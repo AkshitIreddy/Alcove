@@ -2284,7 +2284,10 @@ export default function SettingsPanel(props: {
     if (!props.open || !sheetRef) return;
     const sheet = sheetRef;
     const readChapter = (): void => {
-      const threshold = sheet.getBoundingClientRect().top + 154;
+      // The sticky title/search paper occupies ~126px and section headings
+      // carry their own top rhythm. Read just below both; 154px stopped 28px
+      // too early for Library files even after its jump had visibly landed.
+      const threshold = sheet.getBoundingClientRect().top + 200;
       let current: SettingsChapterId = 'appearance';
       for (const chapter of SETTINGS_CHAPTERS) {
         const section = sheet.querySelector<HTMLElement>(`#nbs-section-${chapter.id}`);

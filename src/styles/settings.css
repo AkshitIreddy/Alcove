@@ -526,7 +526,12 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
   pointer-events: auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-20) var(--space-24) var(--space-48);
+  /* The last two indexed chapters need enough trailing paper to reach the
+     same reading position as every earlier heading. Without this landing room
+     the scroll range clamps while System is still above the sticky header, so
+     the active gilt marker can never advance to Library files or Help. */
+  padding: var(--space-20) var(--space-24)
+    max(var(--space-48), calc(100vh - 250px));
   color: var(--ink-sepia);
   /* One flat sheet of paper. The four stacked gradients this replaces (top
      light, two blotches, a pressed crease) were a texture AND a light model,

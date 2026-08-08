@@ -49,8 +49,6 @@ import { fnv1a } from '../../art/noise';
 import {
   BUILDS,
   PATTERNS,
-  ROLLABLE_BUILDS,
-  ROLLABLE_PATTERNS,
   SHELF_PRESETS,
   getShelfPreset,
   type BuildId,
@@ -58,7 +56,6 @@ import {
 } from '../../art/shelfDesign';
 import {
   FEATURED_THEME_IDS,
-  THEMES,
   THEME_IDS,
   getTheme,
   type ColourScheme,
@@ -67,7 +64,6 @@ import {
 } from '../../art/themes';
 import {
   WALLPAPER_PRESETS,
-  WALLPAPER_ROLL,
   drawWallpaperCard,
   getWallpaper,
   wallpaperAxisKey,
@@ -78,7 +74,6 @@ import {
 } from '../../art/wallpaperDesign';
 import {
   curateList,
-  rollPool,
   saveRoomAsPreset,
   type CurationAxis,
   type Stars,
@@ -104,18 +99,15 @@ import {
   getRoomPreset,
   inkOptions,
   matchRoomPreset,
-  moodTags,
   patternOptions,
   roomPresetOptions,
   scaleOptions,
   shelfPresetOptions,
   themeOptions,
   wallpaperOptions,
-  withMood,
   type RoomLook,
 } from './designOptions';
 import {
-  DEFAULT_ROOM_DESIGN,
   activeRoomDesign,
   loadDesignPrefs,
   saveRoomDesign,
@@ -354,12 +346,6 @@ function sameSpec(a: WallpaperSpec, b: WallpaperSpec): boolean {
   return wallpaperAxisKey(a) === wallpaperAxisKey(b);
 }
 
-function pickOne<T>(list: readonly T[], notThis?: T): T {
-  const pool = notThis === undefined ? list : list.filter((v) => v !== notThis);
-  const from = pool.length > 0 ? pool : list;
-  return from[Math.floor(Math.random() * from.length)] as T;
-}
-
 export interface LibraryStudioProps {
   /** Optional: notified after every change (sound cue, toast…). */
   onChanged?(prefs: LibraryPrefs): void;
@@ -542,8 +528,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
    * own settings key — and neither validator would accept the other's fields.
    * They go out together so the shelf re-bakes once.
    *
-   * The borrowed part colours are cleared, exactly as "surprise me" clears
-   * them. Leaving them would hand the reader a room that does not look like
+   * The borrowed part colours are cleared with the whole-room choice. Leaving
+   * them would hand the reader a room that does not look like
    * the card they just pressed, and no way to tell why.
    */
   const applyPreset = (id: string): void => {
@@ -669,8 +655,8 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
         break;
       case 'room':
         // Only the preset. A borrowed shelf or wall colour survives a room
-        // change on purpose — that is what "back to one room" is for — and the
-        // inline strip has to agree with this, or the same card would mean two
+        // change on purpose, and the inline strip has to agree with this, or
+        // the same card would mean two
         // different things depending on where it was pressed.
         patch({ theme: id as ThemeId });
         break;
@@ -699,104 +685,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       default:
         break;
     }
-  };
-
-  /* ------------------------------- the dice ------------------------------ */
-
-  /**
-   * The mood the dice are loaded toward, or '' for anything.
-   *
-   * The words come from the vocabularies themselves (`moodTags`), so this row
-   * grows as they are tagged and simply does not appear while they are not —
-   * see designOptions.ts. Eight is as many chips as fit two tidy lines in a
-   * 376px sheet, and they arrive commonest-first, so the eight shown are the
-   * eight that actually narrow anything.
-   */
-  const [mood, setMood] = createSignal('');
-  const moods = createMemo<readonly string[]>(() => moodTags().slice(0, 8));
-
-  /**
-   * Somewhere else entirely — a different room, a different case, a different
-   * paper. Ranging over every axis is the point: a "surprise" that nudges one
-   * field is a slider with extra steps.
-   *
-   * The mood narrows each axis independently rather than the roll as a whole.
-   * A reader asking for "goofy" wants a goofy ROOM, and if the papers happen
-   * not to know that word they should still get a paper — an axis with no
-   * match falls back to its whole vocabulary (`withMood`) instead of pinning
-   * itself to whatever it was already wearing.
-   */
-  /*
-   * `rollPool` on the outside of every pool, `withMood` on the inside.
-   *
-   * Order matters and it is the reader's, not the vocabulary's. `rollPool`
-   * takes out what they removed; `withMood` then narrows what is LEFT, and
-   * falls back to what is left — never to the whole vocabulary — when the mood
-   * matches nothing there. Narrowing first and pruning second would let a mood
-   * with one survivor come back empty and take the fallback branch, handing
-   * back a removed entry with the reader's own removal as the reason.
-   *
-   * This is the gate this repo keeps forgetting to hang: `rollPool` was
-   * authored, unit-tested and called by nobody, exactly like `WALLPAPER_ROLL`
-   * before it and `ROLLABLE_BUILDS` before that. A "surprise me" that keeps
-   * handing back the six papers a reader has explicitly taken off the list is
-   * not a dice, it is a panel that did not listen.
-   */
-  const surprise = (): void => {
-    const wanted = mood();
-    const rooms = withMood(
-      rollPool('colour', THEME_IDS, (id) => id),
-      wanted,
-      (id) => THEMES[id],
-    );
-    // ROLLABLE_BUILDS / ROLLABLE_PATTERNS, not BUILD_IDS / PATTERN_IDS — the
-    // carpentry is tiered now for the same reason the papers are, decided by
-    // rendering every build and every pattern at 1:1 and looking
-    // (`scripts/probe-shelf-builds.mjs`). The gated pools also drop the
-    // FALLBACK case, so a roll can never land on the plain plank in bare
-    // timber: that is what a corrupt row resolves to, and a reader handed it by
-    // the dice could not tell a choice from a fault.
-    const builds = withMood(
-      rollPool('build', ROLLABLE_BUILDS, (spec) => spec.id),
-      wanted,
-      (spec) => spec,
-    );
-    const patterns = withMood(
-      rollPool('pattern', ROLLABLE_PATTERNS, (spec) => spec.id),
-      wanted,
-      (spec) => spec,
-    );
-    // WALLPAPER_ROLL, not WALLPAPER_PRESETS. The papers carry a tier for
-    // exactly this — decided by rendering all 126 at real pitch and looking —
-    // and the whole point of the tiering was that the demoted ones stay
-    // PICKABLE while the dice never hand one to somebody who did not ask.
-    // The gate was authored, tested and had no caller: `rollWallpaper` and
-    // `WALLPAPER_ROLL` were reachable from nothing in src/, so "surprise me"
-    // was still rolling all 126. The sheet's own pickers keep offering every
-    // paper, which is where a back-tier one is found on purpose.
-    const papers = withMood(
-      rollPool('wallpaper', WALLPAPER_ROLL, (paper) => paper.id),
-      wanted,
-      (paper) => paper,
-    );
-
-    const nextTheme = pickOne(rooms, libraryPrefs.theme);
-    const paper = pickOne(papers, getWallpaper(wallPresetId()));
-    setBusy(true);
-    void Promise.all([
-      saveLibraryPrefs({
-        theme: nextTheme,
-        shelf: null,
-        wall: null,
-        timberHex: null,
-        wallHex: null,
-      }).then((p) => props.onChanged?.(p)),
-      saveRoomDesign({
-        build: pickOne(builds, BUILDS[design().build]).id,
-        pattern: pickOne(patterns, PATTERNS[design().pattern]).id,
-        wallpaper: paper.spec,
-      }),
-    ]).finally(() => setBusy(false));
   };
 
   return (
@@ -850,71 +738,6 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       <Show when={sheet() === null}>
         {(_closed) => (
           <>
-        {/* A room-wide throw is a starting point, so it belongs at the top of
-            the studio rather than after every fine-grained wallpaper control. */}
-        <section class="nb-panel-section nb-studio-luck nb-library-luck">
-          <h3 class="nb-panel-section-title">start somewhere else</h3>
-
-          {/* Absent until the vocabularies carry mood words — see moodTags(). */}
-          <Show when={moods().length > 0}>
-            <div class="nb-panel-row nb-panel-row-stack">
-              <span class="nb-panel-row-label">
-                in the mood for{' '}
-                <em class="nb-panel-row-hint">{mood() === '' ? 'anything' : mood()}</em>
-              </span>
-              <div class="nb-chip-row" role="group" aria-label="Surprise me mood">
-                <button
-                  type="button"
-                  class="nb-chip"
-                  aria-pressed={mood() === ''}
-                  onClick={() => setMood('')}
-                >
-                  anything
-                </button>
-                <For each={moods()}>
-                  {(word) => (
-                    <button
-                      type="button"
-                      class="nb-chip"
-                      aria-pressed={mood() === word}
-                      onClick={() => setMood(word)}
-                    >
-                      {word}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
-
-          <button
-            type="button"
-            class="nb-studio-luck-action nb-studio-luck-action-surprise nb-library-luck-action"
-            onClick={surprise}
-          >
-            <strong>surprise me</strong>
-            <span>
-              Choose a new colour, case build, timber work and wallpaper together.
-            </span>
-          </button>
-          <div class="nb-chip-row nb-studio-luck-reset">
-            <button
-              type="button"
-              class="nb-chip nb-chip-ghost"
-              onClick={() => patch({ shelf: null, wall: null, timberHex: null, wallHex: null })}
-            >
-              back to one room
-            </button>
-            <button
-              type="button"
-              class="nb-chip nb-chip-ghost"
-              onClick={() => patchDesign({ ...DEFAULT_ROOM_DESIGN })}
-            >
-              plain again
-            </button>
-          </div>
-        </section>
-
         <section class="nb-panel-section">
           <h3 class="nb-panel-section-title">bookcases</h3>
           <BookcasesPanel />

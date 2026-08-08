@@ -47,7 +47,6 @@ import {
   TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
-  bookStyleToOverrides,
   formatForHeight,
   heightForFormat,
   normalizeBookStyleOverrides,
@@ -867,30 +866,6 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     void saveBookBinding(bindingKey(), binding);
   };
 
-  const surprise = (): void => {
-    // A coherent new book: let the room load the dice, then keep the binding
-    // chosen by that same throw. This is deliberately different from
-    // randomise, which mixes every knob from the whole curated vocabulary.
-    const seed = (Math.random() * 0xffffffff) >>> 0;
-    const fresh = resolveBookStyle(seed, themeSpineDefaults(getTheme(libraryPrefs.theme)), null, {
-      pageCount: props.pageCount,
-    });
-    // The room's bias is allowed back in; the reader's removals are not
-    // undone by it. "A whole new book" means a new roll, not a new reader.
-    const { material: _material, ...frozen } = respectingCuration(
-      bookStyleToOverrides(fresh.style),
-    );
-    props.onStyleChange(frozen);
-    let binding = presetForSeed(seed).id;
-    // A weighted roll quite rightly favours restrained bindings. Give it a
-    // few honest rethrows when it lands on the exact binding already here, so
-    // a press still has a visible answer.
-    for (let tries = 0; tries < 4 && binding === design().preset; tries += 1) {
-      binding = presetForSeed((Math.random() * 0xffffffff) >>> 0).id;
-    }
-    void saveBookBinding(bindingKey(), binding);
-  };
-
   /**
    * Per-section luck: the knobs each section's dice re-rolls, keyed by the
    * section's aria label. Draws come from randomBookStyleOverrides so they
@@ -1001,47 +976,24 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <Show when={!bindingSheet() && axisSheet() === null}>
         {(_closed) => (
           <>
-      {/* --------------------------- the two dice ------------------------- */}
-      {/*
-        First in the panel because these are starting points, not an escape
-        hatch after four thousand pixels of controls. They intentionally have
-        different jobs and say so in the controls themselves.
-      */}
-      <section class="nb-panel-section nb-studio-luck" aria-label="Book appearance starting points">
-        <h3 class="nb-panel-section-title">start with the dice</h3>
-        <div class="nb-studio-luck-grid">
-          <button type="button" class="nb-studio-luck-action" onClick={randomise}>
-            <strong>randomise</strong>
-            <span>Mix every book control independently for the widest variety.</span>
-          </button>
-          <button
-            type="button"
-            class="nb-studio-luck-action nb-studio-luck-action-surprise"
-            onClick={surprise}
-          >
-            <strong>surprise me</strong>
-            <span>Make one coherent look, with the current room loading the dice.</span>
-          </button>
-        </div>
-        <div class="nb-chip-row nb-studio-luck-reset">
-          <button
-            type="button"
-            class="nb-chip nb-chip-ghost"
-            onClick={() => {
-              props.onStyleChange(null);
-              void saveBookBinding(bindingKey(), null);
-            }}
-          >
-            follow the room
-          </button>
-        </div>
-        <p class="nb-panel-footnote nb-panel-footnote-tight">
-          Randomise explores; Surprise me coordinates. You can tune either result below.
-        </p>
-      </section>
-
       {/* ------------------------- flipping preview ------------------------ */}
       <div class="nb-studio-stage">
+        <button
+          type="button"
+          class="nb-studio-randomise"
+          aria-label="Randomise this book"
+          data-tooltip="randomise this book"
+          onClick={randomise}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+            <circle cx="8" cy="8" r="1.35" />
+            <circle cx="16" cy="8" r="1.35" />
+            <circle cx="12" cy="12" r="1.35" />
+            <circle cx="8" cy="16" r="1.35" />
+            <circle cx="16" cy="16" r="1.35" />
+          </svg>
+        </button>
         <div
           class="nb-studio-flip"
           classList={{ 'is-cover': face() === 'cover' }}

@@ -1068,11 +1068,58 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
 
 /* ------------------------- flipping book preview -------------------------- */
 .nb-studio-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-8);
   padding: var(--space-12) 0 var(--space-4);
+}
+
+.nb-studio-randomise {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 4;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 2px solid var(--ink-line);
+  border-radius: var(--radius-wobble-sm);
+  box-shadow: 3px 3px 0 var(--shadow-warm);
+  cursor: pointer;
+  transform: rotate(1.5deg);
+  transition: transform var(--dur-xs) var(--ease-out), background var(--dur-xs) var(--ease-out);
+}
+
+.nb-studio-randomise:hover {
+  background: var(--accent-wash);
+  transform: rotate(-2deg) translateY(-1px);
+}
+
+.nb-studio-randomise:active {
+  box-shadow: 1px 1px 0 var(--shadow-warm);
+  transform: translate(2px, 2px) rotate(1deg);
+}
+
+.nb-studio-randomise svg {
+  width: 25px;
+  height: 25px;
+  overflow: visible;
+  fill: var(--accent-wash);
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nb-studio-randomise circle {
+  fill: currentColor;
+  stroke: none;
 }
 
 .nb-studio-flip {

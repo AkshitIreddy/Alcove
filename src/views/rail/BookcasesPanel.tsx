@@ -526,14 +526,6 @@ export default function BookcasesPanel(props: BookcasesPanelProps): JSX.Element 
         <button type="button" class="nb-chip nb-chip-gilt" onClick={addCase}>
           add bookcase
         </button>
-        <button
-          type="button"
-          class="nb-chip"
-          disabled={floors() >= MAX_FLOOR_COUNT}
-          onClick={() => void run(() => addBookcaseFloor())}
-        >
-          add a floor
-        </button>
       </div>
       <p class="nb-panel-footnote">
         {floors() >= MAX_FLOOR_COUNT

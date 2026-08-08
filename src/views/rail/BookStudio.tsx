@@ -978,22 +978,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           <>
       {/* ------------------------- flipping preview ------------------------ */}
       <div class="nb-studio-stage">
-        <button
-          type="button"
-          class="nb-studio-randomise"
-          aria-label="Randomise this book"
-          data-tooltip="randomise this book"
-          onClick={randomise}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
-            <circle cx="8" cy="8" r="1.35" />
-            <circle cx="16" cy="8" r="1.35" />
-            <circle cx="12" cy="12" r="1.35" />
-            <circle cx="8" cy="16" r="1.35" />
-            <circle cx="16" cy="16" r="1.35" />
-          </svg>
-        </button>
+        <RerollDice section="this book" verb="Randomise" onClick={randomise} />
         <div
           class="nb-studio-flip"
           classList={{ 'is-cover': face() === 'cover' }}
@@ -1650,13 +1635,18 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
  * of the big "randomise". Same pre-wobbled stroke idiom as the shelf dock
  * icons (fill:none paths, so a missing stylesheet can't black-box it).
  */
-function RerollDice(props: { section: string; onClick(): void }): JSX.Element {
+function RerollDice(props: {
+  section: string;
+  verb?: 'Reroll' | 'Randomise';
+  onClick(): void;
+}): JSX.Element {
+  const label = (): string => `${props.verb ?? 'Reroll'} ${props.section}`;
   return (
     <button
       type="button"
       class="nb-reroll"
-      aria-label={`Reroll ${props.section}`}
-      data-tooltip={`Reroll ${props.section}`}
+      aria-label={label()}
+      data-tooltip={label()}
       onClick={props.onClick}
     >
       <svg viewBox="0 0 28 28" aria-hidden="true">

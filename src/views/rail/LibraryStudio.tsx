@@ -49,6 +49,8 @@ import { fnv1a } from '../../art/noise';
 import {
   BUILDS,
   PATTERNS,
+  ROLLABLE_BUILDS,
+  ROLLABLE_PATTERNS,
   SHELF_PRESETS,
   getShelfPreset,
   type BuildId,
@@ -56,6 +58,7 @@ import {
 } from '../../art/shelfDesign';
 import {
   FEATURED_THEME_IDS,
+  THEMES,
   THEME_IDS,
   getTheme,
   type ColourScheme,
@@ -64,6 +67,7 @@ import {
 } from '../../art/themes';
 import {
   WALLPAPER_PRESETS,
+  WALLPAPER_ROLL,
   drawWallpaperCard,
   getWallpaper,
   wallpaperAxisKey,
@@ -74,6 +78,7 @@ import {
 } from '../../art/wallpaperDesign';
 import {
   curateList,
+  rollPool,
   saveRoomAsPreset,
   type CurationAxis,
   type Stars,
@@ -99,12 +104,14 @@ import {
   getRoomPreset,
   inkOptions,
   matchRoomPreset,
+  moodTags,
   patternOptions,
   roomPresetOptions,
   scaleOptions,
   shelfPresetOptions,
   themeOptions,
   wallpaperOptions,
+  withMood,
   type RoomLook,
 } from './designOptions';
 import {
@@ -344,6 +351,12 @@ function ColourRow(props: {
  */
 function sameSpec(a: WallpaperSpec, b: WallpaperSpec): boolean {
   return wallpaperAxisKey(a) === wallpaperAxisKey(b);
+}
+
+function pickOne<T>(list: readonly T[], notThis?: T): T {
+  const pool = notThis === undefined ? list : list.filter((value) => value !== notThis);
+  const from = pool.length > 0 ? pool : list;
+  return from[Math.floor(Math.random() * from.length)] as T;
 }
 
 export interface LibraryStudioProps {
@@ -687,6 +700,53 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
     }
   };
 
+  /* A room-wide throw remains the Library Studio's fast starting point. The
+     optional mood chips load the same curated preset pools rather than adding
+     a second, opaque kind of randomisation. */
+  const [mood, setMood] = createSignal('');
+  const moods = createMemo<readonly string[]>(() => moodTags().slice(0, 8));
+
+  const surprise = (): void => {
+    const wanted = mood();
+    const rooms = withMood(
+      rollPool('colour', THEME_IDS, (id) => id),
+      wanted,
+      (id) => THEMES[id],
+    );
+    const builds = withMood(
+      rollPool('build', ROLLABLE_BUILDS, (spec) => spec.id),
+      wanted,
+      (spec) => spec,
+    );
+    const patterns = withMood(
+      rollPool('pattern', ROLLABLE_PATTERNS, (spec) => spec.id),
+      wanted,
+      (spec) => spec,
+    );
+    const papers = withMood(
+      rollPool('wallpaper', WALLPAPER_ROLL, (paper) => paper.id),
+      wanted,
+      (paper) => paper,
+    );
+    const nextTheme = pickOne(rooms, libraryPrefs.theme);
+    const paper = pickOne(papers, getWallpaper(wallPresetId()));
+    setBusy(true);
+    void Promise.all([
+      saveLibraryPrefs({
+        theme: nextTheme,
+        shelf: null,
+        wall: null,
+        timberHex: null,
+        wallHex: null,
+      }).then((prefs) => props.onChanged?.(prefs)),
+      saveRoomDesign({
+        build: pickOne(builds, BUILDS[design().build]).id,
+        pattern: pickOne(patterns, PATTERNS[design().pattern]).id,
+        wallpaper: paper.spec,
+      }),
+    ]).finally(() => setBusy(false));
+  };
+
   return (
     <div
       class="nb-library-studio"
@@ -738,6 +798,47 @@ export default function LibraryStudio(props: LibraryStudioProps): JSX.Element {
       <Show when={sheet() === null}>
         {(_closed) => (
           <>
+        <section class="nb-panel-section nb-library-surprise" aria-label="Surprise room presets">
+          <h3 class="nb-panel-section-title">surprise me</h3>
+          <Show when={moods().length > 0}>
+            <div class="nb-panel-row nb-panel-row-stack">
+              <span class="nb-panel-row-label">
+                preset mood{' '}
+                <em class="nb-panel-row-hint">{mood() === '' ? 'anything' : mood()}</em>
+              </span>
+              <div class="nb-chip-row" role="group" aria-label="Surprise room mood">
+                <button
+                  type="button"
+                  class="nb-chip"
+                  aria-pressed={mood() === ''}
+                  onClick={() => setMood('')}
+                >
+                  anything
+                </button>
+                <For each={moods()}>
+                  {(word) => (
+                    <button
+                      type="button"
+                      class="nb-chip"
+                      aria-pressed={mood() === word}
+                      onClick={() => setMood(word)}
+                    >
+                      {word}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+          <button type="button" class="nb-library-surprise-action" onClick={surprise}>
+            <span aria-hidden="true">⚄</span>
+            <span>
+              <strong>roll a room</strong>
+              <small>colour, case, timber work and wallpaper together</small>
+            </span>
+          </button>
+        </section>
+
         <section class="nb-panel-section">
           <h3 class="nb-panel-section-title">bookcases</h3>
           <BookcasesPanel />

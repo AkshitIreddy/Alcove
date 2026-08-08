@@ -29,6 +29,60 @@
   border: 0;
 }
 
+.nb-library-surprise {
+  padding: var(--space-8);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 16px 13px 15px / 15px 12px 16px 13px;
+}
+
+.nb-library-surprise-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  text-align: left;
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border: var(--stroke-ink-thin);
+  border-color: var(--on-gilt);
+  border-radius: 10px 14px 11px 13px / 13px 10px 14px 11px;
+  cursor: pointer;
+  transform: rotate(0.35deg);
+  transition: transform var(--dur-xs) var(--ease-spring), background var(--dur-xs) var(--ease-out);
+}
+
+.nb-library-surprise-action:hover {
+  background: var(--gilt-light);
+  transform: translateY(-1px) rotate(-0.3deg);
+}
+
+.nb-library-surprise-action > span:first-child {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.nb-library-surprise-action > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nb-library-surprise-action strong {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nb-library-surprise-action small {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  line-height: 1.3;
+}
+
 /* ----------------------------------------------------------------------------
    The strip — eight previews and a way through
    -------------------------------------------------------------------------- */

@@ -395,8 +395,14 @@ export default function BookshelfWorld(): JSX.Element {
    * world that is stood down rather than one left running behind the page.
    */
   const [worldLive, setWorldLive] = createSignal(false);
-  /** True while the reader is inside a book and this room is unattended. */
-  const away = (): boolean => appState.viewState() === 'book';
+  /** The reader has committed to a book; shelf input/work stands down now. */
+  const inBook = (): boolean => appState.viewState() === 'book';
+  /**
+   * Visual ownership changes only after the populated spread has painted.
+   * Until then the already-rendered room and focused cover hide the expensive
+   * TipTap mount, so opening never flashes an empty ruled spread.
+   */
+  const away = (): boolean => inBook() && appState.readerReady();
   let disposed = false;
   let creating = false;
 
@@ -515,11 +521,11 @@ export default function BookshelfWorld(): JSX.Element {
    * before this task ends — and only then does the book fly home.
    */
   createEffect(() => {
-    const inBook = away();
+    const reading = inBook();
     if (!worldLive()) return;
     const w = world;
     if (w === null) return;
-    if (inBook) {
+    if (reading) {
       setDockPanel(null);
       setMenu(null);
       setSpotMenu(null);
@@ -536,7 +542,7 @@ export default function BookshelfWorld(): JSX.Element {
     // composited. On the FIRST pass it is doing its original job: waiting for
     // the floors to load before asking which of them the book stands on.
     void w.ready.then(() => {
-      if (!disposed && !away()) beginReturnIfPending(w);
+      if (!disposed && !inBook()) beginReturnIfPending(w);
     });
   });
 
@@ -671,9 +677,9 @@ export default function BookshelfWorld(): JSX.Element {
    * would work exactly until the first time a book was closed, which is the
    * trap `views/BookView.tsx` spells out beside `import-markdown` for the same
    * reason. An effect that re-registers on the way back is what keeps it.
-   */
+  */
   createEffect(() => {
-    if (away()) return;
+    if (inBook()) return;
     onCleanup(
       registerCommands({
         'new-book': () => addBook(addSpot()?.floor),
@@ -916,7 +922,7 @@ export default function BookshelfWorld(): JSX.Element {
      * REACHED, and a canvas that is merely invisible is still a tab stop away
      * from the reader who is holding a book.
      */
-    <div class="shelf-root" classList={{ 'is-away': away() }} inert={away()}>
+    <div class="shelf-root" classList={{ 'is-away': away() }} inert={inBook()}>
       {/* The app's own tooltip layer (views/Tooltip.tsx). It parks itself on
           <body>, so it is safe to ask for from more than one view — and the
           shelf is the first view a reader ever sees. */}

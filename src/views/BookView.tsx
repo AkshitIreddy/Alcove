@@ -778,6 +778,51 @@ export default function BookView(): JSX.Element {
     queueMicrotask(fitSpread);
   };
 
+  /*
+   * OPENING IS A TWO-OWNER TRANSACTION.
+   *
+   * The shelf's focused cover is already a complete, painted frame. Keep it
+   * on the glass while this view does its expensive first TipTap mounts. Once
+   * the expected live editors exist, wait for bundled fonts and two animation
+   * frames: the first gives Chromium a real paint opportunity for the spread
+   * under the cover, the second atomically hands visual ownership to it via
+   * appState.readerReady. No arbitrary delay and no empty ruled placeholder.
+   */
+  let readerReadyFrame = 0;
+  let readerReadyGeneration = 0;
+  createEffect(
+    on(session, (loaded) => {
+      const generation = ++readerReadyGeneration;
+      if (!loaded) return;
+      const publish = (): void => {
+        if (generation !== readerReadyGeneration) return;
+        const stage = stageElement;
+        const expectedEditors = Number(leftPage() !== null) + Number(rightPage() !== null);
+        const mountedEditors = stage?.querySelectorAll('.nb-page-editor .ProseMirror').length ?? 0;
+        if (stage === undefined || mountedEditors < expectedEditors) {
+          readerReadyFrame = requestAnimationFrame(publish);
+          return;
+        }
+        void document.fonts.ready.then(() => {
+          if (generation !== readerReadyGeneration) return;
+          readerReadyFrame = requestAnimationFrame(() => {
+            if (generation !== readerReadyGeneration) return;
+            readerReadyFrame = requestAnimationFrame(() => {
+              if (generation !== readerReadyGeneration) return;
+              appState.markReaderReady(loaded.book.id);
+            });
+          });
+        });
+      };
+      queueMicrotask(publish);
+      onCleanup(() => {
+        readerReadyGeneration += 1;
+        if (readerReadyFrame !== 0) cancelAnimationFrame(readerReadyFrame);
+        readerReadyFrame = 0;
+      });
+    }),
+  );
+
   onMount(() => {
     if (typeof MutationObserver === 'undefined') return;
     // panelPush writes the tweened edge onto <html>'s inline style; every

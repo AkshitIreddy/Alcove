@@ -18,12 +18,17 @@ export interface AppState {
   closeBook(): void;
   /** Id of the currently open book, or null. */
   readonly openBookId: Accessor<string | null>;
+  /** The first real spread has mounted and crossed a paint boundary. */
+  readonly readerReady: Accessor<boolean>;
+  /** Commit the shelf/cover → populated spread visual handoff. */
+  markReaderReady(bookId: string): void;
   /** Called by the shelf once the close animation has landed the book. */
   clearOpenBook(): void;
 }
 
 const [viewState, setViewState] = createSignal<ViewState>("shelf");
 const [openBookId, setOpenBookId] = createSignal<string | null>(null);
+const [readerReady, setReaderReady] = createSignal(false);
 
 /**
  * App-shell state store. Later features (page flip progress, editor focus, …)
@@ -33,10 +38,21 @@ export const appState: AppState = {
   viewState,
   setViewState: (next) => setViewState(next),
   openBook: (bookId) => {
+    setReaderReady(false);
     if (bookId !== undefined) setOpenBookId(bookId);
     setViewState("book");
   },
-  closeBook: () => setViewState("shelf"),
+  closeBook: () => {
+    setReaderReady(false);
+    setViewState("shelf");
+  },
   openBookId,
-  clearOpenBook: () => setOpenBookId(null),
+  readerReady,
+  markReaderReady: (bookId) => {
+    if (viewState() === "book" && openBookId() === bookId) setReaderReady(true);
+  },
+  clearOpenBook: () => {
+    setReaderReady(false);
+    setOpenBookId(null);
+  },
 };

@@ -51,7 +51,7 @@ import {
 } from 'solid-js';
 import { render } from 'solid-js/web';
 import { usePanelKeys } from '../../state/panelKeys';
-import { PACK_CATEGORIES, UNSUPPORTED_CATEGORIES, packCategory } from './categories';
+import { PACK_CATEGORIES, packCategory } from './categories';
 import { promptForCategory } from './prompt';
 import type { PackCategory, PackCategoryId, PackProblem } from './schema';
 import { fieldSummary } from './schema';
@@ -553,27 +553,6 @@ export function PackDialog(props: PackDialogProps): JSX.Element {
               </Show>
             </section>
 
-            {/* The honest list. The brief: if a category cannot be supported
-                honestly yet, SAY SO here rather than accepting an upload that
-                will be dropped. */}
-            <section class="nb-pack-step nb-pack-notyet" aria-label="What cannot be uploaded yet">
-              <h3 class="nb-pack-step-title nb-pack-notyet-title">what you cannot bring in yet</h3>
-              <dl class="nb-pack-fields font-ui">
-                <For each={UNSUPPORTED_CATEGORIES}>
-                  {(entry) => (
-                    <>
-                      <dt class="nb-pack-notyet-name">{entry.title}</dt>
-                      <dd>
-                        {entry.why}
-                        <Show when={entry.instead !== undefined}>
-                          <span class="nb-pack-instead"> Instead: {entry.instead}</span>
-                        </Show>
-                      </dd>
-                    </>
-                  )}
-                </For>
-              </dl>
-            </section>
           </div>
         </div>
       </div>

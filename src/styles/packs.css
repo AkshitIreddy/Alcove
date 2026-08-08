@@ -321,10 +321,8 @@
  *
  * This was `flex: 1 1 auto` — which in a scrolling column means the step is
  * allowed to SHRINK below its content, and the <pre> inside it (capped at
- * 340px, and not itself a flex item that could be squeezed) spilled straight
- * over the "what you cannot bring in yet" panel below. The prompt was legible
- * through a translucent card, which reads as a rendering fault rather than as
- * a layout one. The column scrolls; nothing in it needs to shrink.
+ * 340px, and not itself a flex item that could be squeezed) spilled outside
+ * its step. The column scrolls; nothing in it needs to shrink.
  */
 .nb-pack-prompt-step {
   flex: none;
@@ -368,42 +366,6 @@
 .nb-pack-prompt:focus-visible {
   outline: none;
   border-color: var(--ink-line);
-}
-
-/* ---- the honest list ---- */
-
-.nb-pack-notyet {
-  flex: none;
-  padding: var(--space-12) var(--space-16);
-  background: color-mix(in srgb, var(--paper-deep) 55%, transparent);
-  border: 1.5px dashed var(--paper-edge);
-  border-radius: var(--radius-hand);
-}
-
-.nb-pack-notyet-title {
-  color: var(--ink-sepia-soft);
-}
-
-/* Stacked, not two columns: these titles are phrases rather than field names,
-   so a `auto 1fr` grid gave the left column a third of the card and left the
-   reasons in a gutter. */
-.nb-pack-notyet .nb-pack-fields {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
-}
-
-.nb-pack-notyet .nb-pack-fields dd + dt {
-  margin-top: var(--space-8);
-}
-
-.nb-pack-notyet-name {
-  font-weight: 700;
-  color: var(--ink-sepia);
-  white-space: normal;
-}
-
-.nb-pack-instead {
-  color: var(--ink-sepia-soft);
 }
 
 /* ----------------------------------------------------------------------------
@@ -551,23 +513,6 @@
   background: var(--wash-blush-light);
   border-style: solid;
   border-color: var(--wash-blush-deep);
-}
-
-.nb-packs-notyet {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0 0 var(--space-8);
-  padding: 0;
-  font-size: var(--text-chip);
-  line-height: 1.45;
-  color: var(--ink-graphite-soft);
-  list-style: none;
-}
-
-.nb-packs-notyet-name {
-  font-weight: 700;
-  color: var(--ink-sepia-soft);
 }
 
 /* ----------------------------------------------------------------------------

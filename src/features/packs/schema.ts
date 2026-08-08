@@ -162,22 +162,6 @@ export interface PackCategory {
  *                     categories that are NOT supported yet                  *
  * ========================================================================== */
 
-/**
- * A thing a reader will reasonably expect to be able to upload, and cannot.
- *
- * These are listed in the dialog on purpose. The brief was explicit — "if a
- * category cannot be supported honestly yet, say so in the dialog instead of
- * accepting an upload you will drop" — and a greyed-out row with a reason
- * beside it is a better answer than an upload button that swallows a file.
- */
-export interface UnsupportedCategory {
-  readonly title: string;
-  /** Why not. Concrete: what the app would have to change. */
-  readonly why: string;
-  /** The nearest thing that DOES work today, when there is one. */
-  readonly instead?: string;
-}
-
 /* ========================================================================== *
  *                          problems, in plain English                        *
  * ========================================================================== */

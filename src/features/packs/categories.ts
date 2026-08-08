@@ -56,7 +56,6 @@ import {
 import type {
   PackCategory,
   PackCategoryId,
-  UnsupportedCategory,
 } from './schema';
 
 /**
@@ -401,36 +400,3 @@ export function isPackCategoryId(value: unknown): value is PackCategoryId {
 export function packCategory(id: unknown): PackCategory | null {
   return typeof id === 'string' ? (BY_ID.get(id) ?? null) : null;
 }
-
-/**
- * What a reader will reasonably try to upload and cannot, with the reason.
- *
- * Kept next to the supported table on purpose. When one of these becomes
- * possible it moves up rather than being remembered — and until it does, the
- * dialog shows the row greyed with its reason instead of an upload button.
- */
-export const UNSUPPORTED_CATEGORIES: readonly UnsupportedCategory[] = [
-  {
-    title: 'A wallpaper as an image',
-    why: 'the wall is one tile repeated across the widest surface on screen, and it is seamless because the app draws the tile. An uploaded picture would show its join.',
-    instead: 'Wallpapers, above — fifty motifs across five scales, four reliefs, six ink slots and fifty tones.',
-  },
-  {
-    title: 'Page effects — tape, washi, frames, lifts',
-    why: 'an effect is drawing code, not data. There is no set of numbers that describes a new one, so there is nothing a file could carry.',
-    instead: 'The catalogue’s tape & trim shelf already offers fifty of each axis.',
-  },
-  {
-    title: 'Book bindings and spine shapes',
-    why: 'the same: a binding is a draw function, picked from fifty spine shapes, fifty materials and fifty decorations that the app knows how to paint.',
-    instead: 'The book studio, where all one hundred and eighty-nine are pickable by hand.',
-  },
-  {
-    title: 'Fonts and handwriting',
-    why: 'the faces are bundled with the app so a page looks the same on a machine that has never seen it. A font loaded from outside would change what an exported PDF looks like without warning.',
-  },
-  {
-    title: 'Cursors',
-    why: 'the app does not have custom cursors yet. When it does, they will be drawings, and drawings do arrive in a file — so this one is a “not yet”, not a “no”.',
-  },
-];

@@ -19,7 +19,7 @@
  *   they think they deleted.
  */
 import { For, Show, createMemo, createSignal, onMount, type JSX } from 'solid-js';
-import { PACK_CATEGORIES, UNSUPPORTED_CATEGORIES, packCategory } from './categories';
+import { PACK_CATEGORIES, packCategory } from './categories';
 import { openPackDialog } from './PackDialog';
 import type { PackCategory } from './schema';
 import {
@@ -184,22 +184,6 @@ export default function PacksPanel(): JSX.Element {
         </Show>
       </section>
 
-      <section class="nb-panel-section nb-panel-section-divided">
-        <h3 class="nb-panel-section-title">not yet, and why</h3>
-        <ul class="nb-packs-notyet font-ui" aria-label="What cannot be uploaded yet">
-          <For each={UNSUPPORTED_CATEGORIES}>
-            {(entry) => (
-              <li>
-                <span class="nb-packs-notyet-name">{entry.title}</span> — {entry.why}
-              </li>
-            )}
-          </For>
-        </ul>
-        <p class="nb-panel-footnote">
-          said out loud rather than hidden behind an upload button that would drop
-          your file.
-        </p>
-      </section>
     </div>
   );
 }

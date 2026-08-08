@@ -21,19 +21,12 @@ export interface FrozenSnapshotBlock {
   readonly height: number;
 }
 
-function computedBorderBox(
-  element: HTMLElement,
-  rect: DOMRect,
-  scaleX: number,
-  scaleY: number,
-): { width: number; height: number } {
+function computedBorderBox(element: HTMLElement): { width: number; height: number } {
   const style = getComputedStyle(element);
   const dimension = (axis: 'width' | 'height'): number => {
     const used = Number.parseFloat(style[axis]);
     if (!Number.isFinite(used) || used <= 0) {
-      return axis === 'width'
-        ? rect.width / Math.max(scaleX, 1e-6)
-        : rect.height / Math.max(scaleY, 1e-6);
+      return axis === 'width' ? element.offsetWidth : element.offsetHeight;
     }
     if (style.boxSizing === 'border-box') return used;
     const extras =
@@ -49,6 +42,21 @@ function computedBorderBox(
     return used + (Number.isFinite(extras) ? extras : 0);
   };
   return { width: dimension('width'), height: dimension('height') };
+}
+
+/** Read a transformed block's exact pre-transform border box on the inert clone. */
+function untransformedRect(element: HTMLElement): DOMRect {
+  const transform = element.style.getPropertyValue('transform');
+  const priority = element.style.getPropertyPriority('transform');
+  // A transform changes only paint/compositing, never flow. Suppressing it for
+  // this one synchronous layout read exposes the fractional CSS origin without
+  // changing any sibling's position. offsetTop was almost right but rounds to
+  // whole CSS pixels — enough for a diagram to move 0.4px at the handoff.
+  element.style.setProperty('transform', 'none', 'important');
+  const rect = element.getBoundingClientRect();
+  if (transform === '') element.style.removeProperty('transform');
+  else element.style.setProperty('transform', transform, priority);
+  return rect;
 }
 
 export function measureSnapshotBlockGeometry(
@@ -75,13 +83,8 @@ export function measureSnapshotBlockGeometry(
       ? sheetRect.height / sheetCssHeight
       : 1;
   return children.map((child): FrozenSnapshotBlock => {
-    const rect = child.getBoundingClientRect();
-    // The visual rect includes every hand-drawn rotate()/skew(). It is the
-    // correct target position but the wrong CSS width: writing that rotated
-    // bounding width back onto the clone and retaining the transform applies
-    // the wobble twice. Ordinary paragraphs have no transform, which is why
-    // this failure singled out cards and diagrams.
-    const size = computedBorderBox(child, rect, scaleX, scaleY);
+    const rect = untransformedRect(child);
+    const size = computedBorderBox(child);
     return {
       top: (rect.top - proseRect.top) / Math.max(scaleY, 1e-6),
       left: (rect.left - proseRect.left) / Math.max(scaleX, 1e-6),
@@ -145,13 +148,6 @@ export function freezeSnapshotBlockGeometry(
   );
   if (children.length === 0) return [];
   const boxes = measured.slice(0, children.length);
-  const sheetRect = sheet.getBoundingClientRect();
-  const sheetStyle = getComputedStyle(sheet);
-  const cssWidth = Number.parseFloat(sheetStyle.width);
-  const cssHeight = Number.parseFloat(sheetStyle.height);
-  const scaleX = Number.isFinite(cssWidth) && cssWidth > 0 ? sheetRect.width / cssWidth : 1;
-  const scaleY = Number.isFinite(cssHeight) && cssHeight > 0 ? sheetRect.height / cssHeight : 1;
-
   prose.style.setProperty('position', 'relative', 'important');
   for (let index = 0; index < children.length; index += 1) {
     const child = children[index]!;
@@ -177,33 +173,5 @@ export function freezeSnapshotBlockGeometry(
     child.style.setProperty('margin', '0', 'important');
   }
 
-  // Preserve the visual border-box origin as well as its untransformed size.
-  // A rotated coordinate system couples x/y, so use a few bounded correction
-  // passes in this inert stage rather than touching the live editor layout.
-  for (let pass = 0; pass < 3; pass += 1) {
-    const proseRect = prose.getBoundingClientRect();
-    for (let index = 0; index < children.length; index += 1) {
-      const child = children[index]!;
-      const box = boxes[index];
-      if (box === undefined || child.style.position !== 'absolute') continue;
-      const rect = child.getBoundingClientRect();
-      const top = Number.parseFloat(child.style.top);
-      const left = Number.parseFloat(child.style.left);
-      if (Number.isFinite(top)) {
-        child.style.setProperty(
-          'top',
-          finitePixel(top + (proseRect.top + box.top * scaleY - rect.top) / Math.max(scaleY, 1e-6)),
-          'important',
-        );
-      }
-      if (Number.isFinite(left)) {
-        child.style.setProperty(
-          'left',
-          finitePixel(left + (proseRect.left + box.left * scaleX - rect.left) / Math.max(scaleX, 1e-6)),
-          'important',
-        );
-      }
-    }
-  }
   return boxes;
 }

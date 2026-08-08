@@ -21,6 +21,36 @@ export interface FrozenSnapshotBlock {
   readonly height: number;
 }
 
+function computedBorderBox(
+  element: HTMLElement,
+  rect: DOMRect,
+  scaleX: number,
+  scaleY: number,
+): { width: number; height: number } {
+  const style = getComputedStyle(element);
+  const dimension = (axis: 'width' | 'height'): number => {
+    const used = Number.parseFloat(style[axis]);
+    if (!Number.isFinite(used) || used <= 0) {
+      return axis === 'width'
+        ? rect.width / Math.max(scaleX, 1e-6)
+        : rect.height / Math.max(scaleY, 1e-6);
+    }
+    if (style.boxSizing === 'border-box') return used;
+    const extras =
+      axis === 'width'
+        ? Number.parseFloat(style.paddingLeft) +
+          Number.parseFloat(style.paddingRight) +
+          Number.parseFloat(style.borderLeftWidth) +
+          Number.parseFloat(style.borderRightWidth)
+        : Number.parseFloat(style.paddingTop) +
+          Number.parseFloat(style.paddingBottom) +
+          Number.parseFloat(style.borderTopWidth) +
+          Number.parseFloat(style.borderBottomWidth);
+    return used + (Number.isFinite(extras) ? extras : 0);
+  };
+  return { width: dimension('width'), height: dimension('height') };
+}
+
 export function measureSnapshotBlockGeometry(
   sheet: HTMLElement,
 ): readonly FrozenSnapshotBlock[] {
@@ -46,11 +76,17 @@ export function measureSnapshotBlockGeometry(
       : 1;
   return children.map((child): FrozenSnapshotBlock => {
     const rect = child.getBoundingClientRect();
+    // The visual rect includes every hand-drawn rotate()/skew(). It is the
+    // correct target position but the wrong CSS width: writing that rotated
+    // bounding width back onto the clone and retaining the transform applies
+    // the wobble twice. Ordinary paragraphs have no transform, which is why
+    // this failure singled out cards and diagrams.
+    const size = computedBorderBox(child, rect, scaleX, scaleY);
     return {
       top: (rect.top - proseRect.top) / Math.max(scaleY, 1e-6),
       left: (rect.left - proseRect.left) / Math.max(scaleX, 1e-6),
-      width: rect.width / Math.max(scaleX, 1e-6),
-      height: rect.height / Math.max(scaleY, 1e-6),
+      width: size.width,
+      height: size.height,
     };
   });
 }
@@ -109,6 +145,12 @@ export function freezeSnapshotBlockGeometry(
   );
   if (children.length === 0) return [];
   const boxes = measured.slice(0, children.length);
+  const sheetRect = sheet.getBoundingClientRect();
+  const sheetStyle = getComputedStyle(sheet);
+  const cssWidth = Number.parseFloat(sheetStyle.width);
+  const cssHeight = Number.parseFloat(sheetStyle.height);
+  const scaleX = Number.isFinite(cssWidth) && cssWidth > 0 ? sheetRect.width / cssWidth : 1;
+  const scaleY = Number.isFinite(cssHeight) && cssHeight > 0 ? sheetRect.height / cssHeight : 1;
 
   prose.style.setProperty('position', 'relative', 'important');
   for (let index = 0; index < children.length; index += 1) {
@@ -133,6 +175,35 @@ export function freezeSnapshotBlockGeometry(
     child.style.setProperty('height', finitePixel(box.height), 'important');
     child.style.setProperty('box-sizing', 'border-box', 'important');
     child.style.setProperty('margin', '0', 'important');
+  }
+
+  // Preserve the visual border-box origin as well as its untransformed size.
+  // A rotated coordinate system couples x/y, so use a few bounded correction
+  // passes in this inert stage rather than touching the live editor layout.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const proseRect = prose.getBoundingClientRect();
+    for (let index = 0; index < children.length; index += 1) {
+      const child = children[index]!;
+      const box = boxes[index];
+      if (box === undefined || child.style.position !== 'absolute') continue;
+      const rect = child.getBoundingClientRect();
+      const top = Number.parseFloat(child.style.top);
+      const left = Number.parseFloat(child.style.left);
+      if (Number.isFinite(top)) {
+        child.style.setProperty(
+          'top',
+          finitePixel(top + (proseRect.top + box.top * scaleY - rect.top) / Math.max(scaleY, 1e-6)),
+          'important',
+        );
+      }
+      if (Number.isFinite(left)) {
+        child.style.setProperty(
+          'left',
+          finitePixel(left + (proseRect.left + box.left * scaleX - rect.left) / Math.max(scaleX, 1e-6)),
+          'important',
+        );
+      }
+    }
   }
   return boxes;
 }

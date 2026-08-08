@@ -535,13 +535,22 @@
     transparent 77%
   );
   border-bottom-right-radius: var(--radius-sm);
-  transition: opacity var(--dur-sm) var(--ease-out), transform var(--dur-sm) var(--ease-out);
   transform-origin: 100% 100%;
 }
 
-.nb-spread:hover .nb-page-curl {
-  opacity: 1;
-  transform: scale(1.18);
+/*
+ * The corner is book chrome, not the leaf being animated. Its old spread-wide
+ * hover scale meant pointerdown could sample any intermediate size, WebGL
+ * painted that approximation for the turn, and landing swapped to a different
+ * CSS size. Keep one settled mark. The edge hotspot still supplies hover
+ * feedback; the corner itself never pulses as ownership changes.
+ *
+ * During a curl the exact DOM mark sits above the canvas. The renderer no
+ * longer redraws an approximate triangle, so both directions use the same
+ * pixels before, during and after the turn.
+ */
+.nb-spread .nb-flip-surface.is-flip-gesture ~ .nb-page-curl {
+  z-index: calc(var(--z-flip) + 1);
 }
 
 /* ----------------------------------------------------------------------------

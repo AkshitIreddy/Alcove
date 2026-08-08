@@ -859,26 +859,11 @@ export class CurlRenderer {
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
 
-    // The dog-ear belongs to the stationary book chrome, but unlike the
-    // binding it never intersects the moving sheet's route. Keep it a final
-    // screen-space mark so its apparent size cannot pulse with perspective.
-    if (this.sceneStyle.showCorner) {
-      const corner = Math.min(
-        Math.max(this.sceneStyle.cornerSize, 1),
-        rightLeaf.w,
-        rightLeaf.h,
-      );
-      drawSolid(
-        rightLeaf.x + rightLeaf.w - corner - 2,
-        rightLeaf.y + rightLeaf.h - corner - 2,
-        corner,
-        corner,
-        this.sceneStyle.cornerPaper,
-        0,
-        this.sceneStyle.cornerRadius,
-        1,
-      );
-    }
+    // The destination dog-ear stays as its exact DOM element above the canvas.
+    // Reconstructing its hard-stop CSS triangle in this generic quad shader
+    // produced a subtly different size/shape, then popped to the real mark at
+    // landing. One screen-space owner is both simpler and pixel-identical in
+    // next and previous turns.
     gl.depthMask(true);
     gl.enable(gl.DEPTH_TEST);
 

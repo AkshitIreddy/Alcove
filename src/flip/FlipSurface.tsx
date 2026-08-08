@@ -311,6 +311,26 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
           token: `${state.token}|ahead:${ahead.revision}`,
         };
       },
+      /**
+       * Materialize one cached face for pixel-level QA.
+       *
+       * A DOM bounding-box probe cannot see snapshot drift because the live
+       * moving leaf is visibility-hidden during the curl. This dev-only bridge
+       * lets a focused probe compare the bitmap the shader actually samples
+       * with the live page it replaces, without asking WebGL for a discarded
+       * back buffer.
+       */
+      bitmapPng: (pageId: string): string | null => {
+        const entry = cache.peek(pageId);
+        if (entry === undefined) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = entry.width;
+        canvas.height = entry.height;
+        const context = canvas.getContext('2d');
+        if (context === null) return null;
+        context.drawImage(entry.bitmap, 0, 0);
+        return canvas.toDataURL('image/png');
+      },
       /** Forget everything, so a probe can ask what a cold book does. */
       clear: () => cache.dispose(),
     };

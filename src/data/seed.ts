@@ -38,6 +38,8 @@
  *   v8 → v9  changed the untouched Welcome cover marker from Forest to Navy.
  *   v9 → v10 makes the untouched Welcome marker pair Crimson outside and the
  *            Festive / Gift ribbon design inside.
+ *   v10 → v11 makes both untouched Welcome markers blue: Navy outside and a
+ *             broad Cornflower silk marker inside.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -88,7 +90,7 @@ import type { PageDoc } from './types';
  * useful sample data first, then guided action, then progressive discovery.
  * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 10;
+export const SEED_VERSION = 11;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -242,10 +244,10 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   thickness: 44, // 'stout' — a five-page book would otherwise be a sliver
   // A restrained fine-binding cover chosen from rendered shelf/held
   // candidates: double fleurons, quill stamp, inset title plate and brass
-  // corners. The crimson ribbon is the warm, unmistakable marker the Welcome
+  // corners. The navy ribbon is the cool, unmistakable marker the Welcome
   // book now uses both outside and between its pages.
   charm: 'ribbon',
-  charmColor: 0, // Crimson
+  charmColor: 2, // Navy
   coverFrame: 21, // Double Fleuron
   coverMedallion: 9, // Quill — the same device as the spine
   cornerProtectors: true,
@@ -253,11 +255,22 @@ export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
 };
 
 /**
- * The Welcome book's between-page ribbon set: Festive / Gift in the ribbon
- * picker. Keep the complete resolved design here, rather than only the preset
- * id, so a seeded book remains truthful if that picker entry is ever renamed.
+ * The Welcome book's between-page ribbon keeps the broad Gift silhouette but
+ * wears blue Cornflower silk. It is deliberately a complete custom design:
+ * no named preset currently has this exact colour/shape combination.
  */
 export const WELCOME_RIBBON: Readonly<Record<string, unknown>> = {
+  cloth: 'cornflower',
+  weight: 'sash',
+  tail: 'swallowtail',
+  material: 'silk',
+  charm: 'none',
+  charmTone: 'gilt',
+  preset: null,
+};
+
+/** Exact v10 inner marker, used only to avoid replacing customised ribbons. */
+const LEGACY_CRIMSON_WELCOME_RIBBON: Readonly<Record<string, unknown>> = {
   cloth: 'postbox',
   weight: 'sash',
   tail: 'swallowtail',
@@ -3524,15 +3537,15 @@ async function renameLegacyWelcomeBook(db: Db): Promise<void> {
 }
 
 /**
- * v10: the Welcome book's matching marker pair became crimson outside and the
- * Festive / Gift design inside.
+ * v11: the Welcome book's matching marker pair became Navy outside and broad
+ * Cornflower silk inside.
  *
  * The two customisation axes are migrated independently. The cover marker is
- * changed only when the complete style is still an exact shipped Forest/Navy
- * binding. The between-page design is installed only when the `ribbon` key has
- * never been written. A reader may therefore have customised either one and
- * still receive the untouched default for the other; no authored choice is
- * replaced.
+ * changed only when the complete style is still an exact shipped
+ * Forest/Crimson binding. The between-page design changes only when it is
+ * absent or exactly the v10 Gift value. A reader may therefore have customised
+ * either axis and still receive the untouched default for the other; no
+ * authored choice is replaced.
  */
 async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
   const rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
@@ -3561,7 +3574,7 @@ async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
       const hasShippedShape =
         keys.length === expectedKeys.length &&
         keys.every((key, index) => key === expectedKeys[index]);
-      const isLegacyMarker = style.charmColor === 1 || style.charmColor === 2;
+      const isLegacyMarker = style.charmColor === 0 || style.charmColor === 1;
       const isOldShippedStyle =
         style.charm === 'ribbon' &&
         isLegacyMarker &&
@@ -3570,12 +3583,25 @@ async function migrateLegacyWelcomeRibbon(db: Db): Promise<void> {
           (key) => key === 'charmColor' || style[key] === expected[key],
         );
       if (isOldShippedStyle) {
-        updated = { ...updated, style: { ...style, charmColor: 0 } };
+        updated = { ...updated, style: { ...style, charmColor: 2 } };
         changed = true;
       }
     }
 
-    if (!Object.prototype.hasOwnProperty.call(meta, 'ribbon')) {
+    const rawRibbon = meta.ribbon;
+    const legacyRibbonKeys = Object.keys(LEGACY_CRIMSON_WELCOME_RIBBON).sort();
+    const hasLegacyRibbon =
+      rawRibbon !== null &&
+      typeof rawRibbon === 'object' &&
+      !Array.isArray(rawRibbon) &&
+      Object.keys(rawRibbon).sort().length === legacyRibbonKeys.length &&
+      legacyRibbonKeys.every(
+        (key) =>
+          Object.prototype.hasOwnProperty.call(rawRibbon, key) &&
+          (rawRibbon as Record<string, unknown>)[key] ===
+            LEGACY_CRIMSON_WELCOME_RIBBON[key],
+      );
+    if (!Object.prototype.hasOwnProperty.call(meta, 'ribbon') || hasLegacyRibbon) {
       updated = { ...updated, ribbon: { ...WELCOME_RIBBON } };
       changed = true;
     }
@@ -3668,7 +3694,8 @@ async function refreshWelcomeBook(db: Db): Promise<boolean> {
  *   v5, v6      replace the welcome book's PAGES with the current tour, and
  *               only when every page in it is still exactly as it was seeded
  *   v9           changed only the untouched shipped outer marker to navy
- *   v10          changes untouched Welcome markers to crimson / Festive Gift
+ *   v10          changed untouched Welcome markers to crimson / Festive Gift
+ *   v11          changes those untouched markers to matching blues
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops

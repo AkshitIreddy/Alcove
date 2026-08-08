@@ -16,6 +16,10 @@ import { resolve } from 'node:path';
 const files = [
   'node_modules/html-to-image/es/clone-node.js',
   'node_modules/html-to-image/lib/clone-node.js',
+  // Vite serves package source for explicit debug imports and can choose it
+  // while invalidating an optimized dependency during HMR. Keep that path
+  // exact too; otherwise a development-only turn still rewraps by 0.1px.
+  'node_modules/html-to-image/src/clone-node.ts',
 ];
 
 const variants = [
@@ -27,6 +31,11 @@ const variants = [
     `                var reducedFont = Math.floor(parseFloat(value.substring(0, value.length - 2))) - 0.1;\n` +
     `                value = "".concat(reducedFont, "px");\n` +
     `            }\n`,
+  `      if (name === 'font-size' && value.endsWith('px')) {\n` +
+    `        const reducedFont =\n` +
+    `          Math.floor(parseFloat(value.substring(0, value.length - 2))) - 0.1\n` +
+    `        value = \`\${reducedFont}px\`\n` +
+    `      }\n`,
 ];
 
 const marker = 'Alcove: preserve the source computed font-size exactly.';
@@ -38,8 +47,9 @@ for (const relative of files) {
   if (old === undefined) {
     throw new Error(`html-to-image font-size patch seam moved in ${relative}`);
   }
+  const indentation = relative.endsWith('.ts') ? '      ' : '            ';
   const replacement =
-    `            // ${marker}\n` +
-    `            // The upstream floor-and-minus-0.1 rewrite changes line wrapping.\n`;
+    `${indentation}// ${marker}\n` +
+    `${indentation}// The upstream floor-and-minus-0.1 rewrite changes line wrapping.\n`;
   writeFileSync(file, source.replace(old, replacement), 'utf8');
 }

@@ -16,18 +16,30 @@ Work **in this order** unless blocked:
 
 ### Owner retest — 2026-08-08
 
-- [ ] Preserve the app-styled table scrollbars in page-turn snapshots; the
-      foreignObject/canvas copy must not fall back to browser scrollbar chrome.
-- [ ] Make the centre binding physically continuous in both turn directions:
+- [ ] **Owner retest — implementation staged:** preserve the app-styled table
+      scrollbars in page-turn snapshots; the foreignObject/canvas copy must not
+      fall back to browser scrollbar chrome. The capture now suppresses clone-
+      invented overflow and draws overflowing thumbs as ordinary token-coloured
+      DOM, because browser scrollbar pseudo-elements cannot cross foreignObject.
+- [ ] **Owner retest — implementation staged:** make the centre binding
+      physically continuous in both turn directions:
       keep the departing side visible until the sheet covers it, reveal the
       arriving side progressively behind the sheet, and keep both halves at
-      the settled size/colour whenever exposed.
-- [ ] Keep the bottom outer page-corner shadow exactly the same apparent size
-      during the curl and after landing.
-- [ ] Eliminate the remaining live-page to snapshot text movement and the
-      resulting mid-turn text anomalies for ordinary and special blocks.
-- [ ] Change the seeded Welcome book's outer marker and inner ribbon from red
-      back to blue, without replacing a reader-customized binding or ribbon.
+      the settled size/colour whenever exposed. Each page shader now owns one
+      binding half, including the moving sheet; there is no final overlay.
+- [ ] **Owner retest — implementation staged:** keep the bottom outer page-
+      corner shadow exactly the same apparent size during the curl and after
+      landing. The GL scene now reads the live hover transition's destination
+      scale/opacity instead of reverting to the unscaled CSS width.
+- [ ] **Owner retest — implementation staged:** eliminate the remaining live-
+      page to snapshot text movement and the resulting mid-turn text anomalies
+      for ordinary and special blocks. Offscreen pages now use the exact left/
+      right leaf size and side-specific cascade; the dependency patch also
+      covers Vite's source/HMR entry instead of only production bundles.
+- [ ] **Owner retest — implementation staged:** change the seeded Welcome
+      book's outer marker and inner ribbon from red back to blue, without
+      replacing a reader-customized binding or ribbon. Seed v11 uses Navy
+      outside and broad Cornflower silk inside, with exact-value migration.
 
 ### Completed owner retest — 2026-08-08
 

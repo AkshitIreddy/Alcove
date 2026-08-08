@@ -189,6 +189,13 @@
   display: none !important;
 }
 
+/* Chromium's scrollbar pseudo-elements cannot cross html-to-image's
+   foreignObject boundary. snapshotChrome.ts supplies an ordinary-DOM copy;
+   suppress the native bar so the capture never contains both. */
+.snapshotting .tableWrapper::-webkit-scrollbar {
+  display: none;
+}
+
 /* ----------------------------------------------------------------------------
    Rigid CSS 3D fallback (no WebGL / context loss / snapshot failure)
    -------------------------------------------------------------------------- */

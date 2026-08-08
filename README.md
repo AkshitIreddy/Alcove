@@ -1144,8 +1144,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->300<!--/f--> of <!--f:srcFiles-->309<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->6979<!--/f--> lines of it.
+<!--f:srcDocstrings-->301<!--/f--> of <!--f:srcFiles-->310<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->6996<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1331,7 +1331,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->309<!--/f--> TypeScript files, <!--f:srcDocstrings-->300<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6979<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->310<!--/f--> TypeScript files, <!--f:srcDocstrings-->301<!--/f--> of which open with a module docstring — <!--f:docstringLines-->6996<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->9<!--/f--> files, <!--f:rustLines-->2619<!--/f--> lines, <!--f:rustCommands-->15<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Bare-bones checks | One Vitest smoke file plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner; no automated browser, pixel, frame or waveform gate | [The bare-bones gate](docs/readme/part-2-developers.md#the-bare-bones-gate) |

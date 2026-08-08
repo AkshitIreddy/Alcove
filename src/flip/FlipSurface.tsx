@@ -190,6 +190,25 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
   const getFlipPages = (dir: FlipDirection): FlipPages | null =>
     canFlip(dir) ? flipSnapshotSceneIds(dir, ids()) : null;
 
+  const sideForPage = (pageId: string): 'left' | 'right' | undefined => {
+    const current = ids();
+    if (
+      pageId === current.left ||
+      pageId === current.nextLeft ||
+      pageId === current.prevLeft
+    ) {
+      return 'left';
+    }
+    if (
+      pageId === current.right ||
+      pageId === current.nextRight ||
+      pageId === current.prevRight
+    ) {
+      return 'right';
+    }
+    return undefined;
+  };
+
   // Read once, like the leaf children: a plain function prop, not JSX.
   const loadPageDoc = props.loadPageDoc;
   const cache = new PageRasterCache({
@@ -203,15 +222,18 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
       ? {
           captureOffscreen: createOffscreenPageCapture({
             loadPageDoc: (pageId) => loadPageDoc(pageId),
-            // Stage sheets at the live leaf's exact size so offscreen
-            // textures align 1:1 with the flip overlay; fall back to the
-            // largest mounted sheet while the leaf is mid-remount.
-            pageSize: () => {
-              const el = props.getPageElement('right');
+            // Stage each page at the exact size of the PHYSICAL SIDE it will
+            // occupy. This used to measure every texture from the right leaf;
+            // fractional flex allocation and side-specific padding then made
+            // a left snapshot rewrap/move text as soon as GL replaced DOM.
+            pageSize: (pageId) => {
+              const side = sideForPage(pageId) ?? 'right';
+              const el = props.getPageElement(side);
               if (el === null) return null;
               const size = measureUntransformedSheet(el);
               return size.width > 1 && size.height > 1 ? size : null;
             },
+            pageSide: sideForPage,
             // …and INSIDE the spread, so the staged sheet inherits the same
             // cascade a mounted leaf does. Staged on <body> it kept the
             // standalone sheet geometry, wrapped its text at different words,

@@ -74,6 +74,19 @@ snapshot; and the Welcome marker is changing back to blue. These are recorded
 at the top of `TODO.md`. No release or demo refresh should happen before that
 list is cleared and the owner accepts the localhost build.
 
+**Post-checkpoint repair candidate (still local, awaiting owner retest):** page
+snapshots now replace non-cloneable browser scrollbar pseudo-elements with
+capture-only app chrome and suppress clone-invented overflow bars. The binding
+is no longer a scene overlay: stationary, revealed and moving sheets each paint
+their own physical half, so occlusion follows the curl. The corner mark reads
+the live hover transition's destination scale/opacity. Offscreen snapshots now
+stage every page at the exact left/right leaf size and under that side's CSS
+cascade, and the html-to-image font-metric patch also covers Vite's source/HMR
+entry. Seed v11 changes only untouched Welcome markers to Navy outside and
+Cornflower silk inside. TypeScript and the five smoke checks pass; this wording
+deliberately does not call the motion defects accepted until the owner exercises
+the localhost build. The demo remains unrendered and nothing has been pushed.
+
 ## 0.4.0 — the current build
 
 **Reading a book no longer rewrites it.** Opening the Welcome book and turning

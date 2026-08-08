@@ -216,6 +216,10 @@ uniform vec2 uPaperScale;  // leaf size / paper tile css size (repeat count)
 uniform float uPaperMix;   // fibre multiply strength (0 disables)
 uniform float uPaperMean;  // mean luminance of the paper tile (normalizer)
 uniform float uLift;       // sin(p·π): 0 at both flat handoff states
+uniform vec4 uGutterColor; // resolved DOM gutter paint, straight alpha
+uniform vec4 uThreadColor; // resolved DOM centre-thread paint, straight alpha
+uniform float uGutterHalfWidth;
+uniform float uThreadHalfWidth;
 
 // The LIVE --paper-cream, baked in at compile time (paperTone.ts). A constant
 // rather than a uniform because it changes only when the reader changes theme,
@@ -254,6 +258,22 @@ vec3 paperMultiply(vec3 color, vec2 uv) {
   vec3 fibre = (tile.rgb + (1.0 - tile.a)) / max(uPaperMean, 0.001);
   return color * mix(vec3(1.0), fibre, uPaperMix);
 }
+
+/** Paint the one binding half physically owned by this leaf. */
+vec3 bindingHalf(vec3 color, float spineDistance) {
+  float gutterMask = 1.0 - smoothstep(
+    max(uGutterHalfWidth - 0.75, 0.0),
+    uGutterHalfWidth + 0.75,
+    spineDistance
+  );
+  float threadMask = 1.0 - smoothstep(
+    max(uThreadHalfWidth - 0.5, 0.0),
+    uThreadHalfWidth + 0.5,
+    spineDistance
+  );
+  color = mix(color, uGutterColor.rgb, uGutterColor.a * gutterMask);
+  return mix(color, uThreadColor.rgb, uThreadColor.a * threadMask);
+}
 `;
 
 export const curlFragSrc = (
@@ -265,6 +285,7 @@ in vec2 vUv;
 
 uniform sampler2D uTexFront;
 uniform sampler2D uTexBack;
+uniform vec2 uLeafSize;
 ${fragCommon(cream)}
 out vec4 outColor;
 
@@ -292,6 +313,8 @@ void main() {
   // Same tiled paper the resting CSS uses, normalized by its mean so only
   // the fibre relief modulates (base tone already lives in the snapshot).
   color = paperMultiply(color, vUv);
+  // local x=0 stays attached to the spine throughout both turn directions.
+  color = bindingHalf(color, vUv.x * uLeafSize.x);
 
   // Nothing else. No crest highlight, no curvature band, no self-shadow —
   // the curl reads from its geometry (the rules bend, the ink foreshortens)
@@ -350,6 +373,7 @@ const float CONTACT_REACH = ${CONTACT_SHADOW_REACH_PX.toFixed(1)};
 void main() {
   // The revealed page sits the same way round as the leaf's front face.
   vec3 color = paperMultiply(samplePage(uTexPage, faceUv(vUv, false)), vUv);
+  color = bindingHalf(color, vUv.x * uLeafSize.x);
 
   // Shadow geometry stays in LEAF-local space (vUv is unmirrored) so the
   // band tracks the fold line the vertex shader used — same spine-anchored
@@ -706,6 +730,28 @@ export class CurlRenderer {
       );
       prog.set1f('uPaperMix', this.paperMix);
       prog.set1f('uPaperMean', 0.94);
+      prog.set4f(
+        'uGutterColor',
+        this.sceneStyle.gutter[0],
+        this.sceneStyle.gutter[1],
+        this.sceneStyle.gutter[2],
+        this.sceneStyle.gutter[3],
+      );
+      prog.set4f(
+        'uThreadColor',
+        this.sceneStyle.thread[0],
+        this.sceneStyle.thread[1],
+        this.sceneStyle.thread[2],
+        this.sceneStyle.thread[3],
+      );
+      prog.set1f(
+        'uGutterHalfWidth',
+        Math.max(this.sceneStyle.gutterWidth * 0.5, 0.5),
+      );
+      prog.set1f(
+        'uThreadHalfWidth',
+        Math.max(this.sceneStyle.threadWidth * 0.5, 0.5),
+      );
     };
 
     const drawGround = (
@@ -804,28 +850,6 @@ export class CurlRenderer {
     drawGround(this.stationary, stationaryLeaf, -dirSign, 0);
     drawGround(this.revealed, movingLeaf, dirSign, 1);
 
-    /*
-     * The binding lives ON the flat paper but UNDER a lifted turning sheet.
-     *
-     * This pass used to paint an opaque cream rectangle first and then draw
-     * the translucent gutter last with depth disabled. The rectangle erased
-     * both pages' rules at the spine, and the last-pass stripe showed through
-     * paper that had not revealed it yet: exactly the pasted-on sticker the
-     * reader reported. The DOM gutter itself is translucent over the paper, so
-     * the GL scene must be the same composition: no backing rectangle, and the
-     * curl drawn afterwards so real paper occludes it.
-     */
-    const bindingX = (leftLeaf.x + leftLeaf.w + rightLeaf.x) * 0.5;
-    const bindingY = Math.min(leftLeaf.y, rightLeaf.y);
-    const bindingH = Math.max(leftLeaf.y + leftLeaf.h, rightLeaf.y + rightLeaf.h) - bindingY;
-    const gutterW = Math.max(this.sceneStyle.gutterWidth, 1);
-    const threadW = Math.min(Math.max(this.sceneStyle.threadWidth, 1), gutterW);
-    const drawBinding = (): void => {
-      drawSolid(bindingX - gutterW * 0.5, bindingY, gutterW, bindingH, this.sceneStyle.gutter, 0.001);
-      drawSolid(bindingX - threadW * 0.5, bindingY, threadW, bindingH, this.sceneStyle.thread, 0.002);
-    };
-    drawBinding();
-
     this.curlProgram.use();
     setCommon(this.curlProgram, movingLeaf);
     this.curlProgram.setTexture('uTexFront', this.front, 0);
@@ -833,15 +857,11 @@ export class CurlRenderer {
     this.curlProgram.setTexture('uPaperTex', this.paper, 2);
     this.mesh.draw();
 
-    // At the two EXACTLY-flat handoffs the settled DOM owns the gutter above
-    // both leaves. Repeat only those endpoint pixels above the mesh so the
-    // p=1 scene already equals the destination before land() releases it. Do
-    // not fade this in during the turn: while p is genuinely between pages the
-    // moving paper must occlude the binding, rather than a stripe appearing
-    // through a sheet that has not revealed it.
+    // Each ground/curl shader owns its physical half of the binding. The
+    // moving half therefore travels around the curl while the two ground
+    // halves remain under it; no screen-space stripe can show through paper.
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
-    if (p <= 1e-6 || p >= 1 - 1e-6) drawBinding();
 
     // The dog-ear belongs to the stationary book chrome, but unlike the
     // binding it never intersects the moving sheet's route. Keep it a final

@@ -35,6 +35,7 @@ import { getFontEmbedCSS, toCanvas } from 'html-to-image';
 import { LruMap, RASTER_CACHE_CAPACITY, snapshotPixelRatio } from './math';
 import { paperToneTag, refreshPaperTone, snapshotBackground } from './paperTone';
 import { inlineSvgStyles } from './svgSnapshot';
+import { prepareSnapshotTableChrome } from './snapshotChrome';
 
 /** Debounce window between an edit and its idle re-rasterization. */
 export const RASTER_DEBOUNCE_MS = 300;
@@ -783,6 +784,7 @@ export class PageRasterCache {
     // Inline SVG loses class-based styling in html-to-image's clone and
     // renders BLACK; see svgSnapshot.ts.
     const restoreSvg = inlineSvgStyles(element);
+    const restoreTableChrome = prepareSnapshotTableChrome(element);
     let canvas: HTMLCanvasElement;
     try {
       canvas = await toCanvas(element, {
@@ -800,6 +802,7 @@ export class PageRasterCache {
       console.warn('[rasterCache] snapshot capture failed for', pageId, err);
       return null;
     } finally {
+      restoreTableChrome();
       restoreSvg();
       element.classList.remove(SNAPSHOTTING_CLASS);
       // Release in a microtask, NOT synchronously: undoing our writes queues

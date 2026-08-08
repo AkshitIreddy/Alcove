@@ -39,6 +39,7 @@ import {
 } from './rasterCache';
 import { inlineSvgStyles } from './svgSnapshot';
 import { snapshotGridCorrections } from './snapshotFidelity';
+import { prepareSnapshotTableChrome } from './snapshotChrome';
 
 /*
  * The marker class, the chrome exclusion and the transparent placeholder are
@@ -55,7 +56,13 @@ export interface OffscreenPageCaptureOptions {
    * Live leaf size (CSS px) to stage the sheet at so textures align 1:1
    * with the flip overlay. Null/omitted → the largest mounted sheet.
    */
-  pageSize?(): OffscreenPageSize | null;
+  pageSize?(pageId: string): OffscreenPageSize | null;
+  /**
+   * Which physical leaf this page occupies in the scene. The spread has
+   * side-specific fore-edge/padding rules, so omitting this can reflow text in
+   * the texture even when width and document are otherwise identical.
+   */
+  pageSide?(pageId: string): 'left' | 'right' | undefined;
   /**
    * The live `.nb-spread` to stage inside. Without it the staged sheet keeps
    * its standalone geometry (wider side padding, deckled top tear) while the
@@ -513,12 +520,13 @@ export function createOffscreenPageCapture(
     const admitted = options.canSettlePage?.(pageId) ?? true;
     const doc = await options.loadPageDoc(pageId);
     if (doc === null) return null;
-    const size = options.pageSize?.() ?? measureMountedSheet();
+    const size = options.pageSize?.(pageId) ?? measureMountedSheet();
     // Everything a mounted leaf is: inside the spread's cascade, paginated,
     // and wearing its own margin doodles. Anything left out here shows up as
     // a jump on the frame the landing swaps this raster for the live page.
     const context: OffscreenLeafContext = {
       host: options.spreadRoot?.() ?? null,
+      side: options.pageSide?.(pageId),
       paginated: true,
       pageId,
     };
@@ -554,6 +562,7 @@ export function createOffscreenPageCapture(
         // paint black (svgSnapshot.ts). No mutation guard needed here — this
         // sheet is ours and nothing is watching it for edits.
         const restoreSvg = inlineSvgStyles(sheet);
+        const restoreTableChrome = prepareSnapshotTableChrome(sheet);
         try {
           const canvas = await toCanvas(sheet, {
             pixelRatio,
@@ -572,6 +581,7 @@ export function createOffscreenPageCapture(
           });
           return await createImageBitmap(canvas);
         } finally {
+          restoreTableChrome();
           restoreSvg();
           sheet.classList.remove(SNAPSHOTTING_CLASS);
         }

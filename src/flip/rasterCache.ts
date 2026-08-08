@@ -39,7 +39,9 @@ import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
   freezeSnapshotListRows,
+  freezeSnapshotNestedGeometry,
   measureSnapshotBlockGeometry,
+  measureSnapshotNestedGeometry,
 } from './snapshotGeometry';
 
 /** Debounce window between an edit and its idle re-rasterization. */
@@ -775,7 +777,9 @@ export class PageRasterCache {
       return this.captureUnmounted(pageId);
     }
     const blockGeometry = measureSnapshotBlockGeometry(clone);
+    const nestedGeometry = measureSnapshotNestedGeometry(clone);
     freezeSnapshotListRows(clone);
+    freezeSnapshotNestedGeometry(clone, nestedGeometry);
     freezeSnapshotBlockGeometry(clone, blockGeometry);
     clone.classList.add(SNAPSHOTTING_CLASS);
     // Inline SVG loses class-based styling in html-to-image's clone and

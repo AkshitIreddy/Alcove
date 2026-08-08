@@ -36,6 +36,7 @@ import { gsap } from 'gsap';
 import { tween } from '../../styles/motion';
 import { claimPanelPush, releasePanelPush } from './panelPush';
 import { CloseIcon } from './icons';
+import AppScrollbar from '../AppScrollbar';
 
 export interface RailPanelProps {
   open: boolean;
@@ -66,6 +67,7 @@ const EAGER_PANELS =
 
 export default function RailPanel(props: RailPanelProps): JSX.Element {
   let sheetRef: HTMLElement | undefined;
+  let bodyRef: HTMLDivElement | undefined;
   const pushKey = `rail-panel-${(instances += 1)}`;
   /** Who to hand focus back to when the sheet leaves. */
   let opener: HTMLElement | null = null;
@@ -200,8 +202,11 @@ export default function RailPanel(props: RailPanelProps): JSX.Element {
           <CloseIcon />
         </button>
       </header>
-      <div class="nb-rail-panel-body">
-        <Show when={everOpened()}>{props.children}</Show>
+      <div class="nb-rail-panel-body-shell">
+        <div class="nb-rail-panel-body" ref={bodyRef}>
+          <Show when={everOpened()}>{props.children}</Show>
+        </div>
+        <AppScrollbar target={() => bodyRef} label={`${props.title} position`} />
       </div>
     </aside>
   );

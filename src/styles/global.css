@@ -155,32 +155,81 @@ h6 {
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
-  cursor: var(--nb-cur-default, default);
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
-  cursor: var(--nb-cur-default, default);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--paper-edge);
   border: 3px solid var(--paper-cream);
   border-radius: var(--radius-pill);
-  cursor: var(--nb-cur-grab, grab);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
 
-::-webkit-scrollbar-thumb:active {
-  cursor: var(--nb-cur-grabbing, grabbing);
-}
-
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Browser scrollbar chrome owns its own cursor in WebView2. Panels therefore
+   hide only their native gutter and place the drawn, accessible DOM scrollbar
+   below over the same native scrollport. Wheel and touch remain native. */
+.nb-app-scrollport {
+  scrollbar-width: none !important;
+}
+
+.nb-app-scrollport::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.nb-app-scrollbar {
+  position: absolute;
+  z-index: 8;
+  top: 8px;
+  right: 4px;
+  bottom: 8px;
+  width: 14px;
+  padding: 2px 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--paper-deep) 48%, transparent);
   cursor: var(--nb-cur-default, default);
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.nb-app-scrollbar[hidden] {
+  display: none;
+}
+
+.nb-app-scrollbar:hover,
+.nb-app-scrollbar:focus-visible {
+  background: var(--paper-deep);
+}
+
+.nb-app-scrollbar-thumb {
+  display: block;
+  width: 8px;
+  min-height: 36px;
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: 7px 9px 8px 10px / 9px 7px 10px 8px;
+  background: var(--paper-edge);
+  cursor: var(--nb-cur-grab, grab);
+  transform: translateY(0);
+  will-change: transform;
+}
+
+.nb-app-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.nb-app-scrollbar-thumb.is-dragging {
+  background: var(--accent-deep);
+  cursor: var(--nb-cur-grabbing, grabbing);
 }
 
 /* ----------------------------------------------------------------------------

@@ -66,26 +66,28 @@ now TypeScript plus five high-signal parser/pagination/version smoke checks;
 release and visual judgement remain deliberate activities rather than an
 automatic claim that rendered pixels or sound are correct.
 
-**Known before the next release:** table scrollbars lose their app styling in
-turn snapshots; the two halves of the centre binding do not yet reveal with the
-physical sheet in both directions; the bottom corner mark changes apparent
-size; some text still shifts when ownership changes from live DOM to the page
-snapshot; and the Welcome marker is changing back to blue. These are recorded
-at the top of `TODO.md`. No release or demo refresh should happen before that
-list is cleared and the owner accepts the localhost build.
+**Newest local repair candidate (awaiting owner retest):** the page turn now
+keeps its stationary leaf as live DOM for the whole motion; only the moving
+leaf transfers to WebGL. Mounted textures clone the exact rendered page rather
+than rebuilding a second editor, and measured block/list boxes are frozen in
+the inert capture. The open-book backing is two symmetric boards with the same
+50% hinge as the page gutter, replacing a stretched closed-cover picture whose
+decorative spine sat on a different axis.
 
-**Post-checkpoint repair candidate (still local, awaiting owner retest):** page
-snapshots now replace non-cloneable browser scrollbar pseudo-elements with
-capture-only app chrome and suppress clone-invented overflow bars. The binding
-is no longer a scene overlay: stationary, revealed and moving sheets each paint
-their own physical half, so occlusion follows the curl. The corner mark reads
-the live hover transition's destination scale/opacity. Offscreen snapshots now
-stage every page at the exact left/right leaf size and under that side's CSS
-cascade, and the html-to-image font-metric patch also covers Vite's source/HMR
-entry. Seed v11 changes only untouched Welcome markers to Navy outside and
-Cornflower silk inside. TypeScript and the five smoke checks pass; this wording
-deliberately does not call the motion defects accepted until the owner exercises
-the localhost build. The demo remains unrendered and nothing has been pushed.
+The same pass restores both top panel-corner outlines, moves and explains the
+two customization dice at the start of the book panel, moves the library's
+Surprise Me action to the top, and carries a saved book appearance through a DB
+re-read into an immediate shelf-spine rebake. A new library opens in brown
+walnut with a columned Egg & Dart case, carved Gilt Damask and vivid rose app
+chrome; plain corrupt-data fallbacks remain independent. Seed v12 gives only an
+untouched Welcome book a solid square case, removes the outer ribbon and striped
+endbands, and keeps one broad blue ribbon between the pages.
+
+TypeScript, the five current smoke checks and focused static screenshots pass.
+The code-side stationary-text measurement was stable through slow and reversed
+drag phases, but that does not substitute for the owner's real-time motion
+judgement. The full demo source now shows timber carving explicitly; the WebP
+remains unrendered and nothing has been pushed, tagged or released.
 
 ## 0.4.0 — the current build
 

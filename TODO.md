@@ -1,11 +1,11 @@
 # Alcove — running TODO
 
-## 🎯 OPEN — owner testing pass (2026-08-07)
+## 🎯 OPEN — owner testing pass (2026-08-08)
 
-**Start with `HANDOFF.md`.** The checked-out commit still matches
-**`origin/main`** (`b847c9d`), while the working tree contains the reviewed
-owner-testing batch described below. Do **not** discard it or push without owner
-permission.
+**Start with `HANDOFF.md`.** Local `main` is intentionally ahead of
+**`origin/main`** with owner-testing checkpoints. Inspect
+`git log --oneline origin/main..HEAD` and the working tree before acting. Do
+**not** discard or push them without owner permission.
 
 **These items are symptoms and priorities, not implementation specs.** Prior
 agents wrote some of the “how” (file names, timers, cue names). **Claude should
@@ -15,6 +15,48 @@ one. Tick the outcome, not the exact recipe in the bullet.
 Work **in this order** unless blocked:
 
 ### Owner retest — 2026-08-08
+
+#### Release blockers — newest owner pass
+
+- [ ] **Owner motion retest — implementation staged:** re-open and fix the
+      page-turn text movement as a transition-ownership
+      defect: ordinary text and special blocks still jump upward when live DOM
+      is replaced by the turning snapshot. The stationary page now remains live
+      DOM; mounted moving-page snapshots clone its exact rendered DOM and freeze
+      measured block/list geometry. Do not close this from still frames or a
+      headless non-reproduction; the owner will confirm the motion.
+- [x] Align the open book's centre binding/shadow with the actual centre seam
+      of the outer cover at every fitted spread size. The page gutter and cover
+      outline now share the exact 50% axis through a symmetric two-board open-
+      cover renderer; runtime centres differed by less than 0.01px.
+- [x] Restore the missing ink outline at both upper corners of every rail/studio
+      panel, including clipped or scrollable panel states.
+- [ ] **Owner shelf retest — implementation staged:** make a saved book
+      customization invalidate and rebuild its shelf spine
+      immediately on return to the library; no manual refresh may be required.
+      Persistence now publishes after SQLite commits, the mounted shelf re-reads
+      the book row, then invalidates and rebakes that spine.
+- [x] Reorder book customization actions: put Randomize and Surprise Me at the
+      top of “Customize this book”, make their behavioral difference explicit,
+      and move the Studio's Surprise Me action to the top of its own panel.
+- [x] Redesign the seeded Welcome binding without overwriting a customized
+      book: remove the OUTER ribbon accessory, remove the white/red spine mark,
+      and replace the hourglass spine silhouette with a solid binding shape.
+      The inner between-page bookmark remains blue.
+- [x] Replace the new-library room default with a grand, intricate, vivid
+      composition while keeping brown timber acceptable: choose an ornate
+      shelf build/carving, richer wallpaper/palette, and a vivid coherent UI
+      accent (red, pink or blue) for Settings and primary controls. Keep corrupt-
+      data fallbacks plain and independent from the authored default.
+- [x] Update the full-length demo storyboard to open on that authored default
+      room and explicitly show changing shelf carving/build. Preserve the
+      existing breadth and panel tour; do not shorten it. Source updated; render
+      remains intentionally held.
+- [ ] Only after the blocker list is owner-accepted: rerender the animated WebP,
+      inspect the full motion manually, push the local commits, tag/publish the
+      GitHub Release, and leave installation to the owner.
+
+#### Earlier staged owner retest
 
 - [ ] **Owner retest — implementation staged:** preserve the app-styled table
       scrollbars in page-turn snapshots; the foreignObject/canvas copy must not
@@ -31,12 +73,12 @@ Work **in this order** unless blocked:
       corner shadow exactly the same apparent size during the curl and after
       landing. The GL scene now reads the live hover transition's destination
       scale/opacity instead of reverting to the unscaled CSS width.
-- [ ] **Owner retest — implementation staged:** eliminate the remaining live-
+- [x] **Superseded by the reopened blocker above:** eliminate the remaining live-
       page to snapshot text movement and the resulting mid-turn text anomalies
       for ordinary and special blocks. Offscreen pages now use the exact left/
       right leaf size and side-specific cascade; the dependency patch also
       covers Vite's source/HMR entry instead of only production bundles.
-- [ ] **Owner retest — implementation staged:** change the seeded Welcome
+- [x] **Superseded by the Welcome redesign above:** change the seeded Welcome
       book's outer marker and inner ribbon from red back to blue, without
       replacing a reader-customized binding or ribbon. Seed v11 uses Navy
       outside and broad Cornflower silk inside, with exact-value migration.

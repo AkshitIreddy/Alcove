@@ -459,6 +459,60 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
   pointer-events: auto;
 }
 
+/* A chapter index attached to the sheet's bound edge. It is a sibling rather
+   than part of the scroller, so all nine destinations remain reachable while
+   the 3200px paper moves underneath. The app tooltip gives each icon its full
+   name; aria-label gives the same name without relying on hover. */
+.nbs-chapter-nav {
+  position: absolute;
+  z-index: 5;
+  top: 104px;
+  right: min(440px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 6px 8px;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: var(--stroke-ink);
+  border-right: none;
+  border-radius: 16px 0 0 19px / 19px 0 0 16px;
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
+  visibility: hidden;
+}
+
+.nbs-chapter-jump {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-sepia-soft);
+  border: 1.5px solid transparent;
+  border-radius: 9px 12px 10px 13px / 12px 9px 13px 10px;
+  cursor: pointer;
+  transition: transform var(--dur-xs) var(--ease-spring), background var(--dur-xs) var(--ease-out);
+}
+
+.nbs-chapter-jump:hover {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+  transform: rotate(-2deg);
+}
+
+.nbs-chapter-jump.is-active {
+  color: var(--on-gilt);
+  background: var(--gilt-face);
+  border-color: var(--on-gilt);
+}
+
+.nbs-chapter-icon {
+  width: 23px;
+  height: 23px;
+  overflow: visible;
+}
+
 .nbs-sheet {
   position: absolute;
   top: 0;
@@ -486,6 +540,37 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
      against hand-drawn paper. */
   scrollbar-width: thin;
   scrollbar-color: var(--paper-edge) transparent;
+}
+
+.nbs-settings-scrollbar {
+  position: absolute;
+  top: 116px;
+  right: 4px;
+  bottom: 8px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-xs) var(--ease-out);
+}
+
+.nbs-settings-scrollbar.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+@media (max-width: 540px) {
+  .nbs-sheet {
+    padding-left: 66px;
+  }
+
+  .nbs-chapter-nav {
+    right: calc(94vw - 50px);
+    top: 112px;
+    border-right: var(--stroke-ink);
+    border-radius: 0 15px 17px 0 / 0 18px 15px 0;
+    box-shadow: none;
+  }
 }
 
 .nbs-sheet::-webkit-scrollbar {
@@ -538,6 +623,13 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
   height: 2px;
   pointer-events: none;
   background: var(--ink-line-soft);
+}
+
+@media (max-width: 540px) {
+  .nbs-header {
+    margin-left: -66px;
+    padding-left: 66px;
+  }
 }
 
 .nbs-title {

@@ -45,6 +45,7 @@ import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
 import { usePanelKeys } from '../../state/panelKeys';
 import { tween } from '../../styles/motion';
+import AppScrollbar from '../../views/AppScrollbar';
 import type { Settings } from '../../data/types';
 import {
   formatRelativeTime,
@@ -1246,7 +1247,68 @@ type SectionAccent =
   | 'lime'
   | 'lemon';
 
+type SettingsChapterId =
+  | 'appearance'
+  | 'library'
+  | 'motion'
+  | 'sound'
+  | 'writing'
+  | 'code'
+  | 'system'
+  | 'files'
+  | 'help';
+
+const SETTINGS_CHAPTERS: readonly {
+  readonly id: SettingsChapterId;
+  readonly label: string;
+}[] = [
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'library', label: 'Library & shelf' },
+  { id: 'motion', label: 'Motion & feel' },
+  { id: 'sound', label: 'Sound' },
+  { id: 'writing', label: 'Writing' },
+  { id: 'code', label: 'Code blocks' },
+  { id: 'system', label: 'System' },
+  { id: 'files', label: 'Library files' },
+  { id: 'help', label: 'Help' },
+];
+
+/** Nine small pre-wobbled marks, one for each settings chapter. */
+function SettingsChapterIcon(props: { id: SettingsChapterId }): JSX.Element {
+  const stroke = {
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': 1.7,
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round',
+  } as const;
+  const drawing = (): JSX.Element => {
+    switch (props.id) {
+      case 'appearance':
+        return <><path d="M4.5 15.7 C7.6 10 11.4 6.3 18.3 4.2 C17.9 10.7 14.5 16.5 7.5 19.5 C8.7 15.2 11.3 11.8 15.4 8.7" {...stroke} /><path d="M7.6 19.4 C6.5 20.1 5.5 20.5 4.5 20.7" {...stroke} opacity=".55" /></>;
+      case 'library':
+        return <><path d="M4.4 5.1 C9.5 4.7 14.6 4.8 19.5 5.2 L19.1 19.2 C14.3 19.6 9.5 19.5 4.7 19.1 Z" {...stroke} /><path d="M5 9.5 C9.8 9.1 14.5 9.2 19.2 9.6 M5 14.2 C9.7 13.8 14.4 13.9 19.1 14.3 M8 5 L8.2 19 M15.6 5 L15.4 19" {...stroke} stroke-width="1.25" /></>;
+      case 'motion':
+        return <><path d="M5 12 C5.5 7.6 8.3 4.7 12.1 4.6 C15.4 4.5 18.1 6.7 18.8 9.8" {...stroke} /><path d="M16.1 8.1 L19 10.3 L20.4 7.1 M19 12 C18.5 16.4 15.7 19.3 11.9 19.4 C8.6 19.5 5.9 17.3 5.2 14.2" {...stroke} /><path d="M7.9 15.9 L5 13.7 L3.6 16.9" {...stroke} /></>;
+      case 'sound':
+        return <><path d="M5 10 L8.2 10 L12 6.7 L12.1 17.4 L8.2 14.1 L5 14.1 Z" {...stroke} /><path d="M15 9 C16.6 10.7 16.6 13.2 15 15 M17.6 6.8 C20.1 9.7 20.1 14.5 17.4 17.3" {...stroke} /></>;
+      case 'writing':
+        return <><path d="M6.2 18.1 C9.4 14.2 12.7 10.2 17.2 5.3 C18 4.5 20.1 6.3 19.3 7.2 C15.1 12 11.6 15.7 7.5 19.4 L4.4 20.1 Z" {...stroke} /><path d="M15.5 7.3 L17.7 9.3 M5.3 18.6 L7 19.5" {...stroke} /></>;
+      case 'code':
+        return <><path d="M9.3 7.2 L4.8 12 L9.4 16.7 M14.7 7.2 L19.2 12 L14.6 16.7 M13 5.5 L10.9 18.6" {...stroke} /></>;
+      case 'system':
+        return <><path d="M4.7 6.1 C9.5 5.7 14.4 5.8 19.2 6.2 L18.9 16.2 C14.2 16.6 9.5 16.5 4.9 16.1 Z" {...stroke} /><path d="M9.2 19.5 C11.2 19.2 13.1 19.2 15 19.5 M12 16.5 L12 19.2 M7.4 9.2 L16.5 9.2" {...stroke} /></>;
+      case 'files':
+        return <><path d="M5.1 5.2 C8.3 4.9 11.4 5 14.5 5.3 L18.9 9.4 L18.6 19.2 C14.1 19.6 9.7 19.5 5.3 19.1 Z" {...stroke} /><path d="M14.4 5.4 L14.3 9.7 L18.7 9.5 M8 13 L15.7 13 M8 16 L14 16" {...stroke} stroke-width="1.3" /></>;
+      case 'help':
+        return <><path d="M7.1 8.1 C7.7 4.9 10.1 3.7 12.4 3.9 C15.6 4.1 17.6 6.1 17.2 8.6 C16.9 10.6 15.1 11.3 13.5 12.3 C12.3 13.1 11.9 14 12 15" {...stroke} /><path d="M11.9 19.2 C12.3 19.2 12.6 18.9 12.6 18.5 C12.6 18.1 12.3 17.8 11.9 17.8 C11.5 17.8 11.2 18.1 11.2 18.5 C11.2 18.9 11.5 19.2 11.9 19.2 Z" {...stroke} /></>;
+    }
+  };
+  return <svg viewBox="0 0 24 24" class="nbs-chapter-icon" aria-hidden="true">{drawing()}</svg>;
+}
+
 function Section(props: {
+  id: SettingsChapterId;
   title: string;
   accent: SectionAccent;
   /**
@@ -1262,6 +1324,7 @@ function Section(props: {
     <Chapter words={`${props.title} ${props.words ?? ''}`}>
       {(shown) => (
         <section
+          id={`nbs-section-${props.id}`}
           class="nbs-section"
           data-accent={props.accent}
           hidden={!shown() || undefined}
@@ -1521,8 +1584,22 @@ export default function SettingsPanel(props: {
 }): JSX.Element {
   let sheetRef: HTMLDivElement | undefined;
   let scrimRef: HTMLDivElement | undefined;
+  let chapterNavRef: HTMLElement | undefined;
   let closeRef: HTMLButtonElement | undefined;
   let lastFocused: HTMLElement | null = null;
+  const [activeChapter, setActiveChapter] = createSignal<SettingsChapterId>('appearance');
+
+  const jumpToChapter = (id: SettingsChapterId): void => {
+    const section = sheetRef?.querySelector<HTMLElement>(`#nbs-section-${id}`);
+    if (!section || section.hidden) return;
+    setActiveChapter(id);
+    const stickyHeader = sheetRef?.querySelector<HTMLElement>('.nbs-header');
+    const headerInset = (stickyHeader?.getBoundingClientRect().height ?? 0) + 22;
+    sheetRef?.scrollTo({
+      top: Math.max(0, section.offsetTop - headerInset),
+      behavior: settings.animationLevel === 'off' ? 'auto' : 'smooth',
+    });
+  };
 
   /*
    * The sheet owns the keyboard while it is open — and only while it is open.
@@ -2156,6 +2233,7 @@ export default function SettingsPanel(props: {
   onMount(() => {
     if (sheetRef) gsap.set(sheetRef, { xPercent: 105, visibility: 'hidden' });
     if (scrimRef) gsap.set(scrimRef, { autoAlpha: 0 });
+    if (chapterNavRef) gsap.set(chapterNavRef, { x: 520, visibility: 'hidden' });
   });
 
   // Slide the paper sheet in/out whenever `open` flips.
@@ -2163,11 +2241,12 @@ export default function SettingsPanel(props: {
     const open = props.open;
     const sheet = sheetRef;
     const scrim = scrimRef;
+    const chapterNav = chapterNavRef;
     if (!sheet || !scrim || open === wasOpen) return open;
     // A whole surface entering/leaving: the 'slow'/'normal' pair the rail
     // sheet uses, so the two panels arrive at the same tempo. tween() folds in
     // the motion preference, so there is no branch here for reduced motion.
-    gsap.killTweensOf([sheet, scrim]);
+    gsap.killTweensOf([sheet, scrim, chapterNav]);
     if (open) {
       lastFocused =
         document.activeElement instanceof HTMLElement
@@ -2175,6 +2254,10 @@ export default function SettingsPanel(props: {
           : null;
       gsap.set(sheet, { visibility: 'visible' });
       gsap.to(sheet, { xPercent: 0, ...tween('slow', 'enter') });
+      if (chapterNav) {
+        gsap.set(chapterNav, { visibility: 'visible' });
+        gsap.to(chapterNav, { x: 0, ...tween('slow', 'enter') });
+      }
       gsap.to(scrim, { autoAlpha: 1, ...tween('normal', 'enter') });
       queueMicrotask(() => closeRef?.focus());
     } else if (wasOpen !== undefined) {
@@ -2183,12 +2266,38 @@ export default function SettingsPanel(props: {
         ...tween('normal', 'exit'),
         onComplete: () => gsap.set(sheet, { visibility: 'hidden' }),
       });
+      if (chapterNav) {
+        gsap.to(chapterNav, {
+          x: 520,
+          ...tween('normal', 'exit'),
+          onComplete: () => gsap.set(chapterNav, { visibility: 'hidden' }),
+        });
+      }
       gsap.to(scrim, { autoAlpha: 0, ...tween('quick', 'exit') });
       lastFocused?.focus();
       lastFocused = null;
     }
     return open;
   }, undefined);
+
+  createEffect(() => {
+    if (!props.open || !sheetRef) return;
+    const sheet = sheetRef;
+    const readChapter = (): void => {
+      const threshold = sheet.getBoundingClientRect().top + 154;
+      let current: SettingsChapterId = 'appearance';
+      for (const chapter of SETTINGS_CHAPTERS) {
+        const section = sheet.querySelector<HTMLElement>(`#nbs-section-${chapter.id}`);
+        if (!section || section.hidden) continue;
+        if (section.getBoundingClientRect().top <= threshold) current = chapter.id;
+        else break;
+      }
+      setActiveChapter(current);
+    };
+    sheet.addEventListener('scroll', readChapter, { passive: true });
+    queueMicrotask(readChapter);
+    onCleanup(() => sheet.removeEventListener('scroll', readChapter));
+  });
 
   // Escape closes; Tab is trapped inside the sheet while open.
   createEffect(() => {
@@ -2223,7 +2332,8 @@ export default function SettingsPanel(props: {
         return;
       }
       if (e.key !== 'Tab' || !sheetRef) return;
-      const focusables = Array.from(
+      const focusables = [
+        ...Array.from(
         sheetRef.querySelectorAll<HTMLElement>(
           'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
         ),
@@ -2231,12 +2341,18 @@ export default function SettingsPanel(props: {
         // element cannot take focus — so leaving it in this list would make
         // the wrap-around at either end focus nothing at all, and Tab out of a
         // narrowed sheet would land the reader on the shelf behind it.
-      ).filter((el) => el.getClientRects().length > 0);
+        ),
+        ...Array.from(
+          chapterNavRef?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? [],
+        ),
+      ].filter((el) => el.getClientRects().length > 0);
       if (focusables.length === 0) return;
       const first = focusables[0] as HTMLElement;
       const last = focusables[focusables.length - 1] as HTMLElement;
       const active = document.activeElement;
-      const inside = active instanceof Node && sheetRef.contains(active);
+      const inside =
+        active instanceof Node &&
+        (sheetRef.contains(active) || chapterNavRef?.contains(active) === true);
       if (e.shiftKey) {
         if (!inside || active === first) {
           e.preventDefault();
@@ -2265,6 +2381,30 @@ export default function SettingsPanel(props: {
         onClick={() => props.onClose()}
         aria-hidden="true"
       />
+      <nav
+        ref={chapterNavRef}
+        class="nbs-chapter-nav"
+        aria-label="Settings sections"
+        aria-hidden={!props.open}
+      >
+        <For each={SETTINGS_CHAPTERS}>
+          {(chapter) => (
+            <button
+              type="button"
+              class="nbs-chapter-jump"
+              classList={{ 'is-active': activeChapter() === chapter.id }}
+              aria-label={chapter.label}
+              aria-current={activeChapter() === chapter.id ? 'location' : undefined}
+              tabindex={props.open ? 0 : -1}
+              data-tooltip={chapter.label}
+              data-tooltip-side="left"
+              onClick={() => jumpToChapter(chapter.id)}
+            >
+              <SettingsChapterIcon id={chapter.id} />
+            </button>
+          )}
+        </For>
+      </nav>
       {/* Everything below is inside the search's scope — the sections, the
           rows and the shortcut list all report through it. Deliberately NOT
           re-indented under the provider: a thousand lines of shifted
@@ -2387,6 +2527,7 @@ export default function SettingsPanel(props: {
 
         {/* ------------------------------ Appearance -------------------------- */}
         <Section
+          id="appearance"
           title="Appearance"
           accent="blush"
           words="look style skin decoration"
@@ -2557,6 +2698,7 @@ export default function SettingsPanel(props: {
 
         {/* --------------------------- Library & shelf ------------------------ */}
         <Section
+          id="library"
           title="Library & shelf"
           accent="moss"
           words="bookcase books shelves"
@@ -2604,6 +2746,7 @@ export default function SettingsPanel(props: {
 
         {/* ----------------------------- Motion & feel ------------------------ */}
         <Section
+          id="motion"
           title="Motion & feel"
           accent="violet"
           words="animation movement"
@@ -2678,7 +2821,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         {/* -------------------------------- Sound ----------------------------- */}
-        <Section title="Sound" accent="turquoise" words="audio noise">
+        <Section id="sound" title="Sound" accent="turquoise" words="audio noise">
           {/* The headline choice, above the sliders: the sliders set how loud
               the app is, the set decides what it sounds like. Every cue is the
               same licensed recording either way — a set conditions them
@@ -3091,6 +3234,7 @@ export default function SettingsPanel(props: {
 
         {/* ------------------------------- Writing ----------------------------- */}
         <Section
+          id="writing"
           title="Writing"
           accent="amber"
           words="editor typing pages text"
@@ -3152,6 +3296,7 @@ export default function SettingsPanel(props: {
             above an indented block looks like at fifteen pixels, which is the
             only question anybody actually has. */}
         <Section
+          id="code"
           title="Code blocks"
           accent="lemon"
           words="programming syntax listing monospace"
@@ -3242,6 +3387,7 @@ export default function SettingsPanel(props: {
 
         {/* ------------------------------- System ------------------------------ */}
         <Section
+          id="system"
           title="System"
           accent="sky"
           words="machine desktop windows app"
@@ -3520,6 +3666,7 @@ export default function SettingsPanel(props: {
 
         {/* --------------------------- Library files -------------------------- */}
         <Section
+          id="files"
           title="Library files"
           accent="coral"
           words="export import transfer parcel bundle"
@@ -3610,6 +3757,7 @@ export default function SettingsPanel(props: {
 
         {/* ------------------------------- Help ------------------------------- */}
         <Section
+          id="help"
           title="Help"
           accent="lime"
           words="support guide learn"
@@ -3629,6 +3777,11 @@ export default function SettingsPanel(props: {
           everything saves itself, instantly · telemetry: never
         </p>
       </div>
+      <AppScrollbar
+        target={() => sheetRef}
+        label="Settings position"
+        class={`nbs-settings-scrollbar ${props.open ? 'is-open' : ''}`}
+      />
       </FindCtx.Provider>
     </div>
   );

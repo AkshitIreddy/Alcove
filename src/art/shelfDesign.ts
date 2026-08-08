@@ -757,6 +757,20 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * a gain rather than a loss — the guilloche runs the length of both boards, so
  * the case is finished with a gold rule at each end instead of a sawtooth.
  *
+ * ## Moved to `colonnade` + `eggDart`, when the opening was asked to feel grand
+ *
+ * Refectory and guilloche made a handsome antique room, but the large ogee
+ * heads and heavy boards read as severe before they read as intricate. The
+ * opening library is now meant to advertise the studio's range immediately:
+ * architecture at the scale of the whole case, and carving that is legible on
+ * the boards rather than merely implied by the silhouette.
+ *
+ * `colonnade` supplies columns with capitals and a pedimented entablature;
+ * `eggDart` runs one of the strongest classical enrichments over the timber.
+ * Both are existing, rollable, authored showpieces. English Walnut remains the
+ * room colour, so the furniture is still a believable brown bookcase while
+ * gilt and the vivid wall do the chromatic work around it.
+ *
  * Paired with {@link FALLBACK_SHELF_DESIGN}, which answers a different
  * question — see the note there.
  *
@@ -766,8 +780,8 @@ export type ShelfDesignInput = Partial<ShelfDesign> | null | undefined;
  * MORE often, not less: it was chosen by looking at twelve builds side by side.
  */
 export const DEFAULT_SHELF_DESIGN: ShelfDesign = {
-  build: 'refectory',
-  pattern: 'guilloche',
+  build: 'colonnade',
+  pattern: 'eggDart',
 };
 
 /**

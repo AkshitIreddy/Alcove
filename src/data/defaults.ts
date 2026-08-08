@@ -14,7 +14,10 @@ import { DEFAULT_KEYBINDINGS as SHIPPED_KEYBINDINGS } from './keybindings';
 
 export const DEFAULT_SETTINGS: Settings = {
   // Appearance
-  theme: 'parchment',
+  // A new profile opens in the shipped Blossom room: pale paper with a vivid
+  // rose accent. Settings, selected tools and primary controls therefore read
+  // as deliberate pink signals instead of folding into the walnut room as moss.
+  theme: 'pastel',
   handwritingEnabled: true,
   handwritingFont: 'Patrick Hand',
   bodyFontSize: 18,

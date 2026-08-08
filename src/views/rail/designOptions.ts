@@ -419,11 +419,12 @@ export function drawRoomCard(ctx: FlatCtx, w: number, h: number, look: RoomLook)
  * the panel. `quiet.house` is exempt, for the same reason it is exempt from the
  * one-paper-each rule: its carpentry is not chosen here, it is whatever
  * `DEFAULT_SHELF_DESIGN` currently is, and a default that lands on a pair the
- * table already names is mildly untidy rather than a reason to fail a build in
- * a file that did not choose it. (It does not today — the default is a
- * refectory worked in guilloche and no card is — but it did while the default
- * was a chapel in quatrefoil, which The Chantry also is. The Chantry is what
- * keeps that carpentry reachable now the default has moved off it.)
+ * table already names is intentional rather than a reason to fail a build in
+ * a file that did not choose it. It does today: the brown house room and Gilt
+ * Salon share a colonnade worked in egg-and-dart and a carved gilt damask,
+ * while their Walnut and Topaz palettes make them plainly different rooms.
+ * The duplicate is useful in the opening strip—it demonstrates that repainting
+ * is an axis of its own without rebuilding the case.
  *
  * ## The house room
  *

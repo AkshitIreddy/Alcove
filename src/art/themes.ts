@@ -968,9 +968,9 @@ export type ThemeId = (typeof THEME_IDS)[number];
  * `walnut` is the one that reads as dark figured timber and keeps a fold the
  * eye can find, and its own wall (`#e9e0cc`) is a warm cream rather than a
  * neutral, which is what lets a papered wall sit warm behind it. Its tags —
- * `warm, dark, formal, quiet` — are also what makes the derived house-room card
- * agree with its carpentry for once: `refectory` files under Antique, and dark
- * English walnut is exactly that.
+ * `warm, dark, formal, quiet` — also agree with the house room's current
+ * colonnade and egg-and-dart: visibly grand carpentry, still grounded by a
+ * believable dark English walnut rather than coloured like stage scenery.
  *
  * Its six cloths (oxblood, inkblue, bottle, honey, plum, sand) are what every
  * new book is dressed from, and they are the reason it beats `apothecary`,

@@ -5505,15 +5505,25 @@ export const FALLBACK_WALLPAPER_ID = 'plain-parchment';
  *    stays a surface; `diaper-illumination`, the densest of the golds, goes to
  *    a flicker of yellow squares.
  *
- * It also finishes the room: the case's `guilloche` is a gilt chain on dark
- * timber, and the wall is a gilt net on cream, so the gold is the one thing
- * crossing from the furniture to the wall.
+ * It also finished that generation of the room: the case's `guilloche` was a
+ * gilt chain on dark timber, and the wall a gilt net on cream.
+ *
+ * ## Moved to `damask-gilt`, with the grander opening carpentry
+ *
+ * The new house case is a classical colonnade worked in egg-and-dart. The fine
+ * trellis was deliberately architectural background; beside columns and a
+ * pediment it became too reserved to sell the room's full potential in the
+ * first seconds. Gilt Damask is the authored grand/carved paper: a large-scale
+ * ogee, palmette and crown with enough colour and hierarchy to read behind the
+ * brown furniture without painting the furniture itself an implausible hue.
+ * It stays in the same flat vocabulary—pigment faces and one ink outline, no
+ * light model—and its gilt ink ties directly to the egg-and-dart enrichment.
  *
  * Plain Parchment is still first in the picker for anyone who wants the bare
  * wall back, and `pin-quiet` and `fleur-royal` are both in the book one search
  * away.
  */
-export const DEFAULT_WALLPAPER_ID = 'trellis-gilt';
+export const DEFAULT_WALLPAPER_ID = 'damask-gilt';
 
 const BY_ID = new Map(WALLPAPER_PRESETS.map((p) => [p.id, p]));
 

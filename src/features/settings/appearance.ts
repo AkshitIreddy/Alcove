@@ -547,10 +547,10 @@ const HAND_BY_ID = new Map(HANDS.map((s) => [s.id, s] as const));
  * reader can no longer tell a fault from their own choice. The fallback is the
  * plainest room in the app on purpose.
  */
-export const DEFAULT_APP_THEME_ID = 'parchment';
+export const DEFAULT_APP_THEME_ID = 'pastel';
 export const FALLBACK_APP_THEME_ID = 'parchment';
 
-/** Total: junk out of SQLite gives the house room, never a throw. */
+/** Total: junk out of SQLite gives the plain fallback room, never a throw. */
 export function resolveTheme(id: string | null | undefined): AppThemeSpec {
   return (
     THEME_BY_ID.get(id ?? '') ??

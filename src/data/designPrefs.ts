@@ -61,7 +61,12 @@ export interface RoomDesign {
   wallpaper: WallpaperSpec;
 }
 
-/** The house room: a plain plank case against a bare wall. */
+/**
+ * The authored house room for a new bookcase.
+ *
+ * These are opening defaults, not corruption fallbacks: the latter remain the
+ * plain plank and bare wall in their owning vocabulary modules.
+ */
 export const DEFAULT_ROOM_DESIGN: RoomDesign = {
   build: DEFAULT_SHELF_DESIGN.build,
   pattern: DEFAULT_SHELF_DESIGN.pattern,
@@ -370,4 +375,3 @@ export function subscribeBookBindings(
     return dispose;
   });
 }
-

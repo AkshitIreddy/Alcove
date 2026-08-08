@@ -4,9 +4,12 @@
  * A turn is not three anonymous page textures. From its first frame until the
  * atomic return to live DOM it owns a complete two-sheet scene:
  *
- *   stationary sheet + revealed sheet + moving front/back + binding chrome.
+ *   live stationary sheet + revealed texture + moving front/back + binding.
  *
- * Keeping that contract explicit prevents the recurring landing-only fixes:
+ * The stationary leaf deliberately stays live DOM under the transparent half
+ * of the canvas; reconstructing a page that never moves made its text react to
+ * a turn on the other side. Keeping the rest of the contract explicit prevents
+ * the recurring landing-only fixes:
  * the gutter, paper backing, edge stack or destination furniture cannot be
  * invented after p=1 if the renderer needed them at p=0. Page pixels include
  * editor content, media, node views, free marks and backlinks; the chrome is

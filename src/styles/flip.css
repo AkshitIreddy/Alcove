@@ -61,10 +61,13 @@
   display: block;
 }
 
-/* Both live sheets stay laid out and paintable below the complete canvas scene.
-   They are opacity-hidden—not visibility:hidden—so the landing owner change is
-   one class removal, with no destination layout or media first appearing then. */
-.nb-flip-surface.is-flip-scene .nb-flip-leaf {
+/* The moving leaf is replaced by its curl texture. The opposite leaf does not
+   move, so it remains live DOM throughout the transaction: no reconstructed
+   editor, foreignObject font pass or stale bitmap is allowed to make stationary
+   text react to a turn happening on the other side. The canvas is transparent
+   there and the lifted sheet naturally covers it when it crosses the hinge. */
+.nb-flip-surface.is-flip-scene[data-flip-moving='left'] .nb-flip-leaf-left,
+.nb-flip-surface.is-flip-scene[data-flip-moving='right'] .nb-flip-leaf-right {
   opacity: 0;
 }
 

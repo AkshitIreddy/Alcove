@@ -228,6 +228,13 @@
      terracotta gradient under a three-layer ambient shadow and an inset
      catch-light — a lit, photographed object sitting inside a flat drawing. */
   background: var(--wash-terracotta);
+  /* BookView's open-cover bake is a complete two-board scene, not a material
+     tile. Stretch that one scene to this exact board box so its 50% hinge
+     remains the same 50% axis as the spread; repeating the intrinsic 720px
+     bitmap created several false spines across a wide window. */
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
   border: var(--stroke-ink);
   border-radius: 16px 22px 18px 24px / 20px 16px 24px 18px;
   box-shadow: var(--shadow-lg);

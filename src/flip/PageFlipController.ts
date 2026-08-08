@@ -479,7 +479,7 @@ export class PageFlipController {
    * is exactly the late-arriving destination state this contract removes.
    */
   private curlFacesReady(pages: FlipPages, warmMissing: boolean): boolean {
-    const ids = [pages.stationary, pages.front, pages.back, pages.revealed].filter(
+    const ids = [pages.front, pages.back, pages.revealed].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
     const missing = ids.filter((id) => this.options.cache.get(id)?.bitmap == null);
@@ -567,7 +567,7 @@ export class PageFlipController {
      */
     const cachedFor = (id: string | null): ImageBitmap | null =>
       id === null ? null : (this.options.cache.get(id)?.bitmap ?? null);
-    const wanted = [pages.stationary, pages.front, pages.back, pages.revealed].filter(
+    const wanted = [pages.front, pages.back, pages.revealed].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
     const missing = wanted.filter((id) => cachedFor(id) === null);
@@ -606,7 +606,6 @@ export class PageFlipController {
     const faceReady = (id: string | null): boolean =>
       id === null || cachedFor(id) !== null;
     const canCurl =
-      faceReady(pages.stationary) &&
       faceReady(pages.front) &&
       faceReady(pages.back) &&
       faceReady(pages.revealed);
@@ -625,7 +624,9 @@ export class PageFlipController {
         id ? (cache.get(id)?.bitmap ?? null) : null;
       this.renderer.setSnapshotScene(
         {
-          stationary: bitmapOf(pages.stationary),
+          // The opposite page remains live DOM; this slot is retained only as
+          // scene-contract compatibility for older renderer callers.
+          stationary: null,
           front: bitmapOf(pages.front),
           back: bitmapOf(pages.back),
           revealed: bitmapOf(pages.revealed),
@@ -667,7 +668,7 @@ export class PageFlipController {
       // frame the leaf is hidden with an empty canvas over it: the page
       // blinks out at the start of every flip, which is most of what made a
       // click-to-turn feel like it jumped rather than moved.
-      this.hideLiveLeaves(); // wrappers keep layout/paint; the GPU owns both sheets
+      this.hideMovingLeaf(side); // the opposite live page remains its own exact pixels
       this.options.canvas.classList.remove('is-flip-releasing');
       this.options.canvas.classList.add('is-flipping');
       this.renderNow();
@@ -941,13 +942,15 @@ export class PageFlipController {
    * Opacity (via CSS), not visibility: Chromium may prepaint the destination
    * underneath, so the final class swap does not ask it to invent the page.
    */
-  private hideLiveLeaves(): void {
+  private hideMovingLeaf(side: LeafSide): void {
+    this.options.root.dataset.flipMoving = side;
     this.options.root.classList.add('is-flip-scene');
   }
 
   /** Atomic counterpart used for landing, cancel, destroy and context loss. */
   private revealLiveLeaves(): void {
     this.options.root.classList.remove('is-flip-scene');
+    delete this.options.root.dataset.flipMoving;
   }
 
   /* ---------------------------- selection state ---------------------------- */

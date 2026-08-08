@@ -666,8 +666,9 @@ export class CurlRenderer {
   }
 
   /**
-   * Draw one complete scene frame:
-   * stationary + revealed sheets → binding → moving curl.
+   * Draw the transition-owned part of one complete scene frame:
+   * revealed sheet → binding half → moving curl. The stationary sheet remains
+   * live DOM through the transparent half of this canvas.
    *
    * Nothing first appears at landing. The opposite page, destination page,
    * paper behind the translucent gutter and its center thread are submitted in
@@ -820,34 +821,29 @@ export class CurlRenderer {
       w: leafW,
       h: leafH,
     };
-    const stationaryLeaf = dirSign > 0 ? leftLeaf : rightLeaf;
-
     // CSS paints its first box shadow on top; draw the list backwards so the
-    // nearest cream/deep hairline wins exactly the same way.
-    for (const edge of [...this.sceneStyle.leftEdges].reverse()) {
+    // nearest cream/deep hairline wins exactly the same way. The stationary
+    // leaf remains live DOM below the transparent half of this canvas, so its
+    // own exact outer stack remains authoritative too.
+    const movingEdges = dirSign > 0
+      ? this.sceneStyle.rightEdges
+      : this.sceneStyle.leftEdges;
+    const movingEdgeLeaf = dirSign > 0 ? rightLeaf : leftLeaf;
+    for (const edge of [...movingEdges].reverse()) {
       drawSolid(
-        leftLeaf.x + edge.x,
-        leftLeaf.y + edge.y,
-        leftLeaf.w,
-        leftLeaf.h,
-        edge.color,
-        -0.02,
-        this.sceneStyle.edgeRadius,
-      );
-    }
-    for (const edge of [...this.sceneStyle.rightEdges].reverse()) {
-      drawSolid(
-        rightLeaf.x + edge.x,
-        rightLeaf.y + edge.y,
-        rightLeaf.w,
-        rightLeaf.h,
+        movingEdgeLeaf.x + edge.x,
+        movingEdgeLeaf.y + edge.y,
+        movingEdgeLeaf.w,
+        movingEdgeLeaf.h,
         edge.color,
         -0.02,
         this.sceneStyle.edgeRadius,
       );
     }
 
-    drawGround(this.stationary, stationaryLeaf, -dirSign, 0);
+    // Deliberately do not draw `stationary`: that page has no motion and stays
+    // as live DOM for the whole transaction. Only the destination ground and
+    // the sheet that actually curls belong to WebGL.
     drawGround(this.revealed, movingLeaf, dirSign, 1);
 
     this.curlProgram.use();

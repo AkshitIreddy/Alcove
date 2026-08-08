@@ -20,8 +20,8 @@
  * - Inline SVG (diagrams) gets its class-based paint inlined for the duration
  *   of the capture — html-to-image does not carry stylesheet rules into an
  *   SVG subtree and unstyled shapes render BLACK (see svgSnapshot.ts).
- * - Those live-DOM writes are guarded so the host's edit watcher does not
- *   read them back as an edit and re-trigger the capture forever.
+ * - Mounted leaves are deep-cloned into an inert offscreen stage before any
+ *   snapshot-only mutation, so capturing never edits the visible page.
  * - Edit trigger: notifyEdited() debounces 300ms then rasterizes inside
  *   requestIdleCallback. ensureAdjacent() eagerly captures neighbours when
  *   a spread settles so both flip directions are instant.
@@ -36,6 +36,11 @@ import { LruMap, RASTER_CACHE_CAPACITY, snapshotPixelRatio } from './math';
 import { paperToneTag, refreshPaperTone, snapshotBackground } from './paperTone';
 import { inlineSvgStyles } from './svgSnapshot';
 import { prepareSnapshotTableChrome } from './snapshotChrome';
+import {
+  freezeSnapshotBlockGeometry,
+  freezeSnapshotListRows,
+  measureSnapshotBlockGeometry,
+} from './snapshotGeometry';
 
 /** Debounce window between an edit and its idle re-rasterization. */
 export const RASTER_DEBOUNCE_MS = 300;
@@ -510,19 +515,6 @@ export class PageRasterCache {
   private readonly pixelRatio: number;
   private disposed = false;
 
-  /**
-   * Pages whose live DOM this cache is mutating right now. A capture toggles
-   * `.snapshotting` on the sheet and inlines SVG paint styles inside it — all
-   * attribute writes, which the host's edit watcher (FlipSurface's
-   * MutationObserver) reads as "the user edited this page". That bumped the
-   * version, which made the fresh entry instantly stale, which scheduled
-   * another capture: a self-feeding loop that re-rasterized both live pages
-   * forever, ~200-300ms of main thread every ~300ms, for as long as a book
-   * was open. Everything downstream (flip smoothness, landing frames) was
-   * starved by it. notifyEdited ignores a page while it is in here.
-   */
-  private readonly capturing = new Set<string>();
-
   /** Idle captures deferred by suspend(), replayed on resume(). */
   private readonly deferred = new Set<string>();
   private suspended = false;
@@ -587,7 +579,6 @@ export class PageRasterCache {
       !this.disposed &&
       !busy(this.inflight) &&
       !busy(this.debounceTimers) &&
-      !busy(this.capturing) &&
       !busy(this.deferred) &&
       this.idleHandles.size === 0;
     const token = ids
@@ -622,9 +613,6 @@ export class PageRasterCache {
    */
   notifyEdited(pageId: string): void {
     if (this.disposed) return;
-    // Our own capture is mutating that page's DOM; treating it as an edit
-    // would restart the capture we are in the middle of (see `capturing`).
-    if (this.capturing.has(pageId)) return;
     this.invalidate(pageId);
     const existing = this.debounceTimers.get(pageId);
     if (existing !== undefined) window.clearTimeout(existing);
@@ -692,7 +680,6 @@ export class PageRasterCache {
     for (const handle of this.idleHandles) handle.cancel();
     this.idleHandles.clear();
     this.deferred.clear();
-    this.capturing.clear();
     this.entries.clear();
     this.versions.clear();
   }
@@ -719,45 +706,26 @@ export class PageRasterCache {
 
   private async capture(pageId: string): Promise<RasterEntry | null> {
     /*
-     * OFF-SCREEN FIRST, EVEN FOR A PAGE THAT IS MOUNTED.
+     * A MOUNTED PAGE IS ITS PRESENTATION, NOT MERELY ITS SAVED DOCUMENT.
      *
-     * Capturing a mounted leaf means capturing the leaf the reader is looking
-     * at, and this routine cannot do that without WRITING TO IT: it adds
-     * `.snapshotting` — which hides the drag handle, the style switcher, both
-     * ProseMirror cursors and anything marked `data-snapshot-hide`, and kills
-     * the caret and the selection tint — then inlines paint onto every SVG
-     * inside it, and puts both back after an await that is 200ms+ of
-     * rasterising.
+     * The old path rebuilt EVERY page in a second offscreen TipTap editor,
+     * including the two leaves already mounted in front of the reader. That
+     * loses transient node-view state and gives Chromium a second chance to
+     * resolve margins, custom-block heights and font wrapping. At pointerdown
+     * both live leaves were hidden and those reconstructed pixels took over,
+     * which is why text on the stationary page visibly jumped in response to
+     * turning the other page.
      *
-     * Measured on a real page turn (`scripts/probe-landing-flicker.mjs`,
-     * sampling the DOM every animation frame, with reduced motion forced OFF so
-     * a curl actually happens): the turn is over at 665ms, the cache resumes
-     * and starts capturing at 928ms, two pages carry `.snapshotting` at once,
-     * and the last is released at 1238ms. The reader's page is edited underneath
-     * them for a third of a second, about a second after the turn — reported as
-     * *"a flicker for a second where it then puts all the processing effects we
-     * have on it"*.
+     * Capture a DEEP CLONE of the exact rendered leaf instead. Snapshot chrome,
+     * SVG paint and block geometry are changed only on that inert copy, so the
+     * live editor is never touched and its current special-block state is what
+     * the texture receives. Unmounted neighbour pages still use the staged
+     * document path below because no presentation exists for them yet.
      *
-     * This was tried once before and reverted as inert: `captureUnmounted`
-     * returned null every time, so it fell straight through to the live path
-     * and changed nothing. The reason was a separate bug — `freeMark.tsx` threw
-     * on `editor.view.dom` for a staged editor and a bare `catch` swallowed it,
-     * so the offscreen path had never worked for anything. With that fixed the
-     * staged sheet appears in the trace (`nb-export-sheet` at x=-11881) and
-     * this preference does what it says.
-     *
-     * The cost is a snapshot that can lag the live DOM by a save, and this file
-     * already accepts exactly that: a "≤300ms-stale frame is accepted by design
-     * (content is unreadable mid-flip; landings always swap to live DOM)". A
-     * texture one keystroke behind, behind a moving curl, is invisible. A page
-     * that changes under the reader is not.
-     *
-     * The live path stays as the fallback, so a build with no offscreen capture
-     * wired still gets textures rather than blank cream.
+     * This ordering is the prepare phase of the render transaction: a visible
+     * source owns its pixels; reconstruction is only a declared fallback when
+     * there is no visible source.
      */
-    const staged = await this.captureUnmounted(pageId);
-    if (staged !== null) return staged;
-
     const element = this.options.getElement(pageId);
     if (
       element === null ||
@@ -765,7 +733,7 @@ export class PageRasterCache {
       element.clientWidth < 1 ||
       element.clientHeight < 1
     ) {
-      return null;
+      return this.captureUnmounted(pageId);
     }
     const versionAtStart = this.version(pageId);
     // The theme can have changed since the last capture; re-read it now so the
@@ -773,21 +741,50 @@ export class PageRasterCache {
     refreshPaperTone();
     const toneAtStart = paperToneTag();
     const background = snapshotBackground(element);
-
     const fontEmbedCSS = await pageFontEmbedCSS(element);
 
-    // From here to the end of the rasterization we are writing to the live
-    // page (the marker class, then every SVG's inline paint) — mutations the
-    // edit watcher must not mistake for typing.
-    this.capturing.add(pageId);
-    element.classList.add(SNAPSHOTTING_CLASS);
+    const sourceStyle = getComputedStyle(element);
+    const sourceRect = element.getBoundingClientRect();
+    const width = Number.parseFloat(sourceStyle.width);
+    const height = Number.parseFloat(sourceStyle.height);
+    const cssWidth = Number.isFinite(width) && width > 1 ? width : element.clientWidth;
+    const cssHeight = Number.isFinite(height) && height > 1 ? height : element.clientHeight;
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.style.setProperty('width', `${cssWidth}px`, 'important');
+    clone.style.setProperty('height', `${cssHeight}px`, 'important');
+
+    const stage = document.createElement('div');
+    stage.setAttribute('aria-hidden', 'true');
+    stage.dataset.nbSnapshotStage = 'mounted';
+    stage.style.cssText =
+      'position:fixed;left:-12000px;top:0;overflow:hidden;pointer-events:none;' +
+      `width:${cssWidth}px;height:${cssHeight}px;`;
+    stage.append(clone);
+    (element.closest<HTMLElement>('.nb-spread') ?? document.body).append(stage);
+
+    // Confirm the clone acquired real layout before committing its measured
+    // block boxes. If an ancestor is tearing down, use the reconstructed path
+    // rather than caching a zero-sized presentation.
+    if (
+      sourceRect.width < 1 ||
+      sourceRect.height < 1 ||
+      clone.getBoundingClientRect().width < 1 ||
+      clone.getBoundingClientRect().height < 1
+    ) {
+      stage.remove();
+      return this.captureUnmounted(pageId);
+    }
+    const blockGeometry = measureSnapshotBlockGeometry(clone);
+    freezeSnapshotListRows(clone);
+    freezeSnapshotBlockGeometry(clone, blockGeometry);
+    clone.classList.add(SNAPSHOTTING_CLASS);
     // Inline SVG loses class-based styling in html-to-image's clone and
     // renders BLACK; see svgSnapshot.ts.
-    const restoreSvg = inlineSvgStyles(element);
-    const restoreTableChrome = prepareSnapshotTableChrome(element);
-    let canvas: HTMLCanvasElement;
+    const restoreSvg = inlineSvgStyles(clone);
+    const restoreTableChrome = prepareSnapshotTableChrome(clone);
+    let canvas: HTMLCanvasElement | null = null;
     try {
-      canvas = await toCanvas(element, {
+      canvas = await toCanvas(clone, {
         pixelRatio: this.pixelRatio,
         backgroundColor: background,
         fontEmbedCSS,
@@ -800,18 +797,12 @@ export class PageRasterCache {
       // than swallow: a capture that keeps failing silently leaves the flip
       // with a blank face and no trace of why.
       console.warn('[rasterCache] snapshot capture failed for', pageId, err);
-      return null;
     } finally {
       restoreTableChrome();
       restoreSvg();
-      element.classList.remove(SNAPSHOTTING_CLASS);
-      // Release in a microtask, NOT synchronously: undoing our writes queues
-      // one more MutationObserver notification, and that notification is
-      // delivered before any microtask queued after it. Clearing the flag
-      // here would hand the watcher our own teardown as a user edit and the
-      // loop would start over.
-      queueMicrotask(() => this.capturing.delete(pageId));
+      stage.remove();
     }
+    if (canvas === null) return this.captureUnmounted(pageId);
     if (this.disposed) return null;
 
     const bitmap = await createImageBitmap(canvas);

@@ -58,6 +58,7 @@ import {
   deriveCoverParams,
   type CoverOverrides,
 } from '../art/covers';
+import { openCoverDataUrl } from '../art/openCover';
 import { getTheme } from '../art/themes';
 import PageEditor, { type PageEditorProps } from '../editor/PageEditor';
 import {
@@ -2206,12 +2207,10 @@ export default function BookView(): JSX.Element {
       >
         {(loaded) => {
           const backdropUrl = createMemo(() =>
-            coverDataUrl(
+            openCoverDataUrl(
               720,
               500,
               deriveCoverParams(loaded.book.spineSeed, coverOverrides()),
-              '',
-              { plate: false },
             ),
           );
           // Built ONCE per book session: mounting a leaf mounts a TipTap

@@ -40,6 +40,11 @@ import {
 import { inlineSvgStyles } from './svgSnapshot';
 import { snapshotGridCorrections } from './snapshotFidelity';
 import { prepareSnapshotTableChrome } from './snapshotChrome';
+import {
+  freezeSnapshotBlockGeometry,
+  freezeSnapshotListRows,
+  measureSnapshotBlockGeometry,
+} from './snapshotGeometry';
 
 /*
  * The marker class, the chrome exclusion and the transparent placeholder are
@@ -199,52 +204,7 @@ export function alignStagedProse(sheet: HTMLElement, pitch: number): number {
  * nested list items keep their real geometry without touching the live editor.
  */
 export function freezeStagedListRows(sheet: HTMLElement): number {
-  let frozen = 0;
-  for (const list of sheet.querySelectorAll<HTMLElement>('ul, ol')) {
-    const flowAnchor = list.nextElementSibling instanceof HTMLElement
-      ? list.nextElementSibling
-      : null;
-    const anchorTopBefore = flowAnchor?.getBoundingClientRect().top ?? null;
-    const marginBottomBefore = Number.parseFloat(getComputedStyle(list).marginBottom) || 0;
-    const rows = Array.from(list.children).filter(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement && child.tagName === 'LI',
-    );
-    if (rows.length === 0) continue;
-    const listBottom = list.getBoundingClientRect().bottom;
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index]!;
-      const top = row.getBoundingClientRect().top;
-      const nextTop = rows[index + 1]?.getBoundingClientRect().top ?? listBottom;
-      const advance = nextTop - top;
-      if (!Number.isFinite(advance) || advance <= 0) continue;
-      row.style.height = `${advance.toFixed(3)}px`;
-      row.style.boxSizing = 'border-box';
-      frozen += 1;
-    }
-    /*
-     * Freezing the LI border boxes changes margin-collapse at the list's foot.
-     * Patrick Hand's ruled paragraphs use positive top padding plus an equal
-     * negative bottom margin; before the freeze that negative lead escapes the
-     * final LI and pulls the next top-level block up by 7.5px. An explicit LI
-     * height contains it, so every block after the first list moved down in
-     * the staged texture even though the list's own measured top/bottom stayed
-     * identical. The live→GL swap therefore jumped text, cards and diagrams on
-     * BOTH pages by exactly 7.5px.
-     *
-     * Preserve the next sibling's measured flow position while retaining the
-     * explicit row heights html-to-image needs. This is measured per list—not
-     * a font-specific constant—so wrapped/nested rows and custom type scales
-     * keep their real advance.
-     */
-    if (flowAnchor !== null && anchorTopBefore !== null) {
-      const delta = flowAnchor.getBoundingClientRect().top - anchorTopBefore;
-      if (Number.isFinite(delta) && Math.abs(delta) > 0.01) {
-        list.style.marginBottom = `${(marginBottomBefore - delta).toFixed(3)}px`;
-      }
-    }
-  }
-  return frozen;
+  return freezeSnapshotListRows(sheet);
 }
 
 /**
@@ -260,63 +220,12 @@ export function freezeStagedListRows(sheet: HTMLElement): number {
  *
  * This sheet is owned and hidden by the snapshot pipeline, so freeze its
  * measured border boxes into one unambiguous flow before cloning: every block
- * gets its measured height, zero trailing margin, and a leading margin equal
- * to the exact gap/overlap from the previous measured border box. Negative
- * heading overlaps are preserved just as deliberately as positive feature
- * gaps. The clone now has one layout answer in both Chromium documents.
+ * gets the exact measured top, left, width and height as absolute geometry.
+ * Negative heading overlaps are preserved just as deliberately as positive
+ * feature gaps. The clone now has one layout answer in both documents.
  */
 export function freezeStagedBlockFlow(sheet: HTMLElement): number {
-  const prose = sheet.querySelector<HTMLElement>('.nb-prose');
-  if (prose === null) return 0;
-  const children = Array.from(prose.children).filter(
-    (node): node is HTMLElement => node instanceof HTMLElement,
-  );
-  if (children.length === 0) return 0;
-
-  const rootTop = prose.getBoundingClientRect().top;
-  const boxes = children.map((child) => {
-    const rect = child.getBoundingClientRect();
-    return {
-      top: rect.top - rootTop,
-      bottom: rect.bottom - rootTop,
-      height: rect.height,
-    };
-  });
-
-  for (let index = 0; index < children.length; index += 1) {
-    const child = children[index]!;
-    const box = boxes[index]!;
-    const previousBottom = index === 0 ? 0 : boxes[index - 1]!.bottom;
-    const leading = box.top - previousBottom;
-    if (!Number.isFinite(box.height) || box.height < 0 || !Number.isFinite(leading)) {
-      continue;
-    }
-    child.style.setProperty('box-sizing', 'border-box', 'important');
-    child.style.setProperty('height', `${box.height.toFixed(3)}px`, 'important');
-    child.style.setProperty('margin-block-start', `${leading.toFixed(3)}px`, 'important');
-    child.style.setProperty('margin-block-end', '0px', 'important');
-  }
-
-  /*
-   * Replacing a collapsed pair with explicit leading/trailing margins changes
-   * the collapse context while we are doing it. Reconcile in document order:
-   * moving one block also moves everything after it, so the next measurement
-   * naturally includes the correction already made above. One pass converges
-   * the whole column to the border boxes recorded before normalization.
-   */
-  for (let index = 0; index < children.length; index += 1) {
-    const child = children[index]!;
-    const actualTop = child.getBoundingClientRect().top - rootTop;
-    const delta = boxes[index]!.top - actualTop;
-    if (!Number.isFinite(delta) || Math.abs(delta) < 0.01) continue;
-    const current = Number.parseFloat(getComputedStyle(child).marginBlockStart) || 0;
-    child.style.setProperty(
-      'margin-block-start',
-      `${(current + delta).toFixed(3)}px`,
-      'important',
-    );
-  }
-  return children.length;
+  return freezeSnapshotBlockGeometry(sheet).length;
 }
 
 function backlinkWords(count: number): string {
@@ -553,8 +462,9 @@ export function createOffscreenPageCapture(
         // Derive the grid and the frozen flow from the final pixels, not the
         // construction frame that preceded them.
         alignStagedProse(sheet, pitch);
+        const blockGeometry = measureSnapshotBlockGeometry(sheet);
         freezeStagedListRows(sheet);
-        freezeStagedBlockFlow(sheet);
+        freezeSnapshotBlockGeometry(sheet, blockGeometry);
         const fontEmbedCSS = await pageFontEmbedCSS(sheet);
         sheet.classList.add(SNAPSHOTTING_CLASS);
         // Diagrams on a staged page hit exactly the same html-to-image hole

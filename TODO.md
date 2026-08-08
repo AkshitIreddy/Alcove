@@ -23,17 +23,19 @@ Work **in this order** unless blocked:
       Room from this panel entirely.
 - [x] Keep the selected app cursor over every styled scrollbar track/thumb;
       dragging a scrollbar must not fall back to the Windows arrow.
-- [x] **Implementation staged; owner motion retest below:** repair the remaining
-      flip-time vertical jump specifically inside special
-      effect blocks. Ordinary ruled prose is stable; the snapshot transaction
-      must preserve nested effect content geometry, not only top-level boxes.
-- [x] **Implementation staged; owner motion retest below:** stage the newly
-      revealed destination leaf's turn-corner shadow in its
-      settled/final state from the first visible flip frame, so its affordance
-      never shifts after the page lands.
-- [x] Simplify Library Studio: remove Surprise Me, Back to one room, Plain
-      again, and the duplicate Add a floor control (the shelf rail owns that
-      action).
+- [ ] **Owner motion retest — replacement staged:** repair the flip-time jump
+      specifically inside transformed special blocks and diagrams. The failed
+      nested-descendant positioning experiment was reverted. The replacement
+      keeps nested layout untouched and freezes only each top-level block's
+      untransformed used size plus its already-rendered visual origin, avoiding
+      the old double-application of rotate/skew geometry.
+- [x] Revert the unsuccessful destination-corner shadow experiment completely.
+      It did not settle the corner and made the reverse turn look worse; both
+      the CSS/scene change and its commit are now explicitly reversed. The
+      pre-experiment presentation is restored for owner retest.
+- [x] Keep Library Studio's top Surprise Me room roller and its preset-mood
+      choices. Remove only Back to one room, Plain again, and the duplicate Add
+      a floor control (the shelf rail owns that action).
 - [x] Replace the Your own tab's “not yet, and why” refusal list with working
       add/import paths. Do not advertise an unsupported upload category; every
       card shown there must accept, validate, persist and surface its result.
@@ -56,9 +58,15 @@ Work **in this order** unless blocked:
       immediately on return to the library; no manual refresh may be required.
       Persistence now publishes after SQLite commits, the mounted shelf re-reads
       the book row, then invalidates and rebakes that spine.
-- [x] Reorder book customization actions: put Randomize and Surprise Me at the
-      top of “Customize this book”, make their behavioral difference explicit,
-      and move the Studio's Surprise Me action to the top of its own panel.
+- [x] Put one compact, light Randomise dice beside the Book Studio preview;
+      remove Surprise Me and Follow the Room from Book Studio. Keep the room-
+      level Surprise Me action at the top of Library Studio with mood presets.
+- [x] Replace native panel scrollbar hit targets with an app-drawn DOM control,
+      preserving the selected cursor over the track, thumb and drag. The same
+      fixed control now serves Settings without scrolling away with its sheet.
+- [x] Add a persistent nine-icon chapter rail to the left edge of Settings.
+      Each icon jumps to its visible section, participates in the focus trap,
+      exposes an accessible name, and uses the app's own hover tooltip.
 - [x] Redesign the seeded Welcome binding without overwriting a customized
       book: remove the OUTER ribbon accessory, remove the white/red spine mark,
       and replace the hourglass spine silhouette with a solid binding shape.

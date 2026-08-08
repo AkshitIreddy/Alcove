@@ -151,7 +151,14 @@ vec4 project(vec2 localPx, float z) {
   float canvasY = uLeafOrigin.y + localPx.y;
   float xc = canvasX - uCanvasSize.x * 0.5;
   float yc = uCanvasSize.y * 0.5 - canvasY;
-  return uProj * vec4(xc, yc, z - uCamDist, 1.0);
+  // Preserve the page's vertical typesetting while still letting depth widen
+  // the curl horizontally. A normal perspective matrix divides both x and y
+  // by (camera-z); text crossing the lifted strip was therefore torn onto two
+  // apparent baselines even though its cached bitmap was pixel-identical to
+  // the live page. Pre-compensate y for that divide. At z=0 this is exactly the
+  // old coordinate; at any lift the post-divide screen y remains identical.
+  float stableY = yc * max((uCamDist - z) / uCamDist, 0.0001);
+  return uProj * vec4(xc, stableY, z - uCamDist, 1.0);
 }
 `;
 
@@ -200,7 +207,11 @@ void main() {
   // z is the whole depth story now: the fragment pass carries no lighting,
   // so the fold distance and wrap angle stop at this shader.
   vUv = a_uv;
-  gl_Position = project(pos, z);
+  // Tilt decides WHERE the corner-led fold crosses the sheet and x/z still
+  // describe the curl. It must not rewrite the document's y coordinate: doing
+  // so made one inline pill appear to wrap into two lines while crossing the
+  // fold, and made special-block text drop then jump home at landing.
+  gl_Position = project(vec2(pos.x, local.y), z);
 }
 `;
 

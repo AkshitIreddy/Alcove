@@ -35,9 +35,8 @@
   --nb-flip-overscan-y: 10px;
   position: absolute;
   /* The complete GPU scene includes the 2–8px fore-edge stack outside the
-     sheet boxes, plus vertical lift from the perspective curl. X stays at the
-     flat scene's 10px contract; the controller raises symmetric Y room for a
-     corner grip without changing hotspot/layout geometry. */
+     sheet boxes. The curl keeps source y coordinates invariant, so the same
+     flat 10px room contains both axes without resizing the overlay by grip. */
   top: calc(-1 * var(--nb-flip-overscan-y));
   left: calc(-1 * var(--nb-flip-overscan-x));
   right: auto;

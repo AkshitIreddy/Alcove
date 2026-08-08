@@ -634,21 +634,16 @@ export class PageFlipController {
         readFlipSnapshotSceneStyle(this.options.root),
       );
       /*
-       * Perspective expands a lifted sheet vertically around the camera
-       * centre. Numeric evaluation of the exact vertex shader at a 617×793
-       * leaf gives ~35px beyond the page for a straight edge turn and ~166px
-       * for the 22.5° corner grip. The old fixed 10px canvas therefore cut the
-       * upper-left of a bottom-corner turn clean off. Scale the symmetric room
-       * with the actual leaf height: 6% contains the straight curl, 24%
-       * contains either corner with a measured margin across book sizes.
-       * Horizontal room stays the flat fore-edge contract's 10px.
+       * The curl preserves every source pixel's page-relative y coordinate.
+       * That is the text-baseline invariant in curl.ts: depth and a corner-led
+       * fold may reshape x, but never tear one line onto several apparent
+       * baselines. The old 6%/24% vertical overscan only existed for the
+       * perspective-y expansion that violated that invariant. The flat scene's
+       * 10px contract now contains every top/bottom edge in either grip.
        */
       this.sceneOverscan = {
         x: FLIP_SCENE_OVERSCAN_PX,
-        y: Math.max(
-          FLIP_SCENE_OVERSCAN_PX,
-          Math.ceil(this.scene.moving.h * (grip === 'edge' ? 0.06 : 0.24)),
-        ),
+        y: FLIP_SCENE_OVERSCAN_PX,
       };
       this.options.canvas.style.setProperty(
         '--nb-flip-overscan-x',

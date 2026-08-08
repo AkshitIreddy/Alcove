@@ -25,26 +25,27 @@ Work **in this order** unless blocked:
 - [x] Book opening no longer exposes empty ruled leaves while TipTap/content is
       mounting. Keep the already-rendered focused cover/shelf as the visual
       owner until the first populated spread has completed a paint opportunity.
-- [ ] **Owner motion retest — replacement staged:** transformed special-block
-      and diagram geometry measured 0px displacement in the fixed-position
-      turn probe; confirm text no longer moves down during the curl and jumps
-      back when live DOM resumes on localhost.
-- [ ] **Owner motion retest — replacement staged:** the right-hand destination
-      corner now has one DOM owner and measured the same 34px size, 0.75 opacity
-      and no transform before/during/after the turn; confirm both directions on
-      localhost.
+- [ ] **Owner motion retest — baseline-invariant renderer staged:** the supplied
+      “Ink Between Words” frames proved the curl was tearing one inline-code
+      pill across two apparent baselines. Live, mounted-snapshot and first-visit
+      offscreen pixels already aligned; conventional perspective-y and tilted
+      mesh-y moved only the lifted portion. The shader now preserves every
+      source pixel's page-relative y while retaining x/depth curl geometry.
+      Held first-visit frames at p=0.62/0.72/0.82/0.92 keep the inline pill and
+      card text on continuous baselines; confirm real-time motion on localhost.
+- [x] Owner confirmed the right-hand destination corner/shadow fix. It keeps
+      one DOM owner and the same 34px size, 0.75 opacity and no transform
+      before/during/after both directions.
 
 - [x] Replace the book studio's action card with one compact Randomise dice
       button at the preview's upper-right; remove Surprise Me and Follow the
       Room from this panel entirely.
 - [x] Keep the selected app cursor over every styled scrollbar track/thumb;
       dragging a scrollbar must not fall back to the Windows arrow.
-- [ ] **Owner motion retest — replacement staged:** repair the flip-time jump
-      specifically inside transformed special blocks and diagrams. The failed
-      nested-descendant positioning experiment was reverted. The replacement
-      keeps nested layout untouched and freezes only each top-level block's
-      untransformed used size plus its already-rendered visual origin, avoiding
-      the old double-application of rotate/skew geometry.
+- [x] Snapshot geometry diagnosis completed and ruled out as the remaining
+      text-motion cause: live, mounted and first-visit offscreen “Ink Between
+      Words” captures agree at 0px vertical offset. The top-level freeze remains
+      for margin/list fidelity, but the surviving defect was shader projection.
 - [x] Revert the unsuccessful destination-corner shadow experiment completely.
       It did not settle the corner and made the reverse turn look worse; both
       the CSS/scene change and its commit are now explicitly reversed. The
@@ -56,13 +57,10 @@ Work **in this order** unless blocked:
       add/import paths. Do not advertise an unsupported upload category; every
       card shown there must accept, validate, persist and surface its result.
 
-- [ ] **Owner motion retest — implementation staged:** re-open and fix the
-      page-turn text movement as a transition-ownership
-      defect: ordinary text and special blocks still jump upward when live DOM
-      is replaced by the turning snapshot. The stationary page now remains live
-      DOM; mounted moving-page snapshots clone its exact rendered DOM and freeze
-      measured block/list geometry. Do not close this from still frames or a
-      headless non-reproduction; the owner will confirm the motion.
+- [x] Superseded the earlier live-DOM/snapshot-handoff theory with direct bitmap
+      evidence. The hidden moving leaf and its cached texture agree; vertical
+      displacement was introduced later by curl projection, now replaced by
+      the baseline-invariant renderer tracked above.
 - [x] Align the open book's centre binding/shadow with the actual centre seam
       of the outer cover at every fitted spread size. The page gutter and cover
       outline now share the exact 50% axis through a symmetric two-board open-

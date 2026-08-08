@@ -284,10 +284,11 @@ const FLOOR_3 = [
  *
  * Four axes, not one, because the point the reader asked for is *"so many
  * options in different areas of customisation … to show how you can change it
- * drastically"*: a whole room, then the timber under it, then the wall behind
- * it, then the colours over all of it. Repainting a room never straightens its
- * arches, so pressing them one after another shows four independent dials
- * rather than four versions of the same one.
+ * drastically"*: a whole room, then the construction and the carving as two
+ * separate shelf axes, then the wall behind it, then the colours over all of
+ * it. Repainting a room never straightens its arches, and rebuilding it never
+ * removes the pattern worked into its timber, so these presses show five
+ * independent dials rather than versions of the same one.
  *
  * THE LAST ENTRY RETURNS TO THE OPENING ROOM. A room preset sets colour,
  * carpentry and paper together, so pressing The House Room again undoes all
@@ -300,6 +301,10 @@ const STUDIO_TOUR = [
   { strip: 'Room presets', name: 'Card Room' },
   { strip: 'Room presets', name: 'Carnival' },
   { strip: 'Bookcase build', index: 3 },
+  // The carving/timber treatment is its own axis. Keep this explicit in the
+  // film: changing only the build was previously easy to mistake for showing
+  // the whole of shelf customisation.
+  { strip: 'Timber pattern', name: 'Fluted' },
   { strip: 'Wallpaper', index: 4 },
   { strip: 'Library colours', index: 2 },
   { strip: 'Room presets', name: 'The House Room' },
@@ -344,6 +349,35 @@ const tl = timeline((t) => {
       skip?.click();
     });
     await advanceScene(page, ctx, 900);
+    /*
+     * Start on the AUTHORED DEFAULT even after an interrupted check left the
+     * reusable demo database wearing the last room it tried. Read constants
+     * from any Vite module instance, but write through the world's bridges:
+     * the HMR duplicate-module warning applies to reactive stores, not to these
+     * immutable values, and the bridges are the subscribed store instances.
+     */
+    await settleScene(
+      ctx,
+      page.evaluate(async () => {
+        const [
+          { DEFAULT_ROOM_DESIGN },
+          { DEFAULT_LIBRARY_PREFS },
+          { DEFAULT_SETTINGS },
+        ] = await Promise.all([
+          import('/src/data/designPrefs.ts'),
+          import('/src/features/bookshelf/libraryPrefs.ts'),
+          import('/src/data/defaults.ts'),
+        ]);
+        await globalThis.__libraryPrefs.save({ ...DEFAULT_LIBRARY_PREFS });
+        await globalThis.__shelfSaveSettings({ theme: DEFAULT_SETTINGS.theme });
+        await globalThis.__shelfSaveDesign({
+          ...DEFAULT_ROOM_DESIGN,
+          wallpaper: { ...DEFAULT_ROOM_DESIGN.wallpaper },
+        });
+      }),
+      { capMs: 15_000, label: 'restore authored opening room' },
+    );
+    await advanceScene(page, ctx, 1_100);
     // Stock three floors. Awaited one floor at a time — each is a run of
     // inserts plus a store refresh, and firing all three at once races the
     // slot allocator. The insert run is async inside the page, so it is a

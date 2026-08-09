@@ -34,6 +34,9 @@ const MENU_QUICK: &str = "nb-tray-quick";
 const MENU_QUIT: &str = "nb-tray-quit";
 /// Event the frontend listens for (must match src/features/system/tray.ts).
 pub const QUICK_NOTE_EVENT: &str = "nb://tray-quick-note";
+/// Main-window tray state, emitted with `true` after a successful hide and
+/// `false` after the tray restores the window.
+pub const VISIBILITY_EVENT: &str = "nb://tray-visibility";
 
 static QUICK_CAPTURE: AtomicBool = AtomicBool::new(false);
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
@@ -74,10 +77,18 @@ pub fn close_to_tray_enabled() -> bool {
 /// Show + unminimize + focus the main window (best-effort).
 fn focus_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
+        let shown = window.show().is_ok();
         let _ = window.unminimize();
         let _ = window.set_focus();
+        if shown {
+            let _ = app.emit_to("main", VISIBILITY_EVENT, false);
+        }
     }
+}
+
+/// Tell the frontend that a close-to-tray hide actually completed.
+pub fn report_hidden(app: &AppHandle) {
+    let _ = app.emit_to("main", VISIBILITY_EVENT, true);
 }
 
 fn run_action(app: &AppHandle, action: TrayAction) {
@@ -201,6 +212,9 @@ mod tests {
     fn event_name_is_tauri_valid() {
         // Tauri event names may only contain [a-zA-Z0-9/:_-].
         assert!(QUICK_NOTE_EVENT
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | ':' | '_' | '-')));
+        assert!(VISIBILITY_EVENT
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | ':' | '_' | '-')));
     }

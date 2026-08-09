@@ -10,7 +10,9 @@ vi.mock('@pixi/sound', () => ({ sound: {} }));
 import {
   getEngineState,
   resetEngineForTests,
+  setAppHiddenInTray,
   setPixiSoundLoader,
+  setPlayAmbienceInTray,
   setSoundscape,
   startAmbient,
   stopAmbient,
@@ -307,6 +309,57 @@ describe('ambient latest-intent lifecycle', () => {
       ambientWanted: false,
       ambientPlaying: null,
       ambientActive: 0,
+    });
+  });
+
+  it('pauses a wanted bed in the tray and resumes it when the window returns', async () => {
+    const start = startAmbient();
+    await flushMicrotasks();
+    const first = library.find('ambient-rain').resolveNext();
+    await start;
+    await vi.advanceTimersByTimeAsync(650);
+
+    setAppHiddenInTray(true);
+    expect(getEngineState()).toMatchObject({
+      ambientWanted: true,
+      appHiddenInTray: true,
+      playAmbienceInTray: false,
+      ambientPlaying: null,
+    });
+    await vi.advanceTimersByTimeAsync(220);
+    expect(first.stopped).toBe(true);
+    expect(getEngineState().ambientActive).toBe(0);
+
+    setAppHiddenInTray(false);
+    await flushMicrotasks();
+    const resumed = library.find('ambient-rain').resolveNext();
+    await flushMicrotasks();
+    expect(resumed.stopped).toBe(false);
+    expect(getEngineState()).toMatchObject({
+      ambientWanted: true,
+      appHiddenInTray: false,
+      ambientPlaying: 'ambient-rain',
+      ambientActive: 1,
+    });
+  });
+
+  it('keeps ambience alive in the tray only after the reader opts in', async () => {
+    setPlayAmbienceInTray(true);
+    const start = startAmbient();
+    await flushMicrotasks();
+    const rain = library.find('ambient-rain').resolveNext();
+    await start;
+    await vi.advanceTimersByTimeAsync(650);
+
+    setAppHiddenInTray(true);
+    await vi.advanceTimersByTimeAsync(220);
+    expect(rain.stopped).toBe(false);
+    expect(getEngineState()).toMatchObject({
+      ambientWanted: true,
+      appHiddenInTray: true,
+      playAmbienceInTray: true,
+      ambientPlaying: 'ambient-rain',
+      ambientActive: 1,
     });
   });
 });

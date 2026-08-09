@@ -765,6 +765,10 @@ let muted = false;
 let muteWhenUnfocused = false;
 /** Window/visibility state mirrored synchronously for every playback gate. */
 let appFocused = true;
+/** True only after the desktop shell has deliberately hidden into its tray. */
+let appHiddenInTray = false;
+/** Reader opt-in; the default is that putting Alcove away quiets its room. */
+let playAmbienceInTray = false;
 let reducedSound = false;
 let character: SoundCharacter = 'calm';
 /**
@@ -885,6 +889,11 @@ function soundsSuppressed(): boolean {
   return muted || (muteWhenUnfocused && !appFocused);
 }
 
+/** Ambient-only policy layered on top of the ordinary mute/focus gate. */
+function ambienceSuppressed(): boolean {
+  return soundsSuppressed() || (appHiddenInTray && !playAmbienceInTray);
+}
+
 function detectAppFocus(): boolean {
   if (typeof document === 'undefined') return true;
   const visible = document.visibilityState === undefined || document.visibilityState === 'visible';
@@ -904,7 +913,7 @@ function setAppFocused(focused: boolean): void {
   if (muteWhenUnfocused && !focused) {
     invalidateAmbientStarts();
     fadeOutAmbient(200);
-  } else if (muteWhenUnfocused && focused && ambientWanted && !muted) {
+  } else if (muteWhenUnfocused && focused && ambientWanted && !ambienceSuppressed()) {
     void startAmbient();
   }
 }
@@ -1449,7 +1458,7 @@ function flushQueuedPlays(fromTrustedGesture = false): void {
     replayedPlays += 1;
     void playFile(item.cue, item.options, item.plan, fromTrustedGesture);
   }
-  if (ambientWanted && !soundsSuppressed()) void startAmbient();
+  if (ambientWanted && !ambienceSuppressed()) void startAmbient();
 }
 
 interface VoicePolicy {
@@ -1666,7 +1675,7 @@ function invalidateAmbientStarts(): number {
 
 /** Whether an async start is still the exact bed the current settings ask for. */
 function ambientStartIsCurrent(generation: number, name: SoundName): boolean {
-  if (generation !== ambientGeneration || !ambientWanted || soundsSuppressed()) return false;
+  if (generation !== ambientGeneration || !ambientWanted || ambienceSuppressed()) return false;
   const current = getSoundscape();
   return current !== 'none' && SOUNDSCAPE_LOOPS[current] === name;
 }
@@ -1729,7 +1738,7 @@ function trackAmbientInstance(instance: PixiInstanceLike): void {
 export async function startAmbient(): Promise<void> {
   ambientWanted = true;
   const generation = invalidateAmbientStarts();
-  if (soundsSuppressed() || soundscape === 'none') return;
+  if (ambienceSuppressed() || soundscape === 'none') return;
   const name = SOUNDSCAPE_LOOPS[soundscape];
   let sound: PixiSoundLike;
   try {
@@ -1792,7 +1801,7 @@ export function setSoundscape(name: SoundscapeName): void {
   // leaves audio which no longer matches the visible selection.
   fadeOutAmbient(CANCEL_FADE_MS);
   if (name === 'none') return;
-  if (ambientWanted && !soundsSuppressed()) void startAmbient();
+  if (ambientWanted && !ambienceSuppressed()) void startAmbient();
 }
 
 export function getSoundscape(): SoundscapeName {
@@ -1918,7 +1927,7 @@ export function muteAll(mute: boolean): void {
   if (mute) {
     invalidateAmbientStarts();
     fadeOutAmbient(200);
-  } else if (ambientWanted && !soundsSuppressed()) {
+  } else if (ambientWanted && !ambienceSuppressed()) {
     void startAmbient();
   }
 }
@@ -1933,6 +1942,34 @@ export function setMuteWhenUnfocused(mute: boolean): void {
   muteWhenUnfocused = mute;
   applyLibraryMute();
   if (soundsSuppressed()) {
+    invalidateAmbientStarts();
+    fadeOutAmbient(200);
+  } else if (ambientWanted && !ambienceSuppressed()) {
+    void startAmbient();
+  }
+}
+
+/**
+ * Desktop shell lifecycle: distinguish being PUT AWAY from merely losing
+ * focus. This never clears `ambientWanted`, so restoring the window can resume
+ * the selected soundscape instead of making the settings toggle lie.
+ */
+export function setAppHiddenInTray(hidden: boolean): void {
+  if (appHiddenInTray === hidden) return;
+  appHiddenInTray = hidden;
+  if (ambienceSuppressed()) {
+    invalidateAmbientStarts();
+    fadeOutAmbient(200);
+  } else if (ambientWanted) {
+    void startAmbient();
+  }
+}
+
+/** Persisted opt-in for readers who want the room to keep sounding in tray. */
+export function setPlayAmbienceInTray(play: boolean): void {
+  if (playAmbienceInTray === play) return;
+  playAmbienceInTray = play;
+  if (ambienceSuppressed()) {
     invalidateAmbientStarts();
     fadeOutAmbient(200);
   } else if (ambientWanted) {
@@ -2076,6 +2113,8 @@ export interface SoundEngineState {
   muted: boolean;
   muteWhenUnfocused: boolean;
   appFocused: boolean;
+  appHiddenInTray: boolean;
+  playAmbienceInTray: boolean;
   reducedSound: boolean;
   character: SoundCharacter;
   /** The reader's chosen voicing — what QA asserts a picker actually applied. */
@@ -2145,6 +2184,8 @@ export function getEngineState(): SoundEngineState {
     muted,
     muteWhenUnfocused,
     appFocused,
+    appHiddenInTray,
+    playAmbienceInTray,
     reducedSound,
     character,
     set: soundSet,
@@ -2292,6 +2333,8 @@ export function resetEngineForTests(): void {
   muted = false;
   muteWhenUnfocused = false;
   appFocused = true;
+  appHiddenInTray = false;
+  playAmbienceInTray = false;
   reducedSound = false;
   character = 'calm';
   soundSet = DEFAULT_SOUND_SET_ID;

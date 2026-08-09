@@ -15,9 +15,12 @@ import { createPage } from '../../data/pages';
 import { subscribe as subscribeSettings } from '../../data/settings';
 import { appState } from '../../state/app';
 import type { Book, BookRow, Settings } from '../../data/types';
+import { setAppHiddenInTray } from '../../sound/engine';
 
 /** Must match `QUICK_NOTE_EVENT` in src-tauri/src/tray.rs. */
 export const QUICK_NOTE_EVENT = 'nb://tray-quick-note';
+/** Must match `VISIBILITY_EVENT` in src-tauri/src/tray.rs. */
+export const TRAY_VISIBILITY_EVENT = 'nb://tray-visibility';
 
 /** Title of the on-demand capture book. */
 export const INBOX_TITLE = 'Inbox';
@@ -126,22 +129,34 @@ export function startTraySync(): () => void {
     });
   });
 
-  let unlisten: (() => void) | null = null;
+  let unlistenQuick: (() => void) | null = null;
+  let unlistenVisibility: (() => void) | null = null;
   let disposed = false;
   void (async () => {
     try {
       const { listen } = await import('@tauri-apps/api/event');
-      const stop = await listen(QUICK_NOTE_EVENT, () => void openQuickNote());
-      if (disposed) stop();
-      else unlisten = stop;
+      const [stopQuick, stopVisibility] = await Promise.all([
+        listen(QUICK_NOTE_EVENT, () => void openQuickNote()),
+        listen<boolean>(TRAY_VISIBILITY_EVENT, (event) => {
+          setAppHiddenInTray(event.payload === true);
+        }),
+      ]);
+      if (disposed) {
+        stopQuick();
+        stopVisibility();
+      } else {
+        unlistenQuick = stopQuick;
+        unlistenVisibility = stopVisibility;
+      }
     } catch {
-      // Event API unavailable — quick capture simply stays inert.
+      // Event API unavailable — desktop tray integrations simply stay inert.
     }
   })();
 
   return () => {
     disposed = true;
     unsubscribeSettings();
-    unlisten?.();
+    unlistenQuick?.();
+    unlistenVisibility?.();
   };
 }

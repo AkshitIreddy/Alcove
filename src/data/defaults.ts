@@ -99,6 +99,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // based muting. `settings.mergeStored` still honours either saved boolean,
   // so this changes only a new profile (or a blob with no value for the key).
   muteSoundsWhenUnfocused: false,
+  // Hiding Alcove is different from briefly focusing another window: by
+  // default the room goes quiet when it is put away in the tray. Readers who
+  // want a continuous bed can opt back in from Sound.
+  playAmbienceInTray: false,
   backupFolder: null,
   perfHud: false,
 

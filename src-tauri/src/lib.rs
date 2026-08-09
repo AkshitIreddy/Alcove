@@ -165,7 +165,9 @@ pub fn run() {
                     // The tray always includes "Quit Alcove" while this flag
                     // is on, so hiding here never leaves a trapped process.
                     api.prevent_close();
-                    let _ = window.hide();
+                    if window.hide().is_ok() {
+                        tray::report_hidden(window.app_handle());
+                    }
                     let _ = tray::ensure_tray(window.app_handle());
                 }
             }

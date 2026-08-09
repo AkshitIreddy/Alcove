@@ -338,6 +338,8 @@ export interface Settings {
   closeToTray: boolean;
   /** Silence cues and the ambient bed while another window has focus. */
   muteSoundsWhenUnfocused: boolean;
+  /** Keep the ambient bed playing while the main window is hidden in the tray. */
+  playAmbienceInTray: boolean;
   /** Absolute folder for backups, or null = app data default. */
   backupFolder: string | null;
   /** Dev overlay: FPS + texture memory. */

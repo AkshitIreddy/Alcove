@@ -3167,6 +3167,17 @@ export default function SettingsPanel(props: {
             />
           </Row>
           <Row
+            label="ambience in the tray"
+            hint="keep the chosen soundscape playing while Alcove is hidden in the system tray"
+            words="ambient background tray hidden continue keep playing"
+          >
+            <Toggle
+              label="play ambience while hidden in tray"
+              checked={settings.playAmbienceInTray}
+              onChange={(v) => put({ playAmbienceInTray: v })}
+            />
+          </Row>
+          <Row
             label="soundscape"
             hint={SOUNDSCAPE_BLURBS[settings.soundscape]}
             words={`ambient background bed atmosphere ${SOUNDSCAPE_NAMES.join(' ')}`}

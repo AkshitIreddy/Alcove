@@ -184,6 +184,10 @@ function mergeStored(raw: unknown): MutableSettings {
       s.muteSoundsWhenUnfocused,
       d.muteSoundsWhenUnfocused,
     ),
+    playAmbienceInTray: takeBoolean(
+      s.playAmbienceInTray,
+      d.playAmbienceInTray,
+    ),
     backupFolder:
       typeof s.backupFolder === 'string' ? s.backupFolder : d.backupFolder,
     perfHud: takeBoolean(s.perfHud, d.perfHud),

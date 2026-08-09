@@ -59,5 +59,15 @@ export async function openBookAnywhere(bookId: string): Promise<void> {
       // their book, on the shelf they were already standing in.
     }
   }
+  // A page link inside the book is navigation WITHIN the reader, not another
+  // request to open the book. Re-opening the already-open id resets
+  // `readerReady`, which hands visual ownership back to the shelf/held-cover
+  // bridge while `useSearchJump` is trying to change spreads. The result is a
+  // flash of the bookshelf and its focus/reveal rectangle beside the page.
+  //
+  // The pending search jump is already parked before this function is called,
+  // so doing nothing here still lets BookView consume it immediately. Cross-
+  // book and shelf-origin jumps retain the full open transition below.
+  if (appState.viewState() === 'book' && appState.openBookId() === bookId) return;
   appState.openBook(bookId);
 }

@@ -25,15 +25,14 @@ Work **in this order** unless blocked:
 - [x] Book opening no longer exposes empty ruled leaves while TipTap/content is
       mounting. Keep the already-rendered focused cover/shelf as the visual
       owner until the first populated spread has completed a paint opportunity.
-- [ ] **Owner motion retest — exact Ink backward turn fix staged:** navigate to
-      “Ink Between Words” on the LEFT leaf and click its LEFT outer turn edge.
-      The reproduced jump was not Ink or ordinary prose: the newly revealed
-      “Lists That Think” callout was photographed 8px low because
-      html-to-image stopped its child margin from collapsing through TipTap's
-      transparent node-view wrapper. Mounted and first-visit captures now pin
-      every custom node view's immediate visual root to Chromium's live border
-      box. A chronological compositor capture keeps the callout at the same
-      top through the final curl and landed frame; confirm the real-time turn.
+- [ ] **OPEN — special-block text still moves during the exact Ink backward
+      turn.** Navigate to “Ink Between Words” on the LEFT leaf and click its
+      LEFT outer turn edge. The owner retested commit `d7c02d2` and confirms it
+      did not fix the issue. Ordinary prose appears stable; text inside custom
+      blocks/diagrams moves during the turn. Treat the previous margin-collapse
+      diagnosis and sparse compositor capture as insufficient. Continue from
+      `docs/HANDOFF-page-flip-special-block-motion.md`; identify the actual
+      visual owner and framebuffer-level displacement before editing again.
 - [ ] **Owner opening retest — held-cover handoff fix staged:** pull or drag a
       book out, let it settle, then click the cover to enter. The cover now
       becomes inert but remains the painted visual owner until `readerReady`;

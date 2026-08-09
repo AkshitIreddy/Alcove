@@ -282,39 +282,56 @@ const FLOOR_3 = [
  * `querySelector`, so Playwright's `:has-text()` is a syntax error here — worth
  * saying out loud because the dry run is what caught it.
  *
- * Four axes, not one, because the point the reader asked for is *"so many
+ * Several axes, not one, because the point the reader asked for is *"so many
  * options in different areas of customisation … to show how you can change it
  * drastically"*: a whole room, then the construction and the carving as two
- * separate shelf axes, then the wall behind it, then the colours over all of
- * it. Repainting a room never straightens its arches, and rebuilding it never
- * removes the pattern worked into its timber, so these presses show five
- * independent dials rather than versions of the same one.
+ * separate shelf axes, the shelf-only colour, the wall behind it, then the
+ * colours over all of it. Repainting a room never straightens its arches, and
+ * rebuilding it never removes the pattern worked into its timber. The named
+ * Lapis → Garnet pair is intentional: it makes the shelf-only colour control
+ * unmistakable instead of asking a viewer to infer it from two brown swatches.
  *
  * THE LAST ENTRY RETURNS TO THE OPENING ROOM. A room preset sets colour,
  * carpentry and paper together, so pressing The House Room again undoes all
- * three of the individual changes above it in one press — which is what lets
+ * of the individual changes above it in one press — which is what lets
  * the scene come home, and the loop close without a crossfade. See the note at
  * the top of the file.
  */
 const STUDIO_TOUR = [
   { strip: 'Room presets', name: 'Gilt Salon' },
-  { strip: 'Room presets', name: 'Card Room' },
+  // Card Room is outside the authored five-card strip. The loop below keeps it
+  // in its original place in the tour through the real full picker.
+  { strip: 'Room presets', name: 'Card Room', picker: 'room-preset' },
   { strip: 'Room presets', name: 'Carnival' },
-  { strip: 'Bookcase build', index: 3 },
+  { strip: 'Bookcase build', name: 'Atelier' },
   // The carving/timber treatment is its own axis. Keep this explicit in the
   // film: changing only the build was previously easy to mistake for showing
   // the whole of shelf customisation.
   { strip: 'Timber pattern', name: 'Fluted' },
-  { strip: 'Wallpaper', index: 4 },
-  { strip: 'Library colours', index: 2 },
+  { strip: 'Wallpaper', name: 'Watered Silk' },
+  { strip: 'Library colours', name: 'Limed Oak' },
+  {
+    strip: 'Shelf colours',
+    name: 'Lapis Cabinet',
+    selector:
+      '[aria-label="shelves colours"] .nb-chip-swatch[aria-label="shelves: Lapis Cabinet"]',
+  },
+  {
+    strip: 'Shelf colours',
+    name: 'Garnet',
+    selector:
+      '[aria-label="shelves colours"] .nb-chip-swatch[aria-label="shelves: Garnet"]',
+  },
   { strip: 'Room presets', name: 'The House Room' },
 ];
 
 /** A CSS selector for one tile in one named strip. */
 const tileSelector = (step) =>
-  step.name !== undefined
-    ? `[aria-label="${step.strip}"] .nb-strip-tile[aria-label^="${step.name}"]`
-    : `[aria-label="${step.strip}"] .nb-strip-tile:nth-of-type(${step.index})`;
+  step.selector !== undefined
+    ? step.selector
+    : step.name !== undefined
+      ? `[aria-label="${step.strip}"] .nb-strip-tile[aria-label^="${step.name}"]`
+      : `[aria-label="${step.strip}"] .nb-strip-tile:nth-of-type(${step.index})`;
 
 const tl = timeline((t) => {
   /* ----------------------------- 1. the shelf ---------------------------- */
@@ -472,7 +489,47 @@ const tl = timeline((t) => {
   t.cue('studio');
 
   for (const step of STUDIO_TOUR) {
+    if (step.picker === 'room-preset') {
+      /* Card Room is intentionally outside the five-card preset strip. Keep
+       * the scene in its original Gilt → Card → Carnival place and show the
+       * real way a reader reaches it: more, search, apply, back. */
+      t.waitFor('[aria-label="Room presets"] .nb-strip-more');
+      t.click('[aria-label="Room presets"] .nb-strip-more', { via: 'cursor' });
+      t.waitFor('.nb-pick-search input');
+      t.click('.nb-pick-search input', { via: 'cursor' });
+      t.call(async function searchForCardRoom(page, ctx) {
+        await page.evaluate(() => {
+          const input = document.querySelector('.nb-pick-search input');
+          if (!(input instanceof HTMLInputElement)) {
+            throw new Error('demo-gif: room preset search did not mount');
+          }
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        for (const character of 'Card Room') {
+          await page.keyboard.type(character);
+          await advanceScene(page, ctx, 45);
+        }
+      }, { name: 'search for Card Room', seconds: 0.405 });
+      t.waitFor('.nb-pick-card[aria-label^="Card Room"]');
+      t.click('.nb-pick-card[aria-label^="Card Room"]', { via: 'cursor' });
+      t.waitFor('.nb-pick-card[aria-label^="Card Room"][aria-pressed="true"]');
+      t.call(async function settleCardRoom(page, ctx) {
+        await settleSpines(page, ctx, { label: 'studio spines after Card Room' });
+        await advanceScene(page, ctx, 190);
+      }, { name: 'settle spines after Card Room' });
+      t.hold(0.65);
+      t.click('.nb-pick-back', { via: 'cursor' });
+      t.waitFor('[aria-label="Room presets"] .nb-strip-tile[aria-label^="Carnival"]');
+      t.hold(0.25);
+      continue;
+    }
     const selector = tileSelector(step);
+    // A pick can rebuild every preview card because its art depends on the
+    // applied room. Wait for the named successor to exist after that rebuild;
+    // otherwise a fast capture can scroll/click the one-frame gap and silently
+    // omit a choice from the film.
+    t.waitFor(selector);
     // Bring it into the sheet's own scroll before pointing at it — the later
     // axes are below the fold, and a cursor glide to an off-screen tile lands
     // on nothing.
@@ -499,6 +556,7 @@ const tl = timeline((t) => {
       await sceneScroll(page, ctx, selector, 'nearest', 500);
     }, { name: `scroll to ${step.name ?? `${step.strip} #${step.index}`}` });
     t.click(selector, { via: 'cursor' });
+    t.waitFor(`${selector}[aria-pressed="true"]`);
     // Long enough to watch the case and the wall actually repaint, which is
     // the whole point of this section.
     t.call(async function settleStudioRepaint(page, ctx) {

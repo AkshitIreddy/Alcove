@@ -66,7 +66,18 @@ const HIDDEN = new Set(['chore', 'ci', 'build', 'test', 'style', 'refactor', 'wi
  * from anyone reading the compare view one link below.
  */
 const HIDDEN_SCOPES = new Set(['todo']);
-const isHidden = (c) => HIDDEN.has(c.type) || HIDDEN_SCOPES.has(c.scope);
+// Page-flip handoff commits record diagnostic checkpoints, including subjects
+// such as "unresolved" that can be superseded later in the same release. Keep
+// the reader-facing flip fixes, but leave those internal docs checkpoints out
+// of the generated GitHub summary; the detailed changelog carries the resolved
+// narrative instead.
+const HIDDEN_TYPE_SCOPES = new Set(['docs:flip']);
+const HIDDEN_TEXT = [/^checkpoint the owner-tested /i];
+const isHidden = (c) =>
+  HIDDEN.has(c.type) ||
+  HIDDEN_SCOPES.has(c.scope) ||
+  HIDDEN_TYPE_SCOPES.has(`${c.type}:${c.scope}`) ||
+  HIDDEN_TEXT.some((pattern) => pattern.test(c.text));
 
 const parsed = subjects
   .map((subject) => {
@@ -115,8 +126,8 @@ head.push('</div>');
 head.push('');
 
 const total = parsed.length;
-const feats = parsed.filter((c) => c.type === 'feat').length;
-const fixes = parsed.filter((c) => c.type === 'fix').length;
+const feats = parsed.filter((c) => c.type === 'feat' && !isHidden(c)).length;
+const fixes = parsed.filter((c) => c.type === 'fix' && !isHidden(c)).length;
 
 const lines = [];
 

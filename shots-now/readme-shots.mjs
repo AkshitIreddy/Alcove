@@ -1201,29 +1201,14 @@ if (appShots.some(wanted)) {
      * Flipping until the spread is the picture is the same instruction stated
      * as a fact about the page rather than as a count.
      *
-     * ## The leaf that HOLDS the chapter, not the leaf that names it
+     * ## Find the authored diagram spread, not merely any diagram
      *
-     * The condition was "any `.nb-diagram` is on screen", and it stopped on the
-     * first one it met — the third spread of the tour, "A library of your own"
-     * facing "Dressing a book". That spread holds one small tree of bookcases
-     * and is otherwise about leather and raised cords, and it sat under the
-     * README's **Diagrams** section, which promises five kinds of diagram drawn
-     * rather than embedded. One leaf out of two, and the wrong one.
-     *
-     * What is wanted is the tour's own diagram chapter — `src/data/seed.ts`
-     * page 17, "Diagrams, drawn by hand": the hand-drawn `tree`, and the "Five
-     * fences, no library" card that names all five kinds and says every line of
-     * every one of them is drawn on the page.
-     *
-     * Matching its HEADING was tried first and produced two pages of cats and
-     * columns. A heading is a block like any other, so the pagination contract
-     * routinely leaves `# Diagrams, drawn by hand` as the last ruled line of
-     * the PREVIOUS leaf and starts the chapter's body at the top of the facing
-     * one — which means the leaf whose h1 says "Diagrams, drawn by hand" is
-     * reliably the leaf that shows something else. So the walk looks for the
-     * chapter's BODY instead: a leaf with a drawn diagram on it and the words
-     * of its card in it. That is a description of the picture rather than of
-     * the table of contents, and it holds however the blocks fall.
+     * The Welcome book now gives each diagram language its own authored leaf.
+     * The first full diagram spread is headed "A tree of ideas" and "A mind
+     * map", with one rendered diagram on each side. Target that named spread:
+     * document-wide diagram counts also see offscreen raster hosts, while a
+     * generic "any visible diagram" can stop on an earlier room/customisation
+     * example that is not the README's diagram chapter.
      *
      * ## Why not "a diagram on each leaf", which was measured
      *
@@ -1248,7 +1233,7 @@ if (appShots.some(wanted)) {
      * exists somewhere in the raster queue", which flickers true a spread early
      * and false again depending on when the idle callback ran.
      */
-    const DIAGRAM_CARD = 'five fences, no library';
+    const DIAGRAM_HEADING = 'a tree of ideas';
     const spread = () =>
       page.evaluate(() => {
         const side = (sel) => {
@@ -1283,7 +1268,8 @@ if (appShots.some(wanted)) {
         };
         return { left: side('.nb-flip-leaf-left'), right: side('.nb-flip-leaf-right') };
       });
-    const holdsChapter = (side) => side.diagrams > 0 && side.text.includes(DIAGRAM_CARD);
+    const holdsChapter = (side) =>
+      side.diagrams > 0 && side.headings.some((heading) => heading.toLowerCase() === DIAGRAM_HEADING);
     const isDrawnSpread = (now) => holdsChapter(now.left) || holdsChapter(now.right);
     /*
      * Turned by TAPPING the leaf's edge hotspot rather than by ArrowRight, and
@@ -1342,9 +1328,9 @@ if (appShots.some(wanted)) {
     }
     if (!isDrawnSpread(now)) {
       throw new Error(
-        `readme-shots: nothing carrying the “${DIAGRAM_CARD}” card and a drawn diagram in the ` +
-          'first forty spreads of the tour — either the card was reworded in src/data/seed.ts ' +
-          'or the diagram renderers are not drawing',
+        `readme-shots: nothing headed “${DIAGRAM_HEADING}” with a drawn diagram in the ` +
+          'first forty spreads of the tour — either the chapter was renamed in src/data/seed.ts ' +
+          'or the diagram renderer is not drawing',
       );
     }
     // Asserted rather than assumed — the run is five minutes long and a wrong

@@ -700,7 +700,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
   createEffect(
     on(
-      () => [resolved(), props.title, face(), spineCanvas(), coverCanvas()] as const,
+      () => [resolved(), pinned(), props.title, face(), spineCanvas(), coverCanvas()] as const,
       () => {
         const r = resolved();
         const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -740,7 +740,15 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             ctx.save();
             ctx.scale(dpr, dpr);
             ctx.translate((PREVIEW_W - w) / 2, baseline - bookH);
-            renderSpine(ctx as Ctx2D, r.spine, 0, 0, bookH, scale, props.title, {
+            // The binding is persisted beside the book rather than inside its
+            // cover_meta style blob. The shelf injects it before renderSpine;
+            // the preview used to omit that one field and therefore drew the
+            // seed's plainer binding while the shelf showed the reader's saved
+            // ornaments. Use the exact same resolved binding here.
+            renderSpine(ctx as Ctx2D, {
+              ...r.spine,
+              binding: pinned() ?? seedBinding(),
+            }, 0, 0, bookH, scale, props.title, {
               hiRes: true,
             });
             ctx.restore();

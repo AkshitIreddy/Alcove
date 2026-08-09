@@ -123,8 +123,13 @@ Work **in this order** unless blocked:
       218/218, 108-file tarball, Node 18/24 and clean-install CI green; npm
       `latest` and the non-draft GitHub `v0.3.3` Release are live. This does not
       authorize an Alcove push.
-- [ ] Push the local **Alcove** commits, tag/publish its GitHub Release, and
-      leave installation to the owner only after separate explicit approval.
+- [x] Push the local **Alcove** commits and publish `v0.5.0`. `main` was pushed
+      through `e340d32`, annotated tag `v0.5.0` was created without rewriting
+      history, and GitHub Actions run `31303803710` completed every gate plus
+      Windows, universal macOS, Linux and Publish jobs. The live, non-draft,
+      non-prerelease Release has 13 assets, complete checksums and signed
+      updater metadata for four platform keys. Alcove was not installed,
+      uninstalled or launched as an installer on the owner's machine.
 
 #### Earlier staged owner retest
 
@@ -267,10 +272,14 @@ Work **in this order** unless blocked:
 
 - [ ] CI workflow on ordinary commits (Actions minutes).
 - [ ] Pin to Start `E_ACCESSDENIED` (needs keyboard grant).
-- [ ] Add the updater signing private key to GitHub Actions secrets before the
-      first updater-enabled release; existing 0.4.0 installs then need one
-      manual bootstrap installer.
-- [ ] `git push` / force-push / tag — only when they say.
+- [x] Add the updater signing private key to GitHub Actions secrets before the
+      first updater-enabled release. The local ignored key signed a smoke file,
+      `TAURI_SIGNING_PRIVATE_KEY` was added without exposing its value, and the
+      v0.5.0 workflow proved four signed updater platform entries. Existing
+      0.4.0 installs still need one manual bootstrap installer.
+- [x] `git push` / tag only when the owner says. The owner authorized v0.5.0 on
+      2026-08-09; `main` and annotated tag `v0.5.0` were pushed normally. No
+      force-push or history rewrite was performed.
 
 ---
 
@@ -1577,7 +1586,7 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       findings. The final storyboard has no missing selector and restores the
       authored House Room for the seam.
 
-- [ ] **Release this batch as 0.5.0.**
+- [x] **Release this batch as 0.5.0.**
       Version 0.4.0 is already published; on 2026-08-09 the owner explicitly
       chose and authorized 0.5.0 for the current feature batch. The active
       sequence is: finish the local gates, commit the remaining scoped changes,
@@ -1588,6 +1597,14 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       The quoted 0.4 request and numbered checklist below are retained as the
       history of the previous release process. They are not instructions for
       moving or recreating the already-published `v0.4.0` tag.
+
+      **Completed 2026-08-09:** [Alcove v0.5.0](https://github.com/AkshitIreddy/Alcove/releases/tag/v0.5.0)
+      is live and GitHub marks it Latest. Release run `31303803710` passed; 13
+      assets include online/offline Windows setup, MSI, universal DMG, macOS
+      updater tarball, DEB, RPM, AppImage, signatures, `latest.json` and
+      `SHA256SUMS.txt`. The signed manifest declares version 0.5.0 for
+      `windows-x86_64`, `linux-x86_64`, `darwin-aarch64` and
+      `darwin-x86_64`.
       > "Once you finish all this, btw, you can call it 0.4 — do this at the end
       > once all is done."
 

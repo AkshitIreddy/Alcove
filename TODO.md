@@ -2,10 +2,11 @@
 
 ## 🎯 OPEN — owner testing pass (2026-08-09)
 
-**Start with `HANDOFF.md`.** Local `main` is intentionally ahead of
-**`origin/main`** with owner-testing checkpoints. Inspect
-`git log --oneline origin/main..HEAD` and the working tree before acting. Do
-**not** discard or push them without owner permission.
+**Start with `HANDOFF.md`.** The owner-tested batch below shipped in Alcove
+**v0.5.1** on 2026-08-09. GitHub Actions run `31309926868` passed every gate,
+all three platform builds, updater-manifest validation and publication. Inspect
+`git log --oneline origin/main..HEAD` and the working tree before acting; do not
+discard or push future work without owner permission.
 
 **These items are symptoms and priorities, not implementation specs.** Prior
 agents wrote some of the “how” (file names, timers, cue names). **Claude should

@@ -5,7 +5,10 @@ export default defineConfig(async (env) =>
   mergeConfig(await viteConfig(env), {
     test: {
       environment: 'node',
-      include: ['tests/smoke.test.ts'],
+      include: [
+        'tests/smoke.test.ts',
+        'tests/sound-ambient.test.ts',
+      ],
       exclude: ['**/node_modules/**'],
       testTimeout: 10_000,
     },

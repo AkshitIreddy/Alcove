@@ -626,7 +626,8 @@ function handleTrustedGesture(library: PixiSoundLibraryLike): void {
         // We are already inside a trusted gesture, so recreate synchronously,
         // discard every sound tied to the dead context, and unlock the new one.
         soundEntries.clear();
-        ambient = undefined;
+        invalidateAmbientStarts();
+        fadeOutAmbient(0);
         preloadState = 'idle';
         library.init();
         if (library.supported !== false) library.disableAutoPause = true;
@@ -734,12 +735,13 @@ export function armAudioGestureResume(
 /** Test seam: swap Pixi Sound and drop every decoded entry. */
 export function setPixiSoundLoader(loader: PixiSoundLoader): void {
   disarmGestureResume?.();
+  invalidateAmbientStarts();
+  fadeOutAmbient(0);
   loadPixiSound = loader;
   pixiModule = undefined;
   pixiLibrary = undefined;
   pixiFilter = undefined;
   soundEntries.clear();
-  ambient = undefined;
 }
 
 /* ------------------------------ engine state ------------------------------ */
@@ -828,6 +830,26 @@ interface AmbientState {
 let ambient: AmbientState | undefined;
 /** Whether the ambient bed should be running (survives mute/unmute). */
 let ambientWanted = false;
+/**
+ * Monotonic authority for an async ambient start.
+ *
+ * Loading and even `sound.play()` may cross task boundaries. Every preference
+ * change invalidates the authority captured by older starts, so an instance
+ * which arrives after a rapid soundscape switch or after "play ambience" was
+ * turned off can only stop itself; it can never publish itself as the bed.
+ * This deliberately never resets to zero -- a promise from before a test/app
+ * reset must not collide with a request made after it.
+ */
+let ambientGeneration = 0;
+/**
+ * Every ambient instance the engine owns, including the outgoing half of a
+ * crossfade. A single `ambient` pointer cannot stop a superseded voice once a
+ * newer voice has replaced it, which was how rapid switches accumulated
+ * several inaudible-to-state but very audible loops.
+ */
+const ambientVoices = new Set<PixiInstanceLike>();
+/** One cancellable volume ramp per ambient instance. */
+const ambientFadeTimers = new Map<PixiInstanceLike, ReturnType<typeof setTimeout>>();
 
 type PreloadState = 'idle' | 'loading' | 'ready' | 'partial' | 'failed';
 let preloadState: PreloadState = 'idle';
@@ -880,6 +902,7 @@ function setAppFocused(focused: boolean): void {
   appFocused = focused;
   applyLibraryMute();
   if (muteWhenUnfocused && !focused) {
+    invalidateAmbientStarts();
     fadeOutAmbient(200);
   } else if (muteWhenUnfocused && focused && ambientWanted && !muted) {
     void startAmbient();
@@ -1635,19 +1658,83 @@ async function playFile(
   }
 }
 
+/** Give every already-running async start an authority it can no longer hold. */
+function invalidateAmbientStarts(): number {
+  ambientGeneration += 1;
+  return ambientGeneration;
+}
+
+/** Whether an async start is still the exact bed the current settings ask for. */
+function ambientStartIsCurrent(generation: number, name: SoundName): boolean {
+  if (generation !== ambientGeneration || !ambientWanted || soundsSuppressed()) return false;
+  const current = getSoundscape();
+  return current !== 'none' && SOUNDSCAPE_LOOPS[current] === name;
+}
+
+function cancelAmbientFade(instance: PixiInstanceLike): void {
+  const timer = ambientFadeTimers.get(instance);
+  if (timer !== undefined) clearTimeout(timer);
+  ambientFadeTimers.delete(instance);
+}
+
+/** Forget a voice from both the owner set and the public current-bed pointer. */
+function releaseAmbientInstance(instance: PixiInstanceLike): void {
+  cancelAmbientFade(instance);
+  ambientVoices.delete(instance);
+  if (ambient?.instance === instance) ambient = undefined;
+}
+
+/**
+ * Stop a zero-volume or failed-authority instance synchronously.
+ *
+ * A stale start was created with volume zero, so this path cannot introduce a
+ * waveform edge. It is important that it is synchronous: starting a second
+ * fade for an instance which never had authority would briefly leave exactly
+ * the orphan loop this guard exists to prevent.
+ */
+function stopAmbientInstance(instance: PixiInstanceLike): void {
+  cancelAmbientFade(instance);
+  instance.volume = 0;
+  try {
+    instance.stop();
+  } catch {
+    // A stale instance may belong to an AudioContext which was just closed.
+    // Ownership still has to be released so it cannot poison later starts.
+  } finally {
+    releaseAmbientInstance(instance);
+  }
+}
+
+/** Register cleanup before publishing an instance as the selected bed. */
+function trackAmbientInstance(instance: PixiInstanceLike): void {
+  if (ambientVoices.has(instance)) return;
+  ambientVoices.add(instance);
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    releaseAmbientInstance(instance);
+  };
+  instance.once('end', release);
+  instance.once('stop', release);
+}
+
 /**
  * Start the ambient bed for the current soundscape, fading in over 600 ms.
  * Idempotent; a no-op while the soundscape is 'none'. When a different loop
- * is already running the two beds crossfade.
+ * is already running it leaves on a short de-click ramp while the selected
+ * bed fades in. The generation checks on both sides of `play()` make the
+ * operation latest-intent-wins.
  */
 export async function startAmbient(): Promise<void> {
   ambientWanted = true;
+  const generation = invalidateAmbientStarts();
   if (soundsSuppressed() || soundscape === 'none') return;
   const name = SOUNDSCAPE_LOOPS[soundscape];
   let sound: PixiSoundLike;
   try {
     await loadPixiSoundOnce();
-    if (!isAudioReady()) return;
+    if (!isAudioReady() || !ambientStartIsCurrent(generation, name)) return;
     sound = await ensureSound(shippedCue(name));
   } catch {
     return;
@@ -1656,20 +1743,39 @@ export async function startAmbient(): Promise<void> {
   // State may have changed while the module/file loaded (soundscape is
   // mutable across the await — re-read it through the accessor so control-flow
   // narrowing from the guard above cannot leak into this check).
-  if (!ambientWanted || soundsSuppressed()) return;
-  const scapeNow = getSoundscape();
-  if (scapeNow === 'none' || SOUNDSCAPE_LOOPS[scapeNow] !== name) return;
+  if (!ambientStartIsCurrent(generation, name)) return;
   if (ambient?.name === name && sound.isPlaying) return;
-  if (ambient && ambient.name !== name) fadeOutAmbient(AMBIENT_FADE_MS); // crossfade out the old bed
-  const instance = await Promise.resolve(sound.play({ volume: 0, speed: 1, loop: true }));
+
+  let instance: PixiInstanceLike;
+  try {
+    instance = await Promise.resolve(sound.play({ volume: 0, speed: 1, loop: true }));
+  } catch (error) {
+    playFailures += 1;
+    lastBackendError = `Ambient ${name} failed to play: ${String(error)}`;
+    return;
+  }
+  if (!ambientStartIsCurrent(generation, name)) {
+    stopAmbientInstance(instance);
+    return;
+  }
+
+  // Keep the old bed through decode, then retire every superseded bed promptly
+  // once the selected replacement exists. A 600 ms fade on every rapid picker
+  // choice lets five field recordings pile up; 32 ms is still a de-click ramp
+  // but is over before the next deliberate choice can become another layer.
+  fadeOutAmbient(CANCEL_FADE_MS);
+  trackAmbientInstance(instance);
   ambient = { sound, instance, name };
   fadeInstance(instance, effectiveVolume(SOUND_MANIFEST[name].category, undefined), AMBIENT_FADE_MS);
 }
 
-/** Stop the ambient loop with a 600 ms fade-out. */
+/** Stop every ambient voice with a short de-click fade. */
 export function stopAmbient(): void {
   ambientWanted = false;
-  fadeOutAmbient(AMBIENT_FADE_MS);
+  invalidateAmbientStarts();
+  // A preference toggle should sound off immediately, while a very short
+  // de-click ramp avoids cutting a field recording at an arbitrary sample.
+  fadeOutAmbient(CANCEL_FADE_MS);
 }
 
 /**
@@ -1680,10 +1786,12 @@ export function stopAmbient(): void {
 export function setSoundscape(name: SoundscapeName): void {
   if (soundscape === name) return;
   soundscape = name;
-  if (name === 'none') {
-    fadeOutAmbient(AMBIENT_FADE_MS);
-    return;
-  }
+  invalidateAmbientStarts();
+  // A picker choice withdraws the previous bed immediately. Keeping it alive
+  // until the replacement decodes means a failed or rapidly superseded load
+  // leaves audio which no longer matches the visible selection.
+  fadeOutAmbient(CANCEL_FADE_MS);
+  if (name === 'none') return;
   if (ambientWanted && !soundsSuppressed()) void startAmbient();
 }
 
@@ -1692,10 +1800,8 @@ export function getSoundscape(): SoundscapeName {
 }
 
 function fadeOutAmbient(fadeMs: number): void {
-  const current = ambient;
-  if (!current) return;
   ambient = undefined;
-  fadeInstance(current.instance, 0, fadeMs, true);
+  for (const instance of [...ambientVoices]) fadeInstance(instance, 0, fadeMs, true);
 }
 
 function fadeInstance(
@@ -1704,13 +1810,28 @@ function fadeInstance(
   durationMs: number,
   stopAfter = false,
 ): void {
+  cancelAmbientFade(instance);
   const start = instance.volume;
   const began = Date.now();
+  // The prompt 32 ms retirement needs more than two coarse 16 ms jumps.
+  // Four-millisecond steps keep the shipped beds' worst adjacent output jump
+  // at their own waveform baseline while the long 600 ms fade stays cheap.
+  const stepMs = durationMs <= CANCEL_FADE_MS ? 4 : 16;
   const step = (): void => {
     const progress = durationMs <= 0 ? 1 : Math.min(1, (Date.now() - began) / durationMs);
     instance.volume = start + (target - start) * progress;
-    if (progress < 1) setTimeout(step, 16);
-    else if (stopAfter) instance.stop();
+    if (progress < 1) {
+      const timer = setTimeout(() => {
+        if (ambientFadeTimers.get(instance) !== timer) return;
+        ambientFadeTimers.delete(instance);
+        step();
+      }, stepMs);
+      ambientFadeTimers.set(instance, timer);
+    } else if (stopAfter) {
+      stopAmbientInstance(instance);
+    } else {
+      ambientFadeTimers.delete(instance);
+    }
   };
   step();
 }
@@ -1795,6 +1916,7 @@ export function muteAll(mute: boolean): void {
   muted = mute;
   applyLibraryMute();
   if (mute) {
+    invalidateAmbientStarts();
     fadeOutAmbient(200);
   } else if (ambientWanted && !soundsSuppressed()) {
     void startAmbient();
@@ -1811,6 +1933,7 @@ export function setMuteWhenUnfocused(mute: boolean): void {
   muteWhenUnfocused = mute;
   applyLibraryMute();
   if (soundsSuppressed()) {
+    invalidateAmbientStarts();
     fadeOutAmbient(200);
   } else if (ambientWanted) {
     void startAmbient();
@@ -1948,6 +2071,8 @@ export interface SoundEngineState {
   ambientWanted: boolean;
   /** The loop the running bed is playing, or null when no bed runs. */
   ambientPlaying: SoundName | null;
+  /** Current plus retiring crossfade voices; settles to 1 on, 0 off. */
+  ambientActive: number;
   muted: boolean;
   muteWhenUnfocused: boolean;
   appFocused: boolean;
@@ -2016,6 +2141,7 @@ export function getEngineState(): SoundEngineState {
     soundscape,
     ambientWanted,
     ambientPlaying: ambient?.name ?? null,
+    ambientActive: ambientVoices.size,
     muted,
     muteWhenUnfocused,
     appFocused,
@@ -2160,6 +2286,8 @@ export function setPlayRngForTests(rng: () => number): void {
 export function resetEngineForTests(): void {
   disarmGestureResume?.();
   disarmGestureResume = undefined;
+  invalidateAmbientStarts();
+  fadeOutAmbient(0);
   volumes = defaultVolumes();
   muted = false;
   muteWhenUnfocused = false;
@@ -2167,7 +2295,6 @@ export function resetEngineForTests(): void {
   reducedSound = false;
   character = 'calm';
   soundSet = DEFAULT_SOUND_SET_ID;
-  ambient = undefined;
   ambientWanted = false;
   soundscape = 'rain';
   resetPageTurnAudioForTests();

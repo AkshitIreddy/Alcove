@@ -455,7 +455,10 @@
   color: var(--on-accent);
   background: var(--accent-deep);
   border-color: var(--ink-line);
-  transform: scale(1.12) rotate(90deg);
+  /* A plus has no alternate direction. Rotating the font glyph around its
+     typographic (not optical) centre made it drift right while hovering.
+     Keep the same centred mark and only give its round plate a small lift. */
+  transform: scale(1.12);
 }
 
 .shelf-addslot:hover .shelf-addslot__tip,

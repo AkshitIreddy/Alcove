@@ -31,12 +31,11 @@
    Pointer events stay on the surface (the controller owns the gesture).
    -------------------------------------------------------------------------- */
 .nb-flip-canvas {
-  --nb-flip-overscan-x: 10px;
-  --nb-flip-overscan-y: 10px;
+  --nb-flip-overscan-x: 64px;
+  --nb-flip-overscan-y: 64px;
   position: absolute;
-  /* The complete GPU scene includes the 2–8px fore-edge stack outside the
-     sheet boxes. The curl keeps source y coordinates invariant, so the same
-     flat 10px room contains both axes without resizing the overlay by grip. */
+  /* Base room for the fore-edge stack and edge-turn projection. The controller
+     replaces the y value with a leaf-relative allowance for corner turns. */
   top: calc(-1 * var(--nb-flip-overscan-y));
   left: calc(-1 * var(--nb-flip-overscan-x));
   right: auto;
@@ -47,9 +46,9 @@
   height: calc(100% + var(--nb-flip-overscan-y) + var(--nb-flip-overscan-y));
   /* global.css makes media responsive with `canvas { max-width: 100% }`.
      That silently clamped this overscanned canvas back to the root width while
-     the drawing buffer and shader still used root+20: every GL x-coordinate
-     was squeezed left, putting the spine ~10px and the right fore-edge ~20px
-     left of the live DOM. This canvas is an intentional overflow overlay. */
+     the drawing buffer and shader still used the larger root: every GL
+     x-coordinate was squeezed left, putting the spine and fore-edge left of
+     the live DOM. This canvas is an intentional overflow overlay. */
   max-width: none;
   max-height: none;
   pointer-events: none;

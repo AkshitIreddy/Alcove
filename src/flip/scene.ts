@@ -88,8 +88,19 @@ export interface FlipSceneEdgeLayer {
   color: SceneRgba;
 }
 
-/** Space required around the spread for its farthest 8px page edge. */
-export const FLIP_SCENE_OVERSCAN_PX = 10;
+/**
+ * Gesture-only room around the settled spread.
+ *
+ * Ten pixels covered only the static fore-edge stack. Sixty-four is the base
+ * room for edge turns and horizontal projection; PageFlipController grows the
+ * vertical room to 24% of leaf height for a corner turn, whose real tilted
+ * cylinder geometry travels much farther. This is framebuffer capacity only:
+ * curl.ts still owns the silhouette that uses it.
+ */
+export const FLIP_SCENE_OVERSCAN_PX = 64;
+
+/** Vertical framebuffer room reserved for the maximum tilted corner curl. */
+export const FLIP_CORNER_OVERSCAN_HEIGHT_FRAC = 0.24;
 
 const FALLBACK_GUTTER: SceneRgba = [93 / 255, 58 / 255, 38 / 255, 0.22];
 const FALLBACK_THREAD: SceneRgba = [93 / 255, 58 / 255, 38 / 255, 0.36];

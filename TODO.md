@@ -14,6 +14,41 @@ one. Tick the outcome, not the exact recipe in the bullet.
 
 Work **in this order** unless blocked:
 
+- [x] **v0.5.1 candidate — corner-turn page silhouette:** allow the curling
+      sheet to travel beyond the settled book rectangle and overlap adjacent
+      reader chrome during the gesture. Do not squeeze/clamp the rendered leaf
+      merely to keep it inside the book/title-panel bounds; settled pages must
+      retain their existing clipping and layout. **Still open after owner
+      retest:** 64px of gesture-only canvas overscan removed the outer clipping
+      bound but did not change the projected sheet silhouette; the curl still
+      read as squished into the settled book. **Owner confirmed the replacement:**
+      the vertex shader now projects the cylinder's real `pos.y` for
+      corner turns while retaining depth-only baseline compensation; corner y
+      room scales to 24% of leaf height and projection strength no longer
+      changes with framebuffer size. At `p=.65`, the shipped leaf geometry
+      measures 106px above the settled page and visibly crosses the title.
+- [x] **v0.5.1 candidate — effect-level page navigation:** clicking the inline
+      page links on “Pages point at pages” and the three buttons inside “Need a
+      way back?” must navigate to their target leaf inside the open book. They
+      must not fall through to the shelf or leave a highlighted focus/window
+      rectangle on the left. Same-book jumps no longer reopen/reset the reader;
+      the exact Welcome link stayed in book view throughout a 500ms trace.
+- [x] **v0.5.1 candidate — Book Studio preview parity:** the spine preview must
+      show the complete binding that the same book displays on its shelf,
+      including the shelf renderer's ornament/reserved-space context rather
+      than the incomplete plain-background variant. Preview rendering now
+      receives the persisted binding id used by the shelf renderer.
+- [x] **v0.5.1 candidate — new-book hover geometry:** hovering the shelf's New
+      book slot must keep its plus centred and upright; no directional rotation
+      or rightward drift. Hover/focus now scales without rotation; the measured
+      glyph centre remains within 0.01px of the slot centre.
+- [x] **v0.5.1 candidate — tray ambience policy:** background ambience should
+      stop while Alcove is hidden in the system tray by default. Add a persisted
+      Sound setting that can opt into continuing it in the tray, and resume the
+      selected ambience correctly when the window returns. Rust now reports
+      successful tray hide/show state to the sound engine, which preserves the
+      selected bed while retiring/resuming voices according to the new opt-in.
+
 ### Owner retest — 2026-08-08
 
 #### Release blockers — newest owner pass

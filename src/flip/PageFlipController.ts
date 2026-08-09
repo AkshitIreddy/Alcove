@@ -38,6 +38,7 @@ import { waitForLandingMedia } from './landingMedia';
 import type { PageRasterCache } from './rasterCache';
 import {
   FLIP_SCENE_OVERSCAN_PX,
+  FLIP_CORNER_OVERSCAN_HEIGHT_FRAC,
   readFlipSnapshotSceneStyle,
   type FlipSnapshotSceneIds,
 } from './scene';
@@ -636,16 +637,21 @@ export class PageFlipController {
         readFlipSnapshotSceneStyle(this.options.root),
       );
       /*
-       * The curl preserves every source pixel's page-relative y coordinate.
-       * That is the text-baseline invariant in curl.ts: depth and a corner-led
-       * fold may reshape x, but never tear one line onto several apparent
-       * baselines. The old 6%/24% vertical overscan only existed for the
-       * perspective-y expansion that violated that invariant. The flat scene's
-       * 10px contract now contains every top/bottom edge in either grip.
+       * A tilted corner curl moves vertices along the fold's tangent. Numeric
+       * evaluation of the shader at the shipped leaf ratio reaches about 16%
+       * of leaf height; 24% leaves room across progress, direction and fit
+       * variants. Edge turns retain their source y and need only the base
+       * fore-edge/projection room. Settled DOM remains unchanged.
        */
       this.sceneOverscan = {
         x: FLIP_SCENE_OVERSCAN_PX,
-        y: FLIP_SCENE_OVERSCAN_PX,
+        y:
+          grip === 'edge'
+            ? FLIP_SCENE_OVERSCAN_PX
+            : Math.max(
+                FLIP_SCENE_OVERSCAN_PX,
+                Math.ceil(this.scene.moving.h * FLIP_CORNER_OVERSCAN_HEIGHT_FRAC),
+              ),
       };
       this.options.canvas.style.setProperty(
         '--nb-flip-overscan-x',

@@ -12,6 +12,11 @@ import {
   CONFETTI_DURATION_MS,
   taskCompletionCue,
 } from '../src/editor/effects/confetti';
+import {
+  FLIP_CORNER_OVERSCAN_HEIGHT_FRAC,
+  FLIP_SCENE_OVERSCAN_PX,
+} from '../src/flip/scene';
+import { CURL_VERT_SRC } from '../src/flip/curl';
 
 const ROOT = resolve(__dirname, '..');
 
@@ -49,6 +54,22 @@ describe('Alcove smoke gate', () => {
     expect(canFlipSpread(4, 1, 'next', false, 10_000)).toBe(true);
     expect(pagesToCreateOnFlip(4, 1, 'next', false, 10_000)).toBe(1);
     expect(pagesToCreateOnFlip(5, 2, 'next', false, 10_000)).toBe(2);
+  });
+
+  it('gives a turning page room beyond the settled cover', () => {
+    // The title gap is about 24px at the shipped reader size. Keep enough
+    // gesture-only framebuffer beyond it for the curl silhouette/contact edge.
+    expect(FLIP_SCENE_OVERSCAN_PX).toBeGreaterThanOrEqual(48);
+    expect(FLIP_CORNER_OVERSCAN_HEIGHT_FRAC).toBeGreaterThanOrEqual(0.2);
+  });
+
+  it('projects the real corner silhouette without depth-tearing baselines', () => {
+    // A larger canvas alone is empty room. The vertex shader must retain the
+    // cylinder's pos.y while the project() helper still compensates only the
+    // independent perspective divide caused by z depth.
+    expect(CURL_VERT_SRC).toContain('float stableY =');
+    expect(CURL_VERT_SRC).toContain('gl_Position = project(pos, z);');
+    expect(CURL_VERT_SRC).not.toContain('project(vec2(pos.x, local.y), z)');
   });
 
   it('keeps the package and desktop bundle on one version', () => {

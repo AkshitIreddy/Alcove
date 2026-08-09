@@ -151,12 +151,10 @@ vec4 project(vec2 localPx, float z) {
   float canvasY = uLeafOrigin.y + localPx.y;
   float xc = canvasX - uCanvasSize.x * 0.5;
   float yc = uCanvasSize.y * 0.5 - canvasY;
-  // Preserve the page's vertical typesetting while still letting depth widen
-  // the curl horizontally. A normal perspective matrix divides both x and y
-  // by (camera-z); text crossing the lifted strip was therefore torn onto two
-  // apparent baselines even though its cached bitmap was pixel-identical to
-  // the live page. Pre-compensate y for that divide. At z=0 this is exactly the
-  // old coordinate; at any lift the post-divide screen y remains identical.
+  // Preserve baselines against DEPTH perspective: z may widen the curl in x,
+  // but it must not independently spread two glyphs onto different screen
+  // rows. This compensation does not flatten genuine corner geometry because
+  // localPx.y is the cylinder-deformed pos.y passed by CURL_VERT below.
   float stableY = yc * max((uCamDist - z) / uCamDist, 0.0001);
   return uProj * vec4(xc, stableY, z - uCamDist, 1.0);
 }
@@ -207,11 +205,11 @@ void main() {
   // z is the whole depth story now: the fragment pass carries no lighting,
   // so the fold distance and wrap angle stop at this shader.
   vUv = a_uv;
-  // Tilt decides WHERE the corner-led fold crosses the sheet and x/z still
-  // describe the curl. It must not rewrite the document's y coordinate: doing
-  // so made one inline pill appear to wrap into two lines while crossing the
-  // fold, and made special-block text drop then jump home at landing.
-  gl_Position = project(vec2(pos.x, local.y), z);
+  // pos is the actual two-dimensional cylinder deformation. In a corner
+  // turn its tangential component carries the lifted silhouette above/below
+  // the settled leaf; projecting only pos.x makes the paper look constrained
+  // to (and compressed inside) its book even when the framebuffer is larger.
+  gl_Position = project(pos, z);
 }
 `;
 
@@ -699,10 +697,17 @@ export class CurlRenderer {
     const radius = Math.max(radiusForP(p, leafW), leafW * 1e-6);
     const lift = Math.sin(Math.min(Math.max(p, 0), 1) * Math.PI);
 
-    const camDist = cameraDistanceForViewport(frame.canvasH, CURL_FOV_RAD);
+    // Overscan is a viewport, not a camera zoom. Deriving camera distance from
+    // canvasH made a corner turn's larger framebuffer move the camera farther
+    // away and flatten the very curl the extra room was meant to reveal.
+    // Anchor depth strength to the settled leaf, then widen the projection's
+    // field of view just enough for the larger symmetric canvas. The z=0 plane
+    // remains exactly one CSS pixel per framebuffer CSS pixel.
+    const camDist = cameraDistanceForViewport(leafH, CURL_FOV_RAD);
+    const projectionFov = 2 * Math.atan(frame.canvasH / (2 * camDist));
     const shadowStart = silhouetteOffset(leafW, foldD, radius, camDist, frame, dirSign);
     const proj = perspectiveMatrix(
-      CURL_FOV_RAD,
+      projectionFov,
       frame.canvasW / frame.canvasH,
       camDist * 0.1,
       camDist * 10,

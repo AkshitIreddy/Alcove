@@ -42,9 +42,13 @@ import { snapshotGridCorrections } from './snapshotFidelity';
 import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
+  freezeSnapshotInlineBoxes,
   freezeSnapshotListRows,
   freezeSnapshotNodeViewGeometry,
   measureSnapshotBlockGeometry,
+  measureSnapshotInlineBoxes,
+  measureSnapshotListRows,
+  measureSnapshotNodeViewGeometry,
 } from './snapshotGeometry';
 
 /*
@@ -464,8 +468,15 @@ export function createOffscreenPageCapture(
         // construction frame that preceded them.
         alignStagedProse(sheet, pitch);
         const blockGeometry = measureSnapshotBlockGeometry(sheet);
-        freezeStagedListRows(sheet);
-        freezeSnapshotNodeViewGeometry(sheet);
+        const listGeometry = measureSnapshotListRows(sheet);
+        const nodeViewGeometry = measureSnapshotNodeViewGeometry(sheet);
+        const inlineGeometry = measureSnapshotInlineBoxes(sheet);
+        freezeSnapshotListRows(sheet, listGeometry);
+        freezeSnapshotInlineBoxes(sheet, inlineGeometry);
+        // See the mounted path: node-view internals establish a relative
+        // containing block, then the top-level pass remains final authority
+        // over the card/diagram owner's page position.
+        freezeSnapshotNodeViewGeometry(sheet, nodeViewGeometry);
         freezeSnapshotBlockGeometry(sheet, blockGeometry);
         const fontEmbedCSS = await pageFontEmbedCSS(sheet);
         sheet.classList.add(SNAPSHOTTING_CLASS);

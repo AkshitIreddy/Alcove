@@ -27,8 +27,8 @@
  *   a spread settles so both flip directions are instant.
  * - LRU cap 6 bitmaps; evicted/replaced bitmaps are close()d.
  * - Monotonic version stamps: invalidate()/notifyEdited() bump the page
- *   version; a flip may knowingly use a ≤300ms-stale frame (doc: accept
- *   stale — content is unreadable mid-flip and landings swap to live DOM).
+ *   version. The curl accepts only a transaction-valid entry; while a fresh
+ *   raster is pending the controller uses its live-DOM fallback.
  */
 
 import { getFontEmbedCSS, toCanvas } from 'html-to-image';
@@ -38,9 +38,13 @@ import { inlineSvgStyles } from './svgSnapshot';
 import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
+  freezeSnapshotInlineBoxes,
   freezeSnapshotListRows,
   freezeSnapshotNodeViewGeometry,
   measureSnapshotBlockGeometry,
+  measureSnapshotInlineBoxes,
+  measureSnapshotListRows,
+  measureSnapshotNodeViewGeometry,
 } from './snapshotGeometry';
 
 /** Debounce window between an edit and its idle re-rasterization. */
@@ -144,10 +148,12 @@ function fontUsageStacks(root: HTMLElement): string[] {
   const stacks = new Set<string>();
   const elements: Element[] = [root, ...Array.from(root.querySelectorAll('*'))];
   for (const element of elements) {
+    let elementStyle: CSSStyleDeclaration | null = null;
     try {
       // Computed first: an inline `var(--font-label)` is not a usable @font-face
       // name, while the computed stack has already resolved that variable.
-      const stack = getComputedStyle(element).fontFamily;
+      elementStyle = getComputedStyle(element);
+      const stack = elementStyle.fontFamily;
       if (stack.trim() !== '') stacks.add(stack.trim());
     } catch {
       // A detached/custom test double can have no computed style. The fallback
@@ -155,11 +161,25 @@ function fontUsageStacks(root: HTMLElement): string[] {
     }
 
     if (!(element instanceof HTMLElement)) continue;
-    for (const pseudo of ['::before', '::after'] as const) {
+    for (const pseudo of ['::before', '::after', '::marker'] as const) {
       try {
+        if (
+          pseudo === '::marker' &&
+          (elementStyle?.display !== 'list-item' || elementStyle.listStyleType === 'none')
+        ) {
+          continue;
+        }
         const style = getComputedStyle(element, pseudo);
         const content = style.content?.trim() ?? '';
-        if (content === '' || content === 'none' || content === 'normal') continue;
+        // Native list markers conventionally report `content: normal`; unlike
+        // ::before/::after that is visible content and html-to-image does not
+        // clone the pseudo-element on its own.
+        if (
+          pseudo !== '::marker' &&
+          (content === '' || content === 'none' || content === 'normal')
+        ) {
+          continue;
+        }
         const stack = style.fontFamily;
         if (stack.trim() !== '') stacks.add(stack.trim());
       } catch {
@@ -465,6 +485,20 @@ export interface RasterEntry {
   readonly width: number;
   readonly height: number;
   readonly pixelRatio: number;
+  /**
+   * Where these pixels came from.  A reconstructed neighbour is useful while
+   * that page is unmounted, but it is never authoritative once the real leaf
+   * exists.  `sourceToken` identifies that exact mounted DOM presentation.
+   */
+  readonly source:
+    | {
+        readonly kind: 'mounted';
+        readonly sourceToken: number;
+        readonly side: 'left' | 'right' | null;
+        readonly cssWidth: number;
+        readonly cssHeight: number;
+      }
+    | { readonly kind: 'offscreen' };
 }
 
 export interface PageRasterCacheOptions {
@@ -514,6 +548,8 @@ export class PageRasterCache {
   private readonly debounceTimers = new Map<string, number>();
   private readonly idleHandles = new Set<IdleHandle>();
   private readonly pixelRatio: number;
+  private readonly sourceTokens = new WeakMap<HTMLElement, number>();
+  private nextSourceToken = 1;
   private disposed = false;
 
   /** Idle captures deferred by suspend(), replayed on resume(). */
@@ -546,15 +582,43 @@ export class PageRasterCache {
   }
 
   /**
+   * Bitmap safe to hand to the curl right now.
+   *
+   * When a page is mounted, only a capture of that exact DOM leaf is usable;
+   * an older offscreen reconstruction may have the same document version and
+   * tone while still having different line wrapping or node-view state.
+   */
+  getUsable(pageId: string): RasterEntry | undefined {
+    if (!this.isFresh(pageId)) return undefined;
+    return this.entries.get(pageId);
+  }
+
+  /**
    * Whether the cached bitmap matches the page's current version AND was taken
    * under the paper tone in force now (see RasterEntry.tone).
    */
   isFresh(pageId: string): boolean {
     const entry = this.entries.peek(pageId);
+    if (
+      entry === undefined ||
+      entry.version !== this.version(pageId) ||
+      entry.tone !== paperToneTag()
+    ) {
+      return false;
+    }
+    const mounted = this.mountedElement(pageId);
+    if (mounted === null) return true;
+    if (entry.source.kind !== 'mounted') return false;
+    const size = this.mountedSize(mounted);
+    const side =
+      mounted.dataset.side === 'left' || mounted.dataset.side === 'right'
+        ? mounted.dataset.side
+        : null;
     return (
-      entry !== undefined &&
-      entry.version === this.version(pageId) &&
-      entry.tone === paperToneTag()
+      entry.source.sourceToken === this.sourceToken(mounted) &&
+      entry.source.side === side &&
+      Math.abs(entry.source.cssWidth - size.width) < 0.02 &&
+      Math.abs(entry.source.cssHeight - size.height) < 0.02
     );
   }
 
@@ -585,7 +649,11 @@ export class PageRasterCache {
     const token = ids
       .map((id) => {
         const entry = this.entries.peek(id);
-        return `${id}:${this.version(id)}:${entry?.version ?? -1}:${entry?.tone ?? '-'}`;
+        const source =
+          entry?.source.kind === 'mounted'
+            ? `mounted-${entry.source.sourceToken}`
+            : (entry?.source.kind ?? '-');
+        return `${id}:${this.version(id)}:${entry?.version ?? -1}:${entry?.tone ?? '-'}:${source}`;
       })
       .join('|');
     return {
@@ -631,9 +699,19 @@ export class PageRasterCache {
    */
   ensure(pageId: string): Promise<RasterEntry | null> {
     if (this.disposed) return Promise.resolve(null);
-    if (this.isFresh(pageId)) return Promise.resolve(this.entries.get(pageId) ?? null);
+    if (this.isFresh(pageId)) return Promise.resolve(this.getUsable(pageId) ?? null);
     const pending = this.inflight.get(pageId);
-    if (pending) return pending;
+    if (pending) {
+      // The pending job may have been admitted while this page was offscreen.
+      // If it finishes after the real leaf mounts, its result is intentionally
+      // unusable; immediately follow it with the mounted capture instead of
+      // leaving the page stuck on that reconstruction until another edit.
+      return pending.then(() => {
+        if (this.disposed) return null;
+        if (this.isFresh(pageId)) return this.getUsable(pageId) ?? null;
+        return this.ensure(pageId);
+      });
+    }
     const capture = this.capture(pageId).finally(() => this.inflight.delete(pageId));
     this.inflight.set(pageId, capture);
     return capture;
@@ -687,6 +765,53 @@ export class PageRasterCache {
 
   /* ------------------------------ internals ------------------------------ */
 
+  private mountedElement(pageId: string): HTMLElement | null {
+    const element = this.options.getElement(pageId);
+    return element !== null &&
+      element.dataset.pageId === pageId &&
+      element.isConnected &&
+      element.clientWidth > 0 &&
+      element.clientHeight > 0
+      ? element
+      : null;
+  }
+
+  /**
+   * Identity of the keyed presentation currently mounted inside a stable leaf.
+   *
+   * BookView deliberately keeps `.nb-sheet-paper` mounted while replacing its
+   * direct `.nb-page` child whenever the page binding changes. Tokening the
+   * paper itself would therefore let pixels from the previous child pass the
+   * freshness check after paging away and back.
+   */
+  private presentationRoot(element: HTMLElement): HTMLElement {
+    for (const child of Array.from(element.children)) {
+      if (child instanceof HTMLElement && child.classList.contains('nb-page')) {
+        return child;
+      }
+    }
+    return element;
+  }
+
+  private sourceToken(element: HTMLElement): number {
+    const presentation = this.presentationRoot(element);
+    const known = this.sourceTokens.get(presentation);
+    if (known !== undefined) return known;
+    const token = this.nextSourceToken++;
+    this.sourceTokens.set(presentation, token);
+    return token;
+  }
+
+  private mountedSize(element: HTMLElement): { width: number; height: number } {
+    const style = getComputedStyle(element);
+    const width = Number.parseFloat(style.width);
+    const height = Number.parseFloat(style.height);
+    return {
+      width: Number.isFinite(width) && width > 1 ? width : element.clientWidth,
+      height: Number.isFinite(height) && height > 1 ? height : element.clientHeight,
+    };
+  }
+
   /** Queue one idle capture, or park it until resume() when suspended. */
   private captureWhenIdle(pageId: string): void {
     if (this.disposed) return;
@@ -727,16 +852,12 @@ export class PageRasterCache {
      * source owns its pixels; reconstruction is only a declared fallback when
      * there is no visible source.
      */
-    const element = this.options.getElement(pageId);
-    if (
-      element === null ||
-      !element.isConnected ||
-      element.clientWidth < 1 ||
-      element.clientHeight < 1
-    ) {
+    const element = this.mountedElement(pageId);
+    if (element === null) {
       return this.captureUnmounted(pageId);
     }
     const versionAtStart = this.version(pageId);
+    const sourceToken = this.sourceToken(element);
     // The theme can have changed since the last capture; re-read it now so the
     // canvas is backed with TODAY's paper and the entry is stamped with it.
     refreshPaperTone();
@@ -744,12 +865,17 @@ export class PageRasterCache {
     const background = snapshotBackground(element);
     const fontEmbedCSS = await pageFontEmbedCSS(element);
 
-    const sourceStyle = getComputedStyle(element);
     const sourceRect = element.getBoundingClientRect();
-    const width = Number.parseFloat(sourceStyle.width);
-    const height = Number.parseFloat(sourceStyle.height);
-    const cssWidth = Number.isFinite(width) && width > 1 ? width : element.clientWidth;
-    const cssHeight = Number.isFinite(height) && height > 1 ? height : element.clientHeight;
+    const sourceSize = this.mountedSize(element);
+    const cssWidth = sourceSize.width;
+    const cssHeight = sourceSize.height;
+    // Measure the authoritative presentation BEFORE the copy is rehomed.
+    // Every previous geometry patch measured `clone` below and therefore
+    // preserved the clone's already-wrong wrap/advance.
+    const blockGeometry = measureSnapshotBlockGeometry(element);
+    const listGeometry = measureSnapshotListRows(element);
+    const nodeViewGeometry = measureSnapshotNodeViewGeometry(element);
+    const inlineGeometry = measureSnapshotInlineBoxes(element);
     const clone = element.cloneNode(true) as HTMLElement;
     clone.style.setProperty('width', `${cssWidth}px`, 'important');
     clone.style.setProperty('height', `${cssHeight}px`, 'important');
@@ -773,11 +899,14 @@ export class PageRasterCache {
       clone.getBoundingClientRect().height < 1
     ) {
       stage.remove();
-      return this.captureUnmounted(pageId);
+      return null;
     }
-    const blockGeometry = measureSnapshotBlockGeometry(clone);
-    freezeSnapshotListRows(clone);
-    freezeSnapshotNodeViewGeometry(clone);
+    freezeSnapshotListRows(clone, listGeometry);
+    freezeSnapshotInlineBoxes(clone, inlineGeometry);
+    // Node-view owners may themselves be top-level prose blocks. Establish
+    // their internal containing block first; the top-level pass must be last
+    // so its absolute source position cannot be overwritten back to relative.
+    freezeSnapshotNodeViewGeometry(clone, nodeViewGeometry);
     freezeSnapshotBlockGeometry(clone, blockGeometry);
     clone.classList.add(SNAPSHOTTING_CLASS);
     // Inline SVG loses class-based styling in html-to-image's clone and
@@ -804,11 +933,26 @@ export class PageRasterCache {
       restoreSvg();
       stage.remove();
     }
-    if (canvas === null) return this.captureUnmounted(pageId);
+    // Once a live presentation exists, a reconstructed fallback is not an
+    // equivalent picture. Let the controller use its live-DOM transition and
+    // retry later instead of caching pixels known to have weaker authority.
+    if (canvas === null) return null;
     if (this.disposed) return null;
 
     const bitmap = await createImageBitmap(canvas);
     if (this.disposed) {
+      bitmap.close();
+      return null;
+    }
+    // A capture is a transaction.  Never publish pixels taken from an old
+    // element, document version or paper tone merely because the async image
+    // conversion eventually completed.
+    if (
+      this.mountedElement(pageId) !== element ||
+      this.sourceToken(element) !== sourceToken ||
+      this.version(pageId) !== versionAtStart ||
+      paperToneTag() !== toneAtStart
+    ) {
       bitmap.close();
       return null;
     }
@@ -819,6 +963,16 @@ export class PageRasterCache {
       width: canvas.width,
       height: canvas.height,
       pixelRatio: this.pixelRatio,
+      source: {
+        kind: 'mounted',
+        sourceToken,
+        side:
+          element.dataset.side === 'left' || element.dataset.side === 'right'
+            ? element.dataset.side
+            : null,
+        cssWidth,
+        cssHeight,
+      },
     };
     this.entries.set(pageId, entry);
     return entry;
@@ -847,6 +1001,17 @@ export class PageRasterCache {
       bitmap.close();
       return null;
     }
+    // The page may have mounted while its reconstructed editor was being
+    // rasterized.  Reconstruction immediately loses authority at that point;
+    // discard it and capture the real leaf in the same ensure transaction.
+    if (this.mountedElement(pageId) !== null) {
+      bitmap.close();
+      return this.capture(pageId);
+    }
+    if (this.version(pageId) !== versionAtStart || paperToneTag() !== toneAtStart) {
+      bitmap.close();
+      return null;
+    }
     const entry: RasterEntry = {
       bitmap,
       version: versionAtStart,
@@ -854,6 +1019,7 @@ export class PageRasterCache {
       width: bitmap.width,
       height: bitmap.height,
       pixelRatio: this.pixelRatio,
+      source: { kind: 'offscreen' },
     };
     this.entries.set(pageId, entry);
     return entry;

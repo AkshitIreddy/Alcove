@@ -2052,6 +2052,7 @@ export default function BookView(): JSX.Element {
     <div
       class="nb-sheet-paper nb-leaf-paper"
       data-side={side}
+      data-page-id={page()?.id}
       ref={(el) => {
         paperElements[side] = el;
         capacityObserver?.observe(el);

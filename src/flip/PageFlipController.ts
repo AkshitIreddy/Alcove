@@ -482,7 +482,7 @@ export class PageFlipController {
     const ids = [pages.front, pages.back, pages.revealed].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
-    const missing = ids.filter((id) => this.options.cache.get(id)?.bitmap == null);
+    const missing = ids.filter((id) => this.options.cache.getUsable(id)?.bitmap == null);
     if (warmMissing) {
       for (const id of missing) void this.options.cache.ensure(id);
     }
@@ -541,7 +541,8 @@ export class PageFlipController {
      * A PAGE NOBODY HAS RASTERISED YET MUST NOT BE TURNED AS BLANK PAPER.
      *
      * The WebGL curl is fed entirely from the raster cache — `bitmapOf` returns
-     * `cache.get(id)?.bitmap ?? null` — and a null texture draws as bare paper.
+     * `cache.getUsable(id)?.bitmap ?? null` — and a null texture draws as bare
+     * paper.
      * For a page the reader has never visited there is nothing cached, so the
      * sheet curls over showing nothing at all. Turn back and forward again and
      * it is perfect, because by then it has been captured. That is exactly what
@@ -566,7 +567,7 @@ export class PageFlipController {
      * its bitmap and gets the curl.
      */
     const cachedFor = (id: string | null): ImageBitmap | null =>
-      id === null ? null : (this.options.cache.get(id)?.bitmap ?? null);
+      id === null ? null : (this.options.cache.getUsable(id)?.bitmap ?? null);
     const wanted = [pages.front, pages.back, pages.revealed].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
@@ -617,11 +618,12 @@ export class PageFlipController {
       // page turns parchment for the length of the flip (see paperTone.ts).
       refreshPaperTone();
       this.renderer.setPaperCream();
-      // Cached bitmaps only — a ≤300ms-stale frame is accepted by design
-      // (content is unreadable mid-flip; landings always swap to live DOM).
+      // Only transaction-valid bitmaps. In particular, a mounted leaf cannot
+      // curl from the older offscreen reconstruction that warmed it while it
+      // was still a neighbour.
       const cache = this.options.cache;
       const bitmapOf = (id: string | null): ImageBitmap | null =>
-        id ? (cache.get(id)?.bitmap ?? null) : null;
+        id ? (cache.getUsable(id)?.bitmap ?? null) : null;
       this.renderer.setSnapshotScene(
         {
           // The opposite page remains live DOM; this slot is retained only as

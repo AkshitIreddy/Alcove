@@ -1,9 +1,18 @@
-# Handoff: unresolved special-block text movement during page turns
+# Resolved handoff: special-block text movement during page turns
 
-Updated 2026-08-09. This is an **open release blocker**. The owner has retested
-the latest implementation and explicitly reports that it is **not fixed**.
-Do not infer success from the checked-in probes, screenshots, comments, or the
-earlier TODO wording.
+Resolved 2026-08-09. The owner retested the final implementation and confirmed
+that special blocks no longer move right during the turn; the Welcome `Esc`
+keycap and ordered-list markers also remain stable. This file is retained as a
+history of the failed approaches and exact reproduction, not an open blocker.
+
+The final horizontal defect was ordering, not margin collapse or shader
+projection. Snapshot capture pinned top-level blocks and then let the node-view
+pass change their wrapper back from `position: absolute` to `position:
+relative`, discarding the page-relative horizontal authority. Mounted and
+offscreen paths now freeze list rows, inline atoms, node-view internals, and
+top-level blocks in that order, with top-level placement last. A negative
+control reproduced +40px horizontal movement; the corrected order measured 0px
+on both axes. The blanket nested-block absolute freeze was removed.
 
 ## The task
 

@@ -288,7 +288,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         const pages = getFlipPages(dir);
         if (pages === null) return null;
         const has = (id: string | null): boolean =>
-          id === null ? true : cache.get(id) !== undefined;
+          id === null ? true : cache.getUsable(id) !== undefined;
         const state = cache.qaState([
           pages.stationary,
           pages.front,

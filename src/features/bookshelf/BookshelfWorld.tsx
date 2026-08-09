@@ -512,9 +512,12 @@ export default function BookshelfWorld(): JSX.Element {
    *    down — `panelKeys.usePanelKeys` says so in as many words: "the trash
    *    drawer goes with the shelf the moment a book is opened". Nothing goes
    *    with the shelf any more, so the shelf has to put its own things away.
-   *  - the pulled-book overlay is dropped. It is the DOM cover that flew to
-   *    the middle of the window, and the book view is now standing exactly
-   *    where it is.
+   *  - the pulled-book overlay is dropped only when the reader is READY. It is
+   *    the DOM cover that flew to the middle of the window and the last
+   *    complete painted owner while TipTap mounts. Dropping it merely because
+   *    `viewState` changed exposes the bare shelf for a frame;
+   *    `readerReady` is the commit boundary where the populated book view
+   *    stands exactly where it is.
    *  - the world stops (`pause`).
    *
    * Coming back, the world is picked up — which paints the case synchronously,
@@ -522,6 +525,11 @@ export default function BookshelfWorld(): JSX.Element {
    */
   createEffect(() => {
     const reading = inBook();
+    // Track both halves of the opening transaction. Shelf input pauses at
+    // `reading`; visual ownership moves only when the populated reader
+    // publishes readiness, so overlay removal and `.is-away` are one reactive
+    // commit rather than two frames with no foreground.
+    const readerReady = appState.readerReady();
     if (!worldLive()) return;
     const w = world;
     if (w === null) return;
@@ -531,7 +539,7 @@ export default function BookshelfWorld(): JSX.Element {
       setSpotMenu(null);
       setPlateEdit(null);
       setNaming(null);
-      setOverlay(null);
+      if (readerReady) setOverlay(null);
       w.pause();
       return;
     }

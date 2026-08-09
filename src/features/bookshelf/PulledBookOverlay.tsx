@@ -196,6 +196,13 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
   const [returnWashUp, setReturnWashUp] = createSignal(p.mode === 'close');
   /** True once the flight has landed and the book is resting in the room. */
   const [held, setHeld] = createSignal(false);
+  /**
+   * The reader route is committed, but its populated first frame has not taken
+   * visual ownership yet. This is separate from `live`: opening makes the
+   * cover inert immediately while its already-painted canvas remains mounted
+   * above the shelf until BookshelfWorld observes `readerReady`.
+   */
+  const [opening, setOpening] = createSignal(false);
 
   /**
    * "Put it back", reachable from the JSX below.
@@ -475,6 +482,7 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       if (opened || returning || finished) return;
       opened = true;
       press = null;
+      setOpening(true);
       setLive(false);
       setHeld(false);
       setCarrying(false);
@@ -686,7 +694,7 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
       <Show when={p.mode === 'open'}>
         <div
           class="pulled-book-scrim"
-          classList={{ 'is-up': dim() && live() }}
+          classList={{ 'is-up': dim() && (live() || opening()) }}
           data-testid="pulled-book-scrim"
           aria-hidden="true"
         />
@@ -756,6 +764,7 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
         class="pulled-book"
         classList={{
           'is-live': live(),
+          'is-opening': opening(),
           'is-carried': carrying(),
           'is-over-case': overCase(),
           'is-held': held(),
@@ -765,9 +774,10 @@ export default function PulledBookOverlay(p: PulledOverlayProps): JSX.Element {
         // The book at rest IS the button that opens it — there is no plate of
         // verbs under it. Keyboard readers get the same two moves the pointer
         // has: Enter/Space opens, Escape shelves it (see `onKey`).
-        role={held() ? 'button' : 'presentation'}
-        tabindex={held() ? 0 : undefined}
-        aria-label={held() ? `Open ${p.book.title}` : undefined}
+        role={held() && live() ? 'button' : 'presentation'}
+        tabindex={held() && live() ? 0 : undefined}
+        aria-label={held() && live() ? `Open ${p.book.title}` : undefined}
+        aria-busy={opening() ? 'true' : undefined}
         style={{ overflow: 'visible' }}
       >
         {/* Inline-styled so the overlay needs no shelf.css additions

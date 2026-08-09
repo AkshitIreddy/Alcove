@@ -19,17 +19,22 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
-## Unreleased — local owner-testing checkpoint
+## 0.5.0 — steadier pages, deeper rooms, calmer focus
 
-This checkpoint is deliberately local: it has **not** been pushed, tagged or
-published, and the animated WebP has not been re-rendered for it.
+This release is the accumulated owner-tested product pass after 0.4.0: the
+reader now holds its exact shape throughout a page turn, the library and book
+studios expose their choices more clearly, focus mode has one compact control
+rail, and the desktop build gains a signed update path. It also includes the
+expanded Welcome book, media and Notebook Script work, sound lifecycle repairs,
+and a deliberately quieter completion effect.
 
 **The desktop build can update itself from signed GitHub Releases.** A new
 release is checked from inside the installed executable, shown as an explicit
 download/install choice, and handed to Tauri's signed updater. Existing 0.4.0
 installations still need one manual bootstrap installer before they can use
-that path. The release workflow now emits updater metadata alongside the
-platform installers; the signing private key remains outside the repository.
+that path. The release workflow emits signed updater metadata, checksums and
+complete Windows, macOS and Linux installers; the signing private key remains
+outside the repository and is installed only as a GitHub Actions secret.
 
 **Installation and ownership are clearer.** Windows setup can choose the
 library-data folder, the running app resolves that location consistently for
@@ -56,8 +61,37 @@ snapshots, page links/backlinks/free marks survive capture, table and special
 block structure is retained, page-local ribbons do not follow the reader to
 another leaf, and arbitrary trailing blank pages remain reachable. Page-turn
 audio is isolated from the busy Pixi/WebGL path and uses one measured clean
-recording; the owner confirmed the static is gone. Confetti likewise ships one
-acceptable cue and stays silent rather than substituting a poor one.
+recording; the owner confirmed the static is gone. Confetti is now deliberately
+silent, while its visual paper burst remains.
+
+**The moving leaf no longer re-typesets itself when a turn begins.** Snapshot
+capture carries the mounted page's exact inline widths, line breaks, list-row
+advance and marker styling into the inert image. That keeps the Welcome
+book's `Esc` keycap whole and its numbered steps visually unchanged. Cards,
+callouts, diagrams and other custom blocks keep their page-relative origin;
+top-level placement is applied after node-view geometry, fixing the reported
+rightward jump. Snapshot freshness is keyed to the mounted page presentation,
+so revisiting a side cannot briefly resurrect an older raster. The owner
+confirmed all three visible defects are gone.
+
+**Focus mode has one purpose-built left rail.** It replaces the large floating
+corner panel and separate exit chip while retaining the existing Book, Pages,
+One page, zoom, leaf and centre controls. Settings and Leave focus live in the
+same rail, and the ordinary settings button is hidden while focused so there is
+only one route to each action.
+
+**Ambient sound now obeys the latest choice.** Rapid soundscape changes retire
+superseded loops even when an older `play()` is still loading, and disabling
+Play ambience stops every active or pending bed. A short 32ms de-click avoids
+pops without letting cached switches accumulate overlapping rooms. Focused race
+tests cover out-of-order starts, turning ambience off during load, rapid cached
+selection and cleanup of already-overlapping voices.
+
+**Confetti is silent and lighter.** A visual celebration never dispatches the
+former party sound, while completion without a visual burst retains the quiet
+checkbox cue. Rendering is limited to one replaceable 28-particle, 760ms burst,
+caps its backing resolution at 1.25×, reuses pointer coordinates without a
+layout read, and creates no canvas when reduced motion is requested.
 
 **The old catch-all QA repository was retired.** Thousands of historical unit,
 Playwright, waveform, baseline and one-off probe files had become a second
@@ -66,8 +100,7 @@ now TypeScript plus five high-signal parser/pagination/version smoke checks;
 release and visual judgement remain deliberate activities rather than an
 automatic claim that rendered pixels or sound are correct.
 
-**Newest local repair candidate (awaiting owner retest):** the page turn now
-keeps its stationary leaf as live DOM for the whole motion; only the moving
+**The stationary leaf remains live DOM for the whole turn.** Only the moving
 leaf transfers to WebGL. Mounted textures clone the exact rendered page rather
 than rebuilding a second editor, and measured block/list boxes are frozen in
 the inert capture. The open-book backing is two symmetric boards with the same
@@ -83,13 +116,12 @@ chrome; plain corrupt-data fallbacks remain independent. Seed v12 gives only an
 untouched Welcome book a solid square case, removes the outer ribbon and striped
 endbands, and keeps one broad blue ribbon between the pages.
 
-TypeScript, the five current smoke checks and focused static screenshots pass.
-The code-side stationary-text measurement was stable through slow and reversed
-drag phases, but that does not substitute for the owner's real-time motion
-judgement. The full demo source now shows timber carving explicitly; the WebP
-remains unrendered and nothing has been pushed, tagged or released.
+The full demo keeps the complete existing tour, reaches Card Room through the
+real full picker, shows Lapis-blue then Garnet-red shelf-only colour, and
+returns to the House Room for its loop. The owner accepted the rendered demo
+and explicitly waived a second automated browser review for this final render.
 
-## 0.4.0 — the current build
+## 0.4.0 — the previous build
 
 **Reading a book no longer rewrites it.** Opening the Welcome book and turning
 through it used to DUPLICATE its content — nothing typed, reading was enough.

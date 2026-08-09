@@ -16,7 +16,7 @@
  *   page     the BOOK goes; two bare leaves, no board, no cover art
  *   leaf     one leaf, the other folded away — a single page, edge to edge
  *
- * The rungs are pure data so `BookView` (which applies them), `FocusDial`
+ * The rungs are pure data so `BookView` (which applies them), `FocusRail`
  * (which offers them) and `tests/focus-range.test.ts` (which pins the ladder)
  * all read one table. Nothing here touches the DOM.
  *

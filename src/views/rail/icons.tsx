@@ -157,6 +157,16 @@ export function FocusIcon(): JSX.Element {
   );
 }
 
+/** Small hand-drawn gear — Settings from the focus-only rail. */
+export function SettingsIcon(): JSX.Element {
+  return frame(
+    <>
+      <path d="M 18.8 12.2 C 18.8 15.9 15.9 18.8 12.1 18.8 C 8.3 18.8 5.3 15.9 5.4 12.1 C 5.4 8.4 8.4 5.4 12.2 5.4 C 15.9 5.4 18.8 8.4 18.8 12.2 Z" {...S} />
+      <path d="M 14.6 12.1 C 14.6 13.5 13.5 14.6 12.1 14.6 C 10.7 14.6 9.6 13.5 9.6 12.1 C 9.6 10.7 10.7 9.6 12.1 9.6 C 13.5 9.6 14.6 10.7 14.6 12.1 Z M 12.2 5.3 L 12.2 2.9 M 12 21.1 L 12 18.8 M 5.4 12.2 L 3 12.2 M 21 12 L 18.7 12 M 7.3 7.3 L 5.6 5.6 M 18.5 18.5 L 16.8 16.8 M 16.9 7.2 L 18.6 5.5 M 5.6 18.6 L 7.3 16.9" {...S} stroke-width="1.6" />
+    </>,
+  );
+}
+
 /** Bookmark ribbon with a forked tail. */
 export function RibbonIcon(): JSX.Element {
   return frame(

@@ -404,17 +404,13 @@
   transform: scale(0.96);
 }
 
-/* The gear lives outside .nb-book-view, so the rail's focus-mode fade cannot
-   reach it without this bridge. Hover/focus still brings it back. */
+/* Focus mode owns a dedicated Settings button in its left rail. Remove the
+   desk seal completely there — leaving it at ten-percent ink produced a
+   duplicate ghost control, and opacity alone left it in the keyboard order. */
 body:has(.nb-book-view.is-focus-mode) .nbs-gear-button {
-  opacity: 0.1;
-  transition: opacity calc(var(--dur-md) * var(--motion-scale, 1))
-    var(--ease-out);
-}
-
-body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:hover,
-body:has(.nb-book-view.is-focus-mode) .nbs-gear-button:focus-visible {
-  opacity: 1;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* The gear is a 1.4px stroke sitting on a saturated seal, so it gets a

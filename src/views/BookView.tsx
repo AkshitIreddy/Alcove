@@ -51,7 +51,7 @@ import {
 } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { save as saveSettings, settings } from '../data/settings';
-import { registerCommands } from '../data/keybindings';
+import { registerCommands, runCommand } from '../data/keybindings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
   coverDataUrl,
@@ -105,7 +105,7 @@ import PageStylePanel from './rail/PageStylePanel';
 import CataloguePanel from './rail/CataloguePanel';
 import SharePanel from './rail/SharePanel';
 import TocPanel from './rail/TocPanel';
-import FocusDial from './rail/FocusDial';
+import FocusRail from './rail/FocusRail';
 import {
   ZOOM_REST,
   clampPan,
@@ -249,21 +249,6 @@ function BackArrowIcon(): JSX.Element {
         stroke-width="2.2"
         stroke-linecap="round"
         stroke-linejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Hand-drawn cross for the focus-mode exit chip (static wobbled path). */
-function CloseStrokeIcon(): JSX.Element {
-  return (
-    <svg viewBox="0 0 18 18" class="nb-focus-exit-glyph" aria-hidden="true">
-      <path
-        d="M 4.2 4.6 C 7.1 7.4 10.4 10.6 13.6 13.5 M 13.7 4.4 C 10.6 7.5 7.4 10.5 4.3 13.6"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
       />
     </svg>
   );
@@ -1253,7 +1238,7 @@ export default function BookView(): JSX.Element {
   /*
    * The `leaf` rung used to have a keyboard step of its own — one page rather
    * than one spread — reached by the arrow keys, and it went with them. What is
-   * left is the FocusDial's `left`/`right` buttons (onPickLeaf below): real
+   * left is the FocusRail's `left`/`right` buttons (onPickLeaf below): real
    * buttons, Tab-reachable, and they pick a side WITHIN the spread. Stated
    * plainly rather than papered over: choosing a side survives, stepping past
    * the right leaf into the next spread does not. The corner curl still turns
@@ -2182,26 +2167,12 @@ export default function BookView(): JSX.Element {
         <span class="nb-back-label">back to shelf</span>
       </button>
 
-      {/* The one thing left on screen in focus mode, because focus mode
-          hides the rail that toggles it: without this the only way out was
-          to guess at F9 or blur the editor first and then press Escape. */}
-      <button
-        type="button"
-        class="nb-focus-exit"
-        aria-label="Leave focus mode (Escape)"
-        tabindex={focusMode() ? 0 : -1}
-        onClick={() => setFocus(false)}
-      >
-        <CloseStrokeIcon />
-        <span class="nb-focus-exit-label font-ui">leave focus</span>
-        <kbd class="nb-focus-exit-key font-ui">Esc</kbd>
-      </button>
-
-      {/* The reader's hand on the mode: which rung, how big, which leaf. Under
-          the exit chip, in the same corner, because that is where this app
-          keeps everything you reach for without looking. */}
+      {/* One focus-only rail owns every control the mode leaves on screen:
+          depth, zoom, leaf, recenter, Settings, and the way out. It replaces
+          the old exit chip + wide dial pair, which covered the page in the
+          very mode meant to clear it. */}
       <Show when={focusMode()}>
-        <FocusDial
+        <FocusRail
           level={focusLevel()}
           onPickLevel={goToFocus}
           zoom={focusZoom()}
@@ -2211,6 +2182,10 @@ export default function BookView(): JSX.Element {
           onPickLeaf={setSoloLeaf}
           panned={focusPan().x !== 0 || focusPan().y !== 0}
           onRecentre={recentre}
+          onOpenSettings={() => {
+            runCommand('open-settings');
+          }}
+          onLeave={() => setFocus(false)}
         />
       </Show>
 

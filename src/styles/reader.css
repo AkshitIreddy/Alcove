@@ -137,205 +137,182 @@
 }
 
 /* --------------------------------------------------------------------------
-   The dial — TOP-LEFT, under the exit chip, because that is the corner this
-   app keeps everything you reach for without looking (see the convention
-   docblock in views/BookView.tsx and tests/top-left-exits.test.ts).
+   The focus rail — one narrow, edge-bound control instead of a floating exit
+   chip plus a wide settings plate. It borrows Settings' chapter-rail shape:
+   paper attached to the left edge, one ink outline, active choices in gilt.
    -------------------------------------------------------------------------- */
 
-/*
- * It arrives out, and then it gets out of the way.
- *
- * The same manners as the back arrow (spread.css): focus mode exists to clear
- * the page, so a permanent control plate sitting on the top-left corner of the
- * paper would be the exact chrome the reader asked to be rid of — *"placed in
- * a way tasteful and goes away after it is used"*. It holds at full ink long
- * enough to be read, settles to a pencil weight, and comes back on hover or on
- * a Tab that lands inside it. It is never removed and never
- * `pointer-events: none`: a control you cannot reach is not a control.
- *
- * Opacity only, and CSS only — this needs no signal, because the element
- * mounts exactly when focus mode begins.
- */
-@keyframes nb-focus-dial-settle {
-  0%,
-  74% {
-    opacity: 1;
+@keyframes nb-focus-rail-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, -50%, 0);
   }
-  100% {
-    opacity: 0.38;
+  to {
+    opacity: 0.88;
+    transform: translate3d(0, -50%, 0);
   }
 }
 
-.nb-focus-dial {
+.nb-focus-rail {
   position: fixed;
-  top: calc(var(--space-16) + 44px);
-  left: var(--space-16);
+  top: 50%;
+  left: 0;
   z-index: var(--z-overlay);
-  width: 214px;
+  width: 50px;
+  max-height: calc(100vh - 24px);
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
-  padding: var(--space-8);
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px 9px;
+  color: var(--ink-sepia);
   background: var(--paper-aged);
   border: var(--stroke-ink-thin);
-  border-radius: var(--radius-hand);
+  border-left: 0;
+  border-radius: 0 16px 19px 0 / 0 19px 16px 0;
   box-shadow: var(--shadow-sm);
-  opacity: 0.38;
-  animation: nb-focus-dial-settle 3.8s var(--ease-out) both;
+  opacity: 0.88;
+  transform: translate3d(0, -50%, 0);
+  animation: nb-focus-rail-arrive var(--dur-md) var(--ease-out) both;
   transition: opacity var(--dur-sm) var(--ease-out);
 }
 
-.nb-focus-dial:hover,
-.nb-focus-dial:focus-within {
+.nb-focus-rail:hover,
+.nb-focus-rail:focus-within {
   opacity: 1;
   animation: none;
 }
 
-.nb-focus-rungs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-4);
-}
-
-.nb-focus-rung {
+.nb-focus-rail-group {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: var(--space-4) 2px;
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
+  gap: 3px;
+}
+
+.nb-focus-rail-button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-sepia-soft);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 9px 12px 10px 13px / 12px 9px 13px 10px;
+  cursor: pointer;
   transition:
+    color var(--dur-xs) var(--ease-out),
     background var(--dur-xs) var(--ease-out),
     border-color var(--dur-xs) var(--ease-out),
-    transform var(--dur-xs) var(--ease-out);
+    transform var(--dur-xs) var(--ease-spring);
 }
 
-.nb-focus-rung:hover {
-  background: var(--wash-amber-light);
-  transform: translateY(-1px);
+.nb-focus-rail-button:hover:not(:disabled) {
+  color: var(--ink-sepia);
+  background: var(--paper-deep);
+  border-color: var(--paper-edge);
+  transform: rotate(-1.5deg) scale(1.03);
 }
 
-.nb-focus-rung.is-active {
+.nb-focus-rail-button:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.nb-focus-rail-button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.nb-focus-rail-button.is-active {
   color: var(--on-gilt);
   background: var(--gilt-face);
-  border-color: var(--ink-line);
+  border-color: var(--on-gilt);
 }
 
-.nb-focus-rung-glyph {
-  width: 30px;
-  height: 22px;
+.nb-focus-rail-glyph,
+.nb-focus-rail-button .nb-rail-icon {
+  width: 23px;
+  height: 23px;
+  overflow: visible;
 }
 
-/* Nunito Sans below 13px — the handwriting faces are unreadable this small. */
-.nb-focus-rung-name {
-  font-size: 11px;
-  line-height: 1.15;
-  letter-spacing: 0.01em;
-  text-align: center;
+.nb-focus-rail-small-glyph {
+  width: 17px;
+  height: 17px;
 }
 
-.nb-focus-zoom {
-  display: grid;
-  grid-template-columns: 34px 1fr 34px;
-  align-items: stretch;
-  gap: var(--space-4);
+.nb-focus-rail-divider {
+  width: 27px;
+  height: 5px;
+  border-top: 1.5px solid var(--paper-edge);
+  transform: rotate(-1.3deg);
 }
 
-.nb-focus-zoom-step,
-.nb-focus-zoom-value {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4) 0;
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
-  transition:
-    background var(--dur-xs) var(--ease-out),
-    border-color var(--dur-xs) var(--ease-out);
-}
-
-.nb-focus-zoom-step:hover:not(:disabled),
-.nb-focus-zoom-value:hover {
-  background: var(--wash-amber-light);
-  border-color: var(--ink-line);
-}
-
-.nb-focus-zoom-step:disabled {
-  opacity: 0.4;
-}
-
-.nb-focus-zoom-glyph {
-  width: 15px;
-  height: 15px;
-}
-
-.nb-focus-zoom-value {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-.nb-focus-leafpick {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-
-.nb-focus-leaf-button {
-  padding: var(--space-4) 0;
-  font-size: 12px;
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: 1.5px solid var(--paper-edge);
-  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
-}
-
-.nb-focus-leaf-button:hover {
-  background: var(--wash-amber-light);
-}
-
-.nb-focus-leaf-button.is-active {
-  color: var(--on-gilt);
-  background: var(--gilt-face);
-  border-color: var(--ink-line);
-}
-
-.nb-focus-recentre {
-  padding: var(--space-4) var(--space-8);
-  font-size: 12px;
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: 1.5px dashed var(--paper-edge);
-  border-radius: 9px 11px 8px 12px / 11px 8px 12px 9px;
-}
-
-.nb-focus-recentre:hover {
-  background: var(--wash-amber-light);
-  border-style: solid;
-}
-
-.nb-focus-dial-keys {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin: 0;
-  font-size: 11px;
-  color: var(--ink-graphite-soft);
-}
-
-.nb-focus-dial-keys kbd {
-  padding: 0 4px;
-  font-family: var(--font-ui);
+/* Nunito Sans below 13px — handwriting faces are unreadable this small. */
+.nb-focus-rail-percent {
   font-size: 10px;
-  border: 1px solid var(--paper-edge);
-  border-radius: 5px 3px 6px 4px / 4px 6px 3px 5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.nb-focus-rail-letter {
+  height: 30px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.nb-focus-rail-centre {
+  border-color: var(--paper-edge);
+  border-style: dashed;
+}
+
+.nb-focus-rail-actions {
+  padding-top: 1px;
+}
+
+.nb-focus-rail-leave {
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border-color: var(--paper-edge);
+}
+
+.nb-focus-rail-leave:hover {
+  background: var(--wash-blush-light);
+  border-color: var(--ink-line);
+}
+
+/* The full rail still fits the demo's 562px viewport and ordinary compact
+   windows without becoming a second scroller beside the page. */
+@media (max-height: 620px) {
+  .nb-focus-rail {
+    gap: 2px;
+    padding: 5px 5px 6px;
+  }
+
+  .nb-focus-rail-group {
+    gap: 2px;
+  }
+
+  .nb-focus-rail-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nb-focus-rail-letter {
+    height: 27px;
+  }
+
+  .nb-focus-rail-glyph,
+  .nb-focus-rail-button .nb-rail-icon {
+    width: 21px;
+    height: 21px;
+  }
+
+  .nb-focus-rail-divider {
+    height: 3px;
+  }
 }
 
 /* ==========================================================================

@@ -772,69 +772,6 @@
   box-shadow: var(--shadow-lg), 0 0 0 100vmax var(--lift-ink-strong);
 }
 
-/* The way out. Focus mode hides the rail, which is where the focus toggle
-   lives, so the mode has to carry its own exit — a small paper tab in the
-   corner the dimmed room can't swallow. Hidden (and out of the tab ring, via
-   the tabindex BookView sets) at every other time.
-
-   TOP-LEFT, on the same peg as the back arrow (which focus mode has faded
-   out, so the two never share the corner). It sat top-right until the reader
-   found it there: "when in focus mode the leave focus mode is in top right,
-   it should be top left instead, similar for all other types of options, it
-   should ALWAYS be on top left, maybe do a check." The check is
-   tests/top-left-exits.test.ts. */
-.nb-focus-exit {
-  position: fixed;
-  top: var(--space-16);
-  left: var(--space-16);
-  z-index: var(--z-overlay);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-4) var(--space-12);
-  color: var(--ink-sepia);
-  background: var(--paper-aged);
-  border: var(--stroke-ink-thin);
-  border-radius: var(--radius-hand);
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity var(--dur-sm) var(--ease-out),
-    background var(--dur-xs) var(--ease-out),
-    transform var(--dur-xs) var(--ease-out);
-}
-
-.nb-book-view.is-focus-mode .nb-focus-exit {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.nb-focus-exit:hover {
-  background: var(--wash-amber-light);
-  transform: translateY(-1px);
-}
-
-.nb-focus-exit-glyph {
-  width: 15px;
-  height: 15px;
-  color: var(--ink-sepia);
-}
-
-/* Nunito Sans below 13px — handwriting faces are unreadable that small. */
-.nb-focus-exit-label {
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.nb-focus-exit-key {
-  padding: 1px var(--space-4);
-  font-size: 11px;
-  color: var(--ink-graphite-soft);
-  border: 1px solid var(--paper-edge);
-  border-radius: 5px 3px 6px 4px / 4px 6px 3px 5px;
-}
-
 /* ----------------------------------------------------------------------------
    Thumbnails strip (roadmap #10) — bottom filmstrip of mini page renders.
    Horizontal scroll stays inside the strip (thin styled bar), never the page.

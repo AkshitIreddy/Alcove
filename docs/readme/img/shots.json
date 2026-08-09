@@ -14,7 +14,9 @@
   },
   "app": {
     "product": "Alcove",
-    "version": "0.5.0"
+    "version": "0.5.1",
+    "reusedFromVersion": "0.5.0",
+    "reuseReason": "Owner approved the unchanged README stills for this runtime-fix release."
   },
   "depicts": {
     "welcomeTitle": "Welcome to Alcove ✎",

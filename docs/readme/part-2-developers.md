@@ -67,7 +67,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->15<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, markdown import, bundle read/write — plus the SQLite
 migrations, in <!--f:rustFiles-->9<!--/f--> files and
-<!--f:rustLines-->2619<!--/f--> lines.
+<!--f:rustLines-->2635<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 

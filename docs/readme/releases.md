@@ -19,6 +19,47 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.5.1 — page turns with room to move
+
+This patch is the owner-tested repair pass immediately after 0.5.0. It keeps
+the new updater path and product surface unchanged while correcting five
+visible or lifecycle defects found in ordinary use.
+
+**Corner turns can leave the book.** The curl renderer previously calculated a
+real two-dimensional cylinder position and then discarded its vertical
+coordinate at projection time. A larger canvas therefore contained only empty
+space while the paper still looked squeezed into the settled cover. Corner
+turns now project the actual tilted silhouette, reserve framebuffer room
+relative to the leaf height, and keep camera strength independent of that
+overscan. The depth-only baseline compensation remains, so ordinary edge turns
+retain the accepted `Esc`, list-marker and special-block stability. The owner
+confirmed the corrected corner can cross the title panel naturally.
+
+**Links within the open book remain in the reader.** Welcome-page links and the
+three “Need a way back?” actions no longer reopen the already-open book, reset
+reader readiness, flash the shelf, or leave its focus rectangle visible. They
+now consume the pending page target directly inside the mounted reader.
+
+**Book Studio previews the binding that is actually on the shelf.** The preview
+now receives the book's persisted binding id instead of falling back to the
+seed's plainer treatment, so ornaments, bands and reserved label space match
+the spine readers see in the room.
+
+**The New book mark stays centred.** Its plus no longer rotates around the font
+glyph's uneven typographic centre on hover; it keeps the same upright optical
+centre and uses only the small existing scale lift.
+
+**Putting Alcove in the tray puts its ambience away.** A successful desktop
+hide now retires the current ambient voice without clearing the reader's chosen
+soundscape, and restoring the window resumes it. This is the default for both
+new and existing settings blobs. Readers who deliberately want continuous
+ambience can enable “ambience in the tray” in Sound settings. Pending starts,
+rapid hide/show transitions and the opt-in path are covered by focused race
+tests.
+
+Existing 0.5.0 desktop installations can discover 0.5.1 through Alcove's
+signed in-app updater after the release workflow publishes `latest.json`.
+
 ## 0.5.0 — steadier pages, deeper rooms, calmer focus
 
 This release is the accumulated owner-tested product pass after 0.4.0: the

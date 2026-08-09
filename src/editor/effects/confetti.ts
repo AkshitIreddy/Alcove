@@ -12,7 +12,10 @@
  *   - ONE rAF loop for every live burst;
  *   - no layout or style reads inside the loop — the palette is resolved once
  *     per theme and the geometry once per burst;
- *   - hard caps on both live bursts and live particles.
+ *   - a single live burst: completing several tasks quickly replaces the old
+ *     handful instead of building a full-screen particle storm;
+ *   - a modest backing-store scale. These are torn-paper shapes, not text, so
+ *     four physical pixels per CSS pixel bought cost without useful detail.
  *
  * WHAT IT LOOKS LIKE: paper confetti out of the app's own paint box. Four
  * shapes (scrap, ribbon, dot, shard) over the full wash palette plus ink and
@@ -23,31 +26,34 @@
  * The particle math is pure and exported for tests; only burstConfetti()
  * touches the DOM.
  *
- * The 900 ms burst is its own arc, not a step on the motion scale — the scale
- * covers UI travel, and a shortened confetti burst would just look broken.
- * What it does take from the scale is the on/off decision (isMotionOff).
+ * The brief burst is its own arc, not a step on the motion scale. What it does
+ * take from the scale is the on/off decision (isMotionOff).
  */
 import { isMotionOff } from '../../styles/motion';
 
 /**
- * The one cue a completed task owns. Kept pure so the no-stacking contract is
- * testable without mounting a TipTap editor or a canvas.
+ * The optional cue beside a completed task. The visual confetti is deliberately
+ * silent: the owner found even the sourced celebration pop cheap, and replacing
+ * it with another object would only rename the same problem. A task completed
+ * without the burst keeps the quiet ordinary checkbox cue.
+ *
+ * Kept pure so the silence contract is testable without mounting TipTap, a
+ * canvas, or the audio engine.
  */
 export function taskCompletionCue(
-  confettiOnComplete: boolean,
-  minimalistMode: boolean,
-): 'confetti' | 'check-done' {
-  return confettiOnComplete && !minimalistMode ? 'confetti' : 'check-done';
+  visualConfettiWillRun: boolean,
+): 'check-done' | null {
+  return visualConfettiWillRun ? null : 'check-done';
 }
 
-export const CONFETTI_COUNT = 40;
-export const CONFETTI_DURATION_MS = 900;
-/** Gravity in px/ms² (≈ 970 px/s² — reads as fluttering paper, not hail). */
+export const CONFETTI_COUNT = 28;
+export const CONFETTI_DURATION_MS = 760;
+/** Gravity in px/ms² (≈ 1200 px/s² — reads as fluttering paper, not hail). */
 export const CONFETTI_GRAVITY_PX_MS2 = 0.0012;
 /** Peak sideways flutter amplitude in px. */
 export const CONFETTI_FLUTTER_PX = 14;
 /** Shortest fade-out tail, in ms; particles stagger their own start. */
-export const CONFETTI_FADE_MS = 250;
+export const CONFETTI_FADE_MS = 210;
 
 /**
  * The app's paint box, not a pastel subset of it: gilt, terracotta, moss,
@@ -141,7 +147,7 @@ function writeParticleFrame(
 /**
  * Build the burst. Pure — `rng` is injectable so tests drive it
  * deterministically. Velocities/sizes are bounded so every particle stays
- * within BURST_REACH of the origin for the whole 900 ms.
+ * within BURST_REACH of the origin for the whole 760 ms.
  */
 export function createConfettiParticles(
   count: number = CONFETTI_COUNT,
@@ -172,7 +178,7 @@ export function createConfettiParticles(
       flipRate: 0.004 + rng() * 0.011,
       // Staggered so the burst thins out instead of switching off at once.
       // CONFETTI_FADE_MS is the SHORTEST tail; the longest is roughly double.
-      fadeAt: 1 - (CONFETTI_FADE_MS + rng() * 240) / CONFETTI_DURATION_MS,
+      fadeAt: 1 - (CONFETTI_FADE_MS + rng() * 190) / CONFETTI_DURATION_MS,
     });
   }
   return particles;
@@ -192,20 +198,19 @@ export function particleAt(p: ConfettiParticle, tMs: number): ConfettiFrame {
 /**
  * Half-width / half-height of a burst's footprint in CSS px, derived from the
  * bounds `createConfettiParticles` guarantees:
- *   x: |vx|·T + flutter          = 0.3·900 + 14   ≈ 284
- *   y: gravity·T²/2 − |vy|min·T  = 486 − 144      ≈ 342 down, ~90 up
- * Rounded up with room for the biggest scrap (a 3.6× ribbon at DRAW_SCALE is
- * ~40 px on its long axis, so ~20 px of slack each way). Anything outside is
- * off-canvas and invisible anyway, which is the point — this is what keeps
- * the clear cheap: ~28% of the viewport instead of all of it.
+ *   x: |vx|·T + flutter          = 0.3·760 + 14   ≈ 242
+ *   y: gravity·T²/2 − |vy|min·T  = 347 − 122      ≈ 225 down, ~90 up
+ * Rounded up with room for the biggest rotating ribbon. Anything outside is
+ * off-canvas and invisible anyway, which is the point: one normal burst now
+ * clears at most ~390k backing pixels instead of ~1.45m on a 2× display.
  */
-const BURST_REACH = { left: 330, right: 330, up: 150, down: 400 } as const;
+const BURST_REACH = { left: 305, right: 305, up: 135, down: 275 } as const;
 
-/** Never composite more than this, however fast the user ticks boxes. */
-const MAX_LIVE_BURSTS = 4;
-const MAX_LIVE_PARTICLES = 160;
-/** Retina is worth it; 3× on a decorative burst is not. */
-const MAX_DPR = 2;
+/** One celebration at a time; a rapid completion replaces the previous one. */
+const MAX_LIVE_BURSTS = 1;
+const MAX_LIVE_PARTICLES = CONFETTI_COUNT;
+/** Simple paper scraps stay crisp without a four-pixel-per-CSS-pixel clear. */
+const MAX_DPR = 1.25;
 
 interface Burst {
   readonly particles: ConfettiParticle[];
@@ -277,7 +282,12 @@ function ensureCanvas(): boolean {
     canvas = document.createElement('canvas');
     canvas.className = 'nb-confetti-canvas';
     canvas.setAttribute('aria-hidden', 'true');
-    context = canvas.getContext('2d');
+    context = canvas.getContext('2d', {
+      alpha: true,
+      // The overlay is transient and never read back. Where supported this
+      // lets the browser favour input-to-pixel latency over canvas buffering.
+      desynchronized: true,
+    });
     if (context === null) {
       canvas = null;
       return false;

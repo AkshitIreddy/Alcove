@@ -7,6 +7,11 @@ import { DEFAULT_SETTINGS } from '../src/data/defaults';
 import { parse } from '../src/script';
 import { canFlipSpread, pagesToCreateOnFlip } from '../src/views/spread';
 import { APP_VERSION } from '../src/version';
+import {
+  CONFETTI_COUNT,
+  CONFETTI_DURATION_MS,
+  taskCompletionCue,
+} from '../src/editor/effects/confetti';
 
 const ROOT = resolve(__dirname, '..');
 
@@ -24,6 +29,16 @@ describe('Alcove smoke gate', () => {
 
   it('keeps focus muting opt-in for a new profile', () => {
     expect(DEFAULT_SETTINGS.muteSoundsWhenUnfocused).toBe(false);
+  });
+
+  it('keeps visual confetti deliberately silent', () => {
+    expect(taskCompletionCue(true)).toBeNull();
+    expect(taskCompletionCue(false)).toBe('check-done');
+  });
+
+  it('keeps the decorative burst inside its lightweight interaction budget', () => {
+    expect(CONFETTI_COUNT).toBeLessThanOrEqual(28);
+    expect(CONFETTI_DURATION_MS).toBeLessThanOrEqual(760);
   });
 
   it('lets end turns grow arbitrarily many blank spreads', () => {

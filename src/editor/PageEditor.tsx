@@ -92,32 +92,75 @@ import { notify } from './script/exporters/toast';
 import '../styles/effects.css';
 
 /**
- * Soft pencil-tick when a todo checkbox is checked (delegated per page root)
- * — plus a confetti burst from the checkbox when the user opted in.
+ * Soft pencil-tick when a todo checkbox is checked without a celebration
+ * (delegated per page root), plus a deliberately silent confetti burst when
+ * the reader opted in.
  *
- * Everything decorative is pushed to the next frame on purpose: the tick has
- * to be the fastest thing on screen, and measuring the box (a forced layout)
- * inside the change handler puts a layout read between the click and the
- * checkbox actually looking checked.
+ * Pointer activation remembers coordinates from the event, so the common path
+ * starts without a forced layout read or an extra staging frame. Keyboard and
+ * assistive activation keep a next-frame measured fallback.
  */
+const taskPointerOrigins = new WeakMap<
+  HTMLInputElement,
+  { readonly x: number; readonly y: number; readonly at: number }
+>();
+
+function onTaskPointerDown(event: PointerEvent): void {
+  const target = event.target;
+  if (
+    !(target instanceof HTMLInputElement) ||
+    !event.isPrimary ||
+    event.button !== 0 ||
+    target.type !== 'checkbox' ||
+    target.closest('li[data-checked]') === null
+  ) {
+    return;
+  }
+  // Pointer coordinates are already present on the event, so remembering
+  // them costs no layout. Only cache the unchecked -> checked direction.
+  if (!target.checked) {
+    taskPointerOrigins.set(target, {
+      x: event.clientX,
+      y: event.clientY,
+      at: event.timeStamp,
+    });
+  } else {
+    taskPointerOrigins.delete(target);
+  }
+}
+
 function onTaskToggle(event: Event): void {
   const target = event.target;
   if (
     !(target instanceof HTMLInputElement) ||
     target.type !== 'checkbox' ||
-    target.closest('li[data-checked]') === null ||
-    !target.checked
+    target.closest('li[data-checked]') === null
   ) {
     return;
   }
-  const celebrates = settings.confettiOnComplete && !settings.minimalistMode;
-  // One action gets one audible answer. Stacking the checkbox cue under the
-  // celebration made a completed task sound like two unrelated objects hit
-  // at once (and doubled the playback work at the exact moment the burst
-  // starts). When the decorative burst is disabled, keep the quieter done
-  // cue; when it is enabled, the celebration owns the moment.
-  void play(taskCompletionCue(settings.confettiOnComplete, settings.minimalistMode));
+  const cachedPointerOrigin = taskPointerOrigins.get(target);
+  taskPointerOrigins.delete(target);
+  if (!target.checked) return;
+  const pointerOrigin =
+    cachedPointerOrigin !== undefined &&
+    event.timeStamp - cachedPointerOrigin.at >= 0 &&
+    event.timeStamp - cachedPointerOrigin.at <= 1_000
+      ? cachedPointerOrigin
+      : undefined;
+  const celebrates =
+    settings.confettiOnComplete &&
+    !settings.minimalistMode &&
+    !isMotionOff();
+  // The visual burst is deliberately silent. When it is disabled, keep the
+  // ordinary completion cue; when it is enabled, do not substitute another
+  // object or leave a quieter sound underneath it.
+  const completionCue = taskCompletionCue(celebrates);
+  if (completionCue !== null) void play(completionCue);
   if (!celebrates) return;
+  if (pointerOrigin !== undefined) {
+    burstConfetti(pointerOrigin);
+    return;
+  }
   requestAnimationFrame(() => {
     if (!target.isConnected) return;
     const rect = target.getBoundingClientRect();
@@ -1091,8 +1134,12 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       onDrop={onPageDrop}
       ref={(el) => {
         pageRootElement = el;
+        el.addEventListener('pointerdown', onTaskPointerDown);
         el.addEventListener('change', onTaskToggle);
-        onCleanup(() => el.removeEventListener('change', onTaskToggle));
+        onCleanup(() => {
+          el.removeEventListener('pointerdown', onTaskPointerDown);
+          el.removeEventListener('change', onTaskToggle);
+        });
       }}
     >
       <div class="nb-page-editor" ref={mountElement} />

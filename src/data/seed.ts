@@ -1337,7 +1337,7 @@ Type \`#\`, \`##\` or \`###\` in Notebook Script.
 - [x] A finished task remembers
 
 ::: callout {variant=tip}
-Checking a task gives a small visual celebration. Motion-off skips the burst; mute and the little-clicks volume control its sound.
+Checking a task gives a small, deliberately silent visual celebration. Motion-off skips the burst.
 :::
 `,
 
@@ -1645,7 +1645,7 @@ Columns keep the picture and the paragraph in their own measures.
 - [ ] Tick me to try the confetti
 
 ::: card {title="A small response, not a fireworks show"}
-The burst is brief. Motion-off or the operating system's reduce-motion setting removes it. Mute everything—or set little clicks & pops to zero—to silence its cue.
+The burst is brief and deliberately silent. Motion-off or the operating system's reduce-motion setting removes it.
 :::
 
 ::: index-card {title="The sound room"}

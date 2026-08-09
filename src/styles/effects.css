@@ -4286,6 +4286,7 @@
   position: fixed;
   pointer-events: none;
   z-index: var(--z-toasts);
+  contain: strict;
 }
 
 /* ----------------------------------------------------------------------------

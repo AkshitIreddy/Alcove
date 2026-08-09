@@ -31,6 +31,10 @@ describe('Alcove smoke gate', () => {
     expect(DEFAULT_SETTINGS.muteSoundsWhenUnfocused).toBe(false);
   });
 
+  it('puts default ambience away with the app in the tray', () => {
+    expect(DEFAULT_SETTINGS.playAmbienceInTray).toBe(false);
+  });
+
   it('keeps visual confetti deliberately silent', () => {
     expect(taskCompletionCue(true)).toBeNull();
     expect(taskCompletionCue(false)).toBe('check-done');

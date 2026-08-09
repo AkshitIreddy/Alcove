@@ -43,6 +43,7 @@ import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
   freezeSnapshotListRows,
+  freezeSnapshotNodeViewGeometry,
   measureSnapshotBlockGeometry,
 } from './snapshotGeometry';
 
@@ -464,6 +465,7 @@ export function createOffscreenPageCapture(
         alignStagedProse(sheet, pitch);
         const blockGeometry = measureSnapshotBlockGeometry(sheet);
         freezeStagedListRows(sheet);
+        freezeSnapshotNodeViewGeometry(sheet);
         freezeSnapshotBlockGeometry(sheet, blockGeometry);
         const fontEmbedCSS = await pageFontEmbedCSS(sheet);
         sheet.classList.add(SNAPSHOTTING_CLASS);

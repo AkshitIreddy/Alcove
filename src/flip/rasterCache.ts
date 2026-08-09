@@ -39,6 +39,7 @@ import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
   freezeSnapshotListRows,
+  freezeSnapshotNodeViewGeometry,
   measureSnapshotBlockGeometry,
 } from './snapshotGeometry';
 
@@ -776,6 +777,7 @@ export class PageRasterCache {
     }
     const blockGeometry = measureSnapshotBlockGeometry(clone);
     freezeSnapshotListRows(clone);
+    freezeSnapshotNodeViewGeometry(clone);
     freezeSnapshotBlockGeometry(clone, blockGeometry);
     clone.classList.add(SNAPSHOTTING_CLASS);
     // Inline SVG loses class-based styling in html-to-image's clone and

@@ -21,6 +21,13 @@ export interface FrozenSnapshotBlock {
   readonly height: number;
 }
 
+export interface FrozenSnapshotNodeViewChild {
+  readonly top: number;
+  readonly left: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 function computedBorderBox(element: HTMLElement): { width: number; height: number } {
   const style = getComputedStyle(element);
   const dimension = (axis: 'width' | 'height'): number => {
@@ -59,6 +66,17 @@ function untransformedRect(element: HTMLElement): DOMRect {
   return rect;
 }
 
+function sheetScale(sheet: HTMLElement): { x: number; y: number } {
+  const rect = sheet.getBoundingClientRect();
+  const style = getComputedStyle(sheet);
+  const width = Number.parseFloat(style.width);
+  const height = Number.parseFloat(style.height);
+  return {
+    x: Number.isFinite(width) && width > 0 ? rect.width / width : 1,
+    y: Number.isFinite(height) && height > 0 ? rect.height / height : 1,
+  };
+}
+
 export function measureSnapshotBlockGeometry(
   sheet: HTMLElement,
 ): readonly FrozenSnapshotBlock[] {
@@ -70,28 +88,92 @@ export function measureSnapshotBlockGeometry(
   if (children.length === 0) return [];
 
   const proseRect = prose.getBoundingClientRect();
-  const sheetRect = sheet.getBoundingClientRect();
-  const sheetStyle = getComputedStyle(sheet);
-  const sheetCssWidth = Number.parseFloat(sheetStyle.width);
-  const sheetCssHeight = Number.parseFloat(sheetStyle.height);
-  const scaleX =
-    Number.isFinite(sheetCssWidth) && sheetCssWidth > 0
-      ? sheetRect.width / sheetCssWidth
-      : 1;
-  const scaleY =
-    Number.isFinite(sheetCssHeight) && sheetCssHeight > 0
-      ? sheetRect.height / sheetCssHeight
-      : 1;
+  const scale = sheetScale(sheet);
   return children.map((child): FrozenSnapshotBlock => {
     const rect = untransformedRect(child);
     const size = computedBorderBox(child);
     return {
-      top: (rect.top - proseRect.top) / Math.max(scaleY, 1e-6),
-      left: (rect.left - proseRect.left) / Math.max(scaleX, 1e-6),
+      top: (rect.top - proseRect.top) / Math.max(scale.y, 1e-6),
+      left: (rect.left - proseRect.left) / Math.max(scale.x, 1e-6),
       width: size.width,
       height: size.height,
     };
   });
+}
+
+/**
+ * Freeze the visual root owned by every custom TipTap node view.
+ *
+ * A node view is a transparent ProseMirror wrapper (`.nb-node-view`) around
+ * the block the reader actually sees. Callout is the minimal reproduction:
+ * the wrapper and its `.nb-callout` child share a 186px border box while the
+ * child's 8px vertical margins collapse through the wrapper. html-to-image
+ * copies computed dimensions as inline styles; that new formatting context
+ * stops the collapse and spends the 8px margin *inside* the wrapper. The
+ * entire callout is consequently photographed 8px low, then jumps upward
+ * when live DOM owns the landed page.
+ *
+ * Pin each immediate visual child at the exact border-box origin Chromium
+ * already chose, then clear only that child's outer margin. Internal layout
+ * remains untouched: diagrams keep their SVG geometry, callouts keep flex,
+ * tables keep their own wrappers. The parent is frozen separately by
+ * `freezeSnapshotBlockGeometry`, so removing margin collapse cannot resize or
+ * move any later top-level block in the snapshot.
+ */
+export function freezeSnapshotNodeViewGeometry(sheet: HTMLElement): number {
+  const prose = sheet.querySelector<HTMLElement>('.nb-prose');
+  if (prose === null) return 0;
+  const scale = sheetScale(sheet);
+  let frozen = 0;
+
+  for (const owner of Array.from(prose.children)) {
+    if (!(owner instanceof HTMLElement) || !owner.classList.contains('nb-node-view')) {
+      continue;
+    }
+    const ownerRect = untransformedRect(owner);
+    const children = Array.from(owner.children).filter(
+      (child): child is HTMLElement => child instanceof HTMLElement,
+    );
+    if (children.length === 0) continue;
+
+    const measured = children.map((child): FrozenSnapshotNodeViewChild => {
+      const rect = untransformedRect(child);
+      const size = computedBorderBox(child);
+      return {
+        top: (rect.top - ownerRect.top) / Math.max(scale.y, 1e-6),
+        left: (rect.left - ownerRect.left) / Math.max(scale.x, 1e-6),
+        width: size.width,
+        height: size.height,
+      };
+    });
+
+    owner.style.setProperty('position', 'relative', 'important');
+    for (let index = 0; index < children.length; index += 1) {
+      const child = children[index]!;
+      const box = measured[index]!;
+      if (
+        !Number.isFinite(box.top) ||
+        !Number.isFinite(box.left) ||
+        !Number.isFinite(box.width) ||
+        !Number.isFinite(box.height) ||
+        box.width < 0 ||
+        box.height < 0
+      ) {
+        continue;
+      }
+      child.style.setProperty('position', 'absolute', 'important');
+      child.style.setProperty('inset', 'auto', 'important');
+      child.style.setProperty('top', finitePixel(box.top), 'important');
+      child.style.setProperty('left', finitePixel(box.left), 'important');
+      child.style.setProperty('width', finitePixel(box.width), 'important');
+      child.style.setProperty('height', finitePixel(box.height), 'important');
+      child.style.setProperty('box-sizing', 'border-box', 'important');
+      child.style.setProperty('margin', '0', 'important');
+      frozen += 1;
+    }
+  }
+
+  return frozen;
 }
 
 /**

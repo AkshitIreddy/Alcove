@@ -1,9 +1,14 @@
 /** A hand-drawn, focus-trapped update offer for one signed Tauri release. */
-import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import { For, Match, Show, Switch, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { usePanelKeys } from '../../state/panelKeys';
+import {
+  parseUpdateNotes,
+  type UpdateNoteBlock,
+  type UpdateNoteInline,
+} from './updateNotes';
 import '../../styles/insert.css';
 import '../../styles/updater.css';
 
@@ -20,6 +25,60 @@ const FOCUSABLE =
 export interface UpdateDialogProps {
   readonly update: Update;
   onClose(): void;
+}
+
+function openReleaseLink(event: MouseEvent, href: string): void {
+  event.preventDefault();
+  void import('@tauri-apps/plugin-opener')
+    .then(({ openUrl }) => openUrl(href))
+    .catch(() => {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    });
+}
+
+function NoteInline(props: { readonly parts: readonly UpdateNoteInline[] }): JSX.Element {
+  return (
+    <For each={props.parts}>
+      {(part) => (
+        <Switch fallback={part.text}>
+          <Match when={part.kind === 'strong'}><strong>{part.text}</strong></Match>
+          <Match when={part.kind === 'em'}><em>{part.text}</em></Match>
+          <Match when={part.kind === 'code'}><code>{part.text}</code></Match>
+          <Match when={part.kind === 'link'}>
+            <a
+              href={(part as Extract<UpdateNoteInline, { kind: 'link' }>).href}
+              classList={{
+                'is-strong':
+                  (part as Extract<UpdateNoteInline, { kind: 'link' }>).strong === true,
+              }}
+              onClick={(event) =>
+                openReleaseLink(
+                  event,
+                  (part as Extract<UpdateNoteInline, { kind: 'link' }>).href,
+                )
+              }
+            >
+              {part.text}
+            </a>
+          </Match>
+        </Switch>
+      )}
+    </For>
+  );
+}
+
+function NoteBlock(props: { readonly block: UpdateNoteBlock }): JSX.Element {
+  const block = props.block;
+  if (block.kind === 'heading') {
+    return block.level === 2
+      ? <h3><NoteInline parts={block.content} /></h3>
+      : <h4><NoteInline parts={block.content} /></h4>;
+  }
+  if (block.kind === 'list') {
+    const items = <For each={block.items}>{(item) => <li><NoteInline parts={item} /></li>}</For>;
+    return block.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
+  }
+  return <p><NoteInline parts={block.content} /></p>;
 }
 
 function releaseDate(value: string | undefined): string | null {
@@ -76,12 +135,7 @@ export function UpdateDialog(props: UpdateDialogProps): JSX.Element {
   });
   onCleanup(() => window.removeEventListener('keydown', onKeyDown, true));
 
-  const notes = (): string => {
-    const body = props.update.body?.trim();
-    return body === undefined || body === ''
-      ? 'A newer Alcove is ready for your shelf.'
-      : body;
-  };
+  const notes = parseUpdateNotes(props.update.body);
 
   const progressPct = (): number | null => {
     const current = phase();
@@ -164,7 +218,9 @@ export function UpdateDialog(props: UpdateDialogProps): JSX.Element {
         </p>
 
         <div class="nb-ins-body nb-update-body">
-          <p id="nb-update-notes" class="nb-update-notes">{notes()}</p>
+          <div id="nb-update-notes" class="nb-update-notes">
+            <For each={notes}>{(block) => <NoteBlock block={block} />}</For>
+          </div>
 
           <Show when={busy()}>
             <div

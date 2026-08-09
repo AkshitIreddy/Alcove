@@ -15,6 +15,12 @@ one. Tick the outcome, not the exact recipe in the bullet.
 
 Work **in this order** unless blocked:
 
+- [x] **Post-v0.5.1 — updater release-note formatting:** the installed updater
+      no longer prints GitHub's raw `<div>`, image, heading, emphasis and table
+      source inside one paragraph. It safely renders the “What changed” summary
+      as headings, lists, emphasis and external links, while omitting the
+      GitHub-only masthead and installer-choice table. This stays on `main` for
+      the next tagged version; 0.5.1 itself was not retagged or replaced.
 - [x] **v0.5.1 candidate — corner-turn page silhouette:** allow the curling
       sheet to travel beyond the settled book rectangle and overlap adjacent
       reader chrome during the gesture. Do not squeeze/clamp the rendered leaf

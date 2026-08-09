@@ -8,6 +8,7 @@ export default defineConfig(async (env) =>
       include: [
         'tests/smoke.test.ts',
         'tests/sound-ambient.test.ts',
+        'tests/update-notes.test.ts',
       ],
       exclude: ['**/node_modules/**'],
       testTimeout: 10_000,

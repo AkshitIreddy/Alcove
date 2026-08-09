@@ -23,11 +23,79 @@
   font-family: var(--font-body);
   font-size: var(--text-md);
   line-height: 1.45;
-  white-space: pre-wrap;
   color: var(--ink-sepia);
   background: var(--paper-cream);
   border: 1.5px dashed var(--ink-line-soft);
   border-radius: var(--radius-hand);
+}
+
+.nb-update-notes > :first-child {
+  margin-top: 0;
+}
+
+.nb-update-notes > :last-child {
+  margin-bottom: 0;
+}
+
+.nb-update-notes h3,
+.nb-update-notes h4 {
+  margin: var(--space-12) 0 var(--space-4);
+  color: var(--ink-sepia);
+  line-height: 1.2;
+}
+
+.nb-update-notes h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: 650;
+}
+
+.nb-update-notes h4 {
+  font-family: var(--font-accent);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.nb-update-notes p {
+  margin: 0 0 var(--space-8);
+}
+
+.nb-update-notes ul,
+.nb-update-notes ol {
+  margin: 0 0 var(--space-8);
+  padding-left: 1.25rem;
+}
+
+.nb-update-notes li + li {
+  margin-top: 2px;
+}
+
+.nb-update-notes li::marker {
+  color: var(--wash-terracotta-deep);
+}
+
+.nb-update-notes code {
+  padding: 0 0.24em;
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--paper-deep);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 5px;
+}
+
+.nb-update-notes a {
+  color: var(--ink-blue);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+
+.nb-update-notes a.is-strong {
+  font-weight: 700;
+}
+
+.nb-update-notes a:hover,
+.nb-update-notes a:focus-visible {
+  color: var(--wash-terracotta-deep);
 }
 
 .nb-update-progress {

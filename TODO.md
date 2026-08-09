@@ -1,6 +1,6 @@
 # Alcove — running TODO
 
-## 🎯 OPEN — owner testing pass (2026-08-08)
+## 🎯 OPEN — owner testing pass (2026-08-09)
 
 **Start with `HANDOFF.md`.** Local `main` is intentionally ahead of
 **`origin/main`** with owner-testing checkpoints. Inspect
@@ -25,14 +25,20 @@ Work **in this order** unless blocked:
 - [x] Book opening no longer exposes empty ruled leaves while TipTap/content is
       mounting. Keep the already-rendered focused cover/shelf as the visual
       owner until the first populated spread has completed a paint opportunity.
-- [ ] **Owner motion retest — baseline-invariant renderer staged:** the supplied
-      “Ink Between Words” frames proved the curl was tearing one inline-code
-      pill across two apparent baselines. Live, mounted-snapshot and first-visit
-      offscreen pixels already aligned; conventional perspective-y and tilted
-      mesh-y moved only the lifted portion. The shader now preserves every
-      source pixel's page-relative y while retaining x/depth curl geometry.
-      Held first-visit frames at p=0.62/0.72/0.82/0.92 keep the inline pill and
-      card text on continuous baselines; confirm real-time motion on localhost.
+- [ ] **Owner motion retest — exact Ink backward turn fix staged:** navigate to
+      “Ink Between Words” on the LEFT leaf and click its LEFT outer turn edge.
+      The reproduced jump was not Ink or ordinary prose: the newly revealed
+      “Lists That Think” callout was photographed 8px low because
+      html-to-image stopped its child margin from collapsing through TipTap's
+      transparent node-view wrapper. Mounted and first-visit captures now pin
+      every custom node view's immediate visual root to Chromium's live border
+      box. A chronological compositor capture keeps the callout at the same
+      top through the final curl and landed frame; confirm the real-time turn.
+- [ ] **Owner opening retest — held-cover handoff fix staged:** pull or drag a
+      book out, let it settle, then click the cover to enter. The cover now
+      becomes inert but remains the painted visual owner until `readerReady`;
+      overlay removal and shelf-away happen in the same reactive commit. A
+      focused transition trace found no shelf-only frame; confirm on localhost.
 - [x] Owner confirmed the right-hand destination corner/shadow fix. It keeps
       one DOM owner and the same 34px size, 0.75 opacity and no transform
       before/during/after both directions.

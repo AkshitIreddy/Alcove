@@ -58,7 +58,7 @@ than waiting.
 
 | Job | Runner | What it does |
 | --- | --- | --- |
-| `gates` | `ubuntu-latest` | `tsc --noEmit`, the fast logic gate (`npm test`), release-only logic (`test:release`), `spec:check`, `readme:check`, `gen-icons.py --check` |
+| `gates` | `ubuntu-latest` | `tsc --noEmit`, the fast logic gate (`npm test`), `spec:check`, `readme:check`, `gen-icons.py --check` |
 | `build` (×3) | `windows-latest`, `macos-15`, `ubuntu-22.04` | the bundle, and nothing else |
 | `release` | `ubuntu-latest` | notes, checksums, one GitHub Release |
 
@@ -372,7 +372,7 @@ In order, because each one only matters if the previous passed.
 - **Linux is x64 only.** `ubuntu-22.04-arm` exists as a runner label, so an arm64
   Linux bundle is one matrix entry away, but nothing has asked for it.
 - **There is still no push-triggered CI.** This workflow fires on tags. `tsc`,
-  `npm test`, `test:release`, `spec:check` and `readme:check` run here, and locally, and nowhere
+  `npm test`, `spec:check` and `readme:check` run here, and locally, and nowhere
   else — so a green release says the gates passed *at the tag*, not that they
   have passed on every commit. Wiring a push workflow is the prerequisite for
   displaying a CI badge, not the other way round.

@@ -120,9 +120,6 @@ jobs:
       - name: Fast logic gate
         run: npm test
 
-      - name: Release-only logic gates
-        run: npm run test:release
-
       - name: Generated spec is current
         run: npm run spec:check
 

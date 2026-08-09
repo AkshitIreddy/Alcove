@@ -25,14 +25,19 @@ Work **in this order** unless blocked:
 - [x] Book opening no longer exposes empty ruled leaves while TipTap/content is
       mounting. Keep the already-rendered focused cover/shelf as the visual
       owner until the first populated spread has completed a paint opportunity.
-- [ ] **OPEN — special-block text still moves during the exact Ink backward
-      turn.** Navigate to “Ink Between Words” on the LEFT leaf and click its
-      LEFT outer turn edge. The owner retested commit `d7c02d2` and confirms it
-      did not fix the issue. Ordinary prose appears stable; text inside custom
-      blocks/diagrams moves during the turn. Treat the previous margin-collapse
-      diagnosis and sparse compositor capture as insufficient. Continue from
-      `docs/HANDOFF-page-flip-special-block-motion.md`; identify the actual
-      visual owner and framebuffer-level displacement before editing again.
+- [x] **Owner-confirmed — page-turn snapshot text and special-block motion.**
+      The Welcome `Esc` keycap remains whole, ordered markers keep their live
+      style/advance, and cards/diagrams no longer move right during a turn.
+      Snapshot capture now carries the mounted inline/list/marker contracts,
+      keys freshness to the keyed `.nb-page`, and applies top-level geometry
+      after node-view geometry. The old order reproduced a +40px callout shift;
+      the corrected order measured 0px on both axes. The broad nested absolute-
+      positioning freeze was removed. The owner tested and accepted the result.
+- [x] Rapid soundscape switching and turning off Play ambience now stop every
+      superseded, active or still-loading loop. Generation authority plus a
+      tracked voice set closes late `play()` races; a 32ms de-click prevents
+      cached switches from accumulating beds. Four focused tests cover the
+      reported switch/off cases.
 - [ ] **Owner opening retest — held-cover handoff fix staged:** pull or drag a
       book out, let it settle, then click the cover to enter. The cover now
       becomes inert but remains the painted visual owner until `readerReady`;
@@ -97,11 +102,29 @@ Work **in this order** unless blocked:
       data fallbacks plain and independent from the authored default.
 - [x] Update the full-length demo storyboard to open on that authored default
       room and explicitly show changing shelf carving/build. Preserve the
-      existing breadth and panel tour; do not shorten it. Source updated; render
-      remains intentionally held.
-- [ ] Only after the blocker list is owner-accepted: rerender the animated WebP,
-      inspect the full motion manually, push the local commits, tag/publish the
-      GitHub Release, and leave installation to the owner.
+      existing breadth and panel tour; do not shorten it. Source and rendered
+      artifact are now updated.
+- [x] Replace focus mode's floating corner panel and separate exit chip with a
+      focus-only 50px left rail. Preserve every book/pages/one-page, zoom, leaf
+      and recenter control; add Settings and Leave focus to the same rail and
+      hide the duplicate global settings gear while focus is active.
+- [x] Make visual confetti deliberately silent and lighter. A visual burst
+      dispatches no audio; disabled/minimal/reduced-motion completion retains
+      the ordinary `check-done` cue. Rendering is capped at one 28-particle,
+      760ms burst with a 1.25× backing store and no pointer-click layout read.
+- [x] Rerender the full-length animated WebP after owner acceptance: 105.21s,
+      1,473 loop frames, 9,054,084 bytes and seam MSE 0.059027777777777776.
+      Preserve the original tour, reach Card Room through the real picker, and
+      add named Lapis Cabinet → Garnet shelf-only colour changes. The owner
+      explicitly waived Codex's manual visual inspection; record the 20
+      temporal-triage findings (worst `round-trip-residue @ f0825`). No selector
+      or applied-state choice was omitted.
+- [x] Release sibling Gifsmith `0.3.3` with optional temporal review. Full gate
+      218/218, 108-file tarball, Node 18/24 and clean-install CI green; npm
+      `latest` and the non-draft GitHub `v0.3.3` Release are live. This does not
+      authorize an Alcove push.
+- [ ] Push the local **Alcove** commits, tag/publish its GitHub Release, and
+      leave installation to the owner only after separate explicit approval.
 
 #### Earlier staged owner retest
 
@@ -190,10 +213,11 @@ Work **in this order** unless blocked:
 - [x] Static / crackle: onboarding step changes, profile preview rapid-fire,
       page-turn playback.
 - [x] Right-click must **not** play page-turn (wrong cue).
-- [x] Todo confetti: celebration pop, **not** metal bell / wooden table tap.
-      When confetti is on, do not stack `check-done` on top.
-- [x] Confetti WAVs: source real CC0 celebration material (balloon pop / party
-      popper class) — not paper rustle, not iPhone UI taps.
+- [x] Todo confetti is deliberately silent. Do not play the former celebration
+      pop and do not stack `check-done` under a visual burst; use the ordinary
+      quiet checkbox cue only when no visual celebration will run.
+- [x] Superseded: the sourced CC0 celebration WAV remains available to old
+      sound-set data, but the confetti effect no longer dispatches it.
 
 ### 2 — Page flip
 
@@ -230,11 +254,14 @@ Work **in this order** unless blocked:
 
 ### Finishing after owner localhost review
 
-- [ ] Re-render the full-length animated WebP after the owner approves this
-      localhost build. Keep all seven studio steps and every rail panel, use
+- [x] Re-render the full-length animated WebP after the owner approves this
+      localhost build. Keep the complete existing studio sequence and every
+      rail panel, use
       TOC/thumbnails once each, retain the ruled ledger and kitten spreads, and
-      do not shorten the tour. The prior 93-second candidate predates the final
-      page-coordinate repair; do not start this render until the owner asks.
+      do not shorten the tour. Completed 2026-08-09 at the owner's request;
+      final candidate is 105.21 seconds and 9,054,084 bytes. It also keeps Card
+      Room through the full picker and shows blue → red shelf colour. Manual
+      visual inspection was explicitly waived for this render.
 
 ### Blocked on owner
 
@@ -1530,20 +1557,37 @@ were confirmed and 18 refuted. Frames are on disk under `qa/demo/frames/`.
       floor count, quick-switch order, focus chrome, both diagram pages, the
       occupied shelf behind Sound settings, and the two-book parcel totals).
 
-- [ ] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
+- [x] **Re-render the demo ONE more time, last.** The shipped `demo.webp` was
       rendered before two changes that are visible in it: the Welcome book's
       first page became ruled paper, and the studio scroll moved from
       `block: 'center'` to `'nearest'` (which is what sliced "My Library" under
       the pinned tab row). It must also wait for the page-budget work, because
       if that changes how the book paginates it changes the turn sequence the
-      demo walks. Render once, at the end, then run the frame review over it and
-      update the alt text in `part-1-users.md`.
+      demo walks. Render once at the end. The owner explicitly waived manual
+      frame review for the final run; keep Gifsmith's optional temporal report
+      as triage evidence and update the README demo alt instead.
 
       Note for whoever does it: `demo.gif` is gitignored deliberately — 12 MB
       against the WebP's 6.5 MB, and GitHub renders animated WebP inline, so the
       GIF is a local artefact and only `demo.webp` ships.
 
-- [ ] **Release this batch as 0.4.**
+      **Completed 2026-08-09:** 105.21s, 1,596 captured/paced frames, 1,473
+      loop frames, 9,054,084 bytes, seam MSE 0.059027777777777776. The owner
+      waived manual visual review; optional temporal review reported 20 triage
+      findings. The final storyboard has no missing selector and restores the
+      authored House Room for the seam.
+
+- [ ] **Release this batch as 0.5.0.**
+      Version 0.4.0 is already published; on 2026-08-09 the owner explicitly
+      chose and authorized 0.5.0 for the current feature batch. The active
+      sequence is: finish the local gates, commit the remaining scoped changes,
+      push `main`, create and push annotated tag `v0.5.0`, wait for the complete
+      GitHub build/release matrix, verify every release asset and updater
+      metadata, then record the published state here and in `HANDOFF.md`.
+
+      The quoted 0.4 request and numbered checklist below are retained as the
+      history of the previous release process. They are not instructions for
+      moving or recreating the already-published `v0.4.0` tag.
       > "Once you finish all this, btw, you can call it 0.4 — do this at the end
       > once all is done."
 
@@ -3720,11 +3764,13 @@ stricter reading and ship the credit, which satisfies either.
       dropcursor had no class at all, so it could not be styled), edge
       auto-scroll on one rAF loop, drop-outside is a clean no-op
 - [x] ~~Checkbox click effect and the confetti animation are **laggy**~~ —
-      ~85% of an edit window was inside html-to-image, driven by the hover loop
-      above. Synchronous cost of a real tick is now **13.4 ms**
+      the editor hitch was removed, and the remaining decorative cost is now a
+      single 28-particle/760ms burst, capped at 1.25× backing resolution. Rapid
+      completions replace it rather than stacking; pointer activation reuses
+      event coordinates instead of forcing layout.
 - [x] ~~Confetti colours are bland~~ — four silhouettes over 14 real tokens
       spanning hue *and* value, independent spin/sway/flip rates, and one
-      canvas sized to the burst footprint (**28% of the viewport, not 100%**)
+      bounded canvas. The visual effect is deliberately silent.
 
 ### Page turn
 
@@ -3750,16 +3796,17 @@ stricter reading and ship the credit, which satisfies either.
       frames were ~300 ms each because of the snapshot loop. The end-state draw
       and the navigate now happen in one task; clear and reveal in one callback
 
-### Focus mode — NOT STARTED this round
+### Focus mode — completed follow-up
 
 - [x] ~~Entering focus mode does **not close an open side panel**~~ — a rail
       panel also pushes the spread sideways to make room, and focus mode hides
       the rail, so entering with Customize open left a wall of controls beside
       a book shoved off the right edge. `setFocus(true)` clears the panel.
-- [x] ~~**No obvious way out.**~~ — a "leave focus · Esc" chip
-      (`BookView.tsx:879`). Escape is also checked BEFORE the defaultPrevented
-      guard, because the caret normally sits in a page and ProseMirror eats
-      its own Escape.
+- [x] ~~**No obvious way out.**~~ — superseded the temporary corner chip with a
+      focus-only left rail containing all former view/zoom/leaf/centre controls,
+      plus Settings and Leave focus. Escape is still checked BEFORE the
+      defaultPrevented guard, because the caret normally sits in a page and
+      ProseMirror eats its own Escape.
 
 ### The "what can I add" catalogue
 

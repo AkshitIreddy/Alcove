@@ -44,7 +44,9 @@ import {
 } from '../data/books';
 import {
   createPage,
+  deletePage,
   getPage,
+  insertPageAfter,
   listPages,
   persistPageDocIdentity,
   savePageDoc,
@@ -77,6 +79,7 @@ import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
+import { isProtectedFlowStart } from '../editor/script/pageBoundaries';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
 import { downloadNotebookScriptSpec } from '../editor/script/exporters/saveFile';
 import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
@@ -457,6 +460,30 @@ export default function BookView(): JSX.Element {
         setPages((prev) => [...prev, created]);
       }
       return created;
+    });
+    appendLane = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  };
+
+  const insertPagesAfter = (
+    anchorId: string,
+    additions: readonly { source: string; doc: PageDoc }[],
+  ): Promise<void> => {
+    const pending = appendLane.then(async () => {
+      let after = anchorId;
+      for (const addition of additions) {
+        const created = await insertPageAfter(after, {
+          doc: addition.doc,
+          scriptSource: addition.source,
+        });
+        if (created === null) break;
+        after = created.id;
+      }
+      const bookId = session()?.book.id;
+      if (bookId) setPages(await listPages(bookId));
     });
     appendLane = pending.then(
       () => undefined,
@@ -1013,6 +1040,14 @@ export default function BookView(): JSX.Element {
     anchorFreeMarks(pageId, freed);
 
     let next: Page | null = pages()[slot + 1] ?? null;
+    if (next && isProtectedFlowStart(next.doc)) {
+      const spill = await insertPageAfter(pageId, {
+        doc: newPageDoc(bookPageStyle(), bookLineHeight()),
+      });
+      if (spill === null) return;
+      setPages(await listPages(spill.bookId));
+      next = spill;
+    }
     if (!next) {
       next = await appendPage();
       if (!next) return;
@@ -1870,6 +1905,41 @@ export default function BookView(): JSX.Element {
     );
   };
 
+  /** Delete the focused leaf, then land on its nearest surviving neighbour. */
+  const deleteActivePage = async (): Promise<void> => {
+    const page = activePage();
+    const before = pages();
+    if (page === null) return;
+    if (before.length <= 1) {
+      notify('a book keeps at least one page', 'error');
+      return;
+    }
+    const removedSlot = before.findIndex((entry) => entry.id === page.id);
+    if (removedSlot < 0 || (await deletePage(page.id)) === null) {
+      notify('could not delete that page', 'error');
+      return;
+    }
+
+    const remaining = before
+      .filter((entry) => entry.id !== page.id)
+      .map((entry, ord) => ({ ...entry, ord }));
+    setPages(remaining);
+    const landing = Math.min(removedSlot, remaining.length - 1);
+    setSpreadIndex(spreadOfSlot(landing));
+    setFocusedSide(landing % 2 === 0 ? 'left' : 'right');
+    setDocVersions((versions) => {
+      const next = { ...versions };
+      delete next[page.id];
+      return next;
+    });
+    const keptBookmarks = bookmarks().filter((mark) => mark.pageId !== page.id);
+    if (keptBookmarks.length !== bookmarks().length) {
+      commitBookmarks(keptBookmarks);
+    }
+    flipApi?.invalidateSnapshots();
+    notify('page deleted');
+  };
+
   // -------------------------------------------------------------------------
   // /today journal jump (roadmap #18): the slash command records a pending
   // page id + opens the Journal book; once this view's session shows that
@@ -2219,6 +2289,8 @@ export default function BookView(): JSX.Element {
           setActivePanel((current) => (current === panel ? null : panel))
         }
         onAddPage={() => void addPage()}
+        canDeletePage={pages().length > 1 && activePage() !== null}
+        onDeletePage={() => void deleteActivePage()}
         focusMode={focusMode()}
         onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}
@@ -2476,6 +2548,7 @@ export default function BookView(): JSX.Element {
                       pageId={pageId}
                       onClose={() => setInsertOpen(false)}
                       onNotify={notify}
+                      onInsertFollowingPages={insertPagesAfter}
                     />
                   )}
                 </Show>

@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { getDb } from './db';
-import { indexPage } from './search';
+import { indexPage, removePageIndex } from './search';
 import type { CreatePageInput, Page, PageDoc, PageRow } from './types';
 
 /**
@@ -121,6 +121,33 @@ export async function createPage(input: CreatePageInput): Promise<Page> {
   return page;
 }
 
+/** Insert a page directly after an existing page, preserving book order. */
+export async function insertPageAfter(
+  anchorId: string,
+  input: Omit<CreatePageInput, 'bookId' | 'ord'>,
+): Promise<Page | null> {
+  const anchor = await getPage(anchorId);
+  if (anchor === null) return null;
+  const db = await getDb();
+  const following = (await listPages(anchor.bookId))
+    .filter((page) => page.ord > anchor.ord)
+    .sort((a, b) => b.ord - a.ord);
+  for (const page of following) {
+    await db.execute('UPDATE pages SET ord = $1 WHERE id = $2', [
+      page.ord + 1,
+      page.id,
+    ]);
+    await indexPage(
+      page.id,
+      page.bookId,
+      page.ord + 1,
+      page.doc,
+      page.updatedAt,
+    );
+  }
+  return createPage({ ...input, bookId: anchor.bookId, ord: anchor.ord + 1 });
+}
+
 /**
  * Persist the editor document (autosave path). Bumps `updated_at`; when the
  * page has a stored script source, the edit marks it dirty so "Export Script"
@@ -215,5 +242,37 @@ export function setPageScript(
       sourceDirty: false,
       updatedAt,
     };
+  });
+}
+
+/**
+ * Delete one page and close its ordinal gap.
+ *
+ * The caller keeps the book-level invariant that at least one page remains.
+ * This layer owns the durable cleanup: the page row, its search entry and its
+ * private autosave-history blob all disappear together, and shifted pages are
+ * re-indexed with their new displayed page numbers.
+ */
+export function deletePage(id: string): Promise<Page | null> {
+  return inPageMutationLane(id, async () => {
+    const existing = await getPage(id);
+    if (existing === null) return null;
+    const db = await getDb();
+    const removed = await db.execute('DELETE FROM pages WHERE id = $1', [id]);
+    if (removed.rowsAffected === 0) return null;
+
+    await Promise.all([
+      removePageIndex(id),
+      db.execute('DELETE FROM settings WHERE key = $1', [`page_history:${id}`]),
+    ]);
+
+    const remaining = await listPages(existing.bookId);
+    for (let ord = 0; ord < remaining.length; ord += 1) {
+      const page = remaining[ord]!;
+      if (page.ord === ord) continue;
+      await db.execute('UPDATE pages SET ord = $1 WHERE id = $2', [ord, page.id]);
+      await indexPage(page.id, page.bookId, ord, page.doc, page.updatedAt);
+    }
+    return existing;
   });
 }

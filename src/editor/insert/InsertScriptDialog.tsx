@@ -35,6 +35,7 @@ import { getPage, setPageScript } from '../../data/pages';
 import type { PageDoc } from '../../data/types';
 import { usePanelKeys } from '../../state/panelKeys';
 import { scriptDocToTiptap } from '../script/toTiptap';
+import { splitNotebookScriptPages } from '../script/pageBoundaries';
 import {
   downloadNotebookScriptSpec,
   NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING,
@@ -48,6 +49,10 @@ export interface InsertScriptDialogProps {
   onClose(): void;
   /** Toast hook — called with a short human message after an action. */
   onNotify?(message: string): void;
+  onInsertFollowingPages?(
+    afterPageId: string,
+    pages: readonly { source: string; doc: PageDoc }[],
+  ): Promise<void>;
 }
 
 const PARSE_DEBOUNCE_MS = 150;
@@ -69,6 +74,7 @@ export default function InsertScriptDialog(
   const [inserting, setInserting] = createSignal(false);
 
   let textareaElement: HTMLTextAreaElement | undefined;
+  let fileElement: HTMLInputElement | undefined;
   let parseTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Mounted only while it is up (BookView's <Show>). The shelf is not behind
@@ -90,6 +96,16 @@ export default function InsertScriptDialog(
   const handleInput = (value: string): void => {
     setSource(value);
     scheduleParse(value);
+  };
+
+  const loadFile = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    try {
+      handleInput(await file.text());
+      props.onNotify?.(`${file.name} loaded`);
+    } catch {
+      props.onNotify?.('could not read that Markdown file');
+    }
   };
 
   /**
@@ -142,7 +158,9 @@ export default function InsertScriptDialog(
     if (text.trim() === '' || inserting()) return;
     setInserting(true);
     try {
-      const doc = parse(text);
+      const pageSources = splitNotebookScriptPages(text);
+      const firstSource = pageSources[0] ?? '';
+      const doc = parse(firstSource);
       const editor = activeEditor();
       const json = scriptDocToTiptap(doc, {
         hasNode: (name) => editor?.schema.nodes[name] !== undefined,
@@ -176,8 +194,27 @@ export default function InsertScriptDialog(
           };
         }
       }
-      await setPageScript(props.pageId, text, insertedDoc);
-      props.onNotify?.('script inserted');
+      await setPageScript(props.pageId, firstSource, insertedDoc);
+      const following = pageSources.slice(1).map((pageSource) => {
+        const pageDoc = scriptDocToTiptap(parse(pageSource), {
+          hasNode: (name) => editor?.schema.nodes[name] !== undefined,
+        }) as PageDoc;
+        return {
+          source: pageSource,
+          doc: {
+            ...pageDoc,
+            attrs: { ...(pageDoc.attrs ?? {}), flowStart: true },
+          },
+        };
+      });
+      if (following.length > 0) {
+        await props.onInsertFollowingPages?.(props.pageId, following);
+      }
+      props.onNotify?.(
+        following.length > 0
+          ? `script inserted across ${following.length + 1} pages`
+          : 'script inserted',
+      );
       props.onClose();
     } finally {
       setInserting(false);
@@ -208,8 +245,19 @@ export default function InsertScriptDialog(
         </button>
         <h2 class="nb-ins-title">Insert script</h2>
         <p class="nb-ins-hint font-ui">
-          paste Notebook Script — from your AI, or your own pen
+          open the .md from your AI, or paste Notebook Script from your own pen
         </p>
+
+        <input
+          ref={fileElement}
+          class="nb-ins-file-input"
+          type="file"
+          accept=".md,text/markdown,text/plain"
+          onChange={(event) => {
+            void loadFile(event.currentTarget.files?.[0]);
+            event.currentTarget.value = '';
+          }}
+        />
 
         <p class="nb-ins-spec-note font-ui" role="note">
           {NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING}
@@ -255,6 +303,13 @@ export default function InsertScriptDialog(
         </div>
 
         <div class="nb-ins-actions nb-ins-spec-actions">
+          <button
+            type="button"
+            class="nb-ins-button nb-ins-button-primary font-ui"
+            onClick={() => fileElement?.click()}
+          >
+            Open AI .md
+          </button>
           <button
             type="button"
             class="nb-ins-button nb-ins-button-ghost font-ui"

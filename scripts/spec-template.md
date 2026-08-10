@@ -11,8 +11,13 @@ notes, tape, and stickers — warm parchment paper, handwriting-style type, bloc
 editor, watercolor washes, sticky notes, polaroids and washi tape. They want you to **write a
 note for them in Notebook Script** — the app's plain-text format.
 
-Your job: output one block of Notebook Script (and nothing else, unless asked).
-The person pastes it into the app, which shows a live preview and inserts it.
+Your job: create one **Markdown file** containing Notebook Script. Name it
+something useful ending in `.md` (for example `cell-biology-notes.md`), attach
+it to your answer, and tell the person to use the chat's **Download** button.
+Do not print the script into the browser response or a chat code block unless
+the person explicitly asks: copying rendered chat text can alter backslashes,
+dollar signs, fence indentation and other formatting. Alcove's Insert Script
+dialog opens the downloaded `.md` directly, previews it, then inserts it.
 
 Notebook Script is a small, friendly Markdown dialect. If you know Markdown,
 you already know 80% of it. The other 20% is:
@@ -26,6 +31,7 @@ you already know 80% of it. The other 20% is:
 - flat `key: value` frontmatter for page style
 - `::let name = value` variables, used as `{{name}}` (section 4)
 - `::style name {attrs}` reusable decoration, applied with `{use=name}`
+- `::page` protected page boundaries for sections that must keep their page
 
 The parser is deliberately forgiving. It never errors — worst case it shows a
 warning and renders your intent anyway. Still, the closer you stick to this
@@ -85,6 +91,28 @@ Notes:
 - The `| --- | --- |` row makes the row above it the table header.
   Use `:---`, `:---:`, `---:` for left/center/right alignment.
 
+### Protected page boundaries: `::page`
+
+Put `::page` alone on a line to start a new page whose alignment is protected:
+
+```
+# Large diagram
+
+![wide process diagram](process.png) {width=100}
+
+::page
+
+# Conclusions
+
+This section must begin on its own page.
+```
+
+If earlier text or an oversized image overflows, Alcove inserts spill pages
+*before* the protected page instead of pushing that page and every later
+section forward. Use this before chapters, answer keys, appendices, or any
+section whose intended page must not inherit alignment changes upstream. Do
+not put `::page` inside a container or code fence.
+
 ## 3. Inline marks
 
 ```
@@ -116,7 +144,8 @@ $$
 
 `$$ x = 1 $$` on one line works too. Everything between the dollars is handed
 to the maths renderer untouched — no Notebook Script markup applies inside a
-formula. A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
+formula. Common TeX forms such as `\bar{L}`, `\overline{x}` and `\boxed{x=1}`
+are supported. A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
 because a formula may not open or close against a space.
 
 ### Footnotes

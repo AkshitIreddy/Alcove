@@ -57,8 +57,8 @@ export const NOTEBOOK_SCRIPT_SPEC_FILE_NAME =
   'alcove-notebook-script-guide.md';
 
 export const NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING =
-  'The full format guide is large. Some assistants may reject a clipboard paste. ' +
-  'If yours accepts file uploads, download the Markdown guide instead.';
+  'Download the format guide for your AI. Ask it to return an attached .md file, ' +
+  'then open that file here—copying from a browser can alter backslashes and fences.';
 
 type SpecSaver = typeof saveBytes;
 

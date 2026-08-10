@@ -1926,6 +1926,31 @@ html[data-nb-col-resizing='true'] {
   padding: 0.08em 0.16em 0 0.1em;
 }
 
+/* TeX accents that AI-authored notes commonly use. These are real geometry,
+   not fallback macro text: the bar follows the expression and the box keeps
+   enough breathing room to remain legible in both inline and display maths. */
+.nb-m-overline {
+  display: inline-flex;
+  align-items: baseline;
+  border-top: 0.08em solid currentColor;
+  padding-top: 0.06em;
+  line-height: 0.95;
+}
+
+.nb-m-overline.is-short {
+  padding-inline: 0.03em;
+}
+
+.nb-m-boxed {
+  display: inline-flex;
+  align-items: baseline;
+  border: 0.08em solid currentColor;
+  border-radius: 0.08em;
+  padding: 0.08em 0.22em 0.1em;
+  margin-inline: 0.08em;
+  line-height: 1;
+}
+
 /* --- scripts ------------------------------------------------------------- */
 .nb-m-scripts {
   flex-direction: column;

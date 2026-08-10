@@ -13,6 +13,8 @@
  *   x^2  a_i  x^{n+1}          superscripts and subscripts, nested
  *   \frac{a}{b}  \tfrac  \dfrac stacked fractions with a rule
  *   \sqrt{x}  \sqrt[3]{x}       radicals with a vinculum
+ *   \bar L  \overline{AB}       a short or long bar above an expression
+ *   \boxed{x=1}                  a ruled box around an expression
  *   \sum_{i=1}^{n}  \int_0^1    big operators, limits over/under in display
  *   \left( … \right)           delimiters that grow with what they hold
  *   \alpha … \Omega, 130 macros greek, relations, arrows, set theory
@@ -103,7 +105,7 @@ export const KNOWN_MACROS: readonly string[] = [
   ...Object.keys(BIG_OPERATORS),
   ...FUNCTIONS,
   'frac', 'dfrac', 'tfrac', 'sqrt', 'text', 'mathrm', 'mathbf', 'mathit',
-  'left', 'right', 'quad', 'qquad',
+  'bar', 'overline', 'boxed', 'left', 'right', 'quad', 'qquad',
 ];
 
 // ---------------------------------------------------------------------------
@@ -194,6 +196,8 @@ export type Atom =
   | { kind: 'row'; body: Atom[] }
   | { kind: 'frac'; num: Atom[]; den: Atom[]; small: boolean }
   | { kind: 'root'; index: Atom[] | null; body: Atom[] }
+  | { kind: 'overline'; body: Atom[]; short: boolean }
+  | { kind: 'boxed'; body: Atom[] }
   | { kind: 'script'; base: Atom; sup: Atom[] | null; sub: Atom[] | null; limits: boolean }
   | { kind: 'text'; text: string; upright: boolean; bold: boolean }
   | { kind: 'fence'; open: string; close: string; body: Atom[] }
@@ -325,6 +329,12 @@ function macroAtom(cursor: Cursor, name: string): Atom | null {
   if (name === 'sqrt') {
     const index = parseOptionalArgument(cursor);
     return { kind: 'root', index, body: parseArgument(cursor) };
+  }
+  if (name === 'bar' || name === 'overline') {
+    return { kind: 'overline', body: parseArgument(cursor), short: name === 'bar' };
+  }
+  if (name === 'boxed') {
+    return { kind: 'boxed', body: parseArgument(cursor) };
   }
   if (name === 'text' || name === 'mathrm' || name === 'textrm') {
     return { kind: 'text', text: parseTextArgument(cursor), upright: true, bold: false };
@@ -522,6 +532,12 @@ export function atomHeight(atoms: readonly Atom[]): number {
       case 'root':
         height = atomHeight(atom.body) + 0.2;
         break;
+      case 'overline':
+        height = atomHeight(atom.body) + 0.18;
+        break;
+      case 'boxed':
+        height = atomHeight(atom.body) + 0.25;
+        break;
       case 'script':
         height = atom.limits
           ? atomHeight([atom.base]) + (atom.sup ? 0.7 : 0) + (atom.sub ? 0.7 : 0)
@@ -614,6 +630,13 @@ function renderAtom(atom: Atom, display: boolean, unary = false): string {
         )}`,
       );
     }
+    case 'overline':
+      return span(
+        `nb-m-overline${atom.short ? ' is-short' : ''}`,
+        renderRow(atom.body, display),
+      );
+    case 'boxed':
+      return span('nb-m-boxed', renderRow(atom.body, display));
     case 'fence': {
       // Scale the delimiters to the content instead of measuring it: one line
       // of maths is 1, a fraction is 2, and 1.05 of leading looks right.

@@ -50,8 +50,8 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.2_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.2_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -359,11 +359,13 @@ six open a panel; after a divider, four that just do something.
 | Focus mode | the rungs of the ladder, and the zoom |
 | Thumbnails | the strip of little pages along the bottom |
 | Add a page | a new page after this one |
-| Delete this page | a deliberate second press removes this leaf; the last page is protected |
 
 Every row carries its own key cap, read from your keymap rather than printed,
 and calls the same opener the keyboard calls — so a button and its shortcut
 cannot drift apart.
+
+To remove a leaf, right-click anywhere on that page and choose **Delete this
+page**. The option is deliberately absent when it is the book's only page.
 
 ### The daily page, and templates
 
@@ -390,7 +392,7 @@ diagrams — and so you never have to teach it how.
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
 **Take the grammar** — *download the format for your AI* saves
-<!--f:specLines-->905<!--/f--> lines generated from the parser's own tables, so
+<!--f:specLines-->907<!--/f--> lines generated from the parser's own tables, so
 it cannot describe a language the app would refuse. **Ask for a note** in your
 own words and have the assistant return an attached `.md` file. **Open it
 directly in Alcove**; downloading preserves TeX backslashes and code fences

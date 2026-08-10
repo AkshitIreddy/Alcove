@@ -19,6 +19,24 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.2 — page boundaries that stay out of the page
+
+**Page deletion now lives where the page does.** Right-click a leaf and choose
+**Delete this page**; the dedicated rail button is gone, and the option does
+not appear for the only surviving page in a book.
+
+**Protected AI page boundaries no longer touch document formatting.** The
+`::page` anchor is stored as page metadata rather than a TipTap document
+attribute, and Alcove automatically migrates boundaries created by 0.6.1.
+Boundary-looking text inside code fences or containers stays literal. This
+keeps the Welcome book and ordinary page styles intact while still inserting
+overflow pages before deliberately anchored sections.
+
+**Dropping a book into trash stays quiet.** The book is moved to trash without
+opening the trash drawer. The Notebook Script checklist also now repeats its
+own leading instruction correctly: assistants should return a downloadable
+`.md` attachment, not browser-rendered text that may lose formatting.
+
 ## 0.6.1 — steadier AI pages and quicker library control
 
 **Notebook Script now survives richer AI output.** Common TeX constructions

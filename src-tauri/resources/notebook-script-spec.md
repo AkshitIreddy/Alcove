@@ -902,4 +902,6 @@ fetch: a kitten | caption=hi  one per line in an image-row
     with `placeholder=...`; never emit a bare `![alt]()`.
 11. Preserve `media=video` and its exported `asset=...` path when a page
     contains local video; never replace it with a guessed URL.
-12. Output the note as one plain-text block, ready to paste.
+12. Return the note as an attached `.md` file and tell the person to download
+    it. Do not replace the attachment with rendered browser text or a code
+    block unless they explicitly ask you to.

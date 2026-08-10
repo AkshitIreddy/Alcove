@@ -276,7 +276,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->316<!--/f--> of <!--f:srcFiles-->325<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7100<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->7099<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -827,7 +827,7 @@ is silently rewritten to the existing one on the way in.
 
 **The spec is generated, and the generation is gated.**
 [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
-is the file a person copies into a chatbot — <!--f:specLines-->905<!--/f--> lines,
+is the file a person copies into a chatbot — <!--f:specLines-->907<!--/f--> lines,
 built by [`scripts/gen-spec.mjs`](../../scripts/gen-spec.mjs) from
 [`src/script/vocab.ts`](../../src/script/vocab.ts) and
 [`scripts/spec-template.md`](../../scripts/spec-template.md), and inlined a second time

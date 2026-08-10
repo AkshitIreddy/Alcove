@@ -34,6 +34,12 @@ export const PERSIST_MAX_JSON_CHARS = 240_000;
 
 export const historyKey = (pageId: string): string => `page_history:${pageId}`;
 
+/** Spell the unit out: the former `56w` looked exactly like “56 weeks”. */
+export function historyWordLabel(words: number): string {
+  const safe = Math.max(0, Math.round(Number.isFinite(words) ? words : 0));
+  return `${safe} ${safe === 1 ? 'word' : 'words'}`;
+}
+
 /* ----------------------------------------------------------------------------
    Pure ring helpers (unit-tested in tests/editor-qol.test.ts)
    -------------------------------------------------------------------------- */

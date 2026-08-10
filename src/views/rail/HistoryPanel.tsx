@@ -7,6 +7,7 @@
  */
 import { createResource, createSignal, For, Show, type JSX } from 'solid-js';
 import {
+  historyWordLabel,
   listSnapshots,
   type PageSnapshot,
 } from '../../editor/history/pageHistory';
@@ -69,7 +70,7 @@ export default function HistoryPanel(props: HistoryPanelProps): JSX.Element {
                   {snapshotLabel(snapshot.at)}
                 </span>
                 <span class="nb-history-words font-label">
-                  {countDoc(snapshot.doc).words}w
+                  {historyWordLabel(countDoc(snapshot.doc).words)}
                 </span>
               </div>
               <p class="nb-history-preview">{preview(snapshot)}</p>

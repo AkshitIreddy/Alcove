@@ -259,6 +259,7 @@ export interface ContentHit {
 export async function searchContent(
   query: string,
   limit = 20,
+  bookId?: string,
 ): Promise<ContentHit[]> {
   const terms = tokenize(query);
   if (terms.length === 0) return [];
@@ -275,6 +276,7 @@ export async function searchContent(
 
   const hits: ContentHit[] = [];
   for (const page of pages) {
+    if (bookId !== undefined && page.bookId !== bookId) continue;
     const score = scoreContent(page, terms, phrase);
     if (score <= 0) continue;
     const snippet =

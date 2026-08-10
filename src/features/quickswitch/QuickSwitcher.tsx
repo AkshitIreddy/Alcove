@@ -36,7 +36,17 @@ import {
   type IndexedPage,
 } from '../../data/search';
 import { settings } from '../../data/settings';
-import { matchesBinding, registerCommands } from '../../data/keybindings';
+import {
+  SHORTCUT_ACTIONS,
+  SHORTCUT_GROUPS,
+  bindingFor,
+  commandIsLive,
+  formatBinding,
+  matchesBinding,
+  registerCommands,
+  runCommand,
+} from '../../data/keybindings';
+import { appState } from '../../state/app';
 import { usePanelKeys } from '../../state/panelKeys';
 import type { Book } from '../../data/types';
 import { fuzzyMatch } from '../../search/fuzzy';
@@ -49,6 +59,7 @@ import {
 import { requestSearchJump } from '../../search/jump';
 import { play } from '../../sound/engine';
 import '../../styles/search.css';
+import { inSearchScope, searchScopeBookId } from './model';
 
 // ---------------------------------------------------------------------------
 // Single-instance registry (see module docblock)
@@ -82,7 +93,16 @@ interface ContentRowItem {
   hit: ContentHit;
 }
 
-type Row = BookRowItem | HeadingRowItem | ContentRowItem;
+interface CommandRowItem {
+  kind: 'command';
+  id: string;
+  label: string;
+  group: string;
+  shortcut: string;
+  score: number;
+}
+
+type Row = BookRowItem | HeadingRowItem | ContentRowItem | CommandRowItem;
 
 const NAV_LIMIT = 12;
 
@@ -132,6 +152,20 @@ function SnippetIcon(): JSX.Element {
   );
 }
 
+function CommandIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 22 22" class="nb-qs-icon" aria-hidden="true">
+      <path
+        d="M 7 4.6 C 7.1 7.1 7 13.9 7.1 17.4 M 15 4.6 C 14.9 7.1 15 13.9 14.9 17.4 M 4.7 7 C 7.2 7.1 13.8 7 17.3 7.1 M 4.7 15 C 7.2 14.9 13.8 15 17.3 14.9"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function QuickSwitcher(): JSX.Element {
   const token = {};
 
@@ -176,13 +210,16 @@ export default function QuickSwitcher(): JSX.Element {
   const shown = (): string =>
     mode() === 'content' ? raw().slice(1) : raw();
   const query = (): string => shown().trim();
+  const scopeBookId = (): string | null =>
+    searchScopeBookId(appState.viewState(), appState.openBookId());
 
   const refreshData = async (): Promise<void> => {
     try {
       const shelved = await listBooksByFloorRange(0, 9999);
-      setBooks(shelved);
+      const scope = scopeBookId();
+      setBooks(inSearchScope(shelved, scope, (book) => book.id));
       await ensureIndexFresh(true);
-      setIndex(await loadIndex());
+      setIndex(inSearchScope(await loadIndex(), scope, (page) => page.bookId));
     } catch {
       // Search stays usable with whatever data already loaded.
     }
@@ -262,6 +299,23 @@ export default function QuickSwitcher(): JSX.Element {
         });
       }
     }
+    const groups = new Map(SHORTCUT_GROUPS.map((group) => [group.id, group.title]));
+    for (const action of SHORTCUT_ACTIONS) {
+      if (!commandIsLive(action.id)) continue;
+      const match = fuzzyMatch(q, `${action.label} ${action.id.replace(/-/g, ' ')}`);
+      if (match === null) continue;
+      rows.push({
+        kind: 'command',
+        id: action.id,
+        label: action.label,
+        group: groups.get(action.group) ?? 'Command',
+        shortcut:
+          action.kind === 'house'
+            ? action.keys
+            : formatBinding(bindingFor(action.id, settings.keybindings)),
+        score: match.score + 8,
+      });
+    }
     rows.sort((a, b) => {
       const sa = a.kind === 'content' ? 0 : a.score;
       const sb = b.kind === 'content' ? 0 : b.score;
@@ -279,7 +333,8 @@ export default function QuickSwitcher(): JSX.Element {
       setContentHits([]);
       return;
     }
-    void searchContent(q).then((hits) => {
+    const scope = scopeBookId();
+    void searchContent(q, 20, scope ?? undefined).then((hits) => {
       // Stale-guard: only apply if the query still matches.
       if (open() && mode() === 'content' && query() === q) setContentHits(hits);
     });
@@ -312,6 +367,11 @@ export default function QuickSwitcher(): JSX.Element {
         ...tokenize(row.headingText),
       ]);
     } else {
+      if (row.kind === 'command') {
+        close();
+        queueMicrotask(() => runCommand(row.id));
+        return;
+      }
       const q = query();
       requestSearchJump(row.hit.bookId, row.hit.pageId, [
         q.toLowerCase(),
@@ -415,6 +475,7 @@ export default function QuickSwitcher(): JSX.Element {
   const rowTitle = (row: Row): string => {
     if (row.kind === 'book') return row.book.title;
     if (row.kind === 'heading') return row.headingText;
+    if (row.kind === 'command') return row.label;
     return row.hit.bookTitle;
   };
 
@@ -422,6 +483,8 @@ export default function QuickSwitcher(): JSX.Element {
     if (row.kind === 'book') return 'book';
     if (row.kind === 'heading')
       return `${row.bookTitle} · p. ${row.page.ord + 1}`;
+    if (row.kind === 'command')
+      return `${row.group}${row.shortcut === '' ? '' : ` · ${row.shortcut}`}`;
     return `p. ${row.hit.ord + 1}`;
   };
 
@@ -489,8 +552,12 @@ export default function QuickSwitcher(): JSX.Element {
               aria-label="Quick switcher query"
               placeholder={
                 mode() === 'content'
-                  ? 'search inside every page…'
-                  : 'jump to a book or heading…  (> to search text)'
+                  ? scopeBookId() === null
+                    ? 'search inside every page…'
+                    : 'search inside this book…'
+                  : scopeBookId() === null
+                    ? 'jump to a book, heading or command…'
+                    : 'find a page or run a command in this book…'
               }
               /* The `>` is a typing SHORTCUT into content mode, not a token
                  the user should have to see or delete: once the mode is lit
@@ -527,6 +594,8 @@ export default function QuickSwitcher(): JSX.Element {
                         <BookIcon />
                       ) : row.kind === 'heading' ? (
                         <HeadingIcon />
+                      ) : row.kind === 'command' ? (
+                        <CommandIcon />
                       ) : (
                         <SnippetIcon />
                       )}

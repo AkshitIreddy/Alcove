@@ -7,7 +7,14 @@ vi.mock('../src/data/db', async (importOriginal) => {
 });
 
 import { getDb } from '../src/data/db';
-import { createPage, deletePage, listPages, savePageDoc } from '../src/data/pages';
+import {
+  createPage,
+  deletePage,
+  isPageFlowStart,
+  listPages,
+  savePageDoc,
+  setPageFlowStart,
+} from '../src/data/pages';
 import { loadIndex } from '../src/data/search';
 
 const doc = (text: string) => ({
@@ -31,6 +38,7 @@ describe('page deletion', () => {
       'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
       [`page_history:${middle.id}`, '[]'],
     );
+    await setPageFlowStart(middle.id, true);
 
     expect(await deletePage(middle.id)).toMatchObject({ id: middle.id });
     expect((await listPages(bookId)).map((page) => [page.id, page.ord])).toEqual([
@@ -43,5 +51,28 @@ describe('page deletion', () => {
         `page_history:${middle.id}`,
       ]),
     ).toEqual([]);
+    expect(await isPageFlowStart(middle.id)).toBe(false);
+  });
+
+  it('migrates legacy flow metadata out of the document attrs', async () => {
+    const bookId = 'legacy-page-flow-book';
+    const page = await createPage({
+      bookId,
+      doc: {
+        ...doc('anchored'),
+        attrs: { pageStyle: 'ruled', flowStart: true },
+      },
+    });
+
+    const [read] = await listPages(bookId);
+    expect(read?.doc.attrs).toEqual({ pageStyle: 'ruled' });
+    expect(await isPageFlowStart(page.id)).toBe(true);
+
+    const db = await getDb();
+    const rows = await db.select<Array<{ doc_json: string }>>(
+      'SELECT doc_json FROM pages WHERE id = $1 LIMIT 1',
+      [page.id],
+    );
+    expect(JSON.parse(rows[0]!.doc_json).attrs).toEqual({ pageStyle: 'ruled' });
   });
 });

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { getDb } from './db';
+import { getDb, type Db } from './db';
 import { indexPage, removePageIndex } from './search';
 import type { CreatePageInput, Page, PageDoc, PageRow } from './types';
 
@@ -67,6 +67,66 @@ function rowToPage(row: PageRow): Page {
   };
 }
 
+const PAGE_FLOW_START_PREFIX = 'page_flow_start:';
+
+function pageFlowStartKey(id: string): string {
+  return `${PAGE_FLOW_START_PREFIX}${id}`;
+}
+
+/** Keep an AI-authored page boundary outside TipTap's formatting envelope. */
+export async function setPageFlowStart(
+  id: string,
+  protectedStart: boolean,
+): Promise<void> {
+  const db = await getDb();
+  if (protectedStart) {
+    await db.execute(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
+      [pageFlowStartKey(id), 'true'],
+    );
+  } else {
+    await db.execute('DELETE FROM settings WHERE key = $1', [
+      pageFlowStartKey(id),
+    ]);
+  }
+}
+
+export async function isPageFlowStart(id: string): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db.select<Array<{ value: string }>>(
+    'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+    [pageFlowStartKey(id)],
+  );
+  return rows[0]?.value === 'true';
+}
+
+/**
+ * v0.6.1 briefly stored this pagination bit in `doc.attrs`. Strip that legacy
+ * field on read and preserve it as page metadata instead. This keeps old AI
+ * imports anchored without letting a pagination concern alter page styling.
+ */
+async function migrateLegacyFlowStart(db: Db, page: Page): Promise<Page> {
+  if (page.doc.attrs?.flowStart !== true) return page;
+  const attrs = { ...page.doc.attrs };
+  delete attrs.flowStart;
+  const doc: PageDoc = {
+    type: 'doc',
+    ...(Object.keys(attrs).length > 0 ? { attrs } : {}),
+    ...(page.doc.content === undefined ? {} : { content: page.doc.content }),
+  };
+  await Promise.all([
+    db.execute(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)',
+      [pageFlowStartKey(page.id), 'true'],
+    ),
+    db.execute('UPDATE pages SET doc_json = $1 WHERE id = $2', [
+      JSON.stringify(doc),
+      page.id,
+    ]),
+  ]);
+  return { ...page, doc };
+}
+
 /** All pages of a book, ordered by `ord` ascending. */
 export async function listPages(bookId: string): Promise<Page[]> {
   const db = await getDb();
@@ -74,7 +134,7 @@ export async function listPages(bookId: string): Promise<Page[]> {
     'SELECT * FROM pages WHERE book_id = $1 ORDER BY ord ASC',
     [bookId],
   );
-  return rows.map(rowToPage);
+  return Promise.all(rows.map((row) => migrateLegacyFlowStart(db, rowToPage(row))));
 }
 
 export async function getPage(id: string): Promise<Page | null> {
@@ -83,7 +143,9 @@ export async function getPage(id: string): Promise<Page | null> {
     'SELECT * FROM pages WHERE id = $1 LIMIT 1',
     [id],
   );
-  return rows.length > 0 ? rowToPage(rows[0]) : null;
+  return rows.length > 0
+    ? migrateLegacyFlowStart(db, rowToPage(rows[0]))
+    : null;
 }
 
 async function nextOrd(bookId: string): Promise<number> {
@@ -264,6 +326,7 @@ export function deletePage(id: string): Promise<Page | null> {
     await Promise.all([
       removePageIndex(id),
       db.execute('DELETE FROM settings WHERE key = $1', [`page_history:${id}`]),
+      db.execute('DELETE FROM settings WHERE key = $1', [pageFlowStartKey(id)]),
     ]);
 
     const remaining = await listPages(existing.bookId);

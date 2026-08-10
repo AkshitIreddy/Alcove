@@ -47,9 +47,11 @@ import {
   deletePage,
   getPage,
   insertPageAfter,
+  isPageFlowStart,
   listPages,
   persistPageDocIdentity,
   savePageDoc,
+  setPageFlowStart,
 } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { loadDesignPrefs } from '../data/designPrefs';
@@ -79,7 +81,6 @@ import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
-import { isProtectedFlowStart } from '../editor/script/pageBoundaries';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
 import { downloadNotebookScriptSpec } from '../editor/script/exporters/saveFile';
 import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
@@ -470,7 +471,11 @@ export default function BookView(): JSX.Element {
 
   const insertPagesAfter = (
     anchorId: string,
-    additions: readonly { source: string; doc: PageDoc }[],
+    additions: readonly {
+      source: string;
+      doc: PageDoc;
+      protectedStart: true;
+    }[],
   ): Promise<void> => {
     const pending = appendLane.then(async () => {
       let after = anchorId;
@@ -480,6 +485,7 @@ export default function BookView(): JSX.Element {
           scriptSource: addition.source,
         });
         if (created === null) break;
+        await setPageFlowStart(created.id, addition.protectedStart);
         after = created.id;
       }
       const bookId = session()?.book.id;
@@ -1040,7 +1046,7 @@ export default function BookView(): JSX.Element {
     anchorFreeMarks(pageId, freed);
 
     let next: Page | null = pages()[slot + 1] ?? null;
-    if (next && isProtectedFlowStart(next.doc)) {
+    if (next && (await isPageFlowStart(next.id))) {
       const spill = await insertPageAfter(pageId, {
         doc: newPageDoc(bookPageStyle(), bookLineHeight()),
       });

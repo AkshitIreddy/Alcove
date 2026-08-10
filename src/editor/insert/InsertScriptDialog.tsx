@@ -51,7 +51,11 @@ export interface InsertScriptDialogProps {
   onNotify?(message: string): void;
   onInsertFollowingPages?(
     afterPageId: string,
-    pages: readonly { source: string; doc: PageDoc }[],
+    pages: readonly {
+      source: string;
+      doc: PageDoc;
+      protectedStart: true;
+    }[],
   ): Promise<void>;
 }
 
@@ -201,10 +205,8 @@ export default function InsertScriptDialog(
         }) as PageDoc;
         return {
           source: pageSource,
-          doc: {
-            ...pageDoc,
-            attrs: { ...(pageDoc.attrs ?? {}), flowStart: true },
-          },
+          doc: pageDoc,
+          protectedStart: true as const,
         };
       });
       if (following.length > 0) {

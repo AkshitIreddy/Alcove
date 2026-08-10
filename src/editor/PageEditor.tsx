@@ -176,6 +176,8 @@ gsap.registerPlugin(Flip);
 export interface PageEditorProps {
   readonly pageId: string;
   readonly initialDoc: PageDoc;
+  /** Page-level action surfaced at the bottom of the right-click menu. */
+  readonly onDeletePage?: () => void;
   /**
    * Fires on every editor update with the fresh doc JSON (same payload the
    * debounced save persists). The spread host uses it to keep its in-memory
@@ -862,7 +864,14 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         contextmenu: (_view, event: Event): boolean => {
           const instance = editor();
           if (!instance || !(event instanceof MouseEvent)) return false;
-          return handleEditorContextMenu(instance, event, notify);
+          return handleEditorContextMenu(
+            instance,
+            event,
+            notify,
+            props.onDeletePage === undefined
+              ? undefined
+              : { onDeletePage: props.onDeletePage },
+          );
         },
       },
     },

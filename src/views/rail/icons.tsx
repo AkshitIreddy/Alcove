@@ -147,19 +147,6 @@ export function HistoryIcon(): JSX.Element {
   );
 }
 
-/** One loose leaf going into a small waste basket — delete this page. */
-export function DeletePageIcon(): JSX.Element {
-  return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M 10 7.5 C 13 7.2 17.8 7.4 21.8 7.5 L 22.8 10.2" />
-      <path d="M 12.2 5.2 C 14.5 4.9 17.1 5 19.4 5.2 L 20.3 7.4" />
-      <path d="M 8.3 11.2 C 12.8 11 19.3 11.1 24 11.4" />
-      <path d="M 10.3 12.1 L 11.8 26 C 15.1 26.5 19 26.4 22.1 25.9 L 23.3 12" />
-      <path d="M 14.7 14.5 L 15.1 22.8 M 19.3 14.5 L 18.9 22.8" />
-    </svg>
-  );
-}
-
 /** Corner brackets around a dot — focus mode. */
 export function FocusIcon(): JSX.Element {
   return frame(

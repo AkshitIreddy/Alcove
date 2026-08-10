@@ -1905,23 +1905,21 @@ export default function BookView(): JSX.Element {
     );
   };
 
-  /** Delete the focused leaf, then land on its nearest surviving neighbour. */
-  const deleteActivePage = async (): Promise<void> => {
-    const page = activePage();
+  /** Delete the right-clicked leaf, then land on its nearest survivor. */
+  const deletePageAt = async (pageId: string): Promise<void> => {
     const before = pages();
-    if (page === null) return;
     if (before.length <= 1) {
       notify('a book keeps at least one page', 'error');
       return;
     }
-    const removedSlot = before.findIndex((entry) => entry.id === page.id);
-    if (removedSlot < 0 || (await deletePage(page.id)) === null) {
+    const removedSlot = before.findIndex((entry) => entry.id === pageId);
+    if (removedSlot < 0 || (await deletePage(pageId)) === null) {
       notify('could not delete that page', 'error');
       return;
     }
 
     const remaining = before
-      .filter((entry) => entry.id !== page.id)
+      .filter((entry) => entry.id !== pageId)
       .map((entry, ord) => ({ ...entry, ord }));
     setPages(remaining);
     const landing = Math.min(removedSlot, remaining.length - 1);
@@ -1929,10 +1927,10 @@ export default function BookView(): JSX.Element {
     setFocusedSide(landing % 2 === 0 ? 'left' : 'right');
     setDocVersions((versions) => {
       const next = { ...versions };
-      delete next[page.id];
+      delete next[pageId];
       return next;
     });
-    const keptBookmarks = bookmarks().filter((mark) => mark.pageId !== page.id);
+    const keptBookmarks = bookmarks().filter((mark) => mark.pageId !== pageId);
     if (keptBookmarks.length !== bookmarks().length) {
       commitBookmarks(keptBookmarks);
     }
@@ -2187,6 +2185,11 @@ export default function BookView(): JSX.Element {
             <PaginatedPageEditor
               pageId={current.id}
               initialDoc={current.doc}
+              onDeletePage={
+                pages().length > 1
+                  ? () => void deletePageAt(current.id)
+                  : undefined
+              }
               onDocChange={(doc) => updatePageDoc(current.id, doc)}
               paginated={!qaNoPagination}
               pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
@@ -2289,8 +2292,6 @@ export default function BookView(): JSX.Element {
           setActivePanel((current) => (current === panel ? null : panel))
         }
         onAddPage={() => void addPage()}
-        canDeletePage={pages().length > 1 && activePage() !== null}
-        onDeletePage={() => void deleteActivePage()}
         focusMode={focusMode()}
         onToggleFocus={toggleFocus}
         bookmarked={activeBookmarked()}

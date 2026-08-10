@@ -96,7 +96,6 @@ import {
   RibbonIcon,
   StickerIcon,
   TocIcon,
-  DeletePageIcon,
 } from './icons';
 
 export type RailPanelId =
@@ -122,9 +121,6 @@ export interface BookRailProps {
   activePanel: RailPanelId | null;
   onTogglePanel(panel: RailPanelId): void;
   onAddPage(): void;
-  /** Delete the focused leaf; disabled when it is the book's only page. */
-  canDeletePage: boolean;
-  onDeletePage(): void;
   /** Focus mode (roadmap #12) — rail icon mirror of F9. */
   focusMode: boolean;
   onToggleFocus(): void;
@@ -263,11 +259,6 @@ const TOOLS: readonly RailTool[] = [
     keyFor: 'new-page',
     action: (p) => p.onAddPage(),
   },
-  {
-    id: 'delete-page',
-    label: 'Delete this page',
-    icon: DeletePageIcon,
-  },
 ];
 
 /**
@@ -302,26 +293,6 @@ export default function BookRail(props: BookRailProps): JSX.Element {
   // still close each other, since two sheets both claiming the panel push
   // would stack one on top of the other.
   const [ribbonsOpen, setRibbonsOpen] = createSignal(false);
-  const [deleteArmed, setDeleteArmed] = createSignal(false);
-  let deleteTimer: ReturnType<typeof setTimeout> | undefined;
-  const disarmDelete = (): void => {
-    setDeleteArmed(false);
-    if (deleteTimer !== undefined) clearTimeout(deleteTimer);
-    deleteTimer = undefined;
-  };
-  const pressDelete = (): void => {
-    if (!props.canDeletePage) return;
-    if (deleteArmed()) {
-      disarmDelete();
-      props.onDeletePage();
-      return;
-    }
-    setDeleteArmed(true);
-    deleteTimer = setTimeout(disarmDelete, 3500);
-  };
-  onCleanup(() => {
-    if (deleteTimer !== undefined) clearTimeout(deleteTimer);
-  });
   createEffect(() => {
     if (props.activePanel !== null) setRibbonsOpen(false);
   });
@@ -453,15 +424,10 @@ export default function BookRail(props: BookRailProps): JSX.Element {
                 // state on the same button, and it must not read as "this page
                 // is bookmarked" when it is only "the ribbons are showing".
                 'is-open': tool.id === 'bookmark' && plateOpen(),
-                'is-delete-armed': tool.id === 'delete-page' && deleteArmed(),
               }}
-              disabled={tool.id === 'delete-page' && !props.canDeletePage}
               // The shortcut rides the accessible name even though the visible
               // bubble draws it as a key cap: a screen reader gets one string.
               aria-label={
-                tool.id === 'delete-page' && deleteArmed()
-                  ? 'Delete this page — press again to confirm'
-                  :
                 capFor(tool) === undefined
                   ? tool.label
                   : `${tool.label} (${capFor(tool)})`
@@ -490,10 +456,6 @@ export default function BookRail(props: BookRailProps): JSX.Element {
                 else openPlateFrom(event.currentTarget);
               }}
               onClick={(event) => {
-                if (tool.id === 'delete-page') {
-                  pressDelete();
-                  return;
-                }
                 if (tool.id === 'bookmark') pressBookmark(event.currentTarget);
                 else if (tool.panel !== undefined) props.onTogglePanel(tool.panel);
                 else tool.action?.(props);

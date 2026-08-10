@@ -18,6 +18,7 @@ import {
   type ContextMenuContext,
   type ContextMenuEntry,
   type ContextMenuItem,
+  type PageContextMenuActions,
   type ContextMenuSubmenu,
 } from './registry';
 import { selectBlock, topLevelBlockAt } from './blockOps';
@@ -61,6 +62,7 @@ export interface OpenContextMenuOptions {
   /** Position immediately before the top-level block to act on. */
   readonly pos: number;
   readonly notify?: (message: string) => void;
+  readonly pageActions?: PageContextMenuActions;
 }
 
 export function openBlockContextMenu(options: OpenContextMenuOptions): void {
@@ -72,7 +74,7 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
   // Select the block under the cursor first.
   selectBlock(editor, pos);
 
-  const entries = buildBlockContextMenu();
+  const entries = buildBlockContextMenu(options.pageActions);
   const candidates = selectableIndexes(entries);
   const context: ContextMenuContext = {
     editor,
@@ -254,6 +256,7 @@ export function handleEditorContextMenu(
   editor: Editor,
   event: MouseEvent,
   notify?: (message: string) => void,
+  pageActions?: PageContextMenuActions,
 ): boolean {
   const view = editor.view;
   const found = view.posAtCoords({
@@ -270,6 +273,7 @@ export function handleEditorContextMenu(
     clientY: event.clientY,
     pos: block.pos,
     notify,
+    pageActions,
   });
   return true;
 }

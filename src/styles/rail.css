@@ -73,13 +73,6 @@
   color: var(--on-gilt);
 }
 
-.nb-rail-button.is-delete-armed {
-  color: var(--ink-deep, #4a2d24);
-  background: var(--wash-terracotta, #df9b7c);
-  border-color: currentColor;
-  transform: rotate(-1deg) scale(1.04);
-}
-
 .nb-rail-button:disabled {
   opacity: 0.38;
   cursor: not-allowed;

@@ -511,8 +511,14 @@ const INSERT_ITEMS: readonly ContextMenuItem[] = [
 // The menu
 // ---------------------------------------------------------------------------
 
-export function buildBlockContextMenu(): ContextMenuEntry[] {
-  return [
+export interface PageContextMenuActions {
+  readonly onDeletePage: () => void;
+}
+
+export function buildBlockContextMenu(
+  pageActions?: PageContextMenuActions,
+): ContextMenuEntry[] {
+  const entries: ContextMenuEntry[] = [
     { kind: 'submenu', id: 'insert', title: 'Insert', glyph: '＋', items: INSERT_ITEMS },
     { kind: 'submenu', id: 'turn-into', title: 'Turn into', glyph: '⇄', items: TURN_INTO_ITEMS },
     { kind: 'submenu', id: 'color', title: 'Color', glyph: 'A', items: COLOR_ITEMS },
@@ -591,4 +597,20 @@ export function buildBlockContextMenu(): ContextMenuEntry[] {
       },
     },
   ];
+
+  if (pageActions !== undefined) {
+    entries.push(
+      { kind: 'divider' },
+      {
+        kind: 'item',
+        id: 'delete-page',
+        title: 'Delete this page',
+        glyph: '⌫',
+        danger: true,
+        run: () => pageActions.onDeletePage(),
+      },
+    );
+  }
+
+  return entries;
 }

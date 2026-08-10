@@ -154,7 +154,6 @@ import {
   classifyDrag,
   classifyKeyZoom,
   KEY_ZOOM_STEP,
-  PULL_COMPLETE_TRAVEL_PX,
 } from './gestures';
 import { ShelfInput } from './input';
 import { nextLodTier, type LodTier } from './lod';
@@ -253,6 +252,10 @@ export interface WorldEvents {
   onAddSpotChange?(spot: AddSpot | null): void;
   /** Right-click on empty plank: the "new book here" menu at `screen`. */
   onShelfMenu?(floor: number, screen: Vec2): void;
+  /** A spine is being carried; viewport coordinates let DOM chrome respond. */
+  onBookDrag?(book: Book, screen: Vec2 | null): void;
+  /** Return true when DOM chrome accepted the release (for example Trash). */
+  onBookDrop?(book: Book, screen: Vec2): boolean;
 }
 
 /** Camera survives the shelf ↔ book unmount round-trip (module singleton). */
@@ -668,7 +671,7 @@ export class ShelfWorld {
       onPointerDown: (cursor) => this.handlePointerDown(cursor),
       onDragStart: (dx, dy, onBook) => this.handleDragStart(dx, dy, onBook),
       onDragMove: (dx, dy, cursor) => this.handleDragMove(dx, dy, cursor),
-      onDragEnd: (samples) => this.handleDragEnd(samples),
+      onDragEnd: (samples, cursor) => this.handleDragEnd(samples, cursor),
       onDragCancel: () => this.handleDragCancel(),
       onTap: (cursor) => this.handleTap(cursor),
       onHover: (cursor) => this.handleHover(cursor),
@@ -3021,11 +3024,7 @@ export class ShelfWorld {
       if (pull.finishing) return;
       pull.targetX = cursor.x;
       pull.targetY = cursor.y + (pull.visual.height * this.camera.zoom) / 2;
-      const travel = Math.hypot(
-        pull.targetX - pull.startX,
-        pull.targetY - pull.startY,
-      );
-      if (travel >= PULL_COMPLETE_TRAVEL_PX) this.finishBookPull();
+      this.events.onBookDrag?.(pull.visual.book, this.clientPoint(cursor));
       this.dirty = true;
       return;
     }
@@ -3040,10 +3039,17 @@ export class ShelfWorld {
     this.dirty = true;
   }
 
-  private handleDragEnd(samples: readonly DragSample[]): void {
+  private handleDragEnd(samples: readonly DragSample[], cursor: Vec2): void {
     if (this.move !== null) return; // move mode: only a tap (click) drops
     if (this.pull !== null) {
-      if (!this.pull.finishing) this.finishBookPull();
+      if (!this.pull.finishing) {
+        const pull = this.pull;
+        const accepted =
+          this.events.onBookDrop?.(pull.visual.book, this.clientPoint(cursor)) === true;
+        this.events.onBookDrag?.(pull.visual.book, null);
+        if (accepted) this.cancelBookPull();
+        else this.finishBookPull();
+      }
       return;
     }
     this.dragging = false;
@@ -3063,10 +3069,17 @@ export class ShelfWorld {
   private handleDragCancel(): void {
     if (this.move !== null) return;
     if (this.pull !== null) {
+      this.events.onBookDrag?.(this.pull.visual.book, null);
       if (!this.pull.finishing) this.cancelBookPull();
       return;
     }
-    this.handleDragEnd([]);
+    this.handleDragEnd([], { x: 0, y: 0 });
+  }
+
+  /** Canvas-local input coordinates to viewport coordinates for DOM targets. */
+  private clientPoint(cursor: Vec2): Vec2 {
+    const rect = this.app.canvas.getBoundingClientRect();
+    return { x: rect.left + cursor.x, y: rect.top + cursor.y };
   }
 
   private handleTap(cursor: Vec2): void {
@@ -3620,6 +3633,7 @@ export class ShelfWorld {
       y: screen.y,
       finishing: false,
     };
+    this.events.onBookDrag?.(visual.book, this.clientPoint(screen));
     this.updateCursor();
     this.dirty = true;
   }

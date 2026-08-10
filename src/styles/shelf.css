@@ -311,6 +311,18 @@
   border-color: var(--ink-line);
 }
 
+.shelf-dock__btn.is-drop-target[data-shelf-dock='trash'] {
+  border-color: var(--gilt-deep);
+  transform: scale(1.06) rotate(-1deg);
+}
+
+.shelf-dock__btn.is-drop-hover[data-shelf-dock='trash'] {
+  color: var(--paper-cream);
+  background: var(--ink-sepia);
+  border-color: var(--gilt-face);
+  transform: scale(1.14) rotate(1deg);
+}
+
 .shelf-dock__icon {
   width: 23px;
   height: 23px;

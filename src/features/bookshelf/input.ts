@@ -36,8 +36,8 @@ export interface InputCallbacks {
   onDragStart(dx: number, dy: number, onBook: boolean): void;
   /** Screen-px delta since the previous move, plus the current cursor. */
   onDragMove(dx: number, dy: number, cursor: Vec2): void;
-  /** Release with screen-px/s velocity samples, most recent first. */
-  onDragEnd(samples: readonly DragSample[]): void;
+  /** Release with velocity samples and the final canvas-local cursor. */
+  onDragEnd(samples: readonly DragSample[], cursor: Vec2): void;
   /** The pointer was cancelled mid-drag (capture lost, etc.). */
   onDragCancel(): void;
   onTap(cursor: Vec2): void;
@@ -168,7 +168,7 @@ export class ShelfInput {
     this.tracking = null;
     if (this.frozen) return;
     if (t.dragging) {
-      this.cb.onDragEnd(t.samples);
+      this.cb.onDragEnd(t.samples, this.cursorOf(e));
     } else {
       const dist = Math.hypot(e.clientX - t.startX, e.clientY - t.startY);
       const held = e.timeStamp - t.startT;

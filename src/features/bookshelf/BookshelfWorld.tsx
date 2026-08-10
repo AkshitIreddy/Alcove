@@ -377,6 +377,20 @@ export default function BookshelfWorld(): JSX.Element {
    * blank out halfway through sliding away.
    */
   const [dockPanel, setDockPanel] = createSignal<DockPanel | null>(null);
+  const [bookDragging, setBookDragging] = createSignal(false);
+  const [trashDropHover, setTrashDropHover] = createSignal(false);
+  let trashButton: HTMLButtonElement | undefined;
+
+  const trashContains = (point: { x: number; y: number }): boolean => {
+    const rect = trashButton?.getBoundingClientRect();
+    return (
+      rect !== undefined &&
+      point.x >= rect.left &&
+      point.x <= rect.right &&
+      point.y >= rect.top &&
+      point.y <= rect.bottom
+    );
+  };
   const [studioBookId, setStudioBookId] = createSignal<string | null>(null);
   /**
    * Has the studio ever been asked for? A LATCH, matching the one inside
@@ -476,6 +490,23 @@ export default function BookshelfWorld(): JSX.Element {
       },
       onAddSpotChange: (spot) => {
         if (!disposed) setAddSpot(spot);
+      },
+      onBookDrag: (_book, screen) => {
+        if (disposed) return;
+        setBookDragging(screen !== null);
+        setTrashDropHover(screen !== null && trashContains(screen));
+      },
+      onBookDrop: (book, screen) => {
+        if (disposed || !trashContains(screen)) return false;
+        setBookDragging(false);
+        setTrashDropHover(false);
+        setDockPanel('trash');
+        void (async () => {
+          void play('crumple-delete');
+          await trashBook(book.id);
+          if (!disposed) await world?.refreshData();
+        })();
+        return true;
       },
     }).then((w) => {
       if (disposed) {
@@ -1282,7 +1313,12 @@ export default function BookshelfWorld(): JSX.Element {
             <button
               type="button"
               class="shelf-dock__btn"
-              classList={{ 'is-active': dockPanel() === 'trash' }}
+              classList={{
+                'is-active': dockPanel() === 'trash',
+                'is-drop-target': bookDragging(),
+                'is-drop-hover': trashDropHover(),
+              }}
+              ref={trashButton}
               data-shelf-dock="trash"
               aria-label="Trash"
               aria-pressed={dockPanel() === 'trash'}

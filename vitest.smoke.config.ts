@@ -25,6 +25,7 @@ export default defineConfig(async (env) =>
         'tests/spine-texture-retirement.test.ts',
         'tests/spine-title-zone-solver.test.ts',
         'tests/update-notes.test.ts',
+        'tests/release-notes.test.ts',
       ],
       exclude: ['**/node_modules/**'],
       testTimeout: 10_000,

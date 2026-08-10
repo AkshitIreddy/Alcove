@@ -8,6 +8,7 @@
  * Usage: node scripts/release-notes.mjs [tag]   (defaults to the current HEAD tag)
  */
 import { execSync } from 'node:child_process';
+import { requiredChangelogForTag } from './release-changelog.mjs';
 
 const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 const trySh = (cmd) => {
@@ -33,6 +34,15 @@ const label = process.argv[2] ?? trySh('git describe --tags --exact-match HEAD')
  */
 const rev = label && trySh(`git rev-parse --verify ${label}~0`) ? label : 'HEAD';
 const tag = label || 'unreleased';
+
+/**
+ * The hand-written release section is the actual product changelog. Commit
+ * subjects are useful as an index, but they cannot replace the explanation of
+ * what changed and why. A version tag therefore has a hard dependency on its
+ * matching `## x.y.z` section: publishing without it is an error, not a link
+ * to somewhere the reader may never open.
+ */
+const detailedChangelog = requiredChangelogForTag(tag);
 
 /** The tag before this one, if any — otherwise summarise the whole history. */
 const previous = trySh(`git describe --tags --abbrev=0 ${rev}~1`);
@@ -161,6 +171,13 @@ if (hidden.length > 0) {
   lines.push('');
 }
 
+if (detailedChangelog !== '') {
+  lines.push('## Detailed changelog');
+  lines.push('');
+  lines.push(detailedChangelog);
+  lines.push('');
+}
+
 /*
  * The way out of the summary and into the detail.
  *
@@ -171,7 +188,7 @@ if (hidden.length > 0) {
  * literal diff for anyone who would rather read the code than the prose.
  */
 lines.push(
-  `📖 **[The full changelog](${REPO}/blob/main/docs/readme/releases.md)**` +
+  `📖 **[Every Alcove release](${REPO}/blob/main/docs/readme/releases.md)**` +
     (previous ? ` · [every commit in ${previous}…${tag}](${REPO}/compare/${previous}...${tag})` : ''),
 );
 lines.push('');

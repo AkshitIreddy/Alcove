@@ -500,7 +500,6 @@ export default function BookshelfWorld(): JSX.Element {
         if (disposed || !trashContains(screen)) return false;
         setBookDragging(false);
         setTrashDropHover(false);
-        setDockPanel('trash');
         void (async () => {
           void play('crumple-delete');
           await trashBook(book.id);

@@ -42,3 +42,8 @@ shots-now/**/*.jpg
 shots-now/**/*.jpeg
 shots-now/**/*.webp
 shots-now/**/*.gif
+
+# Local probe transcripts and throwaway dice audits. The authored harnesses
+# belong in git; their machine-specific stdout/stderr and sampled JSON do not.
+shots-now/runlogs/
+shots-now/dice/

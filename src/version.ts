@@ -20,4 +20,4 @@
  * executable — this constant is what answers when that is unavailable (the
  * browser dev server, a test, or a capability set without `app:default`).
  */
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';

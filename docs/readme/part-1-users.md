@@ -50,8 +50,8 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -147,7 +147,8 @@ camera, the virtualisation and the level-of-detail rules live in
 
 Right-clicking a spine gives you the book's own verbs — take it out, rename,
 dress it, duplicate, move it along the shelf, send it to another bookcase, or
-crumple it into the trash.
+crumple it into the trash. You can also pull a book out and drop it directly on
+the trash dock.
 
 Pull back and the whole case is one object — <!--f:defaultFloors-->10<!--/f-->
 floors as standard, up to <!--f:maxFloors-->60<!--/f--> when you keep pressing
@@ -220,17 +221,19 @@ Both are covered properly under [Making it yours](#making-it-yours).
 
 ### Finding things
 
-`Ctrl+K` opens the switcher. It jumps to books and headings by fuzzy match,
-weighted by what you have opened recently, and `>` (or the Tab key, or the tab
-at the top) flips it into full-text search across every page in every bookcase.
+`Ctrl+K` opens the switcher. On the shelf it jumps across the whole library;
+inside a book it stays inside that book. It finds books, headings and UI
+commands by fuzzy match, weighted by what you have opened recently, and `>`
+(or the Tab key, or the tab at the top) flips it into full-text search over the
+same current scope.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
 ![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Woodcuts, Constellations, Fermenting, Rope Work, Birds, Tide Tables and Ferns running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](img/quickswitch.png)
 
-Search deliberately ignores which bookcase you are standing in front of. You
-open it because something you wrote is somewhere, and the one thing you reliably
-do not remember is which room it was in.
+Shelf search deliberately ignores which bookcase you are standing in front of:
+something you wrote may be in any room. Once a book is open, the scope narrows
+to that book so similarly named pages elsewhere cannot get in the way.
 
 ## Writing in a book
 <!--nav: Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end-->
@@ -356,6 +359,7 @@ six open a panel; after a divider, four that just do something.
 | Focus mode | the rungs of the ladder, and the zoom |
 | Thumbnails | the strip of little pages along the bottom |
 | Add a page | a new page after this one |
+| Delete this page | a deliberate second press removes this leaf; the last page is protected |
 
 Every row carries its own key cap, read from your keymap rather than printed,
 and calls the same opener the keyboard calls — so a button and its shortcut
@@ -385,11 +389,15 @@ diagrams — and so you never have to teach it how.
 
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
-**Take the grammar** — *copy the format for your AI* puts
-<!--f:specLines-->876<!--/f--> lines of specification on your clipboard,
-generated from the parser's own tables, so it cannot describe a language the app
-would refuse. **Ask for a note** in your own words. **Paste it back**, and the
-dialog previews what it recognised before anything lands on the page.
+**Take the grammar** — *download the format for your AI* saves
+<!--f:specLines-->905<!--/f--> lines generated from the parser's own tables, so
+it cannot describe a language the app would refuse. **Ask for a note** in your
+own words and have the assistant return an attached `.md` file. **Open it
+directly in Alcove**; downloading preserves TeX backslashes and code fences
+that browser copy/paste can alter. The dialog previews what it recognised
+before anything lands on the page. A `::page` line starts a protected page, so
+overflow from an earlier large image creates spill pages before it instead of
+shifting every later section.
 
 Nothing is sent anywhere — no API key, no model in the app, no request to
 anybody's server. You carry the text to whichever assistant you already use and

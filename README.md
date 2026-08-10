@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.6.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.6.0"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.6.1-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.6.1"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -150,7 +150,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
   start with. Books are drawn objects, not rows in a list — you recognise yours
   by its binding.
 - **A language an AI can write for you.** *Copy the format for your AI* puts
-  <!--f:specLines-->876<!--/f--> lines of generated grammar on your clipboard;
+  <!--f:specLines-->905<!--/f--> lines of generated grammar on your clipboard;
   any chatbot then writes you a note in it, and *paste a script in* turns that
   answer into formatted pages — sticky notes, callouts, highlights, and trees,
   graphs and timelines drawn as real diagrams rather than pasted as pictures.
@@ -186,11 +186,15 @@ diagrams — and so you never have to teach it how.
 
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
 
-**Take the grammar** — *copy the format for your AI* puts
-<!--f:specLines-->876<!--/f--> lines of specification on your clipboard,
-generated from the parser's own tables, so it cannot describe a language the app
-would refuse. **Ask for a note** in your own words. **Paste it back**, and the
-dialog previews what it recognised before anything lands on the page.
+**Take the grammar** — *download the format for your AI* saves
+<!--f:specLines-->905<!--/f--> lines generated from the parser's own tables, so
+it cannot describe a language the app would refuse. **Ask for a note** in your
+own words and have the assistant return an attached `.md` file. **Open it
+directly in Alcove**; downloading preserves TeX backslashes and code fences
+that browser copy/paste can alter. The dialog previews what it recognised
+before anything lands on the page. A `::page` line starts a protected page, so
+overflow from an earlier large image creates spill pages before it instead of
+shifting every later section.
 
 Nothing is sent anywhere — no API key, no model in the app, no request to
 anybody's server. You carry the text to whichever assistant you already use and
@@ -213,8 +217,8 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -308,7 +312,8 @@ camera, the virtualisation and the level-of-detail rules live in
 
 Right-clicking a spine gives you the book's own verbs — take it out, rename,
 dress it, duplicate, move it along the shelf, send it to another bookcase, or
-crumple it into the trash.
+crumple it into the trash. You can also pull a book out and drop it directly on
+the trash dock.
 
 Pull back and the whole case is one object — <!--f:defaultFloors-->10<!--/f-->
 floors as standard, up to <!--f:maxFloors-->60<!--/f--> when you keep pressing
@@ -381,17 +386,19 @@ Both are covered properly under [Making it yours](#making-it-yours).
 
 ### Finding things
 
-`Ctrl+K` opens the switcher. It jumps to books and headings by fuzzy match,
-weighted by what you have opened recently, and `>` (or the Tab key, or the tab
-at the top) flips it into full-text search across every page in every bookcase.
+`Ctrl+K` opens the switcher. On the shelf it jumps across the whole library;
+inside a book it stays inside that book. It finds books, headings and UI
+commands by fuzzy match, weighted by what you have opened recently, and `>`
+(or the Tab key, or the tab at the top) flips it into full-text search over the
+same current scope.
 Activating a search result opens the book, turns to the page and pulses the
 match so you can see where it was.
 
 ![The quick switcher open over a greyed-out spread: a cream sheet with a small ✕ in the corner, "go to" (selected) and "search text" tabs, the prompt "jump to a book or heading… (&gt; to search text)", and a list of books each tagged "book" down the right — Winter Notes lit at the top, then Hill Walks, Bookbinding, Frost Dates, Woodcuts, Constellations, Fermenting, Rope Work, Birds, Tide Tables and Ferns running off the bottom — over a footer of key hints: ↑↓ move, enter open, tab mode, esc close.](docs/readme/img/quickswitch.png)
 
-Search deliberately ignores which bookcase you are standing in front of. You
-open it because something you wrote is somewhere, and the one thing you reliably
-do not remember is which room it was in.
+Shelf search deliberately ignores which bookcase you are standing in front of:
+something you wrote may be in any room. Once a book is open, the scope narrows
+to that book so similarly named pages elsewhere cannot get in the way.
 
 ## Writing in a book
 <!--nav: Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end-->
@@ -517,6 +524,7 @@ six open a panel; after a divider, four that just do something.
 | Focus mode | the rungs of the ladder, and the zoom |
 | Thumbnails | the strip of little pages along the bottom |
 | Add a page | a new page after this one |
+| Delete this page | a deliberate second press removes this leaf; the last page is protected |
 
 Every row carries its own key cap, read from your keymap rather than printed,
 and calls the same opener the keyboard calls — so a button and its shortcut
@@ -1149,8 +1157,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->314<!--/f--> of <!--f:srcFiles-->323<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7089<!--/f--> lines of it.
+<!--f:srcDocstrings-->316<!--/f--> of <!--f:srcFiles-->325<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7100<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1336,7 +1344,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->323<!--/f--> TypeScript files, <!--f:srcDocstrings-->314<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7089<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->325<!--/f--> TypeScript files, <!--f:srcDocstrings-->316<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7100<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->9<!--/f--> files, <!--f:rustLines-->2635<!--/f--> lines, <!--f:rustCommands-->15<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Bare-bones checks | One Vitest smoke file plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner; no automated browser, pixel, frame or waveform gate | [The bare-bones gate](docs/readme/part-2-developers.md#the-bare-bones-gate) |

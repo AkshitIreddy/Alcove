@@ -610,7 +610,10 @@ export function checkShots(depicted = {}) {
   if (shotApp.product !== app.product) {
     stale(`shots were taken of '${shotApp.product}', this app is called '${app.product}'`);
   }
-  if (shotApp.version !== app.version) {
+  if (
+    shotApp.version !== app.version &&
+    shotApp.compatibleThrough !== app.version
+  ) {
     stale(`shots are of version ${shotApp.version}, package.json says ${app.version}`);
   }
 

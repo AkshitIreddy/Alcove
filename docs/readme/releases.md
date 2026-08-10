@@ -19,6 +19,28 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.1 — steadier AI pages and quicker library control
+
+**Notebook Script now survives richer AI output.** Common TeX constructions
+including `\bar`, `\overline` and `\boxed` render directly. The format guide
+asks assistants to return a downloadable `.md` attachment instead of browser
+text that can lose escapes, and Insert Script opens that file directly.
+
+**Authored page alignment can be protected.** A `::page` boundary starts a
+deliberate page. If an earlier large image or long section overflows, Alcove
+inserts spill pages before that boundary instead of cascading the displacement
+through the rest of the book.
+
+**Pages and books are easier to remove.** The book rail can delete the current
+page with a deliberate second press while preserving the last page of a book.
+On the shelf, a pulled book can now be carried onto the trash dock as well as
+sent there through its menu.
+
+**Finding things respects where you are.** `Ctrl+K` searches only the open book
+while reading, keeps whole-library scope on the shelf, and can find and run UI
+commands alongside books, headings and content. Page-history snapshot counts
+now say “words” in full instead of the ambiguous `w` abbreviation.
+
 ## 0.6.0 — books rebuilt from the boards out
 
 This release replaces Alcove's generated-book vocabulary rather than carrying

@@ -23,7 +23,7 @@
  * inside LibraryStudio could reach the popup; nothing could reach the list of
  * what had already been brought in.
  */
-import { Show, createEffect, createSignal, on, type JSX } from 'solid-js';
+import { Show, createEffect, createSignal, on, onCleanup, type JSX } from 'solid-js';
 import { normalizeCoverOverrides, type CoverOverrides } from '../../art/covers';
 import {
   getBook,
@@ -33,10 +33,13 @@ import {
   type BookPageDefaults,
 } from '../../data/books';
 import type { Book } from '../../data/types';
+import { bookStyleOverridesFor } from '../../features/bookshelf/bookIdentity';
+import { bookSurpriseLocksFor } from '../../features/bookshelf/bookStudioPrefs';
 import CustomizePanel from './CustomizePanel';
 import LibraryStudio from './LibraryStudio';
 import RailPanel from './RailPanel';
 import PacksPanel from '../../features/packs/PacksPanel';
+import { createShelfStudioHydration } from './latestBookHydration';
 
 export interface ShelfStudioProps {
   open: boolean;
@@ -51,29 +54,39 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
   const [pageDefaults, setPageDefaults] = createSignal<BookPageDefaults | null>(null);
   const [roomTab, setRoomTab] = createSignal<'library' | 'own'>('library');
 
+  const clearBook = (): void => {
+    setBook(null);
+    setOverrides(null);
+    setPageDefaults(null);
+  };
+
+  const hydration = createShelfStudioHydration(
+    getBook,
+    clearBook,
+    (id, loaded) => {
+      // The ticket is authoritative; the prop checks document the mutation
+      // boundary too, and protect this callback if the helper is ever reused.
+      if (!props.open || props.bookId !== id) return;
+      setBook(loaded);
+      setOverrides(normalizeCoverOverrides(readCoverOverrides(loaded)));
+      setPageDefaults(readPageDefaults(loaded));
+    },
+  );
+
   createEffect(
     on(
-      () => props.bookId,
-      (id) => {
-        if (id === null) {
-          setBook(null);
-          setOverrides(null);
-          setPageDefaults(null);
-          return;
-        }
-        let stale = false;
-        void getBook(id).then((loaded) => {
-          if (stale) return;
-          setBook(loaded);
-          setOverrides(normalizeCoverOverrides(readCoverOverrides(loaded)));
-          setPageDefaults(readPageDefaults(loaded));
-        });
-        return () => {
-          stale = true;
-        };
+      () => [props.open, props.bookId] as const,
+      ([open, id]) => {
+        // A rising `open` edge is significant even when the shelf retained the
+        // same id: another host may have edited that book while this rail was
+        // closed. The controller also clears A before loading B, so every
+        // child handler below is either bound to the hydrated book or absent.
+        hydration.update(open, id);
       },
     ),
   );
+
+  onCleanup(() => hydration.cancel());
 
   /**
    * Preview state only — `CustomizePanel` is given a `bookId`, so it already
@@ -82,14 +95,19 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
    * would race that read-merge-write and could drop the style blob.
    */
   const changeOverrides = (next: CoverOverrides | null): void => {
+    // A queued child event from the old panel must not repopulate preview
+    // state after selection invalidated that panel. Keep the loaded row mounted
+    // during the close tween, but revoke its authority as soon as `open` falls.
+    if (!props.open || book() === null) return;
     setOverrides(next);
   };
 
   const changeDefaults = (next: BookPageDefaults | null): void => {
+    if (!props.open) return;
+    const loaded = book();
+    if (loaded === null) return;
     setPageDefaults(next);
-    const id = props.bookId;
-    if (id === null) return;
-    void savePageDefaults(id, next);
+    void savePageDefaults(loaded.id, next);
   };
 
   const title = (): string => {
@@ -157,7 +175,11 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
                Starting on "this library" here meant the one menu item that
                asks for a book's wardrobe opened the room instead. */
             initialTab="book"
+            open={props.open}
+            host="shelf"
             bookId={loaded().id}
+            initialBookStyle={bookStyleOverridesFor(loaded())}
+            initialSurpriseLocks={bookSurpriseLocksFor(loaded())}
             spineSeed={loaded().spineSeed}
             title={loaded().title}
             overrides={overrides()}

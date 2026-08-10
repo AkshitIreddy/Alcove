@@ -1,10 +1,10 @@
 /**
  * art/charms.ts — the charm VOCABULARY (library-themes §4).
  *
- * Six charms — ribbon marker, tassel, pressed flower, brass clasp, wax seal,
- * dangling tag — plus their colourways. A book with a crimson ribbon is
- * recognisably that book in every context, which is the whole point: the charm
- * is the fastest identity cue a reader has.
+ * The historical charm ids and their colourways remain readable so old data
+ * can be migrated without a parse failure. None are reader-facing book-surface
+ * options now: every protruding ribbon, tassel, flower, clasp, seal and tag read
+ * as an antenna, sticker or piece of hardware at shelf size.
  *
  * This module is names and colours ONLY. It used to also carry ~700 lines of
  * painterly canvas drawing (`drawSpineCharm` / `drawCoverCharm`, radial
@@ -46,10 +46,28 @@ export const CHARM_LABELS: Readonly<Record<CharmKind, string>> = {
   tag: 'Dangling tag',
 };
 
-/** Charms that actually draw something (studio "surprise me" pool). */
-export const CHARM_KINDS_WITH_ART: readonly CharmKind[] = CHARMS.filter(
-  (c): c is Exclude<CharmKind, 'none'> => c !== 'none',
-);
+/**
+ * Reader-facing charm catalogue after the binding reset.
+ *
+ * Historical ids remain parseable, but every one normalizes to `none`. This is
+ * deliberately separate from the between-page bookmark feature, which is not
+ * a painted binding furnishing and does not use this catalogue.
+ */
+export const ACTIVE_CHARMS = ['none'] as const satisfies readonly CharmKind[];
+
+/** No applied charm art is active after the binding reset. */
+export const CHARM_KINDS_WITH_ART: readonly Exclude<CharmKind, 'none'>[] = [];
+
+const ACTIVE_CHARM_SET: ReadonlySet<string> = new Set(ACTIVE_CHARMS);
+
+export function isActiveCharmKind(value: unknown): value is (typeof ACTIVE_CHARMS)[number] {
+  return typeof value === 'string' && ACTIVE_CHARM_SET.has(value);
+}
+
+/** Retired applied objects become a clean binding, never a different sticker. */
+export function normalizeCharmKind(value: unknown): (typeof ACTIVE_CHARMS)[number] {
+  return isActiveCharmKind(value) ? value : 'none';
+}
 
 export function isCharmKind(value: unknown): value is CharmKind {
   return typeof value === 'string' && (CHARMS as readonly string[]).includes(value);

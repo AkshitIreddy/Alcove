@@ -1,102 +1,53 @@
 /**
- * art/bookDesign.ts — the hundred and fifty ways a book can be bound.
+ * art/bookDesign.ts — the authoritative book-binding vocabulary.
  *
- * `spines.ts` already knows how to dress a spine: bands, a cream label, one of
- * twelve ornament stamps, a ribbon. What it did not have was a *binding*. Every
- * book on the shelf was the same object — a rounded rectangle with a darker
- * strip down its left edge — recoloured six ways, so a full case read as one
- * book photocopied forty times. A real collection is a jumble of physically
- * different things standing next to each other: a limp vellum quarto beside a
- * stapled pamphlet beside a slipcased folio.
+ * The first binding system accumulated fifty silhouettes, fifty surfaces and
+ * fifty decorations. Individually plausible rows combined into rounded toys,
+ * dotted wallpaper, hardware and shapes that stopped reading as books. This
+ * module now draws a hard line between the renderer's diagnostic vocabulary
+ * and the product vocabulary a reader is allowed to create.
  *
- * This module supplies that missing axis, as three small independent
- * vocabularies that combine:
+ * The live system has three independent axes:
  *
- *   SHAPE      what the silhouette does — square, round-backed, gabled, corded,
- *              boxed, coil-bound, a bare sliver. Fifty of them, each a genuinely
- *              different outline plus whatever separate objects hang off it.
- *   MATERIAL   what the face is made of, said in flat colour rather than in
- *              texture — where the turned board sits, whether the head third is
- *              a different hide, what marks the covering carries. Fifty.
- *   DECORATION what is tooled onto it — bands, panels, corner brackets, a
- *              lozenge, a crest, a blind frame, a foot ornament. Fifty.
+ *   SHAPE      three square-ended cased backs: square, tight back, French groove;
+ *   MATERIAL   quiet cloth, calf, vellum, paper and split constructions whose
+ *              identity comes from broad colour/turn/joint relationships;
+ *   DECORATION uninterrupted rules plus authored programmes with one focal idea.
  *
- * and a table of named presets so the studio can offer "Half Morocco" and
- * "Plain Wrapper" as things rather than as sixteen sliders.
+ * `RESET_PRESET_ROWS` is a separately authored collection of finished books.
+ * It is not a compatibility filter over the former catalogue and Surprise does
+ * not generate blind cross-products.
  *
- * ## Every row is RANKED, and the dice only see part of the table
+ * ## The reset is forceful
  *
- * A hundred and fifty ways to bind a book is a hundred and fifty chances to
- * hand somebody a picture that does not read as a book. The reader opened a
- * shelf and found that some of them "are literally pencil shape or other just
- * bizarre shapes" — a scroll on two knobs, a comb-bound report, a head cut to a
- * nib — and the request was not to delete them. It was to put the good ones
- * first and keep the odd ones out of the randomiser.
+ * Old rows remain below only because the one renderer still uses their table
+ * shapes and tests need to identify what was retired. They have no product
+ * authority. Any persisted named id or `own:` id containing one retired axis
+ * normalises to `FORMAL_BOOK_PRESET_ID`; there are no appearance-preserving
+ * brocade, parchment, rounded-back or text-furniture exceptions.
  *
- * So every row of all four tables carries a `group` (which family it belongs
- * to; families are ordered too) and a `tier` (`signature` / `shelf` / `niche` /
- * `oddity`). Three things follow and nothing else decides them:
+ * The active authority is deliberately easy to audit:
  *
- *  - the exported id lists are DERIVED from those two fields, so no list in
- *    this file is hand-sorted and none can be re-sorted by accident;
- *  - `presetForSeed` — the roll a new book makes, and the only binding decision
- *    a reader who never opens the studio ever meets — walks `ROLLABLE_PRESETS`,
- *    which is every tier but `oddity`, floored by the worst part the binding is
- *    built out of (see `worstPartRollable`);
- *  - the studio still offers all fifty of everything. This is a demotion, never
- *    a deletion.
+ *  - `ROLLABLE_SHAPES`, `ROLLABLE_MATERIALS` and `ROLLABLE_DECORATIONS` are
+ *    explicit allow-lists, never tier-derived filters;
+ *  - `BOOK_PRESETS` is built only from `RESET_PRESET_ROWS`;
+ *  - `presetForSeed` walks only named whole books vetted inside the Surprise
+ *    direction pools, never a blind cross-product of otherwise legal parts;
+ *  - retired and malformed ids all resolve to one formal reset binding.
  *
- * Both halves are gated in `tests/book-bindings.test.ts`, because a bizarre
- * silhouette is a silent bug: nothing throws, the atlas bakes it happily, and
- * the first anybody hears about it is a reader saying the shelf looks wrong.
- *
- * ## The second pass, and why the first one missed
- *
- * The same complaint came back: still "too weird … look at how weird this is",
- * with a photograph of a shelf. The mechanism was working — no `oddity` had
- * been rolled — so what was wrong was the threshold, and the reason it was
- * wrong is that the first pass judged the table on a SPECIMEN BOARD. A board
- * asks "is this a good drawing of a wire coil?" and the answer is yes; the
- * reader is asking "does this read as a book in a row of books I did not ask
- * for?", and only a shelf can answer that. `shots-now/dice-shelf.mjs` builds
- * that shelf — thirty books dressed by the real roll, shot at the 80% the app
- * opens on — and `shots-now/suspect-row.mjs` stands one suspect at a time
- * between two plain cloth octavos.
- *
- * Six silhouettes went on that evidence, each of them a good drawing of
- * something that is not a book: the wire coil (a step-ladder), the ring binder
- * (an office ring binder), the springback (a cigar — the "pencil shape" from
- * the first report, still in the roll), the coptic chain (a zip), the bare
- * cords (a bandaged stick) and the wave head (a crayon). Nine head cuts were
- * looked at and eight of them KEPT: at the zoom a reader actually meets a shelf
- * at, a notch or a bevel is invisible, and spending the demotion budget on
- * those would have been the cruelty rather than the fix. (Budget is literal —
- * `tests/book-bindings.test.ts` refuses to let any table send more than a fifth
- * of itself to the bottom, and the silhouettes are now exactly at ten of fifty.
- * A third pass wanting to demote one has to promote one back.)
- *
- * Two things were tried and CLEARED, so a third pass does not spend itself on
- * them. The dressing axes — plates, ornament stamps, applied decorations — were
- * each stood on a shelf between plain cloth octavos and none of them reads as
- * an object: a plate is a label and a stamp is a third of the spine's width.
- * And the gabled head, which looks exactly like the reader's "pencil" when a
- * seeded shelf hands you a tall thin one, is innocent: held at ordinary
- * proportions all four gabled bindings read as psalters. What made rockets of
- * them is that a book's HEIGHT and its THICKNESS are drawn independently
- * (`randomBookStyleOverrides` in `art/bookStyle.ts` picks a format uniformly
- * and the thickness comes from a different stream), so a folio height can land
- * on a pamphlet width. That is a real defect and it is not in this file.
+ * A bizarre silhouette is a silent bug: nothing throws and the atlas bakes it
+ * happily. The explicit lists make visual curation load-bearing in code.
  *
  * ## Why every axis is a TABLE and not a switch
  *
- * Fifty of anything cannot be fifty hand-written path functions and stay
+ * Dozens of anything cannot be dozens of hand-written path functions and stay
  * coherent — the tenth one drifts from the first and the fortieth is somebody
  * else's drawing. So a shape is a row of numbers read by ONE tracer (an end
  * profile at the head, another at the tail, a side profile, a corner cut, and a
  * list of separate objects); a material is a row read by ONE painter (a body
- * tone, a turned board, an optional second covering at head and tail, and one
+ * tone, a turned board, an optional second board covering, and one
  * grain); a decoration is a row read by ONE toolist (a band run, a frame, a
- * motif, or an applied object). That is what makes the fiftieth entry as good
+ * motif, or an applied object). That is what makes the newest entry as good
  * as the first, and it is the same reason `art/shelfDesign.ts` keeps its
  * carpentry as `BuildSpec` rows rather than as fifty drawings.
  *
@@ -134,6 +85,7 @@ import {
 import { normaliseHex } from './customColour';
 import { clothPair as foldCloth } from './palette';
 import { clamp, mulberry32 } from './noise';
+import { colourContrast } from './titleContrast';
 
 /* ========================================================================== *
  *                                   moods                                    *
@@ -217,30 +169,26 @@ export const BOOK_TAGS: readonly BookTag[] = [
  * question the reader asked after opening a shelf and finding "literally pencil
  * shape or other just bizarre shapes" on it.
  *
- * Three things hang off this field and nothing else decides them:
+ * The field still orders the diagnostic tables and documents the original
+ * audit, but it no longer grants product access. The reset's explicit active
+ * allow-lists are the only authority for the picker, stored composed ids and
+ * Surprise. This distinction is intentional: tiering proved too permissive.
  *
  *  - **Order.** Every picker list is sorted by group, then by tier, then by the
  *    order the entry was written in. The good ones come first inside their
  *    family and the odd ones sink, without anybody hand-sorting an array that
  *    the next edit will quietly re-sort.
- *  - **The dice.** `presetForSeed` — the roll a NEW book makes, and the only
- *    randomiser a reader who never opens the studio ever meets — draws from the
- *    rollable tiers only. An `oddity` is never handed to somebody.
- *  - **Nothing else.** Every entry stays fully reachable from the studio. This
- *    is a demotion, never a deletion: a preset id is persisted per book, and
- *    retiring one would silently rebind somebody's library.
- *
- * The field is REQUIRED on every row of every table, so a fifty-first entry
- * cannot be added without somebody saying which of these four it is.
+ * Every diagnostic row must still declare a tier so an added renderer primitive
+ * cannot arrive without somebody recording how it fared in the old audit.
  */
 export type BookTier =
   /** The ones a shelf should be built out of. First in its family. */
   | 'signature'
   /** Sound, everyday, offered freely. */
   | 'shelf'
-  /** Fine but specialised, or quiet enough to be missed. Still rolled. */
+  /** Fine but specialised, or quiet enough to be missed in the old audit. */
   | 'niche'
-  /** Reads as something that is not a book. Pickable, never rolled. */
+  /** Reads as something that is not a book. Diagnostic only. */
   | 'oddity';
 
 /** Every tier, best first. */
@@ -391,15 +339,9 @@ const PRESET_GROUPS: readonly PresetGroup[] = [
 /**
  * Every silhouette id, in the order they were WRITTEN.
  *
- * This list exists to give `SpineShape` its literal union and for no other
- * purpose. What the studio actually shows is `SPINE_SHAPES`, derived below from
- * each shape's own `group` and `tier` — so moving a line in here changes
- * nothing a reader sees, and changing a tier changes the whole grid.
- *
- * The ten original ids all survive and still mean what they meant — a shape
- * reaches a book through its preset, and a preset id is persisted per book in
- * `data/designPrefs.ts`, so retiring one would silently rebind somebody's
- * library.
+ * This list gives the renderer its literal union and lets diagnostics name old
+ * failures. It does not feed the studio. Only `ROLLABLE_SHAPES` below can reach
+ * a newly accepted binding, and every other stored shape is force-normalised.
  */
 const SHAPE_IDS = [
   // Case bindings: the differences are in the joint and the back.
@@ -408,6 +350,7 @@ const SHAPE_IDS = [
   'tight-back',
   'double-hinge',
   'hollow-back',
+  'library-shoulder',
   'spring-back',
   'cushioned',
   'ledger',
@@ -499,6 +442,7 @@ const MATERIAL_IDS = [
   'silk-moire',
   'brocade',
   'damask',
+  'sprig-paper-sides',
 
   // Leather.
   'morocco-grain',
@@ -548,11 +492,79 @@ const MATERIAL_IDS = [
 export type MaterialLook = (typeof MATERIAL_IDS)[number];
 
 /**
- * What is tooled onto the spine. A design carries none, one or two of these —
- * three is already a crowded 30px spine, and the caller usually adds a title
- * and an ornament stamp on top.
+ * The 58 finished tooling programmes used by the 58 non-plain reset presets.
  *
- * Fifty marks, written in families and ordered by `DECORATIONS` below.
+ * This list is deliberately one-to-one with the authored books rather than a
+ * small bag of rules shared by dozens of rows.  A programme can reuse the
+ * bindery's primitives, but its hierarchy, stations and focal idea belong to
+ * one finished binding.  That is what prevents a new large catalogue from
+ * collapsing back into the same four pictures in different colours.
+ */
+export const AUTHORED_SPINE_PROGRAM_IDS = [
+  'quarto-grand-fillet',
+  'oxford-double-compartment',
+  'cambridge-blind-bays',
+  'printers-terminal-blocks',
+  'library-closed-fillet',
+  'folio-five-compartment',
+  'botanical-centre-panel',
+  'prize-laurel-panel',
+  'buckram-library-bays',
+  'buckram-oxford-fillets',
+  'buckram-cambridge-bands',
+  'buckram-archive-folio',
+  'linen-herbarium-sprig',
+  'linen-printers-bands',
+  'linen-scholar-bays',
+  'velvet-crown-frame',
+  'velvet-palmette-panel',
+  'grand-crown-compartments',
+  'calf-blind-double-fillet',
+  'calf-oxford-bands',
+  'calf-cambridge-bays',
+  'calf-gilt-compartments',
+  'calf-royal-crown',
+  'calf-laurel-wreath',
+  'russia-folio-panels',
+  'russia-blind-fillet',
+  'russia-crown-bay',
+  'russia-scholar-bands',
+  'roan-school-fillet',
+  'roan-botanical-sprig',
+  'roan-terminal-bays',
+  'oilcloth-ledger-fillet',
+  'oilcloth-terminal-bands',
+  'vellum-folio-bays',
+  'vellum-terminal-fleuron',
+  'vellum-laurel-panel',
+  'vellum-abbey-fillet',
+  'parchment-quarto-bands',
+  'parchment-blind-bays',
+  'parchment-herbarium-sprig',
+  'parchment-fleuron-panel',
+  'parchment-scholar-fillet',
+  'wrapper-ruled-fold',
+  'wrapper-printers-imprint',
+  'wrapper-botanical-sprig',
+  'wrapper-archive-sewn',
+  'half-calf-material-bands',
+  'half-oxford-compartments',
+  'half-laurel-panel',
+  'quarter-calf-bands',
+  'quarter-scholar-bays',
+  'quarter-botanical-sprig',
+  'three-quarter-corded',
+  'three-quarter-folio-bays',
+  'three-quarter-crown',
+  'half-cloth-herbarium',
+  'half-cloth-prize-laurel',
+  'half-cloth-printers',
+] as const;
+
+/**
+ * What is tooled onto the spine. A design carries one complete programme, or
+ * the intentional plain baseline.  Historical ids remain in this registry so
+ * old data can be diagnosed, but only the list above has product authority.
  */
 const DECORATION_IDS = [
   'plain',
@@ -602,6 +614,7 @@ const DECORATION_IDS = [
   'monogram-lozenge',
   'rosette',
   'star-tooling',
+  'star-fillet-medallion',
   'crest',
   'crown-tooling',
 
@@ -619,6 +632,43 @@ const DECORATION_IDS = [
   'foot-ornament',
   'tally-rules',
   'ribbon-marker',
+
+  // Reset-era programmes: continuous fillets, compartments and one focal tool.
+  'oxford-double-fillet',
+  'cambridge-blind-compartments',
+  'printers-fleuron-terminals',
+  'laurel-centrepiece',
+  'crown-fillet',
+  'heraldic-lozenge',
+  'botanical-centre-sprig',
+  'prize-laurel-terminal',
+  'palmette-compartment',
+  'abbey-blind-rules',
+  'scholar-double-rule',
+  'folio-compartments',
+  'ducal-corners',
+  'royal-compartments',
+  'architects-fillet',
+  'binder-terminal-pair',
+  'library-fillet',
+  'botanical-corner-fillet',
+
+  // Final spine authority: rules only, held to head/tail and joint zones.
+  'single-head-rule',
+  'single-tail-rule',
+  'paired-head-rules',
+  'paired-tail-rules',
+  'terminal-rule-pair',
+  'asymmetric-terminal-rules',
+  'four-terminal-rules',
+  'single-joint-fillet',
+  'inner-joint-fillets',
+  'terminal-rules-with-joints',
+  'head-rules-with-joints',
+  'tail-rules-with-joints',
+
+  // Book-apocalypse authored authority: one programme per non-plain preset.
+  ...AUTHORED_SPINE_PROGRAM_IDS,
 ] as const;
 export type Decoration = (typeof DECORATION_IDS)[number];
 
@@ -626,10 +676,10 @@ export type Decoration = (typeof DECORATION_IDS)[number];
  * Where the four raised cords of a `ribbed` spine sit, as fractions of its
  * height.
  *
- * Not evenly spaced. Even spacing gives five identical compartments, none of
- * them tall enough for a lettering-piece, and the book comes out looking like
- * a ladder; a real corded spine has an enlarged second compartment that the
- * title lives in. `freeSpan` hands that compartment back to the caller.
+ * Not evenly spaced. Even spacing gives five identical compartments and the
+ * book comes out looking like a ladder; a real corded spine has one enlarged
+ * focal compartment. `freeSpan` hands that compartment back to the caller for
+ * a single ornament.
  */
 export const RIB_STATIONS: readonly number[] = [0.14, 0.3, 0.6, 0.8];
 
@@ -952,7 +1002,7 @@ export interface ShapeSpec {
   decorBottom: number;
   /** …and stands this far inside it horizontally. */
   decorInset: number;
-  /** The clear compartment this shape's own furniture leaves for a title. */
+  /** The clear compartment this shape's own furniture leaves for an ornament. */
   claimTop: number;
   claimBottom: number;
 }
@@ -1031,6 +1081,18 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
     ['antique', 'refined', 'airy'],
     { group: 'case', tier: 'shelf', head: 'dome', tail: 'dome', side: 'waist', corner: 0.1, endDepth: 0.078 }),
 
+  // A robust library case, not a novelty cut: the shallow shoulder tells where
+  // the sewn block ends, while paired joints and modest headcaps keep one
+  // continuous back. This replaces soft/stick silhouettes with construction a
+  // reader can still identify on a 24px shelf spine.
+  'library-shoulder': shape('library-shoulder', 'Library Shoulder', 'A stout cased back with a shallow text-block shoulder and reinforced joints.',
+    ['scholarly', 'utilitarian', 'formal'],
+    // Keep the shoulder inside the boards. A narrowed round head plus a wider
+    // applied cap made the old version a bottle/thermos when its label vanished.
+    { group: 'case', tier: 'signature', headWidth: 0.97, tailWidth: 0.97,
+      head: 'cushion', tail: 'cushion', endDepth: 0.012, corner: 0.1,
+      marks: ['grooves'], claimTop: 0.08, claimBottom: 0.92 }),
+
   // A springback is a BARREL — the swell is the whole object, and the boards
   // are pulled in tight above and below it. At 0.9 either end against a 0.15
   // bulge the swing was a pixel and a half and it sat in the middle of the
@@ -1098,8 +1160,10 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   'round-cap': shape('round-cap', 'Rolled Caps', 'Leather turned over a cord at head and tail, and rolled round.',
     ['luxe', 'antique', 'refined'],
-    { group: 'cut', tier: 'signature', head: 'round', tail: 'round', endDepth: 0.04, corner: 0.1, marks: ['headcaps'],
-      claimTop: 0.12, claimBottom: 0.88 }),
+    // The roll is an inset seam in the leather, not a knob wider than the book.
+    { group: 'cut', tier: 'signature', head: 'cushion', tail: 'cushion',
+      headWidth: 0.97, tailWidth: 0.97, endDepth: 0.014, corner: 0.12,
+      marks: ['headcaps'], claimTop: 0.09, claimBottom: 0.91 }),
 
   gabled: shape('gabled', 'Gabled', 'A pitched roof over the head, as on a reliquary.',
     ['ornate', 'devotional', 'antique'],
@@ -1231,7 +1295,7 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
 
   ribbed: shape('ribbed', 'Raised Cords', 'Sewn on raised cords: four flat pills stand proud across the spine.',
     ['formal', 'luxe', 'antique'],
-    { group: 'sewn', tier: 'signature', inset: 0.055, marks: ['cords'], claimTop: 0.32, claimBottom: 0.58 }),
+    { group: 'sewn', tier: 'signature', inset: 0.015, marks: ['cords'], claimTop: 0.32, claimBottom: 0.58 }),
 
   /*
    * The five insets — 0.13, 0.10, 0.10, 0.09, 0.06 — were the whole cluster.
@@ -1346,7 +1410,11 @@ export const SHAPES: Readonly<Record<SpineShape, ShapeSpec>> = {
   // were one picture.
   yapp: shape('yapp', 'Yapp Edges', 'The covers overhang the block at head and tail.',
     ['devotional', 'cosy', 'antique'],
-    { group: 'fastened', tier: 'shelf', inset: 0.115, dropTop: 0.04, dropBottom: 0.04, corner: 0.22, marks: ['yappLips'] }),
+    // A yapp is a soft cover extending a LITTLE beyond the text block. The
+    // earlier 11.5% side inset made its full-width lips into the caps of an
+    // I-beam; keep the back nearly full-width and let a small rounded extension
+    // at head/tail do the naming.
+    { group: 'fastened', tier: 'shelf', inset: 0.045, dropTop: 0.02, dropBottom: 0.02, corner: 0.2, marks: ['yappLips'] }),
 
   /*
    * The plain-rectangle group — square, clasped, chained, chamfered, ledger,
@@ -1387,9 +1455,31 @@ export const SPINE_SHAPES: readonly SpineShape[] = byRank(
   SHAPE_GROUPS,
 ).map((s) => s.id);
 
-/** …and just the ones the dice may land on. */
-export const ROLLABLE_SHAPES: readonly SpineShape[] = SPINE_SHAPES.filter((id) =>
-  isRollable(SHAPES[id].tier),
+/**
+ * The silhouettes a reader may build a NEW binding from.
+ *
+ * This is intentionally much smaller than the archival fifty above. Tiering
+ * alone proved too generous: it kept office stationery, display boxes and
+ * novelty head cuts out of the dice, but still put forty very different
+ * objects in the "spine shape" picker. At shelf size a reader should not need
+ * the name under a tile to decide whether it is a book.
+ *
+ * The kept set is intentionally literal: a straight head and tail, continuous
+ * upright sides, and at most joint grooves inside that rectangular book back.
+ * Rounded, capped, cut, swollen and mechanical outlines remain in `SHAPES` so
+ * old data can be diagnosed, but accepted stored ids normalise onto this set.
+ */
+export const ROLLABLE_SHAPES: readonly SpineShape[] = [
+  'square',
+  'tight-back',
+  'double-hinge',
+] as const;
+
+const ACTIVE_SHAPE_SET: ReadonlySet<string> = new Set(ROLLABLE_SHAPES);
+
+/** Silhouettes retained only so old stored ids can be diagnosed. */
+export const RETIRED_SPINE_SHAPES: readonly SpineShape[] = SPINE_SHAPES.filter(
+  (id) => !ACTIVE_SHAPE_SET.has(id),
 );
 
 /** Look up a silhouette; unknown ids give the plain case rather than a throw. */
@@ -1412,8 +1502,8 @@ export const SHAPE_LABELS: Readonly<Record<SpineShape, string>> = Object.freeze(
  * A covering is not a hue — the book already has one, from `CLOTHS` — it is a
  * RELATIONSHIP to that hue. Buckram is the same book in its own darker value;
  * a wrapper is the same book washed most of the way to paper; vellum throws the
- * pigment away entirely and keeps it only on the label, which is exactly why a
- * vellum quarto jumps out of a row of coloured cloth.
+ * pigment away almost entirely, which is exactly why a vellum quarto jumps out
+ * of a row of coloured cloth.
  */
 type BodyTone = 'cloth' | 'deep' | 'pale' | 'cream' | 'parchment' | 'accent';
 
@@ -1475,6 +1565,7 @@ type Grain =
   | 'shellSpots'
   | 'pasteComb'
   | 'lozenges'
+  | 'sprigs'
   | 'floret'
   | 'fibres'
   | 'laidLines'
@@ -1487,6 +1578,34 @@ type Grain =
 
 /** Which colour the grain marks are struck in. */
 type GrainTone = 'dark' | 'deeper' | 'pale' | 'cream' | 'ink' | 'accent' | 'foil';
+
+/**
+ * Broad construction cue used after the covering is laid.
+ *
+ * This is intentionally not another grain.  Each value describes a real edge,
+ * fold, shoulder or turned face and is drawn in two or three large flat shapes
+ * that survive a 30px shelf spine.  No value emits a repeated field.
+ */
+type MaterialConstruction =
+  | 'cloth-case'
+  | 'buckram-case'
+  | 'linen-case'
+  | 'felt-case'
+  | 'velvet-case'
+  | 'calf-back'
+  | 'morocco-back'
+  | 'russia-back'
+  | 'roan-back'
+  | 'oilcloth-back'
+  | 'vellum-laced'
+  | 'parchment-fold'
+  | 'alum-tawed-laced'
+  | 'wrapper-fold'
+  | 'half-leather'
+  | 'quarter-leather'
+  | 'three-quarter-leather'
+  | 'half-cloth'
+  | 'tips-leather';
 
 /** One covering, as numbers the ONE painter reads. */
 export interface MaterialSpec {
@@ -1508,6 +1627,8 @@ export interface MaterialSpec {
   grainCount: number;
   /** Fine ink lines down the joints: 0, 1 or 2. */
   joints: number;
+  /** One broad, material-specific binding construction. Never a texture. */
+  construction: MaterialConstruction;
   /** Below this spine width the grain is dropped whole. */
   floor: number;
 }
@@ -1523,6 +1644,7 @@ const MATERIAL_DEFAULTS: MaterialRest = {
   grainTone: 'dark',
   grainCount: 8,
   joints: 0,
+  construction: 'cloth-case',
   floor: 11,
 };
 
@@ -1541,22 +1663,26 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   /* ------------------------------ cloth and weave ---------------------------- */
 
   'smooth-cloth': material('smooth-cloth', 'Smooth Cloth', 'Publisher’s cloth: one even face, one turned board, nothing else.',
-    ['plain', 'sober', 'utilitarian'], { group: 'cloth', tier: 'signature' }),
+    ['plain', 'sober', 'utilitarian'], { group: 'cloth', tier: 'signature', construction: 'cloth-case' }),
 
-  'ribbed-cloth': material('ribbed-cloth', 'Rep Cloth', 'Ribbed across in eight fine courses, the way rep is woven.',
+  'ribbed-cloth': material('ribbed-cloth', 'Rep Cloth', 'A fine archival rep weave, retained for older bindings.',
     ['plain', 'formal', 'antique'], { group: 'cloth', tier: 'signature', grain: 'ribs', grainCount: 8, floor: 8 }),
 
-  buckram: material('buckram', 'Library Buckram', 'The whole spine in its own deep tone. Matte, heavy, unbudgeable.',
-    ['utilitarian', 'severe', 'scholarly'], { group: 'cloth', tier: 'signature', body: 'deep', turn: 0.3 }),
+  buckram: material('buckram', 'Library Buckram', 'A deep, quiet library cloth identified by its broad turn and one firm joint.',
+    ['utilitarian', 'severe', 'scholarly'], {
+      group: 'cloth', tier: 'signature', body: 'deep', turn: 0.32, farTurn: 0.08, joints: 1, grain: 'none', construction: 'buckram-case',
+    }),
 
-  linen: material('linen', 'Linen', 'A loose open weave you can count the threads of.',
-    ['plain', 'natural', 'handmade'], { group: 'cloth', tier: 'shelf', turn: 0.2, grain: 'weave', grainCount: 7 }),
+  linen: material('linen', 'Book Linen', 'A pale woven covering expressed by a narrow turn and one joint, never an all-over weave tile.',
+    ['plain', 'natural', 'handmade'], {
+      group: 'cloth', tier: 'shelf', body: 'pale', turn: 0.18, farTurn: 0.06, joints: 1, grain: 'none', construction: 'linen-case',
+    }),
 
   canvas: material('canvas', 'Canvas Duck', 'Heavy cotton duck, laid in a close diagonal twill.',
     ['utilitarian', 'rustic', 'heavy'], { group: 'cloth', tier: 'shelf', body: 'pale', turn: 0.22, grain: 'twill', grainCount: 9 }),
 
-  sailcloth: material('sailcloth', 'Sailcloth', 'No turned board at all — one bolt of canvas, seamed with heavy stitching.',
-    ['utilitarian', 'handmade', 'rustic'], { group: 'cloth', tier: 'niche', body: 'pale', turn: 0, grain: 'stitchRun', grainCount: 12 }),
+  sailcloth: material('sailcloth', 'Sailcloth', 'One bolt of canvas with a restrained pair of sewn joint seams.',
+    ['utilitarian', 'handmade', 'rustic'], { group: 'cloth', tier: 'niche', body: 'pale', turn: 0.12, grain: 'stitchRun', grainCount: 5 }),
 
   hessian: material('hessian', 'Hessian', 'Sackcloth: six coarse slubs and not a smooth inch anywhere.',
     ['rustic', 'natural', 'battered'], { group: 'cloth', tier: 'shelf', turn: 0.18, grain: 'coarse', grainCount: 6 }),
@@ -1564,33 +1690,35 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   tweed: material('tweed', 'Tweed', 'Flecked through with the second cloth, like a coat off a hook.',
     ['cosy', 'rustic', 'natural'], { group: 'cloth', tier: 'shelf', turn: 0.24, grain: 'fleck', grainTone: 'accent', grainCount: 16 }),
 
-  felt: material('felt', 'Felt', 'Thick and soft: a wide turned board and a cut edge standing in tufts.',
-    ['cosy', 'handmade', 'plain'], { group: 'cloth', tier: 'shelf', turn: 0.36, grain: 'napEdge', grainCount: 3 }),
+  felt: material('felt', 'Felt', 'Thick and soft: a modest turned edge with a few cut tufts.',
+    ['cosy', 'handmade', 'plain'], { group: 'cloth', tier: 'shelf', turn: 0.3, farTurn: 0.1, grain: 'none', grainCount: 0, construction: 'felt-case' }),
 
-  velvet: material('velvet', 'Velvet', 'Deep pile in two steps down the fore edge, crushed across the middle.',
-    ['luxe', 'ornate', 'cosy'], { group: 'cloth', tier: 'shelf', body: 'deep', turn: 0.4, grain: 'pile', grainTone: 'accent', grainCount: 3 }),
+  velvet: material('velvet', 'Velvet', 'A deep, even face identified by colour and a broad turned edge, without painted pile specks.',
+    ['luxe', 'ornate', 'cosy'], { group: 'cloth', tier: 'shelf', body: 'deep', turn: 0.24, farTurn: 0.1, grain: 'none', construction: 'velvet-case' }),
 
   /* ------------------------------- figured silks ----------------------------- */
 
-  'silk-moire': material('silk-moire', 'Watered Silk', 'Moiré: five long ripples running the height, like light on water.',
-    ['luxe', 'refined', 'fancy'], { group: 'silk', tier: 'signature', turn: 0.2, grain: 'watered', grainTone: 'pale', grainCount: 5 }),
+  'silk-moire': material('silk-moire', 'Watered Silk', 'A restrained watered figure, retained for older bindings.',
+    ['luxe', 'refined', 'fancy'], { group: 'silk', tier: 'niche', turn: 0.2, grain: 'watered', grainTone: 'dark', grainCount: 3 }),
 
-  brocade: material('brocade', 'Brocade', 'A column of woven figures in the second colour, raised out of the ground.',
-    ['ornate', 'luxe', 'fancy'], { group: 'silk', tier: 'shelf', turn: 0.22, grain: 'figured', grainTone: 'accent', grainCount: 6 }),
+  brocade: material('brocade', 'Brocade', 'Small woven leaf figures repeat quietly in the silk ground.',
+    ['ornate', 'luxe', 'fancy'], { group: 'silk', tier: 'shelf', turn: 0.22, grain: 'figured', grainTone: 'pale', grainCount: 5 }),
 
   damask: material('damask', 'Damask', 'Reversed weave: leaf shapes that are the same silk facing the other way.',
     ['ornate', 'refined', 'formal'], { group: 'silk', tier: 'shelf', turn: 0.22, grain: 'damask', grainTone: 'pale', grainCount: 5 }),
 
   /* ---------------------------------- leather -------------------------------- */
 
-  'morocco-grain': material('morocco-grain', 'Morocco', 'Grained goatskin, turned over BOTH joints so the back reads round.',
-    ['luxe', 'formal', 'antique'], { group: 'leather', tier: 'signature', turn: 0.22, farTurn: 0.14, grain: 'pebble', grainCount: 18, joints: 2 }),
+  'morocco-grain': material('morocco-grain', 'Morocco Goatskin', 'Supple goatskin rounded over a broad back with two pared shoulders; no imitation pebble field.',
+    ['luxe', 'formal', 'antique'], {
+      group: 'leather', tier: 'signature', turn: 0.22, farTurn: 0.14, grain: 'none', joints: 0, construction: 'morocco-back',
+    }),
 
-  'polished-calf': material('polished-calf', 'Polished Calf', 'Smooth hide with a paler panel down the centre, burnished by hand.',
-    ['refined', 'formal', 'luxe'], { group: 'leather', tier: 'signature', turn: 0.2, farTurn: 0.12, grain: 'panelled', grainTone: 'pale', grainCount: 1 }),
+  'polished-calf': material('polished-calf', 'Polished Calf', 'Smooth calf with paired joint fillets; no painted highlight or false shine.',
+    ['refined', 'formal', 'luxe'], { group: 'leather', tier: 'signature', turn: 0.2, farTurn: 0.14, joints: 2, construction: 'calf-back' }),
 
   'russia-calf': material('russia-calf', 'Russia Calf', 'Birch-tarred and dark, with the two joints creased hard in.',
-    ['antique', 'sober', 'scholarly'], { group: 'leather', tier: 'shelf', body: 'deep', turn: 0.24, farTurn: 0.12, joints: 2 }),
+    ['antique', 'sober', 'scholarly'], { group: 'leather', tier: 'shelf', body: 'deep', turn: 0.25, farTurn: 0.15, joints: 2, construction: 'russia-back' }),
 
   'tree-calf': material('tree-calf', 'Tree Calf', 'The acid-drawn tree: a trunk up the spine and four branches off it.',
     ['antique', 'ornate', 'refined'], { group: 'leather', tier: 'shelf', turn: 0.2, farTurn: 0.1, grain: 'flame', grainTone: 'deeper', grainCount: 4 }),
@@ -1602,7 +1730,7 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
     ['antique', 'battered', 'handmade'], { group: 'leather', tier: 'niche', turn: 0.2, farTurn: 0.1, grain: 'mottle', grainTone: 'deeper', grainCount: 7 }),
 
   roan: material('roan', 'Roan', 'Cheap sheepskin standing in for morocco, with one honest joint line.',
-    ['plain', 'utilitarian', 'antique'], { group: 'leather', tier: 'shelf', turn: 0.28, joints: 1 }),
+    ['plain', 'utilitarian', 'antique'], { group: 'leather', tier: 'shelf', turn: 0.29, farTurn: 0.05, joints: 1, construction: 'roan-back' }),
 
   skiver: material('skiver', 'Skiver', 'Split so thin it takes the board’s own colour; pricked all over.',
     ['plain', 'pocket', 'battered'], { group: 'leather', tier: 'niche', body: 'pale', turn: 0.16, grain: 'pinDot', grainTone: 'deeper', grainCount: 14 }),
@@ -1622,19 +1750,21 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   pigskin: material('pigskin', 'Pigskin', 'Bristle holes in threes, all over a pale unstained hide.',
     ['antique', 'scholarly', 'heavy'], { group: 'leather', tier: 'shelf', body: 'pale', turn: 0.24, grain: 'pinDot', grainTone: 'ink', grainCount: 21 }),
 
-  oilcloth: material('oilcloth', 'Oilcloth', 'Waxed and dark, creased three times where it has been folded back.',
-    ['utilitarian', 'battered', 'pocket'], { group: 'leather', tier: 'shelf', body: 'deep', turn: 0.26, grain: 'creases', grainTone: 'pale', grainCount: 3 }),
+  oilcloth: material('oilcloth', 'Oilcloth', 'Waxed dark cloth with one firm joint and an otherwise quiet face.',
+    ['utilitarian', 'battered', 'pocket'], { group: 'leather', tier: 'shelf', body: 'deep', turn: 0.21, farTurn: 0.08, joints: 1, construction: 'oilcloth-back' }),
 
   /* ---------------------------- vellum and parchment ------------------------- */
 
   vellum: material('vellum', 'Vellum', 'Cream whatever the book’s pigment is — the colour lives on the label.',
-    ['antique', 'devotional', 'refined'], { group: 'vellum', tier: 'signature', body: 'cream', turn: 0.22, joints: 1 }),
+    ['antique', 'devotional', 'refined'], { group: 'vellum', tier: 'signature', body: 'cream', turn: 0.22, farTurn: 0.08, joints: 1, construction: 'vellum-laced' }),
 
-  parchment: material('parchment', 'Parchment', 'Older and warmer than vellum, and it has cockled at the joints.',
-    ['antique', 'handmade', 'battered'], { group: 'vellum', tier: 'shelf', body: 'parchment', turn: 0.2, grain: 'creases', grainTone: 'ink', grainCount: 3 }),
+  parchment: material('parchment', 'Parchment', 'Older and warmer than vellum, kept as one quiet warm face with a turned joint.',
+    ['antique', 'handmade', 'battered'], { group: 'vellum', tier: 'shelf', body: 'parchment', turn: 0.2, farTurn: 0.06, grain: 'none', joints: 1, construction: 'parchment-fold' }),
 
-  'alum-tawed': material('alum-tawed', 'Alum-Tawed', 'White tawed pigskin over oak boards: the oldest binding still standing.',
-    ['devotional', 'antique', 'severe'], { group: 'vellum', tier: 'shelf', body: 'cream', turn: 0.16, grain: 'pinDot', grainTone: 'ink', grainCount: 12, joints: 2 }),
+  'alum-tawed': material('alum-tawed', 'Alum-Tawed Pigskin', 'Pale tawed hide laced to oak boards with two broad structural returns, never a field of bristle dots.',
+    ['devotional', 'antique', 'severe'], {
+      group: 'vellum', tier: 'shelf', body: 'cream', turn: 0.16, farTurn: 0.09, grain: 'none', joints: 1, construction: 'alum-tawed-laced',
+    }),
 
   /* ----------------------------- decorated papers ---------------------------- */
 
@@ -1674,28 +1804,34 @@ export const MATERIALS: Readonly<Record<MaterialLook, MaterialSpec>> = {
   'chequer-paper': material('chequer-paper', 'Chequered Paper', 'A two-colour chequer, big enough to count across a room.',
     ['goofy', 'whimsical', 'modern'], { group: 'paper', tier: 'oddity', turn: 0, grain: 'chequer', grainTone: 'accent', grainCount: 9 }),
 
-  'paper-wrapper': material('paper-wrapper', 'Paper Wrapper', 'One sheet folded round, no turned board — which is how the eye knows it is cheap.',
-    ['plain', 'pocket', 'utilitarian'], { group: 'paper', tier: 'signature', body: 'pale', turn: 0, grain: 'wrapperRules', grainTone: 'ink', grainCount: 2 }),
+  'paper-wrapper': material('paper-wrapper', 'Paper Wrapper', 'One quiet pale sheet folded round with no turned board or printed terminal lines.',
+    ['plain', 'pocket', 'utilitarian'], { group: 'paper', tier: 'signature', body: 'pale', turn: 0.08, farTurn: 0.05, grain: 'none', construction: 'wrapper-fold' }),
 
   newsprint: material('newsprint', 'Newsprint', 'Grey stock ruled into columns, already going brown at the edges.',
     ['utilitarian', 'battered', 'pocket'], { group: 'paper', tier: 'niche', body: 'pale', turn: 0, grain: 'newsRules', grainTone: 'dark', grainCount: 14 }),
 
   /* -------------------------- two coverings, one book ------------------------ */
 
-  'half-bound': material('half-bound', 'Half Bound', 'Leather over the head third and the joint; boards for the rest.',
-    ['formal', 'refined', 'antique'], { group: 'split', tier: 'signature', turn: 0.26, split: 'half' }),
+  'half-bound': material('half-bound', 'Half Bound', 'A leather back and corners frame paper-covered boards.',
+    ['formal', 'refined', 'antique'], { group: 'split', tier: 'signature', turn: 0.27, farTurn: 0.12, split: 'half', joints: 2, construction: 'half-leather' }),
 
-  'quarter-bound': material('quarter-bound', 'Quarter Bound', 'A narrow strip of the good stuff at head and tail, and no more.',
-    ['formal', 'plain', 'antique'], { group: 'split', tier: 'signature', turn: 0.26, split: 'quarter' }),
+  'quarter-bound': material('quarter-bound', 'Quarter Bound', 'A narrow leather or cloth back meets paper-covered boards.',
+    ['formal', 'plain', 'antique'], { group: 'split', tier: 'signature', turn: 0.19, farTurn: 0.06, split: 'quarter', joints: 1, construction: 'quarter-leather' }),
 
-  'three-quarter': material('three-quarter', 'Three-Quarter Bound', 'Leather most of the way down: the expensive compromise.',
-    ['luxe', 'formal', 'ornate'], { group: 'split', tier: 'shelf', turn: 0.26, split: 'threeQuarter', joints: 1 }),
+  'three-quarter': material('three-quarter', 'Three-Quarter Bound', 'A leather back and broad corners leave a restrained paper side.',
+    ['luxe', 'formal', 'ornate'], { group: 'split', tier: 'shelf', turn: 0.34, farTurn: 0.15, split: 'threeQuarter', joints: 2, construction: 'three-quarter-leather' }),
 
-  'half-cloth-paper': material('half-cloth-paper', 'Half Cloth over Paper', 'Cloth at the head, and a lozenge paper on the boards below it.',
-    ['plain', 'cosy', 'handmade'], { group: 'split', tier: 'shelf', turn: 0.24, split: 'half', grain: 'lozenges', grainTone: 'pale', grainCount: 8 }),
+  'half-cloth-paper': material('half-cloth-paper', 'Half Cloth over Paper', 'A cloth back and corners hold quiet unpatterned paper sides.',
+    ['plain', 'cosy', 'handmade'], { group: 'split', tier: 'shelf', turn: 0.24, farTurn: 0.08, split: 'half', grain: 'none', joints: 1, construction: 'half-cloth' }),
 
-  'tips-and-bands': material('tips-and-bands', 'Tips & Bands', 'The second hide only where the book is handled: both tips, both joints.',
-    ['refined', 'formal', 'antique'], { group: 'split', tier: 'shelf', turn: 0.28, split: 'tips', joints: 1 }),
+  // Alfred Launder-style construction translated into the flat vocabulary:
+  // a continuous natural cloth back and restrained printed-paper sides. The
+  // tiny sprig is a block-printed mark, never a photographic texture.
+  'sprig-paper-sides': material('sprig-paper-sides', 'Linen & Sprig Paper', 'Natural cloth at the back, small block-printed sprigs on the paper sides.',
+    ['refined', 'handmade', 'natural'], { group: 'split', tier: 'signature', body: 'pale', turn: 0.22, split: 'half', grain: 'sprigs', grainTone: 'accent', grainCount: 6, joints: 1 }),
+
+  'tips-and-bands': material('tips-and-bands', 'Tips & Bands', 'A leather back and small leather tips protect the handled corners.',
+    ['refined', 'formal', 'antique'], { group: 'split', tier: 'shelf', turn: 0.3, farTurn: 0.16, split: 'tips', joints: 2, construction: 'tips-leather' }),
 
   'boards-exposed': material('boards-exposed', 'Exposed Boards', 'Never covered: raw millboard, a cloth strip at the head, and old scuffs.',
     ['battered', 'plain', 'handmade'], { group: 'split', tier: 'niche', body: 'parchment', turn: 0.14, split: 'headBand', grain: 'scuffs', grainTone: 'ink', grainCount: 5 }),
@@ -1707,9 +1843,45 @@ export const MATERIAL_LOOKS: readonly MaterialLook[] = byRank(
   MATERIAL_GROUPS,
 ).map((m) => m.id);
 
-/** …and just the ones the dice may land on. */
-export const ROLLABLE_MATERIALS: readonly MaterialLook[] = MATERIAL_LOOKS.filter((id) =>
-  isRollable(MATERIALS[id].tier),
+/**
+ * Coverings offered for a new binding.
+ *
+ * This is the binding reset's authoritative covering roster. A covering earns
+ * a place here only when its identity comes from construction, a broad colour
+ * relationship, or a few terminal marks. Repeated weave, pebble, dot, scale,
+ * diaper and novelty-paper fields stay in the diagnostic table above, but no
+ * accepted picker id, stored composed id or random roll can ask for them.
+ *
+ * Buckram and book linen were redrawn for this roster: both now use a quiet
+ * face plus a turn/joint construction cue. They are not the tiled versions the
+ * old catalogue offered under those names.
+ */
+export const ROLLABLE_MATERIALS: readonly MaterialLook[] = [
+  'smooth-cloth',
+  'buckram',
+  'linen',
+  'felt',
+  'velvet',
+  'polished-calf',
+  'morocco-grain',
+  'russia-calf',
+  'roan',
+  'oilcloth',
+  'vellum',
+  'parchment',
+  'alum-tawed',
+  'paper-wrapper',
+  'half-bound',
+  'quarter-bound',
+  'three-quarter',
+  'half-cloth-paper',
+] as const;
+
+const ACTIVE_MATERIAL_SET: ReadonlySet<string> = new Set(ROLLABLE_MATERIALS);
+
+/** Coverings retained only so old stored ids can be diagnosed. */
+export const RETIRED_MATERIAL_LOOKS: readonly MaterialLook[] = MATERIAL_LOOKS.filter(
+  (id) => !ACTIVE_MATERIAL_SET.has(id),
 );
 
 /** Look up a covering; unknown ids give smooth cloth rather than a throw. */
@@ -1770,6 +1942,55 @@ type StampGlyph =
 /** How a frame's head is shaped. */
 type FrameHead = 'square' | 'arch' | 'gothic' | 'cartouche';
 
+/** Large, unmistakable binder's tools; never repeated as a field. */
+export type BroadFocalGlyph =
+  | 'crown'
+  | 'palmette'
+  | 'sprig'
+  | 'laurel'
+  | 'shield'
+  | 'fleuron'
+  | 'compass'
+  | 'rosette'
+  | 'fleur-de-lis'
+  | 'starflower'
+  | 'acanthus'
+  | 'sunrise'
+  | 'oak-spray'
+  | 'thistle'
+  | 'ivy-knot'
+  | 'oak-volutes'
+  | 'wheat-saltire'
+  | 'pomegranate'
+  | 'tulip'
+  | 'pinecone'
+  | 'fern-palmette'
+  | 'ginkgo';
+
+/**
+ * Six real binding architectures, not six names for the same tall rectangle.
+ * They all keep the book-square silhouette, but distribute the tooling in
+ * recognisably different ways: closed mitres, open corner returns, stepped
+ * fillets, side rails, folio ledges, or a deliberately open focal canopy.
+ */
+type CompartmentStyle =
+  | 'mitred'
+  | 'corner-return'
+  | 'stepped'
+  | 'rail'
+  | 'folio'
+  | 'canopy';
+
+/** The physically distinct premium binding families which survived reset. */
+type BindingArchetype =
+  | 'terminal'
+  | 'publisher-panel'
+  | 'corded-leather'
+  | 'ceremonial-crown'
+  | 'diagonal-botanical'
+  | 'laureate'
+  | 'structural-sewing';
+
 /**
  * One piece of applied ornament.
  *
@@ -1783,11 +2004,11 @@ type FrameHead = 'square' | 'arch' | 'gothic' | 'cartouche';
 type DecorPart =
   /** Rules across the spine at the given stations. `from`/`to` span the width. */
   | { k: 'rule'; at: readonly number[]; weight: number; from: number; to: number }
-  /** Rules down the spine. Split around a reserved band when they would cross it. */
+  /** Rules down the spine. */
   | { k: 'vrule'; at: readonly number[]; weight: number; top: number; bottom: number }
   /** A repeated motif along one band. */
   | { k: 'run'; at: number; glyph: RunGlyph; height: number; count: number }
-  /** An outlined rectangle. `grows` lets it swell to enclose a reserved band. */
+  /** An outlined rectangle. */
   | {
       k: 'frame';
       top: number;
@@ -1796,17 +2017,44 @@ type DecorPart =
       weight: number;
       head: FrameHead;
       double: boolean;
-      grows: boolean;
+    }
+  /** A square fillet whose transverse divisions physically meet its sides. */
+  | {
+      k: 'compartments';
+      top: number;
+      bottom: number;
+      inset: number;
+      weight: number;
+      double: boolean;
+      divisions: readonly number[];
+      style: CompartmentStyle;
+    }
+  /** Material-bodied raised bands with optional foil rules on the shoulders. */
+  | {
+      k: 'bands';
+      at: readonly number[];
+      height: number;
+      fill: 'surface' | 'accent';
+      shoulders: boolean;
+    }
+  /** One broad, filled binder's tool in an intentionally empty bay. */
+  | { k: 'focal'; at: number; glyph: BroadFocalGlyph; size: number }
+  /** One complete premium spine architecture; never combined with old cages. */
+  | {
+      k: 'binding';
+      archetype: BindingArchetype;
+      variant: number;
+      glyph?: BroadFocalGlyph;
     }
   /** An applied plate: a physical thing stuck on, with its own ink outline. */
   | { k: 'plate'; top: number; height: number; inset: number; shape: PlateShape; ruled: number }
-  /** One motif, struck once. Relocates if the caller reserved its station. */
+  /** One motif, struck once. */
   | { k: 'stamp'; at: number; glyph: StampGlyph; size: number }
-  /** The same motif scattered over the field, skipping the reserved band. */
+  /** The same motif scattered over the field. */
   | { k: 'seme'; glyph: StampGlyph; size: number; rows: number; top: number; bottom: number }
-  /** A stem up the spine with leaves off it. Splits around a reserved band. */
+  /** A stem up the spine with leaves off it. */
   | { k: 'trail'; glyph: 'vine' | 'laurel' | 'acorn'; count: number; top: number; bottom: number }
-  /** Metal: pins, or domed bosses. `cols` 2 keeps the centre clear for a title. */
+  /** Metal: pins, or domed bosses. `cols` 2 makes paired edge rows. */
   | { k: 'studs'; at: readonly number[]; size: number; cols: 1 | 2; domed: boolean }
   /** Brackets or shells at the four corners of the field. */
   | { k: 'corners'; glyph: 'bracket' | 'shell'; arm: number }
@@ -1861,6 +2109,309 @@ function decor(
   };
 }
 
+type AuthoredSpineProgramId = (typeof AUTHORED_SPINE_PROGRAM_IDS)[number];
+
+type ProgrammeFrame = 0 | 1 | 2;
+type ProgrammeFocal = readonly [BroadFocalGlyph, number, number];
+type ProgrammeRow = readonly [
+  id: AuthoredSpineProgramId,
+  name: string,
+  frame: ProgrammeFrame,
+  divisions: readonly number[],
+  bands: readonly number[],
+  focal?: ProgrammeFocal,
+  blind?: boolean,
+];
+
+/**
+ * One row per non-plain preset.  The compact tuple keeps the authoring table
+ * readable while every row still declares its own hierarchy.  Divisions are
+ * deliberately non-uniform: equal little bays are the visual grammar of a
+ * ladder, not of a fine binding.
+ *
+ * Construction references (primary museum/conservation records):
+ * - Library of Congress Diderot treatment — smooth tightback calf, recessed
+ *   cords, gold tooling around spine panels/onlays and tied-down endbands:
+ *   https://www.loc.gov/preservation/conservators/diderot/treatment.html
+ * - Met 448957 — one central motif with geometric tooling growing outward:
+ *   https://www.metmuseum.org/art/collection/search/448957
+ * - Met Vitruvius survey — raised-band quarter leather and complex blind-panel
+ *   publisher's cloth, demonstrating structure and tooling as one hierarchy:
+ *   https://www.metmuseum.org/perspectives/vitruvius
+ */
+const AUTHORED_PROGRAMME_ROWS: readonly ProgrammeRow[] = [
+  ['quarto-grand-fillet', 'Grand Quarto Fillet', 2, [0.18, 0.72], [0.84]],
+  ['oxford-double-compartment', 'Oxford Double Compartments', 2, [0.22, 0.66], [], undefined, false],
+  ['cambridge-blind-bays', 'Cambridge Blind Bays', 1, [0.27, 0.7], [], undefined, true],
+  ['printers-terminal-blocks', 'Printer’s Terminal Bands', 1, [], [0.16, 0.84]],
+  ['library-closed-fillet', 'Library Closed Fillet', 1, [0.2, 0.79], [], undefined, true],
+  ['folio-five-compartment', 'Folio Five Compartments', 1, [0.15, 0.34, 0.67, 0.85], [], undefined, false],
+  ['botanical-centre-panel', 'Botanical Centre Panel', 1, [0.3, 0.7], [], ['sprig', 0.5, 0.58]],
+  ['prize-laurel-panel', 'Prize Laurel Panel', 2, [0.27, 0.61], [], ['laurel', 0.78, 0.6]],
+
+  ['buckram-library-bays', 'Buckram Library Bays', 1, [0.19, 0.76], [], undefined, true],
+  ['buckram-oxford-fillets', 'Buckram Oxford Fillets', 2, [0.24, 0.72], [], undefined, false],
+  ['buckram-cambridge-bands', 'Buckram Cambridge Bands', 1, [0.35, 0.74], [0.18]],
+  ['buckram-archive-folio', 'Buckram Archive Folio', 1, [0.16, 0.37, 0.73, 0.87], [], undefined, true],
+
+  ['linen-herbarium-sprig', 'Linen Herbarium Sprig', 1, [0.3, 0.72], [], ['sprig', 0.51, 0.62]],
+  ['linen-printers-bands', 'Linen Printer’s Bands', 0, [], [0.17, 0.79]],
+  ['linen-scholar-bays', 'Linen Scholar Bays', 1, [0.26, 0.64, 0.82], [], undefined, true],
+
+
+  ['velvet-crown-frame', 'Velvet Sunrise State Binding', 2, [0.25, 0.73], [], ['sunrise', 0.49, 0.62]],
+  ['velvet-palmette-panel', 'Velvet Palmette Panel', 1, [0.28, 0.72], [], ['palmette', 0.5, 0.62]],
+  ['grand-crown-compartments', 'Grand Crown Binding', 2, [], [], ['crown', 0.31, 0.68]],
+
+  ['calf-blind-double-fillet', 'Calf Blind Double Fillet', 2, [0.2, 0.75], [], undefined, true],
+  ['calf-oxford-bands', 'Calf Oxford Bands', 1, [0.32, 0.7], [0.17, 0.83]],
+  ['calf-cambridge-bays', 'Calf Cambridge Bays', 1, [0.25, 0.62, 0.79], [], undefined, true],
+  ['calf-gilt-compartments', 'Calf Gilt Compartments', 2, [0.15, 0.36, 0.67, 0.86], [], undefined, false],
+  ['calf-royal-crown', 'Royal Calf State Binding', 1, [0.23, 0.7], []],
+  ['calf-laurel-wreath', 'Calf Laurel Tool', 1, [0.3, 0.67], [], ['laurel', 0.51, 0.62]],
+
+  ['russia-folio-panels', 'Russia Folio Panels', 1, [0.14, 0.33, 0.63, 0.84], [], undefined, true],
+  ['russia-blind-fillet', 'Russia Blind Fillet', 2, [0.24, 0.78], [], undefined, true],
+  ['russia-crown-bay', 'Russia State Bay', 1, [0.29, 0.71], []],
+  ['russia-scholar-bands', 'Russia Scholar Bands', 1, [0.37, 0.75], [0.19, 0.84], undefined, true],
+
+  ['roan-school-fillet', 'Roan School Fillet', 1, [0.21, 0.8], [], undefined, true],
+  ['roan-botanical-sprig', 'Roan Botanical Sprig', 1, [0.33, 0.73], [], ['sprig', 0.52, 0.58]],
+  ['roan-terminal-bays', 'Roan Terminal Bays', 2, [0.18, 0.77], [0.86]],
+
+  ['oilcloth-ledger-fillet', 'Oilcloth Ledger Fillet', 1, [0.17, 0.39, 0.82], [], undefined, true],
+  ['oilcloth-terminal-bands', 'Oilcloth Terminal Bands', 0, [], [0.14, 0.2, 0.84]],
+
+  ['vellum-folio-bays', 'Vellum Folio Bays', 1, [0.16, 0.35, 0.65, 0.84], [], undefined, true],
+  ['vellum-terminal-fleuron', 'Vellum Terminal Fleuron', 1, [0.24, 0.71], [], ['fleuron', 0.49, 0.58]],
+  ['vellum-laurel-panel', 'Vellum Laurel Tool', 2, [0.3, 0.67], [], ['laurel', 0.5, 0.6]],
+  ['vellum-abbey-fillet', 'Vellum Abbey Fillet', 1, [0.22, 0.43, 0.79], [], undefined, true],
+
+  ['parchment-quarto-bands', 'Parchment Quarto Bands', 1, [], [0.18, 0.76, 0.87], undefined, true],
+  ['parchment-blind-bays', 'Parchment Blind Bays', 2, [0.26, 0.69], [], undefined, true],
+  ['parchment-herbarium-sprig', 'Parchment Herbarium Sprig', 1, [0.31, 0.71], [], ['sprig', 0.51, 0.61]],
+  ['parchment-fleuron-panel', 'Parchment Fleuron Panel', 2, [0.25, 0.68], [], ['fleuron', 0.49, 0.57]],
+  ['parchment-scholar-fillet', 'Parchment Scholar Fillet', 1, [0.19, 0.41, 0.78], [], undefined, true],
+
+  ['wrapper-ruled-fold', 'Wrapper Fold Fillet', 1, [0.18, 0.81], [], undefined, true],
+  ['wrapper-printers-imprint', 'Wrapper Printer’s Imprint', 1, [0.28, 0.74], [], ['fleuron', 0.51, 0.52]],
+  ['wrapper-botanical-sprig', 'Wrapper Botanical Sprig', 1, [0.34, 0.73], [], ['sprig', 0.52, 0.56]],
+  ['wrapper-archive-sewn', 'Wrapper Archive Sewn Fillet', 2, [0.18, 0.39, 0.81], [], undefined, true],
+
+  ['half-calf-material-bands', 'Half Calf Material Bands', 0, [], [0.15, 0.33, 0.72, 0.86]],
+  ['half-oxford-compartments', 'Half Oxford Compartments', 2, [0.21, 0.65, 0.82], [], undefined, false],
+  ['half-laurel-panel', 'Half Binding Oak Tool', 1, [0.29, 0.66], [], ['oak-spray', 0.51, 0.58]],
+
+  ['quarter-calf-bands', 'Quarter Calf Bands', 0, [], [0.17, 0.38, 0.78]],
+  ['quarter-scholar-bays', 'Quarter Scholar Bays', 1, [0.25, 0.6, 0.81], [], undefined, true],
+  ['quarter-botanical-sprig', 'Quarter Botanical Sprig', 2, [0.32, 0.72], [], ['sprig', 0.52, 0.58]],
+
+  ['three-quarter-corded', 'Three-Quarter Material Cords', 0, [], [0.14, 0.29, 0.59, 0.82]],
+  ['three-quarter-folio-bays', 'Three-Quarter Folio Bays', 1, [0.16, 0.31, 0.62, 0.85], [], undefined, false],
+  ['three-quarter-crown', 'Three-Quarter State Binding', 2, [0.25, 0.73], []],
+
+  ['half-cloth-herbarium', 'Half Cloth Herbarium', 1, [0.31, 0.71], [], ['sprig', 0.51, 0.6]],
+  ['half-cloth-prize-laurel', 'Half Cloth Prize Starflower', 2, [0.28, 0.64], [], ['starflower', 0.78, 0.56]],
+  ['half-cloth-printers', 'Half Cloth Printer’s Bands', 1, [0.36, 0.76], [0.17, 0.83]],
+
+] as const;
+
+/**
+ * The architectural decision for every finished programme. Keeping this as a
+ * complete record is intentionally more verbose than deriving `index % 6`:
+ * the silhouette of the tooling belongs to the named binding and survives a
+ * reorder of the catalogue. The rows above own rhythm; this table owns how
+ * that rhythm meets corners, rails and terminal ledges.
+ */
+const RETIRED_PROGRAMME_ARCHITECTURE: Readonly<
+  Record<AuthoredSpineProgramId, CompartmentStyle>
+> = {
+  'quarto-grand-fillet': 'mitred',
+  'oxford-double-compartment': 'corner-return',
+  'cambridge-blind-bays': 'stepped',
+  'printers-terminal-blocks': 'rail',
+  'library-closed-fillet': 'rail',
+  'folio-five-compartment': 'folio',
+  'botanical-centre-panel': 'canopy',
+  'prize-laurel-panel': 'canopy',
+
+  'buckram-library-bays': 'rail',
+  'buckram-oxford-fillets': 'corner-return',
+  'buckram-cambridge-bands': 'stepped',
+  'buckram-archive-folio': 'folio',
+  'linen-herbarium-sprig': 'canopy',
+  'linen-printers-bands': 'rail',
+  'linen-scholar-bays': 'stepped',
+  'velvet-crown-frame': 'canopy',
+  'velvet-palmette-panel': 'canopy',
+  'grand-crown-compartments': 'canopy',
+
+  'calf-blind-double-fillet': 'mitred',
+  'calf-oxford-bands': 'stepped',
+  'calf-cambridge-bays': 'corner-return',
+  'calf-gilt-compartments': 'folio',
+  'calf-royal-crown': 'canopy',
+  'calf-laurel-wreath': 'canopy',
+  'russia-folio-panels': 'folio',
+  'russia-blind-fillet': 'mitred',
+  'russia-crown-bay': 'canopy',
+  'russia-scholar-bands': 'stepped',
+  'roan-school-fillet': 'rail',
+  'roan-botanical-sprig': 'canopy',
+  'roan-terminal-bays': 'corner-return',
+  'oilcloth-ledger-fillet': 'rail',
+  'oilcloth-terminal-bands': 'rail',
+
+  'vellum-folio-bays': 'folio',
+  'vellum-terminal-fleuron': 'canopy',
+  'vellum-laurel-panel': 'canopy',
+  'vellum-abbey-fillet': 'corner-return',
+  'parchment-quarto-bands': 'stepped',
+  'parchment-blind-bays': 'mitred',
+  'parchment-herbarium-sprig': 'canopy',
+  'parchment-fleuron-panel': 'canopy',
+  'parchment-scholar-fillet': 'rail',
+  'wrapper-ruled-fold': 'corner-return',
+  'wrapper-printers-imprint': 'canopy',
+  'wrapper-botanical-sprig': 'canopy',
+  'wrapper-archive-sewn': 'stepped',
+
+  'half-calf-material-bands': 'folio',
+  'half-oxford-compartments': 'corner-return',
+  'half-laurel-panel': 'canopy',
+  'quarter-calf-bands': 'rail',
+  'quarter-scholar-bays': 'stepped',
+  'quarter-botanical-sprig': 'canopy',
+  'three-quarter-corded': 'folio',
+  'three-quarter-folio-bays': 'folio',
+  'three-quarter-crown': 'canopy',
+  'half-cloth-herbarium': 'canopy',
+  'half-cloth-prize-laurel': 'canopy',
+  'half-cloth-printers': 'corner-return',
+};
+void RETIRED_PROGRAMME_ARCHITECTURE;
+
+interface ProgrammeArchetypeSpec {
+  readonly archetype: BindingArchetype;
+  readonly variant: number;
+  readonly glyph?: BroadFocalGlyph;
+}
+
+/**
+ * The final physical authority: 58 redrawn programmes share seven premium
+ * construction families (the eighth family is the nine quiet material-only
+ * baselines). Variants tune hierarchy inside a family; they never reintroduce
+ * crop corners, perimeter cages, labels, hardware or symbol wallpaper.
+ */
+const PROGRAMME_ARCHETYPES: Readonly<
+  Record<AuthoredSpineProgramId, ProgrammeArchetypeSpec>
+> = {
+  'library-closed-fillet': { archetype: 'terminal', variant: 0 },
+  'printers-terminal-blocks': { archetype: 'terminal', variant: 1, glyph: 'fleuron' },
+  'linen-printers-bands': { archetype: 'terminal', variant: 2, glyph: 'starflower' },
+  'roan-school-fillet': { archetype: 'terminal', variant: 3, glyph: 'shield' },
+  'oilcloth-ledger-fillet': { archetype: 'terminal', variant: 4 },
+  'oilcloth-terminal-bands': { archetype: 'terminal', variant: 5, glyph: 'sunrise' },
+  'half-cloth-printers': { archetype: 'terminal', variant: 6, glyph: 'rosette' },
+  'buckram-library-bays': { archetype: 'terminal', variant: 7 },
+  'buckram-cambridge-bands': { archetype: 'terminal', variant: 8 },
+
+  'quarto-grand-fillet': { archetype: 'publisher-panel', variant: 0 },
+  'oxford-double-compartment': { archetype: 'publisher-panel', variant: 1 },
+  'cambridge-blind-bays': { archetype: 'publisher-panel', variant: 2 },
+  'folio-five-compartment': { archetype: 'publisher-panel', variant: 3 },
+  'linen-scholar-bays': { archetype: 'publisher-panel', variant: 4 },
+  'buckram-oxford-fillets': { archetype: 'publisher-panel', variant: 5, glyph: 'acanthus' },
+  'buckram-archive-folio': { archetype: 'publisher-panel', variant: 6 },
+
+  'calf-blind-double-fillet': { archetype: 'corded-leather', variant: 0 },
+  'calf-oxford-bands': { archetype: 'corded-leather', variant: 1 },
+  'russia-folio-panels': { archetype: 'corded-leather', variant: 2 },
+  'calf-cambridge-bays': { archetype: 'corded-leather', variant: 3 },
+  'calf-gilt-compartments': { archetype: 'corded-leather', variant: 4, glyph: 'starflower' },
+  'russia-blind-fillet': { archetype: 'corded-leather', variant: 5 },
+  'russia-scholar-bands': { archetype: 'corded-leather', variant: 6 },
+  'roan-terminal-bays': { archetype: 'corded-leather', variant: 7, glyph: 'rosette' },
+  'half-calf-material-bands': { archetype: 'corded-leather', variant: 8 },
+  'quarter-calf-bands': { archetype: 'corded-leather', variant: 9 },
+  'three-quarter-corded': { archetype: 'corded-leather', variant: 10 },
+  'half-oxford-compartments': { archetype: 'corded-leather', variant: 11, glyph: 'ivy-knot' },
+  'quarter-scholar-bays': { archetype: 'corded-leather', variant: 12, glyph: 'thistle' },
+  'three-quarter-folio-bays': { archetype: 'corded-leather', variant: 13 },
+
+  'grand-crown-compartments': { archetype: 'ceremonial-crown', variant: 0, glyph: 'crown' },
+  'velvet-crown-frame': { archetype: 'ceremonial-crown', variant: 1, glyph: 'sunrise' },
+  'calf-royal-crown': { archetype: 'ceremonial-crown', variant: 2 },
+  'russia-crown-bay': { archetype: 'ceremonial-crown', variant: 3 },
+  'three-quarter-crown': { archetype: 'ceremonial-crown', variant: 4 },
+
+  'botanical-centre-panel': { archetype: 'diagonal-botanical', variant: 0, glyph: 'oak-spray' },
+  'linen-herbarium-sprig': { archetype: 'diagonal-botanical', variant: 1, glyph: 'tulip' },
+  'roan-botanical-sprig': { archetype: 'diagonal-botanical', variant: 2, glyph: 'thistle' },
+  'quarter-botanical-sprig': { archetype: 'diagonal-botanical', variant: 3, glyph: 'pomegranate' },
+  'half-cloth-herbarium': { archetype: 'diagonal-botanical', variant: 4, glyph: 'rosette' },
+  'parchment-herbarium-sprig': { archetype: 'diagonal-botanical', variant: 5, glyph: 'thistle' },
+  'wrapper-botanical-sprig': { archetype: 'diagonal-botanical', variant: 6, glyph: 'ivy-knot' },
+
+  'prize-laurel-panel': { archetype: 'laureate', variant: 0, glyph: 'laurel' },
+  'velvet-palmette-panel': { archetype: 'laureate', variant: 1, glyph: 'palmette' },
+  'calf-laurel-wreath': { archetype: 'laureate', variant: 2, glyph: 'laurel' },
+  'half-laurel-panel': { archetype: 'laureate', variant: 3, glyph: 'oak-spray' },
+  'half-cloth-prize-laurel': { archetype: 'laureate', variant: 4, glyph: 'starflower' },
+  'vellum-terminal-fleuron': { archetype: 'laureate', variant: 5, glyph: 'fleuron' },
+  'vellum-laurel-panel': { archetype: 'laureate', variant: 6, glyph: 'laurel' },
+  'parchment-fleuron-panel': { archetype: 'laureate', variant: 7, glyph: 'fleuron' },
+
+  'vellum-folio-bays': { archetype: 'structural-sewing', variant: 0 },
+  'parchment-quarto-bands': { archetype: 'structural-sewing', variant: 1 },
+  'vellum-abbey-fillet': { archetype: 'structural-sewing', variant: 2 },
+  'parchment-blind-bays': { archetype: 'structural-sewing', variant: 3 },
+  'parchment-scholar-fillet': { archetype: 'structural-sewing', variant: 4 },
+  'wrapper-ruled-fold': { archetype: 'structural-sewing', variant: 5 },
+  'wrapper-printers-imprint': { archetype: 'structural-sewing', variant: 6, glyph: 'fleuron' },
+  'wrapper-archive-sewn': { archetype: 'structural-sewing', variant: 7 },
+};
+
+/** Build the table without weakening `Decoration` to an arbitrary string. */
+const AUTHORED_DECORS: Readonly<Record<AuthoredSpineProgramId, DecorSpec>> =
+  Object.fromEntries(
+    AUTHORED_PROGRAMME_ROWS.map(([id, name, , , , , blind]) => {
+      const architecture = PROGRAMME_ARCHETYPES[id];
+      const parts: DecorPart[] = [{
+        k: 'binding',
+        archetype: architecture.archetype,
+        variant: architecture.variant,
+        ...(architecture.glyph === undefined ? {} : { glyph: architecture.glyph }),
+      }];
+      const tags: readonly BookTag[] =
+        architecture.archetype === 'diagonal-botanical' ||
+        architecture.archetype === 'laureate'
+          ? ['natural', 'handmade', 'refined']
+          : architecture.archetype === 'ceremonial-crown'
+            ? ['formal', 'luxe', 'gilt']
+            : blind
+              ? ['sober', 'scholarly', 'antique']
+              : ['formal', 'refined', 'scholarly'];
+      return [
+        id,
+        decor(
+          id,
+          name,
+          'One physically authored binding architecture, scaled for a true thirty-pixel shelf spine.',
+          tags,
+          parts,
+          {
+            group:
+              architecture.glyph === undefined ? 'panels' : 'stamps',
+            tier: 'signature',
+            floor: 8,
+            blind: blind ?? false,
+          },
+        ),
+      ];
+    }),
+  ) as unknown as Readonly<Record<AuthoredSpineProgramId, DecorSpec>>;
+
 /** Every ornament, keyed by id. */
 export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
   plain: decor('plain', 'Plain', 'Nothing at all. Plenty of real books are like this and a shelf needs them.',
@@ -1874,14 +2425,14 @@ export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
     [{ k: 'rule', at: [0.14, 0.2, 0.82], weight: 0.1, from: 0.18, to: 0.86 }],
     { group: 'rules', tier: 'signature', claimTop: 0.24, claimBottom: 0.78 }),
 
-  'double-bands': decor('double-bands', 'Double Bands', 'Three stations of paired thin rules — fussier, and more expensive.',
+  'double-bands': decor('double-bands', 'Double Bands', 'A paired rule at the head and another at the tail, leaving the whole middle open.',
     ['formal', 'refined', 'gilt'],
-    [{ k: 'rule', at: [0.12, 0.17, 0.46, 0.51, 0.79, 0.84], weight: 0.05, from: 0.16, to: 0.88 }],
-    { group: 'rules', tier: 'signature', claimTop: 0.21, claimBottom: 0.75 }),
+    [{ k: 'rule', at: [0.11, 0.17, 0.83, 0.89], weight: 0.05, from: 0.16, to: 0.88 }],
+    { group: 'rules', tier: 'signature', claimTop: 0.21, claimBottom: 0.79 }),
 
   'triple-bands': decor('triple-bands', 'Triple Bands', 'Three rules together at each end, close as a stave.',
     ['formal', 'ornate', 'gilt'],
-    [{ k: 'rule', at: [0.1, 0.14, 0.18, 0.78, 0.82, 0.86], weight: 0.045, from: 0.16, to: 0.88 }],
+    [{ k: 'rule', at: [0.1, 0.14, 0.18, 0.82, 0.86, 0.9], weight: 0.045, from: 0.16, to: 0.88 }],
     { group: 'rules', tier: 'shelf', claimTop: 0.24, claimBottom: 0.74 }),
 
   'spine-rule': decor('spine-rule', 'Spine Rules', 'Two long rules the whole height, just inside each edge.',
@@ -1982,19 +2533,19 @@ export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
 
   /* ----------------------------- panels and frames --------------------------- */
 
-  'gilt-panel': decor('gilt-panel', 'Gilt Panel', 'A tooled rectangle round the title compartment, grown to fit it.',
+  'gilt-panel': decor('gilt-panel', 'Gilt Panel', 'A tooled rectangle round the central compartment.',
     ['gilt', 'formal', 'luxe'],
-    [{ k: 'frame', top: 0.3, bottom: 0.64, inset: 0.13, weight: 0.06, head: 'square', double: false, grows: true }],
+    [{ k: 'frame', top: 0.3, bottom: 0.64, inset: 0.13, weight: 0.06, head: 'square', double: false }],
     { group: 'panels', tier: 'signature', floor: 12 }),
 
   'double-frame': decor('double-frame', 'Double Frame', 'Two rectangles, one inside the other, the whole height of the spine.',
     ['formal', 'ornate', 'severe'],
-    [{ k: 'frame', top: 0.07, bottom: 0.93, inset: 0.1, weight: 0.05, head: 'square', double: true, grows: false }],
+    [{ k: 'frame', top: 0.07, bottom: 0.93, inset: 0.1, weight: 0.05, head: 'square', double: true }],
     { group: 'panels', tier: 'shelf', floor: 13, claimTop: 0.12, claimBottom: 0.88 }),
 
   'blind-stamped-frame': decor('blind-stamped-frame', 'Blind Frame', 'Struck without foil: ink only, the sober binding’s one gesture.',
     ['sober', 'severe', 'devotional'],
-    [{ k: 'frame', top: 0.045, bottom: 0.955, inset: 0.13, weight: 0.05, head: 'square', double: false, grows: false }],
+    [{ k: 'frame', top: 0.045, bottom: 0.955, inset: 0.13, weight: 0.05, head: 'square', double: false }],
     { group: 'panels', tier: 'signature', blind: true, floor: 12, claimTop: 0.1, claimBottom: 0.9 }),
 
   'blind-panel': decor('blind-panel', 'Blind Panel', 'A tall blind rectangle round the compartment, and nothing shining anywhere.',
@@ -2002,29 +2553,28 @@ export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
     // Taller and WIDER than `gilt-panel`. Struck at the same 0.3–0.66 the two
     // were the same drawing in two colours, and on a dark cloth even the colour
     // did not carry — which is not a second ornament, it is one ornament listed
-    // twice. Wider and not narrower because `LABEL_SPAN` starts at 0.185: a
-    // frame inset past that runs its rails straight through the title.
-    [{ k: 'frame', top: 0.22, bottom: 0.74, inset: 0.075, weight: 0.05, head: 'square', double: false, grows: true }],
+    // twice. Its wider rails also make the blind strike legible at shelf scale.
+    [{ k: 'frame', top: 0.22, bottom: 0.74, inset: 0.075, weight: 0.05, head: 'square', double: false }],
     { group: 'panels', tier: 'shelf', blind: true, floor: 12 }),
 
   'arch-panel': decor('arch-panel', 'Arched Panel', 'A round-headed panel at the head, like a bay in a reading room.',
     ['ornate', 'devotional', 'formal'],
-    [{ k: 'frame', top: 0.06, bottom: 0.3, inset: 0.16, weight: 0.055, head: 'arch', double: false, grows: false }],
+    [{ k: 'frame', top: 0.06, bottom: 0.3, inset: 0.16, weight: 0.055, head: 'arch', double: false }],
     { group: 'panels', tier: 'shelf', floor: 13, claimTop: 0.34 }),
 
   'gothic-panel': decor('gothic-panel', 'Gothic Panel', 'The same panel, brought to a point. A chapel door at spine scale.',
     ['ornate', 'devotional', 'severe'],
-    [{ k: 'frame', top: 0.06, bottom: 0.32, inset: 0.16, weight: 0.055, head: 'gothic', double: false, grows: false }],
+    [{ k: 'frame', top: 0.06, bottom: 0.32, inset: 0.16, weight: 0.055, head: 'gothic', double: false }],
     { group: 'panels', tier: 'shelf', floor: 13, claimTop: 0.36 }),
 
   cartouche: decor('cartouche', 'Cartouche', 'A lobed shield at the foot, waiting for arms it will never get.',
     ['ornate', 'fancy', 'luxe'],
-    [{ k: 'frame', top: 0.62, bottom: 0.84, inset: 0.15, weight: 0.055, head: 'cartouche', double: false, grows: false }],
+    [{ k: 'frame', top: 0.62, bottom: 0.84, inset: 0.15, weight: 0.055, head: 'cartouche', double: false }],
     { group: 'panels', tier: 'shelf', floor: 13, claimBottom: 0.58 }),
 
   'lattice-panel': decor('lattice-panel', 'Lattice Panel', 'A framed trellis at the tail, four crossings of it.',
     ['ornate', 'refined', 'fancy'],
-    [{ k: 'frame', top: 0.68, bottom: 0.92, inset: 0.14, weight: 0.05, head: 'square', double: false, grows: false },
+    [{ k: 'frame', top: 0.68, bottom: 0.92, inset: 0.14, weight: 0.05, head: 'square', double: false },
      { k: 'run', at: 0.8, glyph: 'lattice', height: 0.05, count: 4 }],
     { group: 'panels', tier: 'niche', floor: 14, claimBottom: 0.64 }),
 
@@ -2071,6 +2621,17 @@ export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
     ['gilt', 'whimsical', 'fancy'],
     [{ k: 'stamp', at: 0.5, glyph: 'star', size: 0.32 }],
     { group: 'stamps', tier: 'shelf', floor: 12 }),
+
+  // One coherent tooling programme, based on the central medallion + fillet
+  // hierarchy of Met 448957. Keeping frame and centre in one decoration stops
+  // Surprise from stacking an unrelated panel, stamp and furniture system.
+  'star-fillet-medallion': decor('star-fillet-medallion', 'Star & Fillet Medallion', 'A restrained double fillet enclosing one geometric star low in the field.',
+    ['gilt', 'formal', 'refined'],
+    [
+      { k: 'frame', top: 0.1, bottom: 0.9, inset: 0.14, weight: 0.055, head: 'square', double: true },
+      { k: 'stamp', at: 0.72, glyph: 'star', size: 0.3 },
+    ],
+    { group: 'stamps', tier: 'signature', floor: 13, claimTop: 0.12, claimBottom: 0.88 }),
 
   crest: decor('crest', 'Crest', 'A shield with a band across it: somebody’s arms, on somebody’s book.',
     ['luxe', 'formal', 'antique'],
@@ -2144,6 +2705,300 @@ export const DECORS: Readonly<Record<Decoration, DecorSpec>> = {
     ['cosy', 'devotional', 'whimsical'],
     [{ k: 'ribbon', at: 0.3 }],
     { group: 'terminal', tier: 'shelf', floor: 10, claimTop: 0.2 }),
+
+  /* ----------------------- reset-era binder programmes ---------------------- */
+
+  'oxford-double-fillet': decor(
+    'oxford-double-fillet',
+    'Oxford Double Fillet',
+    'A restrained double perimeter with a single rule at head and tail.',
+    ['formal', 'scholarly', 'refined'],
+    [
+      { k: 'frame', top: 0.06, bottom: 0.94, inset: 0.11, weight: 0.045, head: 'square', double: true },
+      { k: 'rule', at: [0.15, 0.85], weight: 0.05, from: 0.18, to: 0.82 },
+    ],
+    { group: 'panels', tier: 'signature', floor: 12, claimTop: 0.19, claimBottom: 0.81 },
+  ),
+
+  'cambridge-blind-compartments': decor(
+    'cambridge-blind-compartments',
+    'Cambridge Blind Compartments',
+    'One blind perimeter divided into three generous, quiet compartments.',
+    ['sober', 'scholarly', 'antique'],
+    [
+      { k: 'frame', top: 0.055, bottom: 0.945, inset: 0.12, weight: 0.05, head: 'square', double: false },
+      { k: 'rule', at: [0.31, 0.69], weight: 0.05, from: 0.14, to: 0.86 },
+    ],
+    { group: 'panels', tier: 'signature', blind: true, floor: 12, claimTop: 0.34, claimBottom: 0.66 },
+  ),
+
+  'printers-fleuron-terminals': decor(
+    'printers-fleuron-terminals',
+    'Printer’s Fleuron Terminals',
+    'A small fleuron at each end, stopped by one measured rule.',
+    ['refined', 'formal', 'scholarly'],
+    [
+      { k: 'stamp', at: 0.09, glyph: 'fleuron', size: 0.23 },
+      { k: 'stamp', at: 0.91, glyph: 'fleuron', size: 0.23 },
+      { k: 'rule', at: [0.17, 0.83], weight: 0.05, from: 0.2, to: 0.8 },
+    ],
+    { group: 'terminal', tier: 'signature', floor: 11, claimTop: 0.21, claimBottom: 0.79 },
+  ),
+
+  'laurel-centrepiece': decor(
+    'laurel-centrepiece',
+    'Laurel Centre Sprig',
+    'One short laurel sprig held in an open central field by two rules.',
+    ['formal', 'natural', 'refined'],
+    [
+      { k: 'trail', glyph: 'laurel', count: 3, top: 0.4, bottom: 0.6 },
+      { k: 'rule', at: [0.32, 0.68], weight: 0.05, from: 0.22, to: 0.78 },
+    ],
+    { group: 'stamps', tier: 'signature', floor: 12 },
+  ),
+
+  'crown-fillet': decor(
+    'crown-fillet',
+    'Crown & Fillet',
+    'A single crown centred inside a fine double fillet.',
+    ['formal', 'luxe', 'gilt'],
+    [
+      { k: 'frame', top: 0.07, bottom: 0.93, inset: 0.12, weight: 0.045, head: 'square', double: true },
+      { k: 'stamp', at: 0.54, glyph: 'crown', size: 0.31 },
+    ],
+    { group: 'stamps', tier: 'signature', floor: 13, claimTop: 0.11, claimBottom: 0.89 },
+  ),
+
+  'heraldic-lozenge': decor(
+    'heraldic-lozenge',
+    'Heraldic Lozenge',
+    'One lozenge under a short head rule, enclosed by a single fillet.',
+    ['formal', 'antique', 'refined'],
+    [
+      { k: 'frame', top: 0.08, bottom: 0.92, inset: 0.13, weight: 0.05, head: 'square', double: false },
+      { k: 'rule', at: [0.29], weight: 0.05, from: 0.2, to: 0.8 },
+      { k: 'stamp', at: 0.58, glyph: 'lozenge', size: 0.29 },
+    ],
+    { group: 'stamps', tier: 'shelf', floor: 13, claimTop: 0.12, claimBottom: 0.88 },
+  ),
+
+  'botanical-centre-sprig': decor(
+    'botanical-centre-sprig',
+    'Botanical Centre Sprig',
+    'One short vine sprig in the centre, never a trail or repeated field.',
+    ['natural', 'handmade', 'refined'],
+    [
+      { k: 'trail', glyph: 'vine', count: 3, top: 0.39, bottom: 0.61 },
+      { k: 'rule', at: [0.31, 0.69], weight: 0.045, from: 0.24, to: 0.76 },
+    ],
+    { group: 'stamps', tier: 'signature', floor: 12 },
+  ),
+
+  'prize-laurel-terminal': decor(
+    'prize-laurel-terminal',
+    'Prize Laurel Terminal',
+    'A compact laurel at the foot, separated from the open field by one rule.',
+    ['formal', 'natural', 'gilt'],
+    [
+      { k: 'trail', glyph: 'laurel', count: 3, top: 0.7, bottom: 0.88 },
+      { k: 'rule', at: [0.63], weight: 0.055, from: 0.19, to: 0.81 },
+    ],
+    { group: 'terminal', tier: 'signature', floor: 12, claimBottom: 0.59 },
+  ),
+
+  'palmette-compartment': decor(
+    'palmette-compartment',
+    'Palmette Compartment',
+    'A single fleuron in one proportioned central compartment.',
+    ['formal', 'ornate', 'refined'],
+    [
+      { k: 'frame', top: 0.27, bottom: 0.73, inset: 0.13, weight: 0.05, head: 'square', double: false },
+      { k: 'stamp', at: 0.5, glyph: 'fleuron', size: 0.29 },
+    ],
+    { group: 'stamps', tier: 'shelf', floor: 12 },
+  ),
+
+  'abbey-blind-rules': decor(
+    'abbey-blind-rules',
+    'Abbey Blind Rules',
+    'A blind perimeter with one quiet division near each terminal.',
+    ['devotional', 'sober', 'antique'],
+    [
+      { k: 'frame', top: 0.055, bottom: 0.945, inset: 0.14, weight: 0.055, head: 'square', double: false },
+      { k: 'rule', at: [0.23, 0.77], weight: 0.055, from: 0.16, to: 0.84 },
+    ],
+    { group: 'panels', tier: 'signature', blind: true, floor: 12, claimTop: 0.27, claimBottom: 0.73 },
+  ),
+
+  'scholar-double-rule': decor(
+    'scholar-double-rule',
+    'Scholar’s Double Rule',
+    'Paired joint rules joined by one rule at head and tail.',
+    ['scholarly', 'formal', 'sober'],
+    [
+      { k: 'vrule', at: [0.16, 0.84], weight: 0.05, top: 0.06, bottom: 0.94 },
+      { k: 'rule', at: [0.16, 0.84], weight: 0.05, from: 0.16, to: 0.84 },
+    ],
+    { group: 'rules', tier: 'signature', floor: 11, claimTop: 0.2, claimBottom: 0.8 },
+  ),
+
+  'folio-compartments': decor(
+    'folio-compartments',
+    'Folio Compartments',
+    'Four broad horizontal divisions and two quiet joint rules.',
+    ['formal', 'scholarly', 'heavy'],
+    [
+      { k: 'rule', at: [0.16, 0.34, 0.66, 0.84], weight: 0.055, from: 0.16, to: 0.84 },
+      { k: 'vrule', at: [0.15, 0.85], weight: 0.045, top: 0.08, bottom: 0.92 },
+    ],
+    { group: 'rules', tier: 'signature', floor: 12, claimTop: 0.38, claimBottom: 0.62 },
+  ),
+
+  'ducal-corners': decor(
+    'ducal-corners',
+    'Ducal Corners',
+    'Four bracket tools lead to one small crown in the centre.',
+    ['luxe', 'formal', 'gilt'],
+    [
+      { k: 'corners', glyph: 'bracket', arm: 0.28 },
+      { k: 'stamp', at: 0.52, glyph: 'crown', size: 0.28 },
+    ],
+    { group: 'corners', tier: 'shelf', floor: 13, claimTop: 0.12, claimBottom: 0.88 },
+  ),
+
+  'royal-compartments': decor(
+    'royal-compartments',
+    'Royal Compartments',
+    'Measured terminal compartments with one crown in the open middle.',
+    ['formal', 'luxe', 'gilt'],
+    [
+      { k: 'rule', at: [0.17, 0.29, 0.71, 0.83], weight: 0.05, from: 0.16, to: 0.84 },
+      { k: 'stamp', at: 0.5, glyph: 'crown', size: 0.29 },
+    ],
+    { group: 'stamps', tier: 'shelf', floor: 13, claimTop: 0.33, claimBottom: 0.67 },
+  ),
+
+  'architects-fillet': decor(
+    'architects-fillet',
+    'Architect’s Fillet',
+    'A single perimeter joined by exact head and tail rules.',
+    ['formal', 'modern', 'severe'],
+    [
+      { k: 'frame', top: 0.055, bottom: 0.945, inset: 0.1, weight: 0.055, head: 'square', double: false },
+      { k: 'rule', at: [0.13, 0.87], weight: 0.055, from: 0.1, to: 0.9 },
+    ],
+    { group: 'panels', tier: 'shelf', floor: 12, claimTop: 0.17, claimBottom: 0.83 },
+  ),
+
+  'binder-terminal-pair': decor(
+    'binder-terminal-pair',
+    'Binder’s Terminal Pair',
+    'A fleuron at the head, a leaf at the foot, and one rule beside each.',
+    ['refined', 'handmade', 'formal'],
+    [
+      { k: 'stamp', at: 0.09, glyph: 'fleuron', size: 0.23 },
+      { k: 'stamp', at: 0.91, glyph: 'leaf', size: 0.23 },
+      { k: 'rule', at: [0.17, 0.83], weight: 0.05, from: 0.21, to: 0.79 },
+    ],
+    { group: 'terminal', tier: 'signature', floor: 11, claimTop: 0.21, claimBottom: 0.79 },
+  ),
+
+  'library-fillet': decor(
+    'library-fillet',
+    'Library Fillet',
+    'One continuous fillet and two short terminal rules: sober and durable.',
+    ['scholarly', 'utilitarian', 'formal'],
+    [
+      { k: 'frame', top: 0.06, bottom: 0.94, inset: 0.12, weight: 0.055, head: 'square', double: false },
+      { k: 'rule', at: [0.18, 0.82], weight: 0.05, from: 0.24, to: 0.76 },
+    ],
+    { group: 'panels', tier: 'signature', floor: 11, claimTop: 0.22, claimBottom: 0.78 },
+  ),
+
+  'botanical-corner-fillet': decor(
+    'botanical-corner-fillet',
+    'Botanical Corner Fillet',
+    'Bracket corners frame one leaf tool, with the rest of the field left open.',
+    ['natural', 'refined', 'handmade'],
+    [
+      { k: 'corners', glyph: 'bracket', arm: 0.27 },
+      { k: 'stamp', at: 0.54, glyph: 'leaf', size: 0.28 },
+    ],
+    { group: 'corners', tier: 'shelf', floor: 12, claimTop: 0.12, claimBottom: 0.88 },
+  ),
+
+  /* --------------------- final active rule-only programmes ------------------ */
+
+  'single-head-rule': decor('single-head-rule', 'Single Head Rule', 'One short fillet below the head and an otherwise open field.',
+    ['plain', 'formal', 'refined'],
+    [{ k: 'rule', at: [0.15], weight: 0.055, from: 0.2, to: 0.8 }],
+    { group: 'rules', tier: 'signature', claimTop: 0.19 }),
+
+  'single-tail-rule': decor('single-tail-rule', 'Single Tail Rule', 'One short fillet above the tail and an otherwise open field.',
+    ['plain', 'formal', 'refined'],
+    [{ k: 'rule', at: [0.85], weight: 0.055, from: 0.2, to: 0.8 }],
+    { group: 'rules', tier: 'signature', claimBottom: 0.81 }),
+
+  'paired-head-rules': decor('paired-head-rules', 'Paired Head Rules', 'Two close fillets below the head, with no marks through the body.',
+    ['formal', 'refined', 'scholarly'],
+    [{ k: 'rule', at: [0.11, 0.17], weight: 0.05, from: 0.18, to: 0.82 }],
+    { group: 'rules', tier: 'signature', claimTop: 0.21 }),
+
+  'paired-tail-rules': decor('paired-tail-rules', 'Paired Tail Rules', 'Two close fillets above the tail, with no marks through the body.',
+    ['formal', 'refined', 'scholarly'],
+    [{ k: 'rule', at: [0.83, 0.89], weight: 0.05, from: 0.18, to: 0.82 }],
+    { group: 'rules', tier: 'signature', claimBottom: 0.79 }),
+
+  'terminal-rule-pair': decor('terminal-rule-pair', 'Head & Tail Rules', 'One short fillet at each terminal, leaving one generous field.',
+    ['formal', 'plain', 'sober'],
+    [{ k: 'rule', at: [0.15, 0.85], weight: 0.055, from: 0.19, to: 0.81 }],
+    { group: 'rules', tier: 'signature', claimTop: 0.19, claimBottom: 0.81 }),
+
+  'asymmetric-terminal-rules': decor('asymmetric-terminal-rules', 'Asymmetric Terminal Rules', 'A paired head fillet answered by one tail rule.',
+    ['formal', 'refined', 'antique'],
+    [{ k: 'rule', at: [0.11, 0.17, 0.85], weight: 0.05, from: 0.18, to: 0.82 }],
+    { group: 'rules', tier: 'shelf', claimTop: 0.21, claimBottom: 0.81 }),
+
+  'four-terminal-rules': decor('four-terminal-rules', 'Four Terminal Rules', 'Two close rules at each end; the middle remains completely open.',
+    ['formal', 'scholarly', 'gilt'],
+    [{ k: 'rule', at: [0.11, 0.17, 0.83, 0.89], weight: 0.05, from: 0.17, to: 0.83 }],
+    { group: 'rules', tier: 'signature', claimTop: 0.21, claimBottom: 0.79 }),
+
+  'single-joint-fillet': decor('single-joint-fillet', 'Single Joint Fillet', 'One uninterrupted rule beside the near joint.',
+    ['plain', 'severe', 'utilitarian'],
+    [{ k: 'vrule', at: [0.18], weight: 0.055, top: 0.06, bottom: 0.94 }],
+    { group: 'rules', tier: 'shelf', claimTop: 0.06, claimBottom: 0.94 }),
+
+  'inner-joint-fillets': decor('inner-joint-fillets', 'Inner Joint Fillets', 'A quiet vertical pair set inboard from the physical joints.',
+    ['formal', 'refined', 'sober'],
+    [{ k: 'vrule', at: [0.28, 0.72], weight: 0.045, top: 0.07, bottom: 0.93 }],
+    { group: 'rules', tier: 'shelf', claimTop: 0.07, claimBottom: 0.93 }),
+
+  'terminal-rules-with-joints': decor('terminal-rules-with-joints', 'Terminal Rules & Joints', 'Two joint fillets with one short terminal rule at each end.',
+    ['formal', 'scholarly', 'refined'],
+    [
+      { k: 'vrule', at: [0.17, 0.83], weight: 0.045, top: 0.07, bottom: 0.93 },
+      { k: 'rule', at: [0.15, 0.85], weight: 0.05, from: 0.24, to: 0.76 },
+    ],
+    { group: 'rules', tier: 'signature', claimTop: 0.19, claimBottom: 0.81 }),
+
+  'head-rules-with-joints': decor('head-rules-with-joints', 'Head Rules & Joints', 'Two joint fillets with a paired rule held at the head.',
+    ['formal', 'scholarly', 'refined'],
+    [
+      { k: 'vrule', at: [0.17, 0.83], weight: 0.045, top: 0.07, bottom: 0.93 },
+      { k: 'rule', at: [0.11, 0.17], weight: 0.05, from: 0.24, to: 0.76 },
+    ],
+    { group: 'rules', tier: 'shelf', claimTop: 0.21, claimBottom: 0.93 }),
+
+  'tail-rules-with-joints': decor('tail-rules-with-joints', 'Tail Rules & Joints', 'Two joint fillets with a paired rule held at the tail.',
+    ['formal', 'scholarly', 'refined'],
+    [
+      { k: 'vrule', at: [0.17, 0.83], weight: 0.045, top: 0.07, bottom: 0.93 },
+      { k: 'rule', at: [0.83, 0.89], weight: 0.05, from: 0.24, to: 0.76 },
+    ],
+    { group: 'rules', tier: 'shelf', claimTop: 0.07, claimBottom: 0.79 }),
+
+  ...AUTHORED_DECORS,
 };
 
 /** Every ornament id in picker order: family, then tier, then declaration. */
@@ -2152,9 +3007,120 @@ export const DECORATIONS: readonly Decoration[] = byRank(
   DECOR_GROUPS,
 ).map((d) => d.id);
 
-/** …and just the ones the dice may land on. */
-export const ROLLABLE_DECORATIONS: readonly Decoration[] = DECORATIONS.filter((id) =>
-  isRollable(DECORS[id].tier),
+/**
+ * Historical marks whose only job was to hold, imply, or index spine text.
+ *
+ * They remain in preset metadata because `label-plate` still helps choose a
+ * fitting FRONT-COVER title treatment for older named bindings. The spine
+ * painter deliberately ignores every one of them, and the component picker
+ * does not offer an option that produces an empty ticket or doorway.
+ */
+export const SPINE_TEXT_FURNITURE_IDS: readonly Decoration[] = [
+  'label-plate',
+  'banner-plaque',
+  'shelf-ticket',
+  'number-roundel',
+  'gilt-panel',
+  'blind-panel',
+  'arch-panel',
+  'gothic-panel',
+  'cartouche',
+  'lattice-panel',
+] as const;
+
+const SPINE_TEXT_FURNITURE: ReadonlySet<Decoration> = new Set(
+  SPINE_TEXT_FURNITURE_IDS,
+);
+
+/** A self-corded back must not receive a second horizontal construction. */
+const ADDED_BAND_DECORATIONS: ReadonlySet<Decoration> = new Set([
+  'gilt-bands',
+  'double-bands',
+  'triple-bands',
+]);
+
+/**
+ * Marks that remain readable for legacy data but failed the caption-free
+ * shelf test: they resemble belts, rulers, luggage fittings, or antennae more
+ * readily than restrained binding tooling.
+ */
+export const RETIRED_VISUAL_DECORATION_IDS: readonly Decoration[] = [
+  'beaded-band',
+  'dentil-band',
+  'chequer-band',
+  'chain-band',
+  'marbled-band',
+  'pin-studs',
+  'bosses',
+  'tally-rules',
+  'ribbon-marker',
+  'bee-diaper',
+] as const;
+
+/**
+ * The final spine-tooling authority: one quiet baseline plus 58 finished,
+ * individually authored programmes.  Every active part is a connected square
+ * fillet, a material-bodied band or one broad binder's tool.  No active row can
+ * emit a dot field, trail, plate, hardware, rounded ticket or wallpaper run.
+ */
+export const ROLLABLE_DECORATIONS: readonly Decoration[] = [
+  'plain',
+  ...AUTHORED_SPINE_PROGRAM_IDS,
+] as const;
+
+/**
+ * Decorations safe to expose as the independent composer axis.
+ *
+ * Kept as a named export instead of making callers infer safety from the
+ * renderer table. At present every active programme was authored to stand on
+ * any active straight binding; a future named-preset-only programme can remain
+ * active without silently appearing here.
+ */
+export const COMPOSER_SAFE_DECORATIONS: readonly Decoration[] =
+  ROLLABLE_DECORATIONS;
+
+/** Programmes whose broad focal tool already spends the spine's motif budget. */
+export const FOCAL_TOOL_DECORATIONS: readonly Decoration[] =
+  AUTHORED_PROGRAMME_ROWS
+    .filter((row) => PROGRAMME_ARCHETYPES[row[0]].glyph !== undefined)
+    .map((row) => row[0]);
+
+const FOCAL_TOOL_DECORATION_SET: ReadonlySet<string> = new Set(
+  FOCAL_TOOL_DECORATIONS,
+);
+
+/** Does this programme already contain its one broad authored focal tool? */
+export function decorationHasFocalTool(id: unknown): boolean {
+  return typeof id === 'string' && FOCAL_TOOL_DECORATION_SET.has(id);
+}
+
+function bindingOwnsPhysicalCords(
+  part: Extract<DecorPart, { k: 'binding' }>,
+): boolean {
+  return (
+    part.archetype === 'corded-leather' ||
+    part.archetype === 'ceremonial-crown' ||
+    part.archetype === 'structural-sewing'
+  );
+}
+
+/** Does this decoration add any horizontal spine rule or terminal station? */
+export function decorationHasHorizontalRules(id: unknown): boolean {
+  if (typeof id !== 'string') return false;
+  const spec = DECORS[id as Decoration];
+  return spec?.parts.some((part) =>
+    part.k === 'rule' ||
+    part.k === 'bands' ||
+    (part.k === 'binding' && !bindingOwnsPhysicalCords(part)) ||
+    (part.k === 'compartments' && part.divisions.length > 0)
+  ) ?? false;
+}
+
+const ACTIVE_DECOR_SET: ReadonlySet<string> = new Set(ROLLABLE_DECORATIONS);
+
+/** Tooling retained only so old stored ids can be diagnosed. */
+export const RETIRED_DECORATIONS: readonly Decoration[] = DECORATIONS.filter(
+  (id) => !ACTIVE_DECOR_SET.has(id),
 );
 
 /** Look up an ornament; unknown ids give `plain` rather than a throw. */
@@ -2193,12 +3159,28 @@ export interface BookDesign {
    * one at all.
    */
   cloth: number | string;
+  /**
+   * Whether `cloth` came from the dedicated spine-base colour role.
+   *
+   * A vellum or parchment binding normally keeps its undyed paper colour even
+   * when the book inherits a shared cloth pigment. Once the reader explicitly
+   * chooses the spine face, that choice becomes a pale dye/wash instead. The
+   * colour value alone cannot distinguish those two cases: an inherited
+   * `clothHex` and an explicit `spineBaseHex` may contain the same bytes.
+   */
+  baseColourPinned: boolean;
   /** Second cloth, for half/quarter bindings, marbled veins and ribbons. */
-  accent: number;
+  accent: number | string;
+  /** Rules, frames and spine tooling; null follows gilt/blind tooling. */
+  tooling: string | null;
+  /** Centred stamps and medallions; null follows the tooling colour. */
+  emblem: string | null;
+  /** Clasps, corner pieces and other fittings; null uses the authored metal. */
+  hardware: string | null;
   /** Foil on the tooling. False means the same marks struck in soft ink. */
   gilt: boolean;
-  /** Where the label wants to sit, 0..1 of the spine height. */
-  labelAt: number;
+  /** Preferred focal compartment for cords and the optional ornament, 0..1. */
+  focusAt: number;
   seed: number;
 
   /* --- the studio's own axes, on top of whatever the preset decided ------- *
@@ -2294,19 +3276,13 @@ function preset(
  * the bottom of this list lands wherever its family and its quality put it, and
  * nothing here has to be kept in any particular sequence by hand.
  *
- * Two constraints hold across the whole table, and both are load-bearing:
+ * Two diagnostic constraints hold across this former catalogue:
  *
- *  - **No preset carries more than two decorations.** The caller adds a title
- *    and usually an ornament on top of whatever is here, and a 30px spine with
- *    five marks on it is a smudge.
- *  - **`gilt-panel` and `label-plate` may share a preset**, because the panel
- *    grows to enclose the label rather than colliding with it (see the frame
- *    part in `drawDecoration`), and a lettering-piece inside a tooled panel is
- *    one of the handsomest things a spine does.
- *
- * The sixty-two original ids all survive and still mean what they meant — a
- * preset id is persisted per book in `data/designPrefs.ts`, so retiring one
- * would silently rebind somebody's library.
+ *  - **No preset carries more than two decorations.** The caller may add one
+ *    ornament on top, and a 30px spine with four marks on it is a smudge.
+ *  - **Historical text-furniture ids remain identifiable here.** They never
+ *    enter `BOOK_PRESETS`; `bookPresetWantsCoverTitle` reads the old metadata
+ *    only to choose a FRONT-COVER title treatment during migration.
  */
 const PRESET_ROWS: readonly BookPreset[] = [
   /* ------------------------------- wrappers -------------------------------- */
@@ -2337,7 +3313,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('scalloped-primer', 'Scalloped Primer', 'scalloped-head', 'smooth-cloth', ['label-plate'], false, 3, ['whimsical', 'cosy', 'goofy'], { group: 'cloth', tier: 'niche' }),
   preset('diamond-primer', 'Diamond Primer', 'tapered-head', 'smooth-cloth', ['diamond-centre'], true, 3, ['refined', 'gilt', 'fancy'], { group: 'cloth', tier: 'shelf' }),
   preset('tight-back-prize', 'Tight-Back Prize', 'tight-back', 'smooth-cloth', ['gilt-panel', 'corner-tooling'], true, 3, ['formal', 'gilt', 'severe'], { group: 'cloth', tier: 'shelf' }),
-  preset('presentation-binding', 'Presentation Binding', 'rounded', 'smooth-cloth', ['gilt-panel', 'diamond-centre'], true, 2, ['luxe', 'gilt', 'formal'], { group: 'cloth', tier: 'niche' }),
+  preset('presentation-binding', 'Presentation Binding', 'double-hinge', 'smooth-cloth', ['gilt-panel', 'diamond-centre'], true, 2, ['luxe', 'gilt', 'formal'], { group: 'cloth', tier: 'niche' }),
   preset('yapp-pocket', 'Yapp Pocket', 'yapp', 'smooth-cloth', ['label-plate'], false, 3, ['cosy', 'devotional', 'pocket'], { group: 'cloth', tier: 'shelf' }),
   preset('schoolroom-cloth', 'Schoolroom Cloth', 'ledger', 'buckram', ['shelf-ticket'], false, 4, ['utilitarian', 'scholarly', 'battered'], { group: 'cloth', tier: 'shelf' }),
   preset('linen-quarto', 'Linen Quarto', 'square', 'linen', ['label-plate'], false, 5, ['natural', 'plain', 'handmade'], { group: 'cloth', tier: 'shelf' }),
@@ -2346,17 +3322,34 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('canvas-ledger', 'Canvas Ledger', 'ledger', 'canvas', ['corner-tooling'], false, 4, ['utilitarian', 'heavy', 'sober'], { group: 'cloth', tier: 'shelf' }),
   preset('sailmakers-quarto', 'Sailmaker’s Quarto', 'long-stitch', 'sailcloth', ['plain'], false, 3, ['handmade', 'rustic', 'natural'], { group: 'cloth', tier: 'niche' }),
   preset('hessian-folio', 'Hessian Folio', 'splayed', 'hessian', ['plain'], false, 3, ['rustic', 'battered', 'natural'], { group: 'cloth', tier: 'shelf' }),
-  preset('tweed-octavo', 'Tweed Octavo', 'rounded', 'tweed', ['label-plate'], false, 4, ['cosy', 'rustic', 'natural'], { group: 'cloth', tier: 'shelf' }),
-  preset('tweed-gilt', 'Tweed & Gilt', 'rounded', 'tweed', ['gilt-bands', 'label-plate'], true, 3, ['cosy', 'gilt', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('tweed-octavo', 'Tweed Octavo', 'square', 'tweed', ['label-plate'], false, 4, ['cosy', 'rustic', 'natural'], { group: 'cloth', tier: 'shelf' }),
+  preset('tweed-gilt', 'Tweed & Gilt', 'tight-back', 'tweed', ['gilt-bands', 'label-plate'], true, 3, ['cosy', 'gilt', 'refined'], { group: 'cloth', tier: 'shelf' }),
   preset('felt-pocketbook', 'Felt Pocketbook', 'cushioned', 'felt', ['plain'], false, 3, ['cosy', 'handmade', 'pocket'], { group: 'cloth', tier: 'shelf' }),
   preset('velvet-missal', 'Velvet Missal', 'cushioned', 'velvet', ['bosses', 'ribbon-marker'], true, 2, ['devotional', 'luxe', 'ornate'], { group: 'cloth', tier: 'niche' }),
   preset('velvet-album', 'Velvet Album', 'clasped', 'velvet', ['corner-tooling'], true, 2, ['luxe', 'antique', 'heavy'], { group: 'cloth', tier: 'niche' }),
 
+  /*
+   * Cased replacements for the soft-cover cluster.  They keep the tactile
+   * coverings, but put them on continuous backs with one legible furnishing.
+   * That is the construction, rather than a novelty silhouette, doing the
+   * visual work at shelf size.
+   */
+  preset('felt-common-room', 'Common-Room Felt', 'square', 'felt', ['label-plate'], false, 4, ['cosy', 'plain', 'handmade'], { group: 'cloth', tier: 'shelf' }),
+  preset('velvet-presentation', 'Velvet Presentation', 'tight-back', 'velvet', ['label-plate'], true, 3, ['luxe', 'formal', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('archival-cloth', 'Archival Cloth', 'library-shoulder', 'buckram', ['shelf-ticket', 'spine-rule'], false, 4, ['scholarly', 'utilitarian', 'sober'], { group: 'cloth', tier: 'signature' }),
+  preset('linen-herbarium', 'Linen Herbarium', 'tight-back', 'linen', ['vine-trail'], false, 4, ['natural', 'handmade', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('linen-sewn-journal', 'Cased Linen Journal', 'tight-back', 'linen', ['double-bands', 'label-plate'], false, 4, ['handmade', 'natural', 'rustic'], { group: 'cloth', tier: 'shelf' }),
+  preset('sailcloth-field-ledger', 'Sailcloth Field Book', 'tight-back', 'sailcloth', ['shelf-ticket'], false, 4, ['rustic', 'utilitarian', 'handmade'], { group: 'cloth', tier: 'shelf' }),
+  preset('canvas-daybook', 'Cased Canvas Daybook', 'library-shoulder', 'canvas', ['shelf-ticket'], false, 4, ['rustic', 'utilitarian', 'sober'], { group: 'cloth', tier: 'shelf' }),
+  preset('canvas-corded-log', 'Corded Canvas Log', 'ribbed', 'canvas', ['label-plate'], false, 4, ['rustic', 'heavy', 'utilitarian'], { group: 'cloth', tier: 'shelf' }),
+  preset('cased-nature-diary', 'Cased Nature Diary', 'tight-back', 'tweed', ['acorn-tooling', 'label-plate'], false, 4, ['natural', 'cosy', 'refined'], { group: 'cloth', tier: 'shelf' }),
+
   /* -------------------------------- silks ---------------------------------- */
-  preset('moire-keepsake', 'Moiré Keepsake', 'rounded', 'silk-moire', ['label-plate'], true, 3, ['luxe', 'refined', 'fancy'], { group: 'silks', tier: 'shelf' }),
+  preset('moire-keepsake', 'Moiré Keepsake', 'square', 'silk-moire', ['label-plate'], true, 3, ['luxe', 'refined', 'fancy'], { group: 'silks', tier: 'shelf' }),
   preset('moire-panelled', 'Panelled Moiré', 'round-cap', 'silk-moire', ['gilt-panel', 'label-plate'], true, 2, ['luxe', 'gilt', 'ornate'], { group: 'silks', tier: 'niche' }),
   preset('brocade-anthology', 'Brocade Anthology', 'ribbed', 'brocade', ['gilt-bands'], true, 2, ['ornate', 'luxe', 'fancy'], { group: 'silks', tier: 'niche' }),
   preset('damask-hours', 'Damask Hours', 'gabled', 'damask', ['arch-panel'], true, 2, ['devotional', 'ornate', 'formal'], { group: 'silks', tier: 'niche' }),
+  preset('damask-presentation', 'Damask Presentation', 'double-hinge', 'damask', ['gilt-panel', 'label-plate'], true, 3, ['luxe', 'formal', 'refined'], { group: 'silks', tier: 'shelf' }),
 
   /* -------------------------------- buckram -------------------------------- */
   preset('library-buckram', 'Library Buckram', 'square', 'buckram', ['label-plate'], false, 6, ['utilitarian', 'scholarly', 'sober'], { group: 'buckram', tier: 'signature' }),
@@ -2369,17 +3362,17 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('archive-buckram', 'Archive Buckram', 'tab-index', 'buckram', ['tally-rules'], false, 3, ['utilitarian', 'scholarly', 'modern'], { group: 'buckram', tier: 'niche' }),
 
   /* -------------------------------- leather -------------------------------- */
-  preset('full-morocco', 'Full Morocco', 'rounded', 'morocco-grain', ['gilt-bands', 'corner-tooling'], true, 5, ['luxe', 'gilt', 'formal'], { group: 'leather', tier: 'signature' }),
+  preset('full-morocco', 'Full Morocco', 'tight-back', 'morocco-grain', ['gilt-bands', 'corner-tooling'], true, 5, ['luxe', 'gilt', 'formal'], { group: 'leather', tier: 'signature' }),
   preset('tooled-morocco', 'Tooled Morocco', 'ribbed', 'morocco-grain', ['gilt-bands', 'diamond-centre'], true, 4, ['luxe', 'ornate', 'gilt'], { group: 'leather', tier: 'shelf' }),
-  preset('blind-calf', 'Blind-Tooled Calf', 'rounded', 'polished-calf', ['blind-stamped-frame'], false, 4, ['sober', 'severe', 'antique'], { group: 'leather', tier: 'shelf' }),
-  preset('panelled-calf', 'Panelled Calf', 'rounded', 'polished-calf', ['gilt-panel', 'label-plate'], true, 4, ['refined', 'gilt', 'formal'], { group: 'leather', tier: 'shelf' }),
+  preset('blind-calf', 'Blind-Tooled Calf', 'square', 'polished-calf', ['blind-stamped-frame'], false, 4, ['sober', 'severe', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('panelled-calf', 'Panelled Calf', 'tight-back', 'polished-calf', ['gilt-panel', 'label-plate'], true, 4, ['refined', 'gilt', 'formal'], { group: 'leather', tier: 'shelf' }),
   preset('tree-calf', 'Tree Calf', 'hollow-back', 'tree-calf', ['double-bands', 'label-plate'], true, 3, ['antique', 'ornate', 'refined'], { group: 'leather', tier: 'shelf' }),
   preset('diced-russia', 'Diced Russia', 'ribbed', 'russia-calf', ['double-bands', 'foot-ornament'], true, 3, ['antique', 'sober', 'scholarly'], { group: 'leather', tier: 'shelf' }),
-  preset('plain-calf', 'Plain Calf', 'rounded', 'polished-calf', ['plain'], false, 4, ['plain', 'refined', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('plain-calf', 'Plain Calf', 'square', 'polished-calf', ['plain'], false, 4, ['plain', 'refined', 'antique'], { group: 'leather', tier: 'shelf' }),
   preset('yapp-devotional', 'Yapp Devotional', 'yapp', 'morocco-grain', ['gilt-bands', 'ribbon-marker'], true, 3, ['devotional', 'cosy', 'gilt'], { group: 'leather', tier: 'shelf' }),
   preset('cathedral-morocco', 'Cathedral Morocco', 'ribbed', 'morocco-grain', ['gilt-panel', 'label-plate'], true, 2, ['luxe', 'ornate', 'formal'], { group: 'leather', tier: 'niche' }),
   preset('sprinkled-octavo', 'Sprinkled Octavo', 'round-cap', 'sprinkled-calf', ['double-bands', 'label-plate'], true, 4, ['antique', 'scholarly', 'refined'], { group: 'leather', tier: 'shelf' }),
-  preset('mottled-quarto', 'Mottled Quarto', 'rounded', 'mottled-calf', ['spine-rule'], false, 3, ['antique', 'battered', 'handmade'], { group: 'leather', tier: 'niche' }),
+  preset('mottled-quarto', 'Mottled Quarto', 'square', 'mottled-calf', ['spine-rule'], false, 3, ['antique', 'battered', 'handmade'], { group: 'leather', tier: 'niche' }),
   preset('russia-folio', 'Russia Folio', 'double-hinge', 'russia-calf', ['triple-bands', 'label-plate'], true, 3, ['formal', 'luxe', 'severe'], { group: 'leather', tier: 'shelf' }),
   preset('roan-schoolbook', 'Roan Schoolbook', 'square', 'roan', ['label-plate'], false, 5, ['plain', 'utilitarian', 'battered'], { group: 'leather', tier: 'shelf' }),
   preset('roan-almanac', 'Roan Almanac', 'creased', 'roan', ['head-ornament'], false, 3, ['pocket', 'battered', 'antique'], { group: 'leather', tier: 'shelf' }),
@@ -2391,22 +3384,36 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('pigskin-antiphonal', 'Pigskin Antiphonal', 'clasped', 'pigskin', ['bosses'], false, 2, ['antique', 'devotional', 'heavy'], { group: 'leather', tier: 'niche' }),
   preset('pigskin-lectern', 'Lectern Pigskin', 'chained', 'pigskin', ['blind-panel'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'leather', tier: 'oddity' }),
   preset('oilcloth-logbook', 'Oilcloth Logbook', 'ledger', 'oilcloth', ['tally-rules'], false, 3, ['utilitarian', 'battered', 'rustic'], { group: 'leather', tier: 'niche' }),
+  preset('suede-field-book', 'Cased Suede Field Book', 'tight-back', 'suede', ['spine-rule', 'label-plate'], false, 4, ['natural', 'handmade', 'rustic'], { group: 'leather', tier: 'shelf' }),
+  preset('oilcloth-field-book', 'Cased Oilcloth Field Book', 'tight-back', 'oilcloth', ['tally-rules'], false, 4, ['utilitarian', 'battered', 'rustic'], { group: 'leather', tier: 'shelf' }),
+  preset('rounded-roan-almanac', 'Roan Almanac', 'square', 'roan', ['head-ornament', 'label-plate'], false, 4, ['antique', 'cosy', 'plain'], { group: 'leather', tier: 'shelf' }),
+
+  /*
+   * Restrained Morocco: Met 448957's central hierarchy translated into the
+   * house star/fillet vocabulary—one geometric centre, sparse frame, no added
+   * hardware.  See also Ligatus's separation of covering, structure, titling
+   * and furniture; those roles remain independent here.
+   */
+  preset('morocco-star-medallion', 'Star-Medallion Morocco', 'round-cap', 'morocco-grain', ['star-fillet-medallion'], true, 3, ['luxe', 'formal', 'refined'], { group: 'leather', tier: 'signature' }),
+  preset('armorial-calf', 'Restrained Armorial Calf', 'double-hinge', 'polished-calf', ['cartouche', 'gilt-bands'], true, 3, ['formal', 'antique', 'luxe'], { group: 'leather', tier: 'shelf' }),
 
   /* -------------------------------- vellum --------------------------------- */
   preset('antique-vellum', 'Antique Vellum', 'tapered-head', 'vellum', ['spine-rule', 'label-plate'], false, 4, ['antique', 'refined', 'devotional'], { group: 'vellum', tier: 'shelf' }),
   preset('limp-vellum', 'Limp Vellum', 'limp', 'vellum', ['plain'], false, 4, ['antique', 'handmade', 'devotional'], { group: 'vellum', tier: 'shelf' }),
-  preset('gilt-vellum', 'Gilt Vellum', 'rounded', 'vellum', ['gilt-bands', 'label-plate'], true, 3, ['gilt', 'refined', 'antique'], { group: 'vellum', tier: 'shelf' }),
+  preset('gilt-vellum', 'Gilt Vellum', 'tight-back', 'vellum', ['gilt-bands', 'label-plate'], true, 3, ['gilt', 'refined', 'antique'], { group: 'vellum', tier: 'shelf' }),
   preset('vellum-ties', 'Vellum with Ties', 'yapp', 'vellum', ['ribbon-marker'], false, 3, ['devotional', 'cosy', 'antique'], { group: 'vellum', tier: 'shelf' }),
   preset('corded-vellum', 'Corded Vellum', 'ribbed', 'vellum', ['label-plate'], false, 3, ['antique', 'handmade', 'formal'], { group: 'vellum', tier: 'shelf' }),
   preset('parchment-roll', 'Parchment Roll', 'rolled', 'parchment', ['plain'], false, 2, ['antique', 'whimsical', 'handmade'], { group: 'vellum', tier: 'oddity' }),
   preset('parchment-cartulary', 'Cartulary', 'clasped', 'parchment', ['blind-stamped-frame'], false, 2, ['antique', 'severe', 'scholarly'], { group: 'vellum', tier: 'niche' }),
   preset('tawed-psalter', 'Tawed Psalter', 'gabled', 'alum-tawed', ['gothic-panel', 'ribbon-marker'], false, 2, ['devotional', 'antique', 'severe'], { group: 'vellum', tier: 'niche' }),
   preset('tawed-boards', 'Tawed Boards', 'exposed-cords', 'alum-tawed', ['plain'], false, 2, ['antique', 'handmade', 'natural'], { group: 'vellum', tier: 'oddity' }),
+  preset('stiff-vellum-quarto', 'Stiff-Board Vellum Quarto', 'tight-back', 'vellum', ['spine-rule', 'label-plate'], false, 5, ['antique', 'refined', 'scholarly'], { group: 'vellum', tier: 'signature' }),
+  preset('laced-parchment-case', 'Laced Parchment Case', 'ribbed', 'parchment', ['label-plate'], false, 4, ['antique', 'handmade', 'scholarly'], { group: 'vellum', tier: 'shelf' }),
 
   /* --------------------------- decorated papers ---------------------------- */
   preset('marbled-boards', 'Marbled Boards', 'square', 'marbled-paper', ['label-plate'], false, 6, ['fancy', 'antique', 'handmade'], { group: 'papers', tier: 'signature' }),
   preset('combed-marble', 'Combed Marble', 'square', 'marbled-paper', ['gilt-bands'], true, 4, ['fancy', 'gilt', 'antique'], { group: 'papers', tier: 'shelf' }),
-  preset('shell-marble', 'Shell Marble', 'rounded', 'shell-marble', ['double-bands', 'label-plate'], true, 3, ['fancy', 'refined', 'antique'], { group: 'papers', tier: 'shelf' }),
+  preset('shell-marble', 'Shell Marble', 'square', 'shell-marble', ['double-bands', 'label-plate'], true, 3, ['fancy', 'refined', 'antique'], { group: 'papers', tier: 'shelf' }),
   preset('spanish-wave', 'Spanish Wave', 'tight-back', 'spanish-marble', ['marbled-band'], false, 3, ['fancy', 'ornate', 'handmade'], { group: 'papers', tier: 'shelf' }),
   preset('stone-quarto', 'Stone Quarto', 'square', 'stone-marble', ['spine-rule'], false, 3, ['sober', 'antique', 'handmade'], { group: 'papers', tier: 'niche' }),
   preset('paste-paper-book', 'Paste Paper Book', 'coptic', 'paste-paper', ['plain'], false, 3, ['handmade', 'cosy', 'natural'], { group: 'papers', tier: 'oddity' }),
@@ -2422,15 +3429,17 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('striped-songbook', 'Striped Songbook', 'saddle-stapled', 'stripe-paper', ['plain'], false, 3, ['whimsical', 'modern', 'plain'], { group: 'papers', tier: 'shelf' }),
   preset('chequer-primer', 'Chequer Primer', 'scalloped-tail', 'chequer-paper', ['label-plate'], false, 3, ['goofy', 'whimsical', 'modern'], { group: 'papers', tier: 'oddity' }),
   preset('chequer-annual', 'Chequer Annual', 'square', 'chequer-paper', ['chequer-band'], true, 2, ['goofy', 'fancy', 'modern'], { group: 'papers', tier: 'oddity' }),
+  preset('cased-stripe-almanac', 'Cased Stripe Almanac', 'square', 'stripe-paper', ['label-plate'], false, 4, ['cosy', 'whimsical', 'plain'], { group: 'papers', tier: 'shelf' }),
+  preset('paste-paper-keepsake', 'Paste-Paper Keepsake', 'square', 'paste-paper', ['label-plate'], false, 4, ['cosy', 'handmade', 'refined'], { group: 'papers', tier: 'shelf' }),
 
   /* --------------------------- half and quarter ---------------------------- */
   preset('half-morocco', 'Half Morocco', 'ribbed', 'half-bound', ['gilt-bands', 'label-plate'], true, 6, ['formal', 'luxe', 'gilt'], { group: 'halfQuarter', tier: 'signature' }),
-  preset('half-calf', 'Half Calf', 'rounded', 'half-bound', ['double-bands'], true, 5, ['formal', 'refined', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('half-calf', 'Half Calf', 'tight-back', 'half-bound', ['double-bands'], true, 5, ['formal', 'refined', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
   preset('half-cloth', 'Half Cloth', 'square', 'half-cloth-paper', ['label-plate'], false, 5, ['plain', 'cosy', 'handmade'], { group: 'halfQuarter', tier: 'shelf' }),
   preset('half-roan', 'Half Roan', 'tight-back', 'half-bound', ['spine-rule'], true, 3, ['plain', 'formal', 'antique'], { group: 'halfQuarter', tier: 'shelf' }),
   preset('sammelband', 'Sammelband', 'ribbed', 'half-bound', ['foot-ornament', 'label-plate'], true, 2, ['scholarly', 'antique', 'formal'], { group: 'halfQuarter', tier: 'niche' }),
-  preset('tooled-tail', 'Tooled Tail', 'rounded', 'half-bound', ['foot-ornament', 'spine-rule'], true, 2, ['refined', 'gilt', 'ornate'], { group: 'halfQuarter', tier: 'niche' }),
-  preset('quarter-calf', 'Quarter Calf', 'rounded', 'quarter-bound', ['double-bands'], true, 5, ['formal', 'plain', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('tooled-tail', 'Tooled Tail', 'tight-back', 'half-bound', ['foot-ornament', 'spine-rule'], true, 2, ['refined', 'gilt', 'ornate'], { group: 'halfQuarter', tier: 'niche' }),
+  preset('quarter-calf', 'Quarter Calf', 'square', 'quarter-bound', ['double-bands'], true, 5, ['formal', 'plain', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
   preset('quarter-cloth', 'Quarter Cloth', 'square', 'quarter-bound', ['label-plate'], false, 5, ['plain', 'utilitarian', 'sober'], { group: 'halfQuarter', tier: 'signature' }),
   preset('quarter-vellum', 'Quarter Vellum', 'tapered-head', 'quarter-bound', ['spine-rule', 'label-plate'], false, 3, ['antique', 'refined', 'scholarly'], { group: 'halfQuarter', tier: 'shelf' }),
   preset('marbled-quarter', 'Marbled Quarter', 'square', 'quarter-bound', ['marbled-band', 'label-plate'], false, 3, ['fancy', 'antique', 'handmade'], { group: 'halfQuarter', tier: 'shelf' }),
@@ -2439,6 +3448,15 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('tips-and-bands', 'Tips & Bands', 'double-hinge', 'tips-and-bands', ['corner-tooling', 'label-plate'], true, 3, ['refined', 'formal', 'antique'], { group: 'halfQuarter', tier: 'shelf' }),
   preset('exposed-boards', 'Exposed Boards', 'splayed', 'boards-exposed', ['plain'], false, 3, ['battered', 'handmade', 'plain'], { group: 'halfQuarter', tier: 'niche' }),
   preset('rebacked-quarto', 'Rebacked Quarto', 'shoulder', 'boards-exposed', ['shelf-ticket'], false, 3, ['battered', 'antique', 'scholarly'], { group: 'halfQuarter', tier: 'niche' }),
+
+  /*
+   * The Met's Alfred Launder examples pair restrained cloth/vellum backs with
+   * patterned-paper sides and one restrained title ground. The active
+   * version uses the same construction hierarchy in Alcove's flat vocabulary:
+   * continuous titleless spine, quiet paper field, a composed front cover and
+   * no loose furniture.
+   */
+  preset('launder-patterned-sides', 'Launder Patterned Sides', 'tight-back', 'sprig-paper-sides', ['label-plate'], true, 5, ['refined', 'handmade', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
 
   /* -------------------------- the sewing you can see ------------------------ */
   preset('coptic-sketchbook', 'Coptic Sketchbook', 'coptic', 'linen', ['plain'], false, 4, ['handmade', 'natural', 'modern'], { group: 'sewn', tier: 'oddity' }),
@@ -2502,7 +3520,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('seme-royal', 'Semé Royal', 'ribbed', 'morocco-grain', ['fleur-seme', 'label-plate'], true, 1, ['luxe', 'ornate', 'gilt'], { group: 'ornamented', tier: 'niche' }),
   preset('empire-bees', 'Empire Bees', 'round-cap', 'morocco-grain', ['bee-diaper'], true, 1, ['ornate', 'luxe', 'fancy'], { group: 'ornamented', tier: 'oddity' }),
   preset('vine-trailed-herbal', 'Trailed Herbal', 'ribbed', 'polished-calf', ['vine-trail'], true, 2, ['ornate', 'natural', 'handmade'], { group: 'ornamented', tier: 'niche' }),
-  preset('laurel-prize', 'Prize Binding', 'rounded', 'smooth-cloth', ['laurel-spray', 'label-plate'], true, 3, ['formal', 'gilt', 'refined'], { group: 'ornamented', tier: 'shelf' }),
+  preset('laurel-prize', 'Prize Binding', 'tight-back', 'smooth-cloth', ['laurel-spray', 'label-plate'], true, 3, ['formal', 'gilt', 'refined'], { group: 'ornamented', tier: 'shelf' }),
   preset('acorn-nature-diary', 'Acorn Nature Diary', 'limp', 'tweed', ['acorn-tooling'], false, 3, ['natural', 'cosy', 'rustic'], { group: 'ornamented', tier: 'niche' }),
   preset('sunburst-atlas', 'Sunburst Atlas', 'flared-tail', 'silk-moire', ['sunburst-fan'], true, 2, ['fancy', 'ornate', 'luxe'], { group: 'ornamented', tier: 'niche' }),
   preset('cartouche-armorial', 'Armorial Cartouche', 'ribbed', 'morocco-grain', ['cartouche', 'gilt-bands'], true, 2, ['luxe', 'ornate', 'formal'], { group: 'ornamented', tier: 'niche' }),
@@ -2516,7 +3534,7 @@ const PRESET_ROWS: readonly BookPreset[] = [
   preset('dotted-miscellany', 'Dotted Miscellany', 'round-cap', 'tree-calf', ['dotted-rule', 'label-plate'], true, 3, ['refined', 'antique', 'gilt'], { group: 'ornamented', tier: 'shelf' }),
   preset('dentil-lexicon', 'Dentil Lexicon', 'stepped-head', 'buckram', ['dentil-band', 'label-plate'], true, 2, ['formal', 'scholarly', 'ornate'], { group: 'ornamented', tier: 'niche' }),
   preset('banner-songbook', 'Banner Songbook', 'scalloped-head', 'block-print', ['banner-plaque'], true, 2, ['whimsical', 'ornate', 'cosy'], { group: 'ornamented', tier: 'niche' }),
-  preset('monogrammed-letters', 'Monogrammed Letters', 'rounded', 'morocco-grain', ['monogram-lozenge', 'gilt-bands'], true, 2, ['luxe', 'refined', 'formal'], { group: 'ornamented', tier: 'niche' }),
+  preset('monogrammed-letters', 'Monogrammed Letters', 'double-hinge', 'morocco-grain', ['monogram-lozenge', 'gilt-bands'], true, 2, ['luxe', 'refined', 'formal'], { group: 'ornamented', tier: 'niche' }),
   preset('crowned-statutes', 'Crowned Statutes', 'ribbed', 'russia-calf', ['crown-tooling', 'triple-bands'], true, 1, ['luxe', 'formal', 'ornate'], { group: 'ornamented', tier: 'niche' }),
   preset('studded-daybook', 'Studded Daybook', 'ledger', 'oilcloth', ['pin-studs'], false, 2, ['utilitarian', 'heavy', 'battered'], { group: 'ornamented', tier: 'niche' }),
   preset('shell-corner-keepsake', 'Shell-Corner Keepsake', 'cushioned', 'shell-marble', ['shell-corners', 'label-plate'], true, 2, ['fancy', 'ornate', 'cosy'], { group: 'ornamented', tier: 'niche' }),
@@ -2526,16 +3544,148 @@ const PRESET_ROWS: readonly BookPreset[] = [
 ];
 
 /**
- * The named bindings in the order the studio lists them: family, then tier,
- * then the order they were written in.
+ * The post-reset named collection.
  *
- * The families are ordered too, and deliberately not the order they were
- * written: cloth, leather and half bindings first because that is what a
- * handsome shelf is mostly made of, and the mechanical bindings — spirals,
- * combs, ring files — last, because they are office supplies with a book's
- * proportions.
+ * This is deliberately a second authored table, not a filter over the old
+ * catalogue and not a generated cross-product. Each row names a complete
+ * straight-backed book, a quiet construction-led covering, and one tooling
+ * hierarchy. Similar materials get different programmes only when the result
+ * serves a distinct library role: prize book, archive volume, devotional,
+ * field book, formal folio, or everyday reading copy.
  */
-export const BOOK_PRESETS: readonly BookPreset[] = byRank(PRESET_ROWS, PRESET_GROUPS);
+const RESET_PRESET_ROWS: readonly BookPreset[] = [
+  /* -------------------------------- cloth --------------------------------- */
+  preset('plain-cloth', 'Plain Cloth', 'square', 'smooth-cloth', ['plain'], false, 9, ['plain', 'sober', 'utilitarian'], { group: 'cloth', tier: 'signature' }),
+  preset('gilt-quarto', 'Gilt Quarto', 'square', 'smooth-cloth', ['quarto-grand-fillet'], true, 8, ['gilt', 'formal', 'refined'], { group: 'cloth', tier: 'signature' }),
+  preset('oxford-cloth', 'Oxford Cloth', 'tight-back', 'smooth-cloth', ['oxford-double-compartment'], true, 6, ['formal', 'scholarly', 'refined'], { group: 'cloth', tier: 'signature' }),
+  preset('cambridge-cloth', 'Cambridge Cloth', 'tight-back', 'smooth-cloth', ['cambridge-blind-bays'], false, 6, ['sober', 'scholarly', 'antique'], { group: 'cloth', tier: 'signature' }),
+  preset('printers-cloth', 'Printer’s Cloth', 'double-hinge', 'smooth-cloth', ['printers-terminal-blocks'], true, 5, ['refined', 'scholarly', 'formal'], { group: 'cloth', tier: 'shelf' }),
+  preset('library-fillet-cloth', 'Library Fillet Cloth', 'square', 'smooth-cloth', ['library-closed-fillet'], false, 6, ['scholarly', 'utilitarian', 'formal'], { group: 'cloth', tier: 'signature' }),
+  preset('folio-cloth', 'Folio Cloth', 'tight-back', 'smooth-cloth', ['folio-five-compartment'], true, 4, ['formal', 'scholarly', 'heavy'], { group: 'cloth', tier: 'shelf' }),
+  preset('botanical-cloth', 'Botanical Cloth', 'square', 'smooth-cloth', ['botanical-centre-panel'], false, 4, ['natural', 'handmade', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('prize-cloth', 'Prize Cloth', 'tight-back', 'smooth-cloth', ['prize-laurel-panel'], true, 4, ['formal', 'gilt', 'refined'], { group: 'cloth', tier: 'shelf' }),
+
+  preset('buckram-library', 'Library Buckram', 'square', 'buckram', ['buckram-library-bays'], false, 7, ['utilitarian', 'scholarly', 'sober'], { group: 'buckram', tier: 'signature' }),
+  preset('buckram-oxford', 'Oxford Buckram', 'tight-back', 'buckram', ['buckram-oxford-fillets'], true, 5, ['formal', 'scholarly', 'refined'], { group: 'buckram', tier: 'shelf' }),
+  preset('buckram-cambridge', 'Cambridge Buckram', 'double-hinge', 'buckram', ['buckram-cambridge-bands'], false, 5, ['sober', 'scholarly', 'antique'], { group: 'buckram', tier: 'shelf' }),
+  preset('buckram-folio', 'Archive Folio', 'tight-back', 'buckram', ['buckram-archive-folio'], false, 4, ['scholarly', 'utilitarian', 'heavy'], { group: 'buckram', tier: 'shelf' }),
+
+  preset('linen-commonplace', 'Linen Commonplace', 'square', 'linen', ['plain'], false, 6, ['plain', 'natural', 'handmade'], { group: 'cloth', tier: 'signature' }),
+  preset('linen-botanical', 'Linen Herbarium', 'tight-back', 'linen', ['linen-herbarium-sprig'], false, 5, ['natural', 'handmade', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('linen-printers', 'Printer’s Linen', 'double-hinge', 'linen', ['linen-printers-bands'], true, 4, ['refined', 'handmade', 'formal'], { group: 'cloth', tier: 'shelf' }),
+  preset('linen-scholar', 'Scholar’s Linen', 'tight-back', 'linen', ['linen-scholar-bays'], false, 5, ['scholarly', 'natural', 'sober'], { group: 'cloth', tier: 'shelf' }),
+
+  preset('velvet-crown', 'Sunrise Velvet', 'double-hinge', 'velvet', ['velvet-crown-frame'], true, 3, ['luxe', 'formal', 'gilt'], { group: 'cloth', tier: 'shelf' }),
+  preset('velvet-palmette', 'Palmette Velvet', 'tight-back', 'velvet', ['velvet-palmette-panel'], true, 3, ['luxe', 'ornate', 'refined'], { group: 'cloth', tier: 'shelf' }),
+  preset('velvet-ducal', 'Grand Crown Velvet', 'square', 'velvet', ['grand-crown-compartments'], true, 2, ['luxe', 'formal', 'ornate'], { group: 'cloth', tier: 'signature' }),
+
+  /* -------------------------------- leather -------------------------------- */
+  preset('plain-calf', 'Plain Calf', 'square', 'polished-calf', ['plain'], false, 7, ['plain', 'refined', 'antique'], { group: 'leather', tier: 'signature' }),
+  preset('blind-calf', 'Blind Calf', 'tight-back', 'polished-calf', ['calf-blind-double-fillet'], false, 6, ['sober', 'severe', 'antique'], { group: 'leather', tier: 'signature' }),
+  preset('oxford-calf', 'Oxford Calf', 'tight-back', 'polished-calf', ['calf-oxford-bands'], true, 6, ['formal', 'scholarly', 'refined'], { group: 'leather', tier: 'signature' }),
+  preset('cambridge-calf', 'Cambridge Calf', 'double-hinge', 'polished-calf', ['calf-cambridge-bays'], false, 5, ['sober', 'scholarly', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('calf-compartments', 'Calf Gilt Compartments', 'square', 'polished-calf', ['calf-gilt-compartments'], true, 5, ['formal', 'antique', 'gilt'], { group: 'leather', tier: 'shelf' }),
+  preset('royal-calf', 'Royal State Calf', 'double-hinge', 'polished-calf', ['calf-royal-crown'], true, 3, ['formal', 'luxe', 'gilt'], { group: 'leather', tier: 'shelf' }),
+  preset('laurel-calf', 'Laureate Calf', 'square', 'polished-calf', ['calf-laurel-wreath'], true, 4, ['formal', 'natural', 'refined'], { group: 'leather', tier: 'shelf' }),
+
+  preset('russia-folio', 'Russia Folio', 'double-hinge', 'russia-calf', ['russia-folio-panels'], true, 5, ['formal', 'scholarly', 'severe'], { group: 'leather', tier: 'signature' }),
+  preset('russia-blind', 'Blind Russia', 'tight-back', 'russia-calf', ['russia-blind-fillet'], false, 5, ['sober', 'antique', 'severe'], { group: 'leather', tier: 'shelf' }),
+  preset('russia-crown', 'Formal Russia', 'square', 'russia-calf', ['russia-crown-bay'], true, 3, ['formal', 'luxe', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('russia-scholar', 'Russia Scholar', 'tight-back', 'russia-calf', ['russia-scholar-bands'], false, 5, ['scholarly', 'sober', 'antique'], { group: 'leather', tier: 'shelf' }),
+
+  preset('roan-schoolbook', 'Roan Schoolbook', 'square', 'roan', ['plain'], false, 7, ['plain', 'utilitarian', 'antique'], { group: 'leather', tier: 'signature' }),
+  preset('roan-fillet', 'Roan School Fillet', 'tight-back', 'roan', ['roan-school-fillet'], false, 5, ['plain', 'formal', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('roan-botanical', 'Botanical Roan', 'double-hinge', 'roan', ['roan-botanical-sprig'], false, 4, ['natural', 'handmade', 'antique'], { group: 'leather', tier: 'shelf' }),
+  preset('roan-terminal', 'Terminal-Bay Roan', 'tight-back', 'roan', ['roan-terminal-bays'], true, 4, ['refined', 'handmade', 'formal'], { group: 'leather', tier: 'shelf' }),
+
+  preset('oilcloth-logbook', 'Oilcloth Logbook', 'square', 'oilcloth', ['plain'], false, 6, ['utilitarian', 'battered', 'sober'], { group: 'leather', tier: 'signature' }),
+  preset('oilcloth-rules', 'Ledger Oilcloth', 'tight-back', 'oilcloth', ['oilcloth-ledger-fillet'], false, 5, ['utilitarian', 'formal', 'sober'], { group: 'leather', tier: 'shelf' }),
+  preset('oilcloth-terminal', 'Terminal Oilcloth', 'double-hinge', 'oilcloth', ['oilcloth-terminal-bands'], false, 4, ['utilitarian', 'handmade', 'refined'], { group: 'leather', tier: 'shelf' }),
+
+  /* --------------------------- vellum and parchment ------------------------ */
+  preset('plain-vellum', 'Plain Vellum', 'square', 'vellum', ['plain'], false, 7, ['antique', 'devotional', 'refined'], { group: 'vellum', tier: 'signature' }),
+  preset('vellum-folio', 'Vellum Folio', 'tight-back', 'vellum', ['vellum-folio-bays'], false, 5, ['formal', 'scholarly', 'antique'], { group: 'vellum', tier: 'signature' }),
+  preset('vellum-terminal', 'Fleuron Vellum', 'double-hinge', 'vellum', ['vellum-terminal-fleuron'], true, 4, ['refined', 'devotional', 'formal'], { group: 'vellum', tier: 'shelf' }),
+  preset('vellum-laurel', 'Laureate Vellum', 'square', 'vellum', ['vellum-laurel-panel'], true, 4, ['formal', 'natural', 'antique'], { group: 'vellum', tier: 'shelf' }),
+  preset('vellum-abbey', 'Abbey Vellum', 'tight-back', 'vellum', ['vellum-abbey-fillet'], false, 5, ['devotional', 'sober', 'antique'], { group: 'vellum', tier: 'shelf' }),
+
+  preset('parchment-quarto', 'Parchment Quarto', 'square', 'parchment', ['parchment-quarto-bands'], false, 6, ['antique', 'handmade', 'scholarly'], { group: 'vellum', tier: 'signature' }),
+  preset('parchment-blind', 'Blind Parchment', 'tight-back', 'parchment', ['parchment-blind-bays'], false, 5, ['sober', 'antique', 'handmade'], { group: 'vellum', tier: 'shelf' }),
+  preset('parchment-sprig', 'Parchment Herbarium', 'double-hinge', 'parchment', ['parchment-herbarium-sprig'], false, 4, ['natural', 'handmade', 'antique'], { group: 'vellum', tier: 'shelf' }),
+  preset('parchment-fleuron', 'Fleuron Parchment', 'tight-back', 'parchment', ['parchment-fleuron-panel'], false, 4, ['refined', 'handmade', 'scholarly'], { group: 'vellum', tier: 'shelf' }),
+  preset('parchment-scholar', 'Scholar’s Parchment', 'square', 'parchment', ['parchment-scholar-fillet'], false, 5, ['scholarly', 'sober', 'antique'], { group: 'vellum', tier: 'shelf' }),
+
+  /* -------------------------------- wrappers ------------------------------- */
+  preset('plain-wrapper', 'Plain Wrapper', 'square', 'paper-wrapper', ['plain'], false, 7, ['plain', 'pocket', 'utilitarian'], { group: 'wrappers', tier: 'signature' }),
+  preset('ruled-wrapper', 'Fold-Fillet Wrapper', 'tight-back', 'paper-wrapper', ['wrapper-ruled-fold'], false, 5, ['plain', 'scholarly', 'utilitarian'], { group: 'wrappers', tier: 'shelf' }),
+  preset('printers-wrapper', 'Printer’s Wrapper', 'double-hinge', 'paper-wrapper', ['wrapper-printers-imprint'], false, 4, ['refined', 'handmade', 'scholarly'], { group: 'wrappers', tier: 'shelf' }),
+  preset('botanical-wrapper', 'Botanical Wrapper', 'square', 'paper-wrapper', ['wrapper-botanical-sprig'], false, 4, ['natural', 'handmade', 'plain'], { group: 'wrappers', tier: 'shelf' }),
+  preset('archive-wrapper', 'Archive Fillet Wrapper', 'tight-back', 'paper-wrapper', ['wrapper-archive-sewn'], false, 5, ['scholarly', 'utilitarian', 'sober'], { group: 'wrappers', tier: 'shelf' }),
+
+  /* --------------------------- split constructions ------------------------ */
+  preset('half-calf', 'Half Calf', 'tight-back', 'half-bound', ['half-calf-material-bands'], true, 7, ['formal', 'refined', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('half-oxford', 'Oxford Half Binding', 'square', 'half-bound', ['half-oxford-compartments'], true, 5, ['formal', 'scholarly', 'refined'], { group: 'halfQuarter', tier: 'shelf' }),
+  preset('half-laurel', 'Oak Half Binding', 'double-hinge', 'half-bound', ['half-laurel-panel'], true, 4, ['formal', 'natural', 'antique'], { group: 'halfQuarter', tier: 'shelf' }),
+
+  preset('quarter-calf', 'Quarter Calf', 'square', 'quarter-bound', ['quarter-calf-bands'], true, 7, ['formal', 'plain', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('quarter-cloth', 'Quarter Cloth', 'tight-back', 'quarter-bound', ['plain'], false, 7, ['plain', 'utilitarian', 'sober'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('quarter-scholar', 'Scholar’s Quarter Binding', 'double-hinge', 'quarter-bound', ['quarter-scholar-bays'], false, 5, ['scholarly', 'formal', 'sober'], { group: 'halfQuarter', tier: 'shelf' }),
+  preset('quarter-botanical', 'Botanical Quarter Binding', 'square', 'quarter-bound', ['quarter-botanical-sprig'], false, 4, ['natural', 'handmade', 'refined'], { group: 'halfQuarter', tier: 'shelf' }),
+
+  preset('three-quarter-morocco', 'Three-Quarter Corded Binding', 'tight-back', 'three-quarter', ['three-quarter-corded'], true, 5, ['luxe', 'formal', 'antique'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('three-quarter-folio', 'Three-Quarter Folio', 'double-hinge', 'three-quarter', ['three-quarter-folio-bays'], true, 4, ['formal', 'scholarly', 'heavy'], { group: 'halfQuarter', tier: 'shelf' }),
+  preset('three-quarter-crown', 'Three-Quarter State Binding', 'square', 'three-quarter', ['three-quarter-crown'], true, 3, ['luxe', 'formal', 'gilt'], { group: 'halfQuarter', tier: 'shelf' }),
+
+  preset('half-cloth', 'Half Cloth', 'square', 'half-cloth-paper', ['plain'], false, 7, ['plain', 'cosy', 'handmade'], { group: 'halfQuarter', tier: 'signature' }),
+  preset('half-cloth-botanical', 'Herbarium Half Cloth', 'tight-back', 'half-cloth-paper', ['half-cloth-herbarium'], false, 5, ['natural', 'handmade', 'refined'], { group: 'halfQuarter', tier: 'shelf' }),
+  preset('half-cloth-prize', 'Starflower Prize Half Cloth', 'double-hinge', 'half-cloth-paper', ['half-cloth-prize-laurel'], true, 4, ['formal', 'cosy', 'gilt'], { group: 'halfQuarter', tier: 'shelf' }),
+  preset('half-cloth-printers', 'Printer’s Half Cloth', 'square', 'half-cloth-paper', ['half-cloth-printers'], false, 4, ['refined', 'handmade', 'scholarly'], { group: 'halfQuarter', tier: 'shelf' }),
+
+];
+
+/** The one formal binding used for every hard-reset recovery. */
+export const FORMAL_BOOK_PRESET_ID = 'gilt-quarto' as const;
+
+/** Every pre-reset preset, retained only as an id registry for hard migration. */
+const HISTORICAL_BOOK_PRESETS: readonly BookPreset[] = byRank(PRESET_ROWS, PRESET_GROUPS);
+
+/**
+ * A small public sample of the historical compositions explicitly called out
+ * during the visual audit. The full retired roster is exported below.
+ */
+export const CURATED_RETIRED_BOOK_PRESET_IDS = [
+  'felt-pocketbook',
+  'velvet-missal',
+  'cushioned-album',
+  'shell-corner-keepsake',
+  'laced-parchment-case',
+  'three-quarter-set',
+  'combed-marble',
+] as const;
+
+/**
+ * The named bindings a reader can choose now.
+ *
+ * This is the new authored collection in its own right. It is never obtained
+ * by filtering the historical catalogue, so a later change to an old row
+ * cannot accidentally revive it. Every row is square-ended, construction-led,
+ * titleless on the spine and limited to one coherent tooling programme.
+ */
+const COVER_LABEL_PRESET_SET: ReadonlySet<string> = new Set(
+  HISTORICAL_BOOK_PRESETS
+    .filter((preset) => preset.decorations.includes('label-plate'))
+    .map((preset) => preset.id),
+);
+
+/** Whether this historical binding asks the FRONT COVER for a label treatment. */
+export function bookPresetWantsCoverTitle(id: string): boolean {
+  return COVER_LABEL_PRESET_SET.has(id);
+}
+
+export const BOOK_PRESETS: readonly BookPreset[] = byRank(
+  RESET_PRESET_ROWS,
+  PRESET_GROUPS,
+);
 
 /** The id of one of the presets above. */
 export type BookPresetId = string;
@@ -2544,17 +3694,230 @@ const PRESET_BY_ID: ReadonlyMap<string, BookPreset> = new Map(
   BOOK_PRESETS.map((p) => [p.id, p] as const),
 );
 
+/** Concepts explicitly purged by the premium-binding reset. */
+export const RESET_RETIRED_BOOK_PRESET_IDS = [
+  'scholar-cloth',
+  'formal-felt',
+  'felt-fleuron',
+  'felt-library',
+  'heraldic-calf',
+  'oilcloth-architect',
+  'tips-and-bands',
+  'half-heraldic',
+  'tips-heraldic',
+  'tips-corners',
+  'tips-fillet',
+] as const;
+
+/** Historical and reset-era named bindings absent from picker/Surprise. */
+export const RETIRED_BOOK_PRESET_IDS: readonly string[] = [
+  ...new Set([
+    ...HISTORICAL_BOOK_PRESETS
+      .filter((preset) => !PRESET_BY_ID.has(preset.id))
+      .map((preset) => preset.id),
+    ...RESET_RETIRED_BOOK_PRESET_IDS,
+  ]),
+];
+
+const RETIRED_PRESET_SET: ReadonlySet<string> = new Set(RETIRED_BOOK_PRESET_IDS);
+
 /** Every preset id, in list order (the studio's dropdown). */
 export const BOOK_PRESET_IDS: readonly string[] = BOOK_PRESETS.map((p) => p.id);
+
+/* ---------------------------- surprise directions ----------------------- */
+
+/** A coherent visual direction for the Book Studio's Surprise action. */
+export interface BookSurpriseDirection {
+  id: string;
+  label: string;
+  hint: string;
+  /** Explicitly art-directed bindings. Never inferred from intersecting tags. */
+  presetIds: readonly string[];
+}
+
+/**
+ * Art-directed binding pools.
+ *
+ * These echo the room studio's useful language, but every list was composed at
+ * the WHOLE-BOOK level. A tag intersection is not enough: "ornate" can mean a
+ * velvet missal, a novelty paper or a crocodile case, and blindly crossing
+ * those axes is precisely how a randomiser produces costume rather than a
+ * binding. Each pool therefore names finished books with a coherent material,
+ * silhouette and tooling density.
+ */
+export const BOOK_SURPRISE_DIRECTIONS = [
+  {
+    id: 'formal',
+    label: 'Formal',
+    hint: 'Crisp joints, measured rules and restrained construction.',
+    presetIds: [
+      'gilt-quarto',
+      'oxford-cloth',
+      'printers-cloth',
+      'library-fillet-cloth',
+      'folio-cloth',
+      'buckram-oxford',
+      'buckram-folio',
+      'oxford-calf',
+      'calf-compartments',
+      'russia-folio',
+      'half-calf',
+      'quarter-scholar',
+    ],
+  },
+  {
+    id: 'grand',
+    label: 'Grand',
+    hint: 'Velvet, calf and gilt arranged around one formal focal programme.',
+    presetIds: [
+      'velvet-crown',
+      'velvet-palmette',
+      'velvet-ducal',
+      'royal-calf',
+      'russia-crown',
+      'vellum-terminal',
+      'three-quarter-crown',
+      'three-quarter-folio',
+      'prize-cloth',
+      'half-cloth-prize',
+      'half-laurel',
+      'calf-compartments',
+    ],
+  },
+  {
+    id: 'antique',
+    label: 'Antique',
+    hint: 'Blind rules, calf, parchment and split boards with old-library restraint.',
+    presetIds: [
+      'cambridge-cloth',
+      'cambridge-calf',
+      'russia-blind',
+      'russia-scholar',
+      'roan-fillet',
+      'vellum-abbey',
+      'parchment-blind',
+      'parchment-quarto',
+      'blind-calf',
+      'quarter-calf',
+      'three-quarter-morocco',
+      'vellum-folio',
+    ],
+  },
+  {
+    id: 'storybook',
+    label: 'Storybook',
+    hint: 'Warm tactile bindings and one small fleuron or terminal flourish.',
+    presetIds: [
+      'library-fillet-cloth',
+      'buckram-library',
+      'ruled-wrapper',
+      'linen-commonplace',
+      'linen-printers',
+      'roan-schoolbook',
+      'roan-terminal',
+      'plain-wrapper',
+      'printers-wrapper',
+      'half-cloth-printers',
+      'botanical-wrapper',
+      'half-cloth-prize',
+    ],
+  },
+  {
+    id: 'botanical',
+    label: 'Botanical',
+    hint: 'Linen, parchment and calf with one short leaf or laurel programme.',
+    presetIds: [
+      'botanical-cloth',
+      'prize-cloth',
+      'linen-botanical',
+      'laurel-calf',
+      'roan-botanical',
+      'vellum-laurel',
+      'parchment-sprig',
+      'botanical-wrapper',
+      'half-laurel',
+      'quarter-botanical',
+      'half-cloth-botanical',
+    ],
+  },
+  {
+    id: 'cosy',
+    label: 'Cosy',
+    hint: 'Soft cloth, linen, roan and quiet half bindings.',
+    presetIds: [
+      'plain-cloth',
+      'library-fillet-cloth',
+      'linen-commonplace',
+      'linen-botanical',
+      'botanical-wrapper',
+      'roan-botanical',
+      'roan-schoolbook',
+      'plain-wrapper',
+      'half-cloth',
+      'half-cloth-prize',
+      'parchment-fleuron',
+      'quarter-cloth',
+    ],
+  },
+  {
+    id: 'rustic',
+    label: 'Rustic',
+    hint: 'Linen, roan, oilcloth and parchment kept sturdy and simple.',
+    presetIds: [
+      'linen-scholar',
+      'oilcloth-logbook',
+      'oilcloth-rules',
+      'oilcloth-terminal',
+      'buckram-cambridge',
+      'parchment-quarto',
+      'parchment-scholar',
+      'ruled-wrapper',
+      'quarter-botanical',
+      'half-cloth',
+      'roan-botanical',
+      'archive-wrapper',
+    ],
+  },
+  {
+    id: 'quiet',
+    label: 'Quiet',
+    hint: 'Plain cloth, sober joints and very little surface furniture.',
+    presetIds: [
+      'plain-cloth',
+      'library-fillet-cloth',
+      'buckram-library',
+      'buckram-cambridge',
+      'plain-calf',
+      'blind-calf',
+      'plain-vellum',
+      'vellum-folio',
+      'parchment-scholar',
+      'archive-wrapper',
+      'quarter-cloth',
+      'half-oxford',
+    ],
+  },
+] as const satisfies readonly BookSurpriseDirection[];
+
+export type BookSurpriseDirectionId = (typeof BOOK_SURPRISE_DIRECTIONS)[number]['id'];
+
+const SURPRISE_DIRECTION_BY_ID: ReadonlyMap<string, BookSurpriseDirection> = new Map(
+  BOOK_SURPRISE_DIRECTIONS.map((direction) => [direction.id, direction] as const),
+);
+
+/** Every vetted surprise id, de-duplicated in direction order. */
+const SURPRISE_PRESET_ID_SET: ReadonlySet<string> = new Set(
+  BOOK_SURPRISE_DIRECTIONS.flatMap((direction) => direction.presetIds),
+);
 
 /* ------------------------- bindings built by hand ------------------------- */
 
 /**
  * A binding a reader composed themselves, as an id.
  *
- * The 189 presets are the curated bindings — combinations somebody chose and
- * named. But the three axes are independently pickable in the studio, and
- * 50 × 50 × 50 of them cannot be a table.
+ * `BOOK_PRESETS` is the authored finished-book collection. The three active
+ * axes are also independently pickable in the studio, and their complete
+ * cross-product cannot sensibly be another named table.
  *
  * So a composed binding is written as `own:shape/material/decoration/gilt` and
  * resolved on read. That is deliberately an ID rather than a new shape of
@@ -2577,18 +3940,19 @@ export const BOOK_PRESET_IDS: readonly string[] = BOOK_PRESETS.map((p) => p.id);
  * `decoration` may be `none`, which is how a reader takes the marks off.
  *
  * GILT IS ITS OWN SEGMENT because the preset table says it has to be. It looks
- * derivable and is not: `smooth-cloth` carries presets both gilt and plain,
- * and of the 189 rows only 134 agree with "gilt iff the decoration is a gilt
- * one" — `double-bands`, `label-plate` and `corner-tooling` all appear struck
- * in foil on one binding and blind on another. It is an editorial choice about
- * the whole book, so a reader composing one gets to make it too rather than
- * have it guessed from the other two.
+ * derivable and is not: the same uninterrupted fillet can be struck blind or
+ * in foil. It is an editorial choice about the whole book, so a reader
+ * composing one gets to make it rather than have it guessed from the mark.
  */
 const OWN_PREFIX = 'own:';
 
-const SHAPE_SET = new Set<string>(SPINE_SHAPES);
-const MATERIAL_SET = new Set<string>(MATERIAL_LOOKS);
-const DECOR_SET = new Set<string>(DECORATIONS);
+// A composed id is valid only when every axis is still offered. The diagnostic
+// renderer tables remain larger so we can recognise what changed, but carrying one
+// retired part forward would preserve the very non-book silhouette the safety
+// migration is meant to remove.
+const SHAPE_SET = ACTIVE_SHAPE_SET;
+const MATERIAL_SET = ACTIVE_MATERIAL_SET;
+const DECOR_SET = ACTIVE_DECOR_SET;
 
 /** The axes of a hand-composed binding. */
 export interface OwnBinding {
@@ -2633,7 +3997,7 @@ export function parseOwnBinding(id: BookPresetId | null | undefined): OwnBinding
  * a composed binding is never rolled, only chosen.
  */
 function ownPreset(parts: OwnBinding): BookPreset {
-  const base = BOOK_PRESETS[0] as BookPreset;
+  const base = PRESET_BY_ID.get(FORMAL_BOOK_PRESET_ID) as BookPreset;
   return {
     ...base,
     id: ownBindingId(parts),
@@ -2645,16 +4009,77 @@ function ownPreset(parts: OwnBinding): BookPreset {
   };
 }
 
-/** Look up a preset. Unknown ids fall back to the first, never throw. */
+/**
+ * Look up a preset.
+ *
+ * Unknown ids and every retired id become the same formal safe binding. The
+ * reset deliberately has no appearance-preserving exceptions: retaining one
+ * brocade field or one legacy panel would keep the failed system alive through
+ * a side door.
+ */
 export function bookPreset(id: BookPresetId | null | undefined): BookPreset {
   const own = parseOwnBinding(id);
   if (own !== null) return ownPreset(own);
-  return (id ? PRESET_BY_ID.get(id) : undefined) ?? (BOOK_PRESETS[0] as BookPreset);
+  return (
+    (id ? PRESET_BY_ID.get(id) : undefined) ??
+    (PRESET_BY_ID.get(FORMAL_BOOK_PRESET_ID) as BookPreset)
+  );
+}
+
+/**
+ * Has this finished binding already spent its one authored motif programme?
+ *
+ * Named and `own:` bindings take the same path so Surprise, the surface
+ * resolver and the Studio do not each invent a slightly different definition
+ * of "already ornamented" before deciding whether to add the separate emblem.
+ */
+export function bookPresetHasAuthoredFocal(
+  id: string | null | undefined,
+): boolean {
+  return bookPreset(id).decorations.some(decorationHasFocalTool);
+}
+
+/**
+ * The one broad tool a finished binding already owns, if any.
+ *
+ * The shelf renderer consumes the whole authored programme. Cover projection
+ * needs only this semantic identity so it can carry the same focal hierarchy
+ * onto the front board without enlarging a shelf glyph or re-rolling another
+ * ornament. Keeping the lookup beside `PROGRAMME_ARCHETYPES` prevents the two
+ * surfaces from inferring meaning from decoration names.
+ */
+export function bookPresetAuthoredFocalGlyph(
+  id: string | null | undefined,
+): BroadFocalGlyph | null {
+  const decoration = bookPreset(id).decorations.find(decorationHasFocalTool);
+  if (decoration === undefined) return null;
+  return PROGRAMME_ARCHETYPES[decoration as AuthoredSpineProgramId]?.glyph ?? null;
 }
 
 export function isBookPresetId(v: unknown): v is BookPresetId {
   if (typeof v !== 'string') return false;
   return PRESET_BY_ID.has(v) || parseOwnBinding(v) !== null;
+}
+
+/** Was this once a named binding but deliberately removed from new choices? */
+export function isRetiredBookPresetId(v: unknown): v is string {
+  return typeof v === 'string' && RETIRED_PRESET_SET.has(v);
+}
+
+/**
+ * Repair a stored binding id.
+ *
+ * `null` still means "let this book's seed choose". Any stored STRING that no
+ * longer names a supported binding — an unrepaired retired preset, a retired
+ * `own:` axis, or data written by a future/experimental build — becomes the
+ * conservative formal binding. This is intentionally different from dropping
+ * an unsupported id: dropping would hand authority back to the seed. The hard
+ * fallback is deterministic and makes the reset forceful on every old library.
+ */
+export function normaliseBookPresetId(v: unknown): BookPresetId | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== 'string') return null;
+  return isBookPresetId(v) ? v : FORMAL_BOOK_PRESET_ID;
 }
 
 /**
@@ -2676,24 +4101,63 @@ export function isBookPresetId(v: unknown): v is BookPresetId {
  * nobody can overrule), and this only ever removes from the dice.
  */
 function worstPartRollable(p: BookPreset): boolean {
-  if (!isRollable(SHAPES[p.shape].tier)) return false;
-  if (!isRollable(MATERIALS[p.material].tier)) return false;
-  return p.decorations.every((d) => isRollable(DECORS[d].tier));
+  if (!ACTIVE_SHAPE_SET.has(p.shape)) return false;
+  if (!ACTIVE_MATERIAL_SET.has(p.material)) return false;
+  return p.decorations.every((decoration) => ACTIVE_DECOR_SET.has(decoration));
 }
 
 /**
  * The bindings the dice may hand out.
  *
- * Everything an `oddity` — a scroll on two knobs, a comb-bound report, a wire
- * spiral, a chequerboard nursery annual — is fully pickable in the studio and
- * never rolled, which is the whole request: the shelf a reader is given should
- * be a library, and the odd things should be there because somebody chose them.
+ * Surprise draws only from the active reset collection. Former catalogue rows
+ * remain diagnostic data solely so old stored ids can be recognised and
+ * migrated to the formal safe binding.
  */
 export const ROLLABLE_PRESETS: readonly BookPreset[] = BOOK_PRESETS.filter(
-  (p) => isRollable(p.tier) && worstPartRollable(p),
+  (p) => SURPRISE_PRESET_ID_SET.has(p.id) && isRollable(p.tier) && worstPartRollable(p),
 );
 
-const TOTAL_WEIGHT = ROLLABLE_PRESETS.reduce((sum, p) => sum + p.weight, 0);
+function pickWeightedBookPreset(pool: readonly BookPreset[], seed: number): BookPreset {
+  const safePool = pool.length > 0 ? pool : [bookPreset(FORMAL_BOOK_PRESET_ID)];
+  const total = safePool.reduce((sum, preset) => sum + Math.max(1, preset.weight), 0);
+  let acc = mulberry32(seed >>> 0)() * total;
+  for (const preset of safePool) {
+    acc -= Math.max(1, preset.weight);
+    if (acc < 0) return preset;
+  }
+  return safePool[safePool.length - 1] as BookPreset;
+}
+
+function surpriseDirectionSalt(id: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Choose one complete, coherent binding inside a named direction.
+ *
+ * Passing `null` means anything, but "anything" is still the union of the
+ * vetted direction pools rather than all legal axis combinations. The seed is
+ * required so the studio can avoid repeating its current id without making
+ * the art layer non-deterministic, and so tests can sweep thousands of rolls.
+ */
+export function surpriseBookPreset(
+  direction: BookSurpriseDirectionId | null,
+  seed: number,
+): BookPreset {
+  const descriptor = direction === null ? null : SURPRISE_DIRECTION_BY_ID.get(direction);
+  const pool = descriptor
+    ? descriptor.presetIds
+        .map((id) => PRESET_BY_ID.get(id))
+        .filter((preset): preset is BookPreset => preset !== undefined)
+    : ROLLABLE_PRESETS;
+  const salt = descriptor ? surpriseDirectionSalt(descriptor.id) : 0xb00d5e1;
+  return pickWeightedBookPreset(pool, (seed ^ salt) >>> 0);
+}
 
 /**
  * Which binding a seed lands on. Weighted, so a shelf comes out mostly plain
@@ -2706,14 +4170,7 @@ const TOTAL_WEIGHT = ROLLABLE_PRESETS.reduce((sum, p) => sum + p.weight, 0);
  * it walks `ROLLABLE_PRESETS` and not the whole table.
  */
 export function presetForSeed(seed: number): BookPreset {
-  // A dedicated stream, xored with a constant of its own, so adding this axis
-  // does not reshuffle any of the draws `deriveSpineParams` already makes.
-  let acc = mulberry32((seed ^ 0xb00d5e1) >>> 0)() * TOTAL_WEIGHT;
-  for (const p of ROLLABLE_PRESETS) {
-    acc -= p.weight;
-    if (acc < 0) return p;
-  }
-  return ROLLABLE_PRESETS[ROLLABLE_PRESETS.length - 1] as BookPreset;
+  return surpriseBookPreset(null, seed);
 }
 
 /* ========================================================================== *
@@ -2728,14 +4185,26 @@ export interface ResolveBookDesignOptions {
    * or the reader's own `#rrggbb`. See `BookDesign.cloth`.
    */
   cloth?: number | string;
+  /**
+   * `cloth` is the reader's dedicated spine-base choice, not the shared cloth
+   * inherited by the whole book. Pale coverings retain their natural colour
+   * unless this bit is true.
+   */
+  baseColourPinned?: boolean;
   /** Second cloth. Defaults to one the seed picks, never equal to `cloth`. */
-  accent?: number;
+  accent?: number | string;
+  /** Rules, frames and spine tooling. A custom hex overrides gilt/blind ink. */
+  tooling?: string | null;
+  /** Centred stamps and medallions. Null inherits the tooling convention. */
+  emblem?: string | null;
+  /** Clasps, corner pieces and other metalwork. */
+  hardware?: string | null;
   /** Pin the binding (the studio's picker). Omit to let the seed choose. */
   preset?: BookPresetId | null;
   /** Force foil on or off, overriding the preset's own answer. */
   gilt?: boolean;
-  /** Where the label sits, 0..1. Callers pass `FlatSpine.labelAt`. */
-  labelAt?: number;
+  /** Preferred focal compartment for cords and the optional ornament, 0..1. */
+  focusAt?: number;
   /**
    * Overrule the preset's covering.
    *
@@ -2777,47 +4246,64 @@ export function resolveBookDesign(opts: ResolveBookDesignOptions): BookDesign {
   const cloth: number | string = ownCloth ?? slot;
   // The accent must never equal the cloth: a half binding whose leather is the
   // same colour as its boards is just a plain book with a stray line on it.
-  const accent = normIndex(
-    opts.accent ?? slot + 1 + (((seed >>> 5) % (CLOTHS.length - 1)) | 0),
+  const ownAccent = normaliseHex(opts.accent);
+  const accentSlot = normIndex(
+    typeof opts.accent === 'number'
+      ? opts.accent
+      : slot + 1 + (((seed >>> 5) % (CLOTHS.length - 1)) | 0),
     CLOTHS.length,
   );
+  const accent: number | string =
+    ownAccent ?? (accentSlot === slot ? normIndex(slot + 1, CLOTHS.length) : accentSlot);
   const gilt = opts.gilt ?? chosen.gilt;
+  const bands = clamp(Math.round(opts.bands ?? 0), 0, 3);
+  // Raised cords already divide the spine horizontally. A second terminal-rule
+  // programme on top turns even a good straight book into a ladder, so the
+  // resolver—not just Surprise—owns the invariant for every direct/manual path.
+  const decorations: readonly Decoration[] =
+    bands > 0 && chosen.decorations.some(decorationHasHorizontalRules)
+      ? ['plain']
+      : chosen.decorations;
   return {
     preset: chosen.id,
     shape: opts.shape ?? chosen.shape,
     material: opts.material ?? chosen.material,
-    decorations: chosen.decorations,
+    decorations,
     cloth,
-    accent: accent === slot ? normIndex(slot + 1, CLOTHS.length) : accent,
+    baseColourPinned: opts.baseColourPinned === true,
+    accent,
+    tooling: normaliseHex(opts.tooling),
+    emblem: normaliseHex(opts.emblem),
+    hardware: normaliseHex(opts.hardware),
     gilt,
-    labelAt: clamp(opts.labelAt ?? 0.24, 0.16, 0.48),
+    focusAt: clamp(opts.focusAt ?? 0.24, 0.16, 0.48),
     seed,
-    bands: clamp(Math.round(opts.bands ?? 0), 0, 5),
+    bands,
     bandGilt: opts.bandGilt ?? gilt,
     headTail:
       opts.headTail === null || opts.headTail === undefined
         ? null
-        : clamp(Math.round(opts.headTail), 0, 2),
+        : clamp(Math.round(opts.headTail), 1, 3),
     wear: clamp(opts.wear ?? 0, 0, 1),
   };
 }
 
 /**
- * The studio's seven binding materials, folded onto the fifty looks the drawing
- * knows. Seven distinct answers — the map is injective on purpose, because a
- * chip that lands on the same picture as its neighbour is a chip that does
- * nothing.
+ * The studio's seven coarse covering chips, folded onto active reset looks.
+ * Every emitted look is accepted by `ROLLABLE_MATERIALS`; a coarse override can
+ * therefore never resurrect brocade, pebble grain, marbling, scale fields or
+ * any other retired surface behind a safe named binding.
  */
 export const MATERIAL_LOOK_FOR_BINDING: Readonly<Record<string, MaterialLook>> = {
-  leather: 'morocco-grain',
+  leather: 'polished-calf',
   cloth: 'smooth-cloth',
   paper: 'paper-wrapper',
   vellum: 'vellum',
   linen: 'linen',
-  // Silk is the flattest rich surface a flat drawing has: one deep even tone,
-  // edge to edge, no turned board catching the light it does not have.
-  silk: 'silk-moire',
-  marbled: 'marbled-paper',
+  silk: 'velvet',
+  // The old chip name remains a storage/API value. Its safe visual answer is a
+  // split cloth-and-paper construction, not an all-over faux-marble bitmap.
+  marbled: 'half-cloth-paper',
 };
 
 /** `MATERIAL_LOOK_FOR_BINDING` with a safe fallback. */
@@ -2845,6 +4331,7 @@ export function bindingMaterialFor(look: MaterialLook): string {
     case 'sailcloth':
     case 'hessian':
     case 'tweed':
+    case 'sprig-paper-sides':
       return 'linen';
     case 'silk-moire':
     case 'brocade':
@@ -2856,6 +4343,7 @@ export function bindingMaterialFor(look: MaterialLook): string {
     case 'stone-marble':
     case 'shell-marble':
     case 'paste-paper':
+    case 'half-cloth-paper':
       return 'marbled';
     case 'patterned-paper':
     case 'block-print':
@@ -2911,9 +4399,9 @@ export function bindingMaterialFor(look: MaterialLook): string {
  *
  * "Are these two resolved bindings different pixels?", answered as one string
  * two tests can compare. That is the observable `tests/book-bindings.test.ts`
- * and `tests/design-cache-keys.test.ts` use to prove the vocabularies really
- * are fifty shapes, fifty coverings and 189 presets rather than a table with
- * duplicates in it — which is not something a specimen board can establish,
+ * and `tests/design-cache-keys.test.ts` use to prove that the archival
+ * vocabularies and current active subset do not collapse different bindings
+ * onto one pixel identity — which is not something a specimen board can establish,
  * because a board shows what a binding looks like and never that two of them
  * look different. It is also the tag a content-keyed spine cache would carry
  * if one is ever built, which is why the separators below are still exact.
@@ -2935,15 +4423,22 @@ export function bookDesignTag(design: BookDesign): string {
   // anyway. The separators are load-bearing, not tidiness.
   return [
     design.preset,
+    design.seed,
     design.shape,
     design.cloth,
+    design.baseColourPinned ? 'own-base' : 'inherited-base',
     design.accent,
+    design.tooling ?? '-',
+    design.emblem ?? '-',
+    design.hardware ?? '-',
     design.gilt ? 'g' : 'n',
     design.material,
     design.bands,
     design.bandGilt ? 'g' : 'n',
     design.headTail ?? '-',
-    Math.round(design.wear * 10),
+    design.focusAt.toFixed(4),
+    design.decorations.join(','),
+    design.wear.toFixed(4),
   ].join('.');
 }
 
@@ -3030,6 +4525,26 @@ function rubbed(foil: string, board: string, wear: number): string {
   return wear <= 0.02 ? foil : mix(foil, board, clamp(wear, 0, 1) * 0.5);
 }
 
+/** One authoritative fold for the reader's tooling role. */
+function toolingColour(design: BookDesign, board: string, blind = false): string {
+  const authored = design.tooling ?? (blind ? FLAT.inkSoft : design.gilt ? FLAT.gilt : FLAT.inkSoft);
+  return rubbed(authored, board, design.wear);
+}
+
+/** A stamp may differ from its frame, but inherits it when unset. */
+function emblemColour(design: BookDesign, board: string, blind = false): string {
+  const authored =
+    design.emblem ??
+    design.tooling ??
+    (blind ? FLAT.inkSoft : design.gilt ? FLAT.gilt : FLAT.inkSoft);
+  return rubbed(authored, board, design.wear);
+}
+
+/** Fittings retain their authored metal unless the reader pins this role. */
+function hardwareColour(design: BookDesign, authored: string, board: string): string {
+  return rubbed(design.hardware ?? authored, board, design.wear);
+}
+
 /** The [face, board] pair a material's `body` tone asks for. */
 function bodyPair(design: BookDesign): readonly [string, string] {
   const spec = materialSpec(design.material);
@@ -3043,9 +4558,32 @@ function bodyPair(design: BookDesign): readonly [string, string] {
       return [pale, mix(pale, FLAT.ink, 0.2)];
     }
     case 'cream':
-      return [FLAT.cream, FLAT.creamDeep];
+      if (!design.baseColourPinned) return [FLAT.cream, FLAT.creamDeep];
+      if (normaliseHex(design.cloth) === FLAT.cream) {
+        return [FLAT.cream, FLAT.creamDeep];
+      }
+      // Vellum is still vellum after it is coloured: retain the pale ground
+      // and let roughly two fifths of the chosen dye remain. This is strong
+      // enough to read on a 30px shelf spine without turning the material into
+      // ordinary cloth.
+      {
+        const tinted = mix(face, FLAT.cream, 0.6);
+        return [tinted, mix(tinted, FLAT.ink, 0.2)];
+      }
     case 'parchment':
-      return [FLAT.creamDeep, mix(FLAT.creamDeep, FLAT.ink, 0.24)];
+      if (!design.baseColourPinned) {
+        return [FLAT.creamDeep, mix(FLAT.creamDeep, FLAT.ink, 0.24)];
+      }
+      if (normaliseHex(design.cloth) === FLAT.creamDeep) {
+        return [FLAT.creamDeep, mix(FLAT.creamDeep, FLAT.ink, 0.24)];
+      }
+      // Parchment is a warmer, slightly denser wash than vellum. Its source
+      // still moves the face visibly, while the creamDeep paper anchor keeps
+      // it from reading as smooth cloth with a different label.
+      {
+        const tinted = mix(face, FLAT.creamDeep, 0.54);
+        return [tinted, mix(tinted, FLAT.ink, 0.24)];
+      }
     case 'accent':
       return [accentFace, accentDark];
     default:
@@ -3053,23 +4591,76 @@ function bodyPair(design: BookDesign): readonly [string, string] {
   }
 }
 
-/** Where a split material's second covering sits, as a [top, bottom] span. */
+/**
+ * The actual flat faces a resolved spine covering paints.
+ *
+ * Exported for recipe QA: contrast against the reader's raw swatch is not
+ * enough because vellum, parchment, deep buckram and split bindings transform
+ * that swatch before a tooling mark ever meets it. Pale skins ignore inherited
+ * cloth but wash an explicitly pinned face colour into their paper ground.
+ */
+export function bookBodyColours(design: BookDesign): readonly [string, string] {
+  return bodyPair(design);
+}
+
+/**
+ * The two colour controls which feed the spine painter, before the material
+ * turns, washes or replaces either pigment.
+ *
+ * These are deliberately different from {@link bookBodyColours}. A deep
+ * buckram spine paints the folded face of its source cloth; natural vellum
+ * discards an inherited source for cream while explicitly dyed vellum washes
+ * it toward paper; a worn cloth mixes it toward paper. Book Studio needs both
+ * answers: the well shows the pixels, while a Surprise lock must persist the
+ * source and keep the transformations which made those pixels.
+ */
+export function bookColourSources(
+  design: Pick<BookDesign, 'cloth' | 'accent'>,
+): { base: string; accent: string } {
+  const source = (value: number | string): string => {
+    if (typeof value === 'string') return normaliseHex(value) ?? (CLOTHS[0]![0] as string);
+    return (CLOTHS[normIndex(value, CLOTHS.length)] ?? CLOTHS[0]!)[0] as string;
+  };
+  return {
+    base: source(design.cloth),
+    accent: source(design.accent),
+  };
+}
+
+/**
+ * The representative flat fills actually painted for the spine's primary and
+ * secondary colour roles.
+ *
+ * `base` is the main material face. `accent` is the secondary covering after
+ * wear, used by split bindings, patterned materials, endbands and applied
+ * bands. Returning the painter's resolved values keeps Studio wells truthful
+ * for vellum, parchment, deep cloth, split bindings and ordinary cloth alike.
+ */
+export function bookPainterColours(
+  design: BookDesign,
+): { base: string; accent: string } {
+  const [base] = bodyPair(design);
+  const [accent] = fadedPair(clothPair(design.accent), design.wear);
+  return { base, accent };
+}
+
+/**
+ * Where a split binding's BACK covering sits on the spine.
+ *
+ * Half/quarter binding describes the boards: leather or cloth covers the whole
+ * back, then extends by different amounts onto the boards and corners. The old
+ * renderer split that second covering into horizontal spine chunks, which made
+ * a strong colour pair look like two books stacked end-to-end. `covers.ts`
+ * still draws the construction-specific board regions from `MaterialSpec.split`;
+ * this span keeps the shelf-facing back continuous, as the object itself is.
+ */
 function splitSpan(split: Split): readonly (readonly [number, number])[] {
   switch (split) {
     case 'half':
-      return [[-0.02, 0.34]];
     case 'quarter':
-      return [
-        [-0.02, 0.18],
-        [0.9, 1.02],
-      ];
     case 'threeQuarter':
-      return [[-0.02, 0.6]];
     case 'tips':
-      return [
-        [-0.02, 0.12],
-        [0.88, 1.02],
-      ];
+      return [[-0.02, 1.02]];
     case 'headBand':
       return [[-0.02, 0.15]];
     default:
@@ -3092,6 +4683,14 @@ function surfaceAt(design: BookDesign, t: number): readonly [string, string] {
     if (t >= a && t <= b) return fadedPair(clothPair(design.accent), design.wear);
   }
   return bodyPair(design);
+}
+
+/** Actual covering faces at one spine-height fraction, including split skins. */
+export function bookSurfaceColoursAt(
+  design: BookDesign,
+  fraction: number,
+): readonly [string, string] {
+  return surfaceAt(design, clamp(fraction, 0, 1));
 }
 
 /**
@@ -3152,32 +4751,15 @@ function fillBand(
  * ========================================================================== */
 
 /** What a shape does to the footprint it was given. */
-export interface BookSpineBoxes {
+interface SpineBoxes {
   /** The drawn book body. Many shapes stand narrower than their footprint. */
   body: DesignBox;
   /**
-   * Where tooling and the label go. Identical to `body` except for the boxed
+   * Where tooling and the optional ornament go. Identical to `body` except for the boxed
    * shapes, whose marks belong on the case rather than on the sliver of head
    * showing above it, and for the cut heads, which eat into their own top.
    */
   decor: DesignBox;
-}
-
-/**
- * The boxes `drawBookSpine` will use, without drawing anything.
- *
- * Exists so a caller that sets its own title can measure the run, ask
- * `bookLabelBox` where the lettering-piece lands, and hand that back as
- * `reserved` — all before a single pixel is committed.
- */
-export function bookSpineBoxes(
-  design: BookDesign,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): BookSpineBoxes {
-  return shapeBoxes(shapeSpec(design.shape), x, y, w, h);
 }
 
 /**
@@ -3194,7 +4776,7 @@ function endIntrusion(profile: EndProfile, endDepth: number): number {
   return END_PROFILES[profile].reach * endDepth;
 }
 
-function shapeBoxes(spec: ShapeSpec, x: number, y: number, w: number, h: number): BookSpineBoxes {
+function shapeBoxes(spec: ShapeSpec, x: number, y: number, w: number, h: number): SpineBoxes {
   const inset = w * spec.inset;
   const body: DesignBox = {
     x: x + inset,
@@ -3432,11 +5014,11 @@ function drawShapeMarks(
   const { x, y, w, h } = b;
   const seed = design.seed;
   const [, board] = surfaceAt(design, 0.5);
-  const brass = rubbed(FLAT.gilt, board, design.wear);
+  const brass = hardwareColour(design, FLAT.gilt, board);
   // Old wire, not new: a warm pewter mixed out of the ink, because `FLAT.slate`
   // barely tinted toward cream is a COLD blue-grey, and four books with cold
   // blue hardware on them were the only cold things on a parchment shelf.
-  const steel = mix(FLAT.inkSoft, FLAT.cream, 0.5);
+  const steel = design.hardware ?? mix(FLAT.inkSoft, FLAT.cream, 0.5);
   const thread = mix(FLAT.cream, board, 0.2);
   const fine = Math.max(1, ink * 0.62);
   const caseFill = mix(board, FLAT.cream, 0.52);
@@ -3459,12 +5041,15 @@ function drawShapeMarks(
 
     switch (mark) {
       case 'cords': {
-        // Fat, not thin: a cord is a rope under leather, and a hairline rung
-        // would read as a rule rather than as something standing proud.
-        const ch = Math.max(2.4, h * 0.026);
+        // A cord rises UNDER the leather and stays inside the board footprint.
+        // Full-footprint 2.4px pills protruded beyond the back and turned four
+        // sewing stations into the rungs of a ladder at shelf width.
+        const ch = Math.max(1.1, Math.min(h * 0.013, w * 0.14));
+        const cx = x + w * 0.07;
+        const cw = w * 0.86;
         for (let i = 0; i < RIB_STATIONS.length; i++) {
           const s = RIB_STATIONS[i] as number;
-          pill(foot.x, y + h * s - ch / 2, foot.w, ch, surfaceAt(design, s)[0], 40 + i);
+          pill(cx, y + h * s - ch / 2, cw, ch, mix(surfaceAt(design, s)[0], FLAT.ink, 0.08), 40 + i);
         }
         break;
       }
@@ -3839,25 +5424,38 @@ function drawShapeMarks(
         break;
       }
       case 'headcaps': {
-        // Leather turned over a cord at head and tail, and rolled round.
-        const capH = Math.max(2.2, h * 0.024);
+        // Leather turned over a cord at head and tail. This is an INSET seam,
+        // not a separate pill wider than the body (the old baluster/capsule).
+        const capH = Math.max(1, Math.min(h * 0.009, w * 0.07));
+        const cap = mix(board, FLAT.ink, 0.28);
         for (const [t, n] of [
-          [0.045, 0],
-          [0.955, 1],
+          [0.052, 0],
+          [0.948, 1],
         ] as const) {
-          pill(x + w * 0.04, y + h * t - capH / 2, w * 0.92, capH, surfaceAt(design, t)[1], 168 + n);
+          stroke(
+            ctx,
+            x + w * 0.14,
+            y + h * t,
+            x + w * 0.86,
+            y + h * t,
+            cap,
+            capH,
+            seed + 168 + n,
+          );
         }
         break;
       }
       case 'yappLips': {
-        // The covers overhang the block. The lips sit mostly OUTSIDE the body,
-        // so they read as caps on the ends rather than as two rungs across it.
-        const lh = Math.max(2, h * 0.03);
+        // A subtle soft-cover extension, not a structural crossbar. It sits
+        // mostly outside the body and is only a breath wider than the back.
+        const lh = Math.max(1.5, h * 0.018);
+        const lx = foot.x + foot.w * 0.025;
+        const lw = foot.w * 0.95;
         for (const [ly, t, n] of [
           [y - lh * 0.62, 0, 0],
           [y + h - lh * 0.38, 1, 1],
         ] as const) {
-          pill(foot.x, ly, foot.w, lh, surfaceAt(design, t)[1], 170 + n);
+          pill(lx, ly, lw, lh, surfaceAt(design, t)[1], 170 + n);
         }
         break;
       }
@@ -3922,6 +5520,14 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
   const [accentFace, accentBoard] = fadedPair(clothPair(design.accent), design.wear);
   const seed = design.seed;
   const r = Math.min(w * 0.3, h * 0.03);
+  const authoredBinding = design.decorations
+    .flatMap((mark) => decorSpec(mark).parts)
+    .find((part): part is Extract<DecorPart, { k: 'binding' }> => part.k === 'binding');
+  const cordedProgramme = authoredBinding?.archetype === 'corded-leather';
+  const sparseOilclothProgramme =
+    authoredBinding?.archetype === 'terminal' && authoredBinding.variant === 4;
+  const sparseLinenScholarProgramme =
+    authoredBinding?.archetype === 'publisher-panel' && authoredBinding.variant === 4;
 
   // Below its floor the fine work of a covering — veins, lozenges, joint lines
   // — lands on less than a pixel and reads as dirt, so a sliver gets the plain
@@ -3986,7 +5592,7 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
       case 'accent':
         return accentFace;
       case 'foil':
-        return rubbed(FLAT.gilt, board, design.wear);
+        return toolingColour(design, board);
       default:
         return mix(board, FLAT.ink, 0.16);
     }
@@ -4090,31 +5696,32 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
         break;
       }
       case 'napEdge': {
-        // Felt is thick and it is CUT, not woven: a broad soft band down the
-        // fore edge in the second value, and tufts standing out of its inner
-        // edge where the shears left it. Depth as a darker flat face beside a
-        // lighter one; the tufts are what stop the band being a printed stripe.
-        const bw = fw * 0.34;
+        // Felt is thick and CUT, not two cloths glued together. Keep the darker
+        // edge narrow enough to read as thickness, then let a handful of flat
+        // clipped tufts name the surface. The old third-width slab was louder
+        // than the title and made the material look half-bound.
+        const bw = fw * 0.18;
         fillBand(ctx, x + w * (f1 - bw), y - h * 0.02, w * (bw + 0.06), h * 1.04, gc, w * 0.1, seed + 205);
-        const tufts = Math.max(8, n * 4);
+        const tufts = Math.max(6, n * 3);
         for (let i = 0; i < tufts; i++) {
           const t = 0.03 + (i * 0.94) / tufts;
           const j = wob(seed + i * 7) * fw * 0.06;
-          stroke(ctx, x + w * (f1 - bw + j), y + h * t, x + w * (f1 - bw + j), y + h * (t + 0.055), gc, Math.max(1, w * 0.05), seed + 206 + i);
+          stroke(ctx, x + w * (f1 - bw - 0.025 + j), y + h * t, x + w * (f1 - bw + 0.035 + j), y + h * (t + 0.006), gc, Math.max(0.9, w * 0.036), seed + 206 + i);
         }
         break;
       }
       case 'pile': {
-        // Velvet is pile, and pile turns: TWO steps of it down the fore edge,
-        // the outer one the accent and the inner one half way back to the
-        // ground, plus the crush marks across where the nap has been pressed
-        // flat. One hard stripe of accent read as a bookmark laid on the book.
-        const outer = fw * 0.24;
-        fillBand(ctx, x + w * (f1 - outer), y - h * 0.02, w * (outer + 0.06), h * 1.04, gc, w * 0.1, seed + 205);
-        fillBand(ctx, x + w * (f1 - outer * 1.95), y - h * 0.02, w * outer * 0.8, h * 1.04, mix(gc, board, 0.45), w * 0.1, seed + 207);
-        const crush = Math.max(4, n * 2);
-        for (let i = 1; i <= crush; i++) {
-          hLine((i * 0.92) / (crush + 1) + 0.04, f1 - outer * 1.95, f1 + 0.02, h * 0.006, i);
+        // Velvet is a deep continuous covering. Sparse paired nap turns name
+        // it without inventing a bright fore-edge panel (the broad two-step
+        // slab was repeatedly read as a second cover at both preview scales).
+        const crush = Math.max(3, n + 1);
+        const quiet = mix(gc, face, 0.32);
+        for (let i = 0; i < crush; i++) {
+          const t = 0.12 + ((i + 0.4 + rand() * 0.2) * 0.76) / crush;
+          const a = f0 + fw * (0.16 + rand() * 0.46);
+          const len = fw * (0.14 + rand() * 0.12);
+          stroke(ctx, x + w * a, y + h * t, x + w * (a + len), y + h * (t + 0.008), quiet, Math.max(0.8, w * 0.026), seed + 205 + i * 2);
+          stroke(ctx, x + w * (a + len * 0.12), y + h * (t + 0.018), x + w * (a + len * 0.78), y + h * (t + 0.023), gc, Math.max(0.7, w * 0.02), seed + 206 + i * 2);
         }
         break;
       }
@@ -4132,9 +5739,8 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
         }
         break;
       }
-      case 'watered':
-      case 'combedVeins': {
-        const moire = spec.grain === 'watered';
+      case 'watered': {
+        const moire = true;
         /** One ripple pulled the height of the sheet. */
         const vein = (at: number, amp: number, colour: string, width: number, k: number): void => {
           const vx = x + w * at;
@@ -4171,21 +5777,56 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
         }
         break;
       }
+      case 'combedVeins': {
+        // A comb is pulled ACROSS the sheet, so the colour should travel as
+        // broad, irregular waves rather than four full-height uprights. Those
+        // uprights were handsome enlarged but collapsed into a barcode on a
+        // 30px shelf spine. Crossing the narrow field at staggered heights
+        // keeps the motion recognisably marbled without becoming either a
+        // structural band or a field of scratch marks.
+        const veins = Math.max(3, Math.min(4, n));
+        for (let i = 0; i < veins; i++) {
+          const t = 0.12 + (i * 0.76) / Math.max(1, veins - 1);
+          const rise = (i % 2 === 0 ? 1 : -1) * (0.045 + rand() * 0.035);
+          const bow = (i % 3 - 1) * 0.055;
+          ctx.beginPath();
+          ctx.moveTo(x + w * f0, y + h * t);
+          ctx.bezierCurveTo(
+            x + w * (f0 + fw * 0.28), y + h * (t + rise + bow),
+            x + w * (f0 + fw * 0.7), y + h * (t - rise + bow),
+            x + w * f1, y + h * (t + rise * 0.45),
+          );
+          ctx.strokeStyle = i % 2 === 0 ? gc : mix(gc, face, 0.34);
+          ctx.lineWidth = Math.max(1, w * 0.03);
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          // The paler echo is deliberately incomplete: a second edge gives
+          // the wave a combed ribbon quality, while a full parallel line would
+          // turn it back into a ruled stripe.
+          ctx.beginPath();
+          ctx.moveTo(x + w * (f0 + fw * 0.13), y + h * (t + 0.018));
+          ctx.bezierCurveTo(
+            x + w * (f0 + fw * 0.36), y + h * (t + rise + bow + 0.018),
+            x + w * (f0 + fw * 0.62), y + h * (t - rise + bow + 0.018),
+            x + w * (f0 + fw * 0.84), y + h * (t + rise * 0.2 + 0.018),
+          );
+          ctx.strokeStyle = mix(gc, face, 0.48);
+          ctx.lineWidth = Math.max(0.8, w * 0.02);
+          ctx.stroke();
+        }
+        break;
+      }
       case 'figured':
-        // Two columns, offset row by row. One column down the middle is a
-        // stripe of beads, not a woven figure — a brocade is a REPEAT, and a
-        // repeat needs at least two of it side by side to be seen as one.
-        //
-        // …and the figure is RAISED out of a ground, so it needs the ground: a
-        // fine pick line under each row, and the weft showing through the
-        // middle of the figure itself. Bare lozenges were a scatter of pips.
+        // Two offset columns of very small woven leaves. Horizontal ground
+        // rails made the old brocade look like mechanical brackets; the repeat
+        // itself is enough to say figured silk in flat art.
         for (let row = 0; row < n; row++) {
           const t = 0.08 + (row * 0.84) / (n - 1 || 1);
           const cy = y + h * t;
-          const s = Math.min(w * 0.13, h * 0.019);
-          hLine(t + 0.016, f0 + 0.01, f1 - 0.01, h * 0.0032, row);
+          const s = Math.min(w * 0.105, h * 0.015);
           for (let col = 0; col < 2; col++) {
-            const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.44 : 0.5 + col * 0.44));
+            const cxx = x + w * (f0 + fw * (row % 2 === 0 ? 0.28 + col * 0.42 : 0.48 + col * 0.42));
             if (cxx > x + w * f1) continue;
             ctx.beginPath();
             ctx.moveTo(cxx, cy - s);
@@ -4193,7 +5834,7 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
             ctx.quadraticCurveTo(cxx - s * 0.85, cy, cxx, cy - s);
             ctx.fillStyle = gc;
             ctx.fill();
-            stroke(ctx, cxx - s * 0.4, cy, cxx + s * 0.4, cy, mix(gc, board, 0.5), Math.max(0.7, s * 0.32), seed + 218 + row * 2 + col);
+            stroke(ctx, cxx, cy - s * 0.5, cxx, cy + s * 0.65, mix(gc, board, 0.55), Math.max(0.65, s * 0.22), seed + 218 + row * 2 + col);
           }
         }
         break;
@@ -4483,22 +6124,26 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
         }
         break;
       }
-      case 'pasteComb':
-        // A comb has TEETH: one pass leaves three waves at once, and the paste
-        // drags thinner under the middle tooth. One arc a row was a smile.
-        for (let i = 0; i < n; i++) {
-          const cy = y + h * (0.07 + (i * 0.86) / (n - 1 || 1));
+      case 'pasteComb': {
+        // Local comb pulls, not edge-to-edge waves: alternating short fans keep
+        // the paste-paper gesture from turning the spine into water or ruling.
+        const rows = Math.max(4, n);
+        for (let i = 0; i < rows; i++) {
+          const cy = y + h * (0.09 + (i * 0.82) / Math.max(1, rows - 1));
+          const a0 = f0 + fw * (i % 2 === 0 ? 0.04 : 0.3);
+          const a1 = Math.min(f1, a0 + fw * 0.64);
           for (let k = 0; k < 3; k++) {
-            const oy = cy + h * 0.011 * k;
+            const oy = cy + h * 0.009 * (k - 1);
             ctx.beginPath();
-            ctx.moveTo(x + w * f0, oy);
-            ctx.quadraticCurveTo(x + w * (f0 + fw * 0.5), oy + h * 0.024, x + w * f1, oy);
+            ctx.moveTo(x + w * a0, oy);
+            ctx.quadraticCurveTo(x + w * ((a0 + a1) / 2), oy + h * 0.019, x + w * a1, oy - h * 0.004);
             ctx.strokeStyle = k === 1 ? mix(gc, face, 0.42) : gc;
-            ctx.lineWidth = Math.max(0.9, h * 0.005);
+            ctx.lineWidth = Math.max(0.8, h * (k === 1 ? 0.0038 : 0.0048));
             ctx.stroke();
           }
         }
         break;
+      }
       case 'lozenges': {
         // A diaper, which is a lozenge with something IN it — the block that
         // printed the paper carried a pip, and without it the field is a row
@@ -4519,6 +6164,27 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
             ctx.fillStyle = gc;
             ctx.fill();
             dot(cxx, cy, Math.max(0.55, size * 0.26), pip);
+          }
+        }
+        break;
+      }
+      case 'sprigs': {
+        // A restrained two-leaf block, offset down the paper side. At shelf
+        // size this reads as printed paper without becoming a busy textile.
+        const rows = Math.max(4, n);
+        const stem = mix(gc, FLAT.ink, 0.28);
+        for (let i = 0; i < rows; i++) {
+          const cy = y + h * (0.09 + (i * 0.82) / Math.max(1, rows - 1));
+          const cxx = x + w * (f0 + fw * (i % 2 === 0 ? 0.34 : 0.63));
+          const s = Math.min(w * 0.1, h * 0.012);
+          stroke(ctx, cxx, cy + s * 0.9, cxx, cy - s * 0.75, stem, Math.max(0.7, s * 0.28), seed + 610 + i);
+          for (const side of [-1, 1] as const) {
+            ctx.beginPath();
+            ctx.moveTo(cxx, cy - s * 0.05);
+            ctx.quadraticCurveTo(cxx + side * s * 0.9, cy - s * 0.65, cxx + side * s * 0.72, cy + s * 0.12);
+            ctx.quadraticCurveTo(cxx + side * s * 0.34, cy + s * 0.3, cxx, cy - s * 0.05);
+            ctx.fillStyle = gc;
+            ctx.fill();
           }
         }
         break;
@@ -4671,14 +6337,256 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
     // two rectangles stacked rather than as one book bound in two skins.
     const inward = top < 0 ? -1 : 1;
     const fy = y + h * (edge + 0.013 * inward);
-    const fillet = rubbed(design.gilt ? FLAT.gilt : FLAT.creamDeep, accentBoard, design.wear);
+    const fillet = toolingColour(design, accentBoard);
     const from = spec.turn > 0 ? spec.turn * 0.55 : 0.04;
     stroke(ctx, x + w * from, fy, x + w * 0.96, fy, fillet, Math.max(0.9, w * 0.03), seed + 306 + i);
   }
 
+  /* ---------------------- the binding construction ----------------------- */
+
+  // These are broad faces and folds, not surface texture.  They remain quiet
+  // enough to sit under tooling, but make the nine intentionally plain books
+  // look bound and let two equally coloured materials stay recognisable.
+  if (w >= 8) {
+    const [cover, edge] = surfaceAt(design, 0.5);
+    const seam = mix(edge, FLAT.ink, 0.34);
+    const quiet = mix(cover, edge, 0.28);
+    const quietPale = mix(cover, FLAT.cream, 0.16);
+    const line = Math.max(0.9, w * 0.032);
+
+    const cap = (
+      at: number,
+      depth: number,
+      inset: number,
+      colour: string,
+      nSeed: number,
+    ): void => {
+      const top = y + h * at;
+      const tall = Math.max(2, h * depth);
+      fillBand(ctx, x + w * inset, top, w * (1 - inset * 2), tall, colour, 0, seed + nSeed);
+      const ruleY = at < 0.5 ? top + tall : top;
+      stroke(ctx, x + w * (inset + 0.03), ruleY, x + w * (0.97 - inset), ruleY, seam, line, seed + nSeed + 1);
+    };
+
+    const shoulder = (
+      at: number,
+      width: number,
+      colour: string,
+      nSeed: number,
+    ): void => {
+      fillBand(ctx, x + w * at, y - h * 0.02, w * width, h * 1.04, colour, 0, seed + nSeed);
+      const sx = x + w * (at + (at < 0.5 ? width : 0));
+      stroke(ctx, sx, y + h * 0.025, sx, y + h * 0.975, seam, line, seed + nSeed + 1);
+    };
+
+    switch (spec.construction) {
+      case 'cloth-case':
+        // A cased cloth book shows the covering turned over the head and tail
+        // of the board.  Two short square folds are enough; more is pattern.
+        cap(0.018, 0.025, 0.13, quiet, 700);
+        cap(0.957, 0.025, 0.13, quiet, 702);
+        break;
+      case 'buckram-case':
+        // Library buckram is heavy at the fore turn and cut crisply at both
+        // terminals.  The uninterrupted far shoulder is its identifying face.
+        shoulder(0.84, 0.12, quiet, 710);
+        cap(0.02, 0.035, 0.1, edge, 712);
+        cap(0.945, 0.035, 0.1, edge, 714);
+        break;
+      case 'linen-case':
+        // Linen is thinner and more open than buckram: narrow paired turn-ins,
+        // with a broad pale fold rather than a field of weave marks.
+        // The scholar programme already owns a continuous blind panel; its
+        // extra material caps formerly doubled both ends into even ladder bars.
+        if (!sparseLinenScholarProgramme) {
+          cap(0.025, 0.022, 0.19, quietPale, 720);
+          cap(0.953, 0.022, 0.19, quietPale, 722);
+        }
+        shoulder(0.9, 0.045, quiet, 724);
+        break;
+      case 'felt-case': {
+        // One continuous cut edge with three broad, joined undulations.  The
+        // former row of tiny tufts read as perforation/disease at shelf scale.
+        const left = x + w * 0.82;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 1.03, y - h * 0.02);
+        ctx.lineTo(x + w * 1.03, y + h * 1.02);
+        ctx.lineTo(left, y + h * 1.02);
+        for (let i = 3; i >= 0; i -= 1) {
+          const py = y + h * (i / 3);
+          const belly = left - w * (i % 2 === 0 ? 0.055 : 0.015);
+          ctx.quadraticCurveTo(belly, py - h / 12, left, py - h / 6);
+        }
+        ctx.closePath();
+        ctx.fillStyle = quiet;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(left, y + h * 0.98);
+        for (let i = 3; i >= 0; i -= 1) {
+          const py = y + h * (i / 3);
+          const belly = left - w * (i % 2 === 0 ? 0.055 : 0.015);
+          ctx.quadraticCurveTo(belly, py - h / 12, left, py - h / 6);
+        }
+        ctx.strokeStyle = seam;
+        ctx.lineWidth = Math.max(1.1, w * 0.04);
+        ctx.stroke();
+        break;
+      }
+      case 'velvet-case':
+        // Velvet is a deep continuous pile.  A single broad reversed-pile
+        // inset says that without specks, highlights or wallpaper.
+        fillBand(ctx, x + w * 0.34, y + h * 0.055, w * 0.42, h * 0.89, quiet, w * 0.05, seed + 740);
+        stroke(ctx, x + w * 0.34, y + h * 0.07, x + w * 0.34, y + h * 0.93, seam, line, seed + 741);
+        stroke(ctx, x + w * 0.76, y + h * 0.07, x + w * 0.76, y + h * 0.93, seam, line, seed + 742);
+        break;
+      case 'calf-back':
+        // Smooth calf is rounded over both shoulders.  Two broad pared faces
+        // make that construction legible before any gilt is struck.
+        if (cordedProgramme) {
+          cap(0.018, 0.028, 0.18, quiet, 750);
+        } else {
+          shoulder(0.19, 0.075, quiet, 750);
+          shoulder(0.735, 0.075, quiet, 752);
+        }
+        break;
+      case 'morocco-back': {
+        // Morocco is identified by its supple rounded back, not a pebble tile.
+        // Two broad pared lobes flank one uninterrupted central face; when an
+        // authored cord programme is present the cords remain the sole rails.
+        if (cordedProgramme) {
+          cap(0.02, 0.03, 0.13, quiet, 754);
+          cap(0.95, 0.03, 0.13, quiet, 756);
+          break;
+        }
+        const left = x + w * 0.16;
+        const right = x + w * 0.84;
+        ctx.beginPath();
+        ctx.moveTo(left, y + h * 0.03);
+        ctx.quadraticCurveTo(x + w * 0.27, y + h * 0.5, left, y + h * 0.97);
+        ctx.lineTo(x + w * 0.34, y + h * 0.97);
+        ctx.quadraticCurveTo(x + w * 0.43, y + h * 0.5, x + w * 0.34, y + h * 0.03);
+        ctx.closePath();
+        ctx.moveTo(right, y + h * 0.03);
+        ctx.quadraticCurveTo(x + w * 0.73, y + h * 0.5, right, y + h * 0.97);
+        ctx.lineTo(x + w * 0.66, y + h * 0.97);
+        ctx.quadraticCurveTo(x + w * 0.57, y + h * 0.5, x + w * 0.66, y + h * 0.03);
+        ctx.closePath();
+        ctx.fillStyle = quiet;
+        ctx.fill();
+        ctx.strokeStyle = seam;
+        ctx.lineWidth = Math.max(1, w * 0.032);
+        ctx.stroke();
+        break;
+      }
+      case 'russia-back':
+        // Russia calf is firmer and deeper: a wide central back with hard,
+        // paired shoulders, all in related flat tones.
+        if (cordedProgramme) {
+          cap(0.947, 0.03, 0.14, quiet, 760);
+        } else {
+          fillBand(ctx, x + w * 0.3, y + h * 0.025, w * 0.42, h * 0.95, quiet, 0, seed + 760);
+          stroke(ctx, x + w * 0.3, y + h * 0.035, x + w * 0.3, y + h * 0.965, seam, line, seed + 761);
+          stroke(ctx, x + w * 0.72, y + h * 0.035, x + w * 0.72, y + h * 0.965, seam, line, seed + 762);
+        }
+        break;
+      case 'roan-back':
+        // Roan is thin and singly pared: one broad shoulder, one narrow far
+        // turn, and no imitation morocco grain.
+        if (!cordedProgramme) shoulder(0.285, 0.09, quiet, 770);
+        cap(0.025, 0.024, 0.22, quietPale, 772);
+        break;
+      case 'oilcloth-back':
+        // The waxed sheet folds as a flap.  Its uninterrupted far fold and
+        // blunt terminal return distinguish it from leather without shine.
+        if (!sparseOilclothProgramme) shoulder(0.78, 0.14, quiet, 780);
+        cap(0.94, 0.038, 0.08, edge, 782);
+        break;
+      case 'vellum-laced':
+        // Broad vellum turn-ins; no point holes, ties or hairline creases.
+        cap(0.035, 0.045, 0.17, quietPale, 790);
+        cap(0.92, 0.045, 0.17, quietPale, 792);
+        shoulder(0.8, 0.09, quiet, 794);
+        break;
+      case 'parchment-fold': {
+        // One wide cockled fold, painted as a face rather than a scratch.
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.72, y - h * 0.02);
+        ctx.bezierCurveTo(x + w * 0.63, y + h * 0.24, x + w * 0.83, y + h * 0.51, x + w * 0.69, y + h * 0.75);
+        ctx.quadraticCurveTo(x + w * 0.62, y + h * 0.9, x + w * 0.72, y + h * 1.02);
+        ctx.lineTo(x + w * 0.86, y + h * 1.02);
+        ctx.quadraticCurveTo(x + w * 0.76, y + h * 0.9, x + w * 0.83, y + h * 0.75);
+        ctx.bezierCurveTo(x + w * 0.97, y + h * 0.51, x + w * 0.77, y + h * 0.24, x + w * 0.86, y - h * 0.02);
+        ctx.closePath();
+        ctx.fillStyle = quiet;
+        ctx.fill();
+        break;
+      }
+      case 'alum-tawed-laced': {
+        // Two broad lacing returns enter from the joint and disappear beneath
+        // the tawed covering. Connected quadrilaterals survive at 30px without
+        // becoming punctures, stitches, scratches or a regular ladder.
+        shoulder(0.16, 0.08, quietPale, 804);
+        for (const [at, rise, key] of [[0.23, -0.018, 806], [0.76, 0.018, 808]] as const) {
+          ctx.beginPath();
+          ctx.moveTo(x + w * 0.13, y + h * (at - 0.017));
+          ctx.lineTo(x + w * 0.68, y + h * (at + rise - 0.017));
+          ctx.lineTo(x + w * 0.68, y + h * (at + rise + 0.017));
+          ctx.lineTo(x + w * 0.13, y + h * (at + 0.017));
+          ctx.closePath();
+          ctx.fillStyle = quiet;
+          ctx.fill();
+          ctx.strokeStyle = seam;
+          ctx.lineWidth = Math.max(1, w * 0.035);
+          ctx.stroke();
+          void key;
+        }
+        break;
+      }
+      case 'wrapper-fold':
+        // A wrapper is one sheet folded round a text block: paired paper
+        // returns and a broad square fold at the tail, never printed ruling.
+        shoulder(0.08, 0.055, quiet, 810);
+        shoulder(0.865, 0.055, quiet, 812);
+        cap(0.94, 0.035, 0.16, quietPale, 814);
+        break;
+      case 'half-leather':
+        if (!cordedProgramme) {
+          shoulder(0.25, 0.11, quiet, 820);
+          shoulder(0.69, 0.11, quiet, 822);
+        }
+        cap(0.02, 0.028, 0.1, edge, 824);
+        break;
+      case 'quarter-leather':
+        if (!cordedProgramme) shoulder(0.19, 0.07, quiet, 830);
+        cap(0.95, 0.028, 0.2, quietPale, 832);
+        break;
+      case 'three-quarter-leather':
+        if (!cordedProgramme) {
+          shoulder(0.33, 0.1, quiet, 840);
+          shoulder(0.57, 0.1, quiet, 842);
+        }
+        cap(0.02, 0.032, 0.08, edge, 844);
+        cap(0.948, 0.032, 0.08, edge, 846);
+        break;
+      case 'half-cloth':
+        shoulder(0.24, 0.08, quietPale, 850);
+        shoulder(0.74, 0.08, quietPale, 852);
+        cap(0.03, 0.025, 0.14, quiet, 854);
+        break;
+      case 'tips-leather':
+        shoulder(0.3, 0.09, quiet, 860);
+        shoulder(0.61, 0.09, quiet, 862);
+        cap(0.025, 0.024, 0.19, edge, 864);
+        cap(0.951, 0.024, 0.19, edge, 866);
+        break;
+      default:
+        break;
+    }
+  }
+
   /* -------------------------------- the joints ------------------------------ */
 
-  if (fine && spec.joints > 0) {
+  if (fine && spec.joints > 0 && !cordedProgramme) {
     const joint = mix(board, FLAT.ink, 0.42);
     // The board standing up out of the crease — the OTHER side of the same
     // fold, said the only way this style says depth: a second flat face beside
@@ -4697,86 +6605,21 @@ function paintMaterial(ctx: FlatCtx, b: DesignBox, design: BookDesign): void {
 
 /** How far down the spine a material has already spoken for, at the head. */
 function materialHeadClaim(material: MaterialLook): number {
-  const spans = splitSpan(materialSpec(material).split);
-  const head = spans.find(([top]) => top <= 0);
-  return head === undefined ? 0 : head[1] + 0.02;
+  // A continuous leather/cloth back is the ground, not a furnishing, and does
+  // not consume the central ornament/tooling field. Only the exposed-board
+  // head patch is a local applied region that needs its own room.
+  return materialSpec(material).split === 'headBand' ? 0.17 : 0;
 }
 
 /** …and the same at the foot. */
 function materialFootClaim(material: MaterialLook): number {
-  const spans = splitSpan(materialSpec(material).split);
-  const tail = spans.find(([, bottom]) => bottom >= 1);
-  return tail === undefined ? 1 : tail[0] - 0.02;
+  void material;
+  return 1;
 }
 
 /* ========================================================================== *
  *                          stage 3 — the decoration                          *
  * ========================================================================== */
-
-/**
- * A region of the spine the caller has spoken for, in absolute px.
- *
- * `x0`/`x1` are optional. Without them the band is treated as spanning the full
- * width, which is what every caller meant before they existed — but a
- * lettering-piece is a RECTANGLE, and treating it as a horizontal stripe is
- * what let `spine-rule` strike through one: its rules sit at 0.15 and 0.85 of
- * the width, just outside the `LABEL_SPAN` constant, so the vertical-rule
- * painter concluded they cleared the label and ran them full height. On the
- * designs whose plate is actually wider than that constant, they did not.
- */
-interface Reserved {
-  y0: number;
-  y1: number;
-  x0?: number;
-  x1?: number;
-}
-
-/**
- * Does a lettering-piece fit, and read as one?
- *
- * The same test `spines.ts` applies before it sets a title, exported so the two
- * cannot disagree — a plate drawn here that the title code then declines to
- * fill is a blank white smear, and the reverse is a title floating on bare
- * cloth. On a sliver the answer is no and the book simply goes untitled, which
- * is what a sliver on a real shelf does.
- */
-export function fitsLabelPlate(d: DesignBox): boolean {
-  return d.w > 14 && d.h > 60;
-}
-
-function overlaps(reserved: Reserved | null, y0: number, y1: number): boolean {
-  return reserved !== null && y0 < reserved.y1 && y1 > reserved.y0;
-}
-
-/**
- * Does a vertical stripe from `px - half` to `px + half` cross the reserved
- * rectangle? Falls back to `LABEL_SPAN` when the caller gave no x extent, so
- * callers that pass only a band behave exactly as they did.
- *
- * `WOBBLE_SLACK` is not padding for taste. Every line in this vocabulary is
- * drawn with a bowed edge, so a rule's ink lands a pixel or two either side of
- * where its centre says it is. `spine-rule` sits about 1.8px clear of the
- * plate on a 34px spine — clear by arithmetic, and through the title in the
- * bitmap. Compare the ink's real reach, not the nominal centreline.
- */
-const WOBBLE_SLACK = 0.06;
-
-function crossesReserved(
-  reserved: Reserved | null,
-  px: number,
-  half: number,
-  x: number,
-  w: number,
-): boolean {
-  if (reserved === null) return false;
-  const x0 = reserved.x0 ?? x + w * LABEL_SPAN.left;
-  const x1 = reserved.x1 ?? x + w * LABEL_SPAN.right;
-  const reach = half + Math.max(1.5, w * WOBBLE_SLACK);
-  return px + reach > x0 && px - reach < x1;
-}
-
-/** The horizontal span a lettering-piece covers, as fractions of the width. */
-const LABEL_SPAN = { left: 0.185, right: 0.815 } as const;
 
 /* ------------------------------- run glyphs -------------------------------- */
 
@@ -5143,43 +6986,1435 @@ function drawStamp(
   }
 }
 
+/* ---------------------- reset-era construction tools ---------------------- */
+
+/** One continuous square fillet. Corners stay book-square, never pill-round. */
+function drawSquareFillet(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  weight: number,
+  seed: number,
+): void {
+  if (w <= 2 || h <= 2) return;
+  const bow = Math.min(0.75, Math.max(0.18, w * 0.018));
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  bowTo(ctx, x, y, x + w, y, wob(seed) * bow);
+  bowTo(ctx, x + w, y, x + w, y + h, wob(seed + 1) * bow);
+  bowTo(ctx, x + w, y + h, x, y + h, wob(seed + 2) * bow);
+  bowTo(ctx, x, y + h, x, y, wob(seed + 3) * bow);
+  ctx.closePath();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = weight;
+  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'butt';
+  ctx.stroke();
+}
+
+/**
+ * A real compartment system: transverse fillets terminate in the perimeter,
+ * so the result is a bound panel structure rather than floating ladder rungs.
+ */
+function drawCompartments(
+  ctx: FlatCtx,
+  d: DesignBox,
+  part: Extract<DecorPart, { k: 'compartments' }>,
+  foil: string,
+  blind: string,
+  seed: number,
+): void {
+  const { x, y, w, h } = d;
+  const x0 = x + w * part.inset;
+  const x1 = x + w * (1 - part.inset);
+  const y0 = y + h * part.top;
+  const y1 = y + h * part.bottom;
+  if (x1 - x0 <= 3 || y1 - y0 <= h * 0.08) return;
+  const weight = Math.max(1, w * part.weight);
+  const accentWeight = Math.max(0.9, weight * 0.82);
+  const span = x1 - x0;
+  const rise = Math.max(2.2, Math.min(w * 0.15, (y1 - y0) * 0.055));
+  const gap = Math.max(1.5, w * 0.06);
+
+  const ruled = (
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    colour: string,
+    line: number,
+    key: number,
+  ): void => {
+    stroke(ctx, ax, ay, bx, by, colour, line, seed + key);
+  };
+
+  const cornerReturn = (
+    px: number,
+    py: number,
+    sx: -1 | 1,
+    sy: -1 | 1,
+    arm: number,
+    colour: string,
+    line: number,
+    key: number,
+  ): void => {
+    ctx.beginPath();
+    ctx.moveTo(px + sx * arm, py);
+    ctx.lineTo(px, py);
+    ctx.lineTo(px, py + sy * arm * 1.35);
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = line;
+    ctx.lineJoin = 'miter';
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+    // A shorter parallel return reads as two binder's fillets, not a UI box.
+    if (!part.double) return;
+    const inset = Math.max(1.2, line * 1.25);
+    ctx.beginPath();
+    ctx.moveTo(px + sx * (arm * 0.72), py + sy * inset);
+    ctx.lineTo(px + sx * inset, py + sy * inset);
+    ctx.lineTo(px + sx * inset, py + sy * arm);
+    ctx.strokeStyle = blind;
+    ctx.lineWidth = Math.max(0.85, line * 0.72);
+    ctx.stroke();
+    void key;
+  };
+
+  const steppedFillet = (): void => {
+    const cut = Math.min(span * 0.16, rise * 1.4);
+    ctx.beginPath();
+    ctx.moveTo(x0 + cut, y0);
+    ctx.lineTo(x1 - cut, y0);
+    ctx.lineTo(x1, y0 + rise);
+    ctx.lineTo(x1, y1 - rise);
+    ctx.lineTo(x1 - cut, y1);
+    ctx.lineTo(x0 + cut, y1);
+    ctx.lineTo(x0, y1 - rise);
+    ctx.lineTo(x0, y0 + rise);
+    ctx.closePath();
+    ctx.strokeStyle = blind;
+    ctx.lineWidth = weight;
+    ctx.lineJoin = 'miter';
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+    cornerReturn(x0 + cut, y0 + gap, 1, 1, Math.min(span * 0.2, rise * 1.3), foil, accentWeight, 41);
+    cornerReturn(x1 - cut, y1 - gap, -1, -1, Math.min(span * 0.2, rise * 1.3), foil, accentWeight, 42);
+  };
+
+  // Establish a dark structural layer first. Gold is then reserved for short
+  // returns, shoulders and focal ledges, so pale vellum no longer becomes one
+  // low-contrast yellow ruler and dark cloth no longer becomes a gold cage.
+  switch (part.style) {
+    case 'mitred':
+      drawSquareFillet(ctx, x0, y0, span, y1 - y0, blind, weight, seed + 20);
+      if (part.double && span > gap * 2 + 3) {
+        drawSquareFillet(
+          ctx,
+          x0 + gap,
+          y0 + gap,
+          span - gap * 2,
+          y1 - y0 - gap * 2,
+          foil,
+          accentWeight,
+          seed + 21,
+        );
+      } else {
+        ruled(x0, y0, x1, y0, foil, accentWeight, 24);
+        ruled(x0, y1, x1, y1, foil, accentWeight, 25);
+        cornerReturn(x0, y0, 1, 1, Math.min(span * 0.28, rise * 1.7), foil, accentWeight, 22);
+        cornerReturn(x1, y1, -1, -1, Math.min(span * 0.28, rise * 1.7), foil, accentWeight, 23);
+      }
+      break;
+    case 'corner-return': {
+      drawSquareFillet(ctx, x0, y0, span, y1 - y0, blind, weight, seed + 30);
+      ruled(x0, y0, x1, y0, foil, accentWeight, 36);
+      ruled(x0, y1, x1, y1, foil, accentWeight, 37);
+      const arm = Math.min(span * 0.38, rise * 2.2);
+      cornerReturn(x0, y0, 1, 1, arm, foil, accentWeight, 32);
+      cornerReturn(x1, y0, -1, 1, arm, foil, accentWeight, 33);
+      cornerReturn(x0, y1, 1, -1, arm, foil, accentWeight, 34);
+      cornerReturn(x1, y1, -1, -1, arm, foil, accentWeight, 35);
+      break;
+    }
+    case 'stepped':
+      steppedFillet();
+      ruled(x0 + span * 0.16, y0, x1 - span * 0.16, y0, foil, accentWeight, 43);
+      ruled(x0 + span * 0.16, y1, x1 - span * 0.16, y1, foil, accentWeight, 44);
+      break;
+    case 'rail': {
+      const inner = part.double ? gap : 0;
+      ruled(x0 + inner, y0 + rise, x0 + inner, y1 - rise, blind, weight, 50);
+      ruled(x1 - inner, y0 + rise, x1 - inner, y1 - rise, blind, weight, 51);
+      ruled(x0, y0 + rise, x1, y0 + rise, foil, accentWeight, 52);
+      ruled(x0, y1 - rise, x1, y1 - rise, foil, accentWeight, 53);
+      ruled(x0 + span * 0.2, y0, x1 - span * 0.2, y0, blind, weight, 54);
+      ruled(x0 + span * 0.2, y1, x1 - span * 0.2, y1, blind, weight, 55);
+      break;
+    }
+    case 'folio': {
+      ruled(x0, y0, x0, y1, blind, weight, 60);
+      ruled(x1, y0, x1, y1, blind, weight, 61);
+      for (const [py, sy, key] of [[y0, 1, 62], [y1, -1, 64]] as const) {
+        ruled(x0, py, x1, py, blind, weight, key);
+        ruled(x0 + gap, py + sy * rise, x1 - gap, py + sy * rise, foil, accentWeight, key + 1);
+      }
+      break;
+    }
+    case 'canopy': {
+      const arm = span * 0.34;
+      drawSquareFillet(ctx, x0, y0, span, y1 - y0, blind, weight, seed + 70);
+      ruled(x0, y0, x1, y0, foil, accentWeight, 78);
+      ruled(x0, y1, x1, y1, foil, accentWeight, 79);
+      cornerReturn(x0, y0, 1, 1, arm, foil, accentWeight, 74);
+      cornerReturn(x1, y0, -1, 1, arm, foil, accentWeight, 75);
+      cornerReturn(x0, y1, 1, -1, arm, foil, accentWeight, 76);
+      cornerReturn(x1, y1, -1, -1, arm, foil, accentWeight, 77);
+      break;
+    }
+    default:
+      break;
+  }
+
+  // Unequal stations remain programme-authored. Their connection treatment is
+  // family-specific, preventing a row of short equal rungs from becoming a
+  // ladder while retaining the physical logic of a ruled spine compartment.
+  for (let i = 0; i < part.divisions.length; i += 1) {
+    const station = part.divisions[i] as number;
+    if (station <= part.top + 0.025 || station >= part.bottom - 0.025) continue;
+    const py = y + h * station;
+    switch (part.style) {
+      case 'corner-return': {
+        const fromLeft = i % 2 === 0;
+        const end = fromLeft ? x0 + span * 0.67 : x1 - span * 0.67;
+        ruled(fromLeft ? x0 : x1, py, end, py, blind, weight, 100 + i);
+        const tick = Math.max(1.8, rise * 0.72);
+        ruled(end, py, end, py + (fromLeft ? 1 : -1) * tick, foil, accentWeight, 110 + i);
+        break;
+      }
+      case 'stepped': {
+        const inset = Math.min(span * 0.11, gap * 1.2);
+        ruled(x0 + inset, py, x1 - inset, py, i % 2 === 0 ? foil : blind, i % 2 === 0 ? accentWeight : weight, 120 + i);
+        ruled(x0 + inset, py - rise * 0.55, x0 + inset, py + rise * 0.55, blind, weight, 130 + i);
+        ruled(x1 - inset, py - rise * 0.55, x1 - inset, py + rise * 0.55, blind, weight, 140 + i);
+        break;
+      }
+      case 'rail': {
+        const fromLeft = i % 2 === 0;
+        ruled(
+          fromLeft ? x0 : x1,
+          py,
+          fromLeft ? x0 + span * 0.62 : x1 - span * 0.62,
+          py,
+          i === 0 ? foil : blind,
+          i === 0 ? accentWeight : weight,
+          150 + i,
+        );
+        break;
+      }
+      case 'canopy': {
+        const clear = span * 0.22;
+        ruled(x0, py, (x0 + x1) / 2 - clear, py, blind, weight, 160 + i * 2);
+        ruled((x0 + x1) / 2 + clear, py, x1, py, blind, weight, 161 + i * 2);
+        if (i === 0 || i === part.divisions.length - 1) {
+          ruled(x0 + span * 0.16, py, x1 - span * 0.16, py, foil, accentWeight, 170 + i);
+        }
+        break;
+      }
+      case 'folio':
+        ruled(x0, py, x1, py, blind, weight, 180 + i);
+        if (i === 0 || i === part.divisions.length - 1) {
+          ruled(x0 + gap, py + (i === 0 ? rise * 0.48 : -rise * 0.48), x1 - gap, py + (i === 0 ? rise * 0.48 : -rise * 0.48), foil, accentWeight, 190 + i);
+        }
+        break;
+      case 'mitred':
+      default:
+        ruled(x0, py, x1, py, blind, weight, 200 + i);
+        if (i % 2 === 0) {
+          ruled(x0 + span * 0.18, py, x1 - span * 0.18, py, foil, accentWeight, 210 + i);
+        }
+        break;
+    }
+  }
+}
+
+/** A raised, square-ended band made from the covering itself. */
+function drawMaterialBands(
+  ctx: FlatCtx,
+  d: DesignBox,
+  design: BookDesign,
+  part: Extract<DecorPart, { k: 'bands' }>,
+  foil: string,
+  seed: number,
+): void {
+  const { x, y, w, h } = d;
+  const ink = Math.max(0.9, inkWidth(w) * 0.46);
+  for (let i = 0; i < part.at.length; i += 1) {
+    const t = part.at[i] as number;
+    const [face, board] = part.fill === 'accent'
+      ? fadedPair(clothPair(design.accent), design.wear)
+      : surfaceAt(design, t);
+    const bh = Math.max(2.4, Math.min(h * part.height, w * 0.34));
+    const bx = x + w * 0.025;
+    const bw = w * 0.95;
+    const by = y + h * t - bh / 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, by + bh * 0.34);
+    ctx.quadraticCurveTo(x + w * 0.5, by - bh * 0.12, bx + bw, by + bh * 0.34);
+    ctx.lineTo(bx + bw, by + bh * 0.78);
+    ctx.quadraticCurveTo(x + w * 0.5, by + bh * 1.12, bx, by + bh * 0.78);
+    ctx.closePath();
+    ctx.fillStyle = mix(board, face, 0.18);
+    ctx.fill();
+    // One blind lower shoulder establishes relief. A black rectangular outline
+    // made a real raised cord look like a luggage strap around a canister.
+    stroke(
+      ctx,
+      bx + w * 0.03,
+      by + bh * 0.83,
+      bx + bw - w * 0.03,
+      by + bh * 0.83,
+      mix(board, FLAT.ink, 0.55),
+      ink,
+      seed + i * 4,
+    );
+    if (!part.shoulders || w < 10) continue;
+    // A restrained centre strike identifies a gilt cord without doubling every
+    // band into four parallel ruler lines.
+    stroke(
+      ctx,
+      x + w * 0.2,
+      by + bh * 0.43,
+      x + w * 0.8,
+      by + bh * 0.43,
+      foil,
+      Math.max(0.85, w * 0.031),
+      seed + i * 4 + 1,
+    );
+  }
+}
+
+/**
+ * Paint one of the seven premium non-quiet binding archetypes. The eighth
+ * archetype is `plain`: material construction alone. Geometry here follows
+ * what a binder physically does at shelf scale—rules, panels, cords, tooling
+ * and sewing—rather than inventing a generic frame and decorating it.
+ */
+function drawBindingArchetype(
+  ctx: FlatCtx,
+  d: DesignBox,
+  design: BookDesign,
+  part: Extract<DecorPart, { k: 'binding' }>,
+  foil: string,
+  blind: string,
+  stamp: string,
+  seed: number,
+): void {
+  const { x, y, w, h } = d;
+  const primary = Math.max(1.1, w * 0.045);
+  const secondary = Math.max(0.9, w * 0.03);
+  const px = (t: number): number => x + w * t;
+  const py = (t: number): number => y + h * t;
+  const ruled = (
+    at: number,
+    from: number,
+    to: number,
+    colour: string,
+    line = primary,
+    key = 0,
+  ): void => stroke(ctx, px(from), py(at), px(to), py(at), colour, line, seed + key);
+
+  switch (part.archetype) {
+    case 'terminal': {
+      // Nine press programmes: three deliberately quiet rule architectures
+      // and six single-tool imprints. None is a recoloured head-pair/tail-pair
+      // tuple, and no mark floats without a ruled construction to key into.
+      const rhythms: readonly (readonly [number, number, number, 'foil' | 'blind', 'primary' | 'secondary'][])[] = [
+        [[0.13, 0.15, 0.85, 'blind', 'primary'], [0.165, 0.15, 0.85, 'blind', 'secondary'], [0.84, 0.24, 0.76, 'foil', 'primary']],
+        [[0.16, 0.2, 0.8, 'foil', 'primary'], [0.78, 0.31, 0.69, 'blind', 'secondary']],
+        [[0.2, 0.3, 0.7, 'blind', 'secondary'], [0.82, 0.14, 0.86, 'foil', 'primary']],
+        [[0.14, 0.14, 0.66, 'blind', 'primary'], [0.86, 0.34, 0.86, 'blind', 'primary']],
+        [[0.18, 0.36, 0.84, 'blind', 'secondary'], [0.58, 0.18, 0.72, 'foil', 'primary'], [0.86, 0.48, 0.82, 'blind', 'secondary']],
+        [[0.16, 0.2, 0.8, 'blind', 'secondary'], [0.74, 0.14, 0.86, 'blind', 'primary']],
+        [[0.24, 0.15, 0.72, 'foil', 'primary'], [0.82, 0.28, 0.85, 'blind', 'secondary']],
+        [[0.12, 0.22, 0.78, 'blind', 'primary'], [0.68, 0.14, 0.64, 'blind', 'secondary'], [0.84, 0.36, 0.86, 'foil', 'primary']],
+        [[0.2, 0.13, 0.87, 'blind', 'secondary'], [0.8, 0.2, 0.8, 'foil', 'primary']],
+      ];
+      const rhythm = rhythms[part.variant] ?? rhythms[0] as readonly [number, number, number, 'foil' | 'blind', 'primary' | 'secondary'][];
+      for (let i = 0; i < rhythm.length; i += 1) {
+        const [at, from, to, colour, weight] = rhythm[i] as [number, number, number, 'foil' | 'blind', 'primary' | 'secondary'];
+        ruled(at, from, to, colour === 'foil' ? foil : blind, weight === 'primary' ? primary : secondary, 10 + i);
+      }
+      if (part.glyph !== undefined) {
+        const focalAt = [0.52, 0.48, 0.51, 0.5, 0.43, 0.48, 0.5, 0.46, 0.5][part.variant] ?? 0.5;
+        drawOpenBinderTool(ctx, part.glyph, px(0.5), py(focalAt), w * 0.82, stamp, primary);
+      }
+      break;
+    }
+    case 'publisher-panel': {
+      // Publisher cloth owns both continuous cases and deliberately open folio
+      // fields. Each variant changes the large architecture, not a 1px offset.
+      switch (part.variant) {
+        case 0: { // grand quarto: double gilt case with unequal connected bays
+          drawSquareFillet(ctx, px(0.14), py(0.07), w * 0.72, h * 0.86, foil, primary, seed + 20);
+          drawSquareFillet(ctx, px(0.225), py(0.07) + w * 0.085, w * 0.55, h * 0.86 - w * 0.17, blind, secondary, seed + 21);
+          ruled(0.29, 0.14, 0.86, blind, primary, 22);
+          ruled(0.73, 0.14, 0.86, foil, secondary, 23);
+          break;
+        }
+        case 1: { // Oxford: one calm double perimeter and no division
+          drawSquareFillet(ctx, px(0.14), py(0.07), w * 0.72, h * 0.86, foil, primary, seed + 24);
+          drawSquareFillet(ctx, px(0.225), py(0.07) + w * 0.085, w * 0.55, h * 0.86 - w * 0.17, blind, secondary, seed + 25);
+          break;
+        }
+        case 2: { // Cambridge: blind case, low bay, integrated lozenge
+          drawSquareFillet(ctx, px(0.16), py(0.09), w * 0.68, h * 0.82, blind, primary, seed + 26);
+          ruled(0.72, 0.16, 0.84, foil, primary, 27);
+          break;
+        }
+        case 3: { // Folio: open field with two unequal physical ledges
+          ruled(0.2, 0.12, 0.88, blind, primary * 1.22, 28);
+          ruled(0.67, 0.23, 0.82, foil, primary, 29);
+          ruled(0.83, 0.12, 0.68, blind, secondary, 30);
+          break;
+        }
+        case 4: { // Linen scholar: a single high blind case and open foot
+          drawSquareFillet(ctx, px(0.18), py(0.09), w * 0.64, h * 0.58, blind, primary, seed + 31);
+          ruled(0.82, 0.3, 0.7, blind, secondary, 32);
+          break;
+        }
+        case 5: { // Buckram Oxford: one gilt case with an open acanthus bay
+          drawSquareFillet(ctx, px(0.13), py(0.12), w * 0.74, h * 0.74, foil, primary, seed + 33);
+          ruled(0.7, 0.13, 0.87, blind, secondary, 34);
+          break;
+        }
+        case 6: { // Archive folio: open upper ledger and short tail docket
+          ruled(0.16, 0.12, 0.88, blind, primary * 1.18, 35);
+          ruled(0.36, 0.23, 0.84, blind, secondary, 36);
+          ruled(0.82, 0.42, 0.88, foil, primary, 37);
+          break;
+        }
+        default:
+          break;
+      }
+      if (part.glyph !== undefined) {
+        const focalAt = [0.52, 0.52, 0.43, 0.47, 0.74, 0.45, 0.59][part.variant] ?? 0.5;
+        drawOpenBinderTool(ctx, part.glyph, px(0.5), py(focalAt), w * 0.78, stamp, primary);
+      }
+      break;
+    }
+    case 'corded-leather': {
+      // Physical raised cords carry the design. One, two or three deliberately
+      // unequal cords replace the old fourteen near-identical three-rung backs.
+      // Select volumes strike one broad tool into the largest open bay.
+      const stationSets: readonly (readonly number[])[] = [
+        [0.2, 0.78],
+        [0.16, 0.43, 0.82],
+        [0.15, 0.7],
+        [0.24, 0.74],
+        [0.14, 0.38, 0.82],
+        [0.28, 0.76],
+        [0.15, 0.52, 0.85],
+        [0.18, 0.73],
+        [0.17, 0.8],
+        [0.3, 0.72],
+        [0.2, 0.47, 0.81],
+        [0.18, 0.74],
+        [0.24, 0.79],
+        [0.15, 0.41, 0.84],
+      ];
+      const stations = stationSets[part.variant] ?? stationSets[0] as readonly number[];
+      drawMaterialBands(
+        ctx,
+        d,
+        design,
+        {
+          k: 'bands',
+          at: stations,
+          height: part.variant === 5 || part.variant === 9 ? 0.025 : 0.021,
+          fill: part.variant === 10 || part.variant === 13 ? 'accent' : 'surface',
+          shoulders: design.gilt && part.variant % 3 !== 0,
+        },
+        design.gilt ? foil : blind,
+        seed + 30,
+      );
+      if (part.glyph !== undefined) {
+        const focalStations = [0.5, 0.62, 0.43, 0.48, 0.6, 0.5, 0.33, 0.47, 0.49, 0.5, 0.63, 0.46, 0.51, 0.62] as const;
+        drawOpenBinderTool(
+          ctx,
+          part.glyph,
+          px(0.5),
+          py(focalStations[part.variant] ?? 0.5),
+          w * (part.variant === 10 || part.variant === 13 ? 0.76 : 0.72),
+          stamp,
+          primary,
+        );
+      }
+      break;
+    }
+    case 'ceremonial-crown': {
+      // Five state bindings, one focal each. Grand Crown owns the only crown;
+      // the related velvet/calf/Russia/three-quarter volumes use distinct
+      // classical tools instead of repeating the Welcome silhouette in colour.
+      const cordSets: readonly (readonly number[])[] = [
+        [0.19, 0.77], // Grand: unequal state cords around one open crown bay
+        [0.25],       // Velvet anthemion: one high structural cord
+        [0.18, 0.72], // Royal calf: paired shoulders around heraldic lozenge
+        [0.21, 0.81], // Russia acanthus: wide blind central field
+        [0.64],       // Three-quarter fleur: one broad lower cord
+      ];
+      const focalStations = [0.49, 0.58, 0.46, 0.52, 0.39] as const;
+      drawMaterialBands(
+        ctx,
+        d,
+        design,
+        {
+          k: 'bands',
+          at: cordSets[part.variant] ?? cordSets[0] as readonly number[],
+          height: part.variant === 0 ? 0.024 : 0.021,
+          fill: part.variant === 4 ? 'accent' : 'surface',
+          shoulders: part.variant !== 3,
+        },
+        foil,
+        seed + 40,
+      );
+      if (part.variant === 0) {
+        // Bespoke Welcome state architecture: blind construction establishes
+        // the open bay, restrained gold rules lead into one broad open crown.
+        ruled(0.31, 0.15, 0.85, blind, secondary, 42);
+        ruled(0.68, 0.24, 0.76, foil, secondary, 43);
+      } else if (part.variant === 1) {
+        ruled(0.79, 0.18, 0.82, foil, primary, 44);
+      } else if (part.variant === 2) {
+        ruled(0.84, 0.32, 0.68, blind, secondary, 45);
+      } else if (part.variant === 3) {
+        ruled(0.15, 0.2, 0.8, blind, primary, 46);
+        ruled(0.72, 0.3, 0.82, foil, secondary, 47);
+      } else {
+        ruled(0.18, 0.22, 0.78, blind, secondary, 48);
+      }
+      // Grand is the only Crown preset. Related state bindings are allowed to
+      // be ceremonial through their cord and rule architecture alone; a
+      // missing focal must never silently fall back to another crown.
+      if (part.glyph !== undefined) {
+        drawOpenBinderTool(
+          ctx,
+          part.glyph,
+          px(0.5),
+          py(focalStations[part.variant] ?? 0.49),
+          w * (part.variant === 0 ? 0.94 : part.variant === 1 ? 0.86 : 0.8),
+          stamp,
+          part.variant === 0 ? primary * 1.08 : primary,
+        );
+      }
+      break;
+    }
+    case 'diagonal-botanical': {
+      // Seven botanical presets now use seven silhouette-distinct broad brass
+      // tools. Remote rules vary by book role, but never become a frame or a
+      // repeated field; the tool itself remains the one visual hierarchy.
+      const topRules = [0.18, 0.24, 0.16, 0.28, 0.2, 0.14, 0.25] as const;
+      const tailRules = [0.82, 0.76, 0.86, 0.72, 0.8, 0.84, 0.75] as const;
+      const focalAt = [0.51, 0.49, 0.54, 0.5, 0.47, 0.52, 0.5] as const;
+      ruled(topRules[part.variant] ?? 0.2, part.variant % 2 === 0 ? 0.17 : 0.31, part.variant % 2 === 0 ? 0.83 : 0.69, part.variant % 3 === 0 ? foil : blind, secondary, 50);
+      ruled(tailRules[part.variant] ?? 0.8, part.variant % 3 === 1 ? 0.28 : 0.2, part.variant % 3 === 1 ? 0.72 : 0.8, part.variant % 2 === 0 ? blind : foil, secondary, 51);
+      drawOpenBinderTool(
+        ctx,
+        part.glyph ?? 'sprig',
+        px(0.5),
+        py(focalAt[part.variant] ?? 0.5),
+        w * (part.variant === 0 ? 0.96 : part.variant === 3 || part.variant === 4 ? 0.9 : 0.84),
+        stamp,
+        primary,
+      );
+      break;
+    }
+    case 'laureate': {
+      // Eight prize/terminal volumes share a formal open-field grammar but not
+      // a repeated laurel stamp. Each tool owns a distinct silhouette and an
+      // unequal pair of remote rules tuned to its material.
+      const top = [0.22, 0.29, 0.18, 0.26, 0.16, 0.31, 0.2, 0.28] as const;
+      const tail = [0.79, 0.72, 0.84, 0.76, 0.87, 0.7, 0.81, 0.74] as const;
+      const focal = [0.5, 0.53, 0.48, 0.54, 0.46, 0.52, 0.49, 0.51] as const;
+      ruled(top[part.variant] ?? 0.24, part.variant % 2 === 0 ? 0.18 : 0.28, part.variant % 2 === 0 ? 0.82 : 0.72, part.variant % 3 === 0 ? foil : blind, secondary, 60);
+      ruled(tail[part.variant] ?? 0.78, part.variant % 3 === 0 ? 0.27 : 0.18, part.variant % 3 === 0 ? 0.73 : 0.82, part.variant % 2 === 0 ? blind : foil, secondary, 61);
+      const paleFocal = part.variant === 5 || part.variant === 7;
+      drawOpenBinderTool(
+        ctx,
+        part.glyph ?? 'laurel',
+        px(0.5),
+        py(focal[part.variant] ?? 0.5),
+        w * (paleFocal ? 1.12 : part.variant === 1 ? 0.96 : 0.88),
+        paleFocal ? mix(stamp, FLAT.ink, 0.18) : stamp,
+        primary,
+      );
+      break;
+    }
+    case 'structural-sewing': {
+      const wrapper = design.material === 'paper-wrapper';
+      // One continuous joint fold is common to the family; lacing and sewing
+      // rhythms are intentionally unequal so folio, abbey, scholar and archive
+      // do not compress into one three-rung parchment back.
+      ctx.beginPath();
+      const foldAt = 0.15 + (part.variant % 3) * 0.025;
+      ctx.moveTo(px(foldAt), py(0.08));
+      ctx.quadraticCurveTo(px(foldAt - 0.025), py(0.5), px(foldAt), py(0.92));
+      ctx.strokeStyle = blind;
+      ctx.lineWidth = primary;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      if (wrapper) {
+        const stationSets: Readonly<Record<number, readonly number[]>> = {
+          5: [0.2, 0.8],
+          6: [0.17, 0.73],
+          7: [0.14, 0.47, 0.84],
+        };
+        const stations = stationSets[part.variant] ?? [0.18, 0.82];
+        for (let i = 0; i < stations.length; i += 1) {
+          const at = stations[i] as number;
+          const reach = part.variant === 7 ? 0.44 + i * 0.1 : 0.5 + (i % 2) * 0.12;
+          ruled(at, foldAt, reach, i === 1 ? foil : blind, i === 1 ? secondary : primary, 70 + i);
+        }
+        if (part.glyph !== undefined) {
+          drawOpenBinderTool(ctx, part.glyph, px(0.58), py(0.47), w * 0.72, stamp, primary);
+        }
+      } else {
+        const stationSets: readonly (readonly number[])[] = [
+          [0.18, 0.76],
+          [0.24, 0.52, 0.83],
+          [0.16, 0.68],
+          [0.31, 0.74],
+          [0.22, 0.8],
+        ];
+        const stations = stationSets[part.variant] ?? stationSets[0] as readonly number[];
+        drawMaterialBands(
+          ctx,
+          d,
+          design,
+          {
+            k: 'bands',
+            at: stations,
+            height: part.variant === 1 ? 0.022 : 0.019,
+            fill: part.variant === 2 ? 'accent' : 'surface',
+            shoulders: part.variant === 0 || part.variant === 3,
+          },
+          blind,
+          seed + 75,
+        );
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/** Retired first-pass filled tool kept beside the historical renderer only. */
+function drawRetiredFilledFocal(
+  ctx: FlatCtx,
+  glyph: BroadFocalGlyph,
+  cx: number,
+  cy: number,
+  width: number,
+  colour: string,
+  ink: number,
+): void {
+  if (width < 6) return;
+  const r = width / 2;
+  const outline = Math.max(0.9, ink * 0.56);
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = FLAT.ink;
+  ctx.lineWidth = outline;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  const leaf = (lx: number, ly: number, angle: number, long: number, broad: number): void => {
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, -long);
+    ctx.quadraticCurveTo(broad, 0, 0, long);
+    ctx.quadraticCurveTo(-broad, 0, 0, -long);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  switch (glyph) {
+    case 'crown':
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.86, cy + r * 0.42);
+      ctx.lineTo(cx - r * 0.82, cy - r * 0.28);
+      ctx.lineTo(cx - r * 0.38, cy + r * 0.02);
+      ctx.lineTo(cx, cy - r * 0.86);
+      ctx.lineTo(cx + r * 0.38, cy + r * 0.02);
+      ctx.lineTo(cx + r * 0.82, cy - r * 0.28);
+      ctx.lineTo(cx + r * 0.86, cy + r * 0.42);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.rect(cx - r * 0.94, cy + r * 0.42, r * 1.88, r * 0.34);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    case 'palmette':
+      // Three broad lobes over one square foot. Five thin rays became a sun or
+      // splash at shelf scale; an anthemion must read as one filled fan.
+      for (const [angle, dx, scale] of [
+        [-0.62, -0.32, 0.82], [0, 0, 1.02], [0.62, 0.32, 0.82],
+      ] as const) {
+        leaf(cx + r * dx, cy - r * 0.06, angle, r * scale, r * 0.34);
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.78, cy + r * 0.56);
+      ctx.lineTo(cx + r * 0.78, cy + r * 0.56);
+      ctx.lineTo(cx + r * 0.64, cy + r * 0.83);
+      ctx.lineTo(cx - r * 0.64, cy + r * 0.83);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    case 'sprig':
+      // A compact leaf cluster, not a long scratch trail. The broad leaves
+      // dominate the short stem at 30px and remain recognisably botanical.
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(1.5, r * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.78);
+      ctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.05, cx, cy - r * 0.58);
+      ctx.stroke();
+      leaf(cx, cy - r * 0.58, 0, r * 0.43, r * 0.27);
+      for (const [dy, side] of [[-0.25, -1], [-0.06, 1], [0.27, -1], [0.43, 1]] as const) {
+        leaf(cx + side * r * 0.4, cy + dy * r, side * 0.9, r * 0.42, r * 0.25);
+      }
+      break;
+    case 'laurel':
+      // One diagonal, leafy spray. Symmetric U and V arrangements became a
+      // horseshoe or a winged badge at shelf scale; the diagonal silhouette is
+      // read as a branch before it can be mistaken for heraldic hardware.
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(1.5, r * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.62, cy + r * 0.8);
+      ctx.quadraticCurveTo(cx - r * 0.02, cy + r * 0.12, cx + r * 0.52, cy - r * 0.78);
+      ctx.stroke();
+      for (let i = 0; i < 5; i += 1) {
+        const t = (i + 0.55) / 5.3;
+        const side = i % 2 === 0 ? -1 : 1;
+        const lx = cx - r * 0.62 + r * 1.14 * t + side * r * 0.19;
+        const ly = cy + r * 0.8 - r * 1.58 * t + side * r * 0.05;
+        leaf(lx, ly, -0.72 + side * 0.9, r * 0.36, r * 0.22);
+      }
+      leaf(cx + r * 0.5, cy - r * 0.78, -0.72, r * 0.4, r * 0.24);
+      break;
+    case 'shield':
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.72, cy - r * 0.82);
+      ctx.lineTo(cx + r * 0.72, cy - r * 0.82);
+      ctx.lineTo(cx + r * 0.68, cy + r * 0.08);
+      ctx.quadraticCurveTo(cx + r * 0.48, cy + r * 0.7, cx, cy + r);
+      ctx.quadraticCurveTo(cx - r * 0.48, cy + r * 0.7, cx - r * 0.68, cy + r * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.12);
+      ctx.lineTo(cx + r * 0.58, cy - r * 0.12);
+      ctx.strokeStyle = FLAT.ink;
+      ctx.lineWidth = Math.max(1, outline * 0.9);
+      ctx.stroke();
+      break;
+    case 'fleuron':
+      leaf(cx, cy - r * 0.23, 0, r * 0.72, r * 0.28);
+      leaf(cx - r * 0.38, cy + r * 0.03, -0.82, r * 0.58, r * 0.24);
+      leaf(cx + r * 0.38, cy + r * 0.03, 0.82, r * 0.58, r * 0.24);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.72, cy + r * 0.68);
+      ctx.lineTo(cx + r * 0.72, cy + r * 0.68);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(1.2, r * 0.17);
+      ctx.stroke();
+      break;
+    default:
+      break;
+  }
+}
+// Keep the historical diagnostic renderer type-checked, but never call it.
+void drawRetiredFilledFocal;
+
+/**
+ * One broad OPEN binder's tool. These are continuous struck-line programmes,
+ * not filled pictograms pasted into a panel: every motif grows out of a base
+ * ledge or side return and every leaf keeps one readable outline contour.
+ */
+export function drawOpenBinderTool(
+  ctx: FlatCtx,
+  glyph: BroadFocalGlyph,
+  cx: number,
+  cy: number,
+  width: number,
+  colour: string,
+  ink: number,
+): void {
+  if (width < 6) return;
+  const r = width / 2;
+  const tool = Math.max(1.25, Math.min(r * 0.16, ink * 1.15));
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = tool;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  const strike = (line = tool): void => {
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = line;
+    ctx.stroke();
+  };
+
+  const leaf = (
+    lx: number,
+    ly: number,
+    angle: number,
+    long: number,
+    broad: number,
+  ): void => {
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, -long);
+    ctx.quadraticCurveTo(broad, 0, 0, long);
+    ctx.quadraticCurveTo(-broad, 0, 0, -long);
+    ctx.closePath();
+    strike(Math.max(0.9, tool * 0.86));
+    ctx.beginPath();
+    ctx.moveTo(0, -long * 0.68);
+    ctx.lineTo(0, long * 0.68);
+    strike(Math.max(0.8, tool * 0.62));
+    ctx.restore();
+  };
+
+  const shoulders = (atY: number, inner: number, outer = 1.12): void => {
+    ctx.beginPath();
+    ctx.moveTo(cx - r * outer, atY);
+    ctx.lineTo(cx - r * inner, atY);
+    ctx.moveTo(cx + r * inner, atY);
+    ctx.lineTo(cx + r * outer, atY);
+    strike(Math.max(0.95, tool * 0.82));
+  };
+
+  const lozenge = (lx: number, ly: number, size: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(lx, ly - size);
+    ctx.lineTo(lx + size * 0.72, ly);
+    ctx.lineTo(lx, ly + size);
+    ctx.lineTo(lx - size * 0.72, ly);
+    ctx.closePath();
+    strike(Math.max(0.82, tool * 0.68));
+  };
+
+  switch (glyph) {
+    case 'crown': {
+      // Bowed circlet, paired arches and three finials. The circlet continues
+      // into the compartment shoulders, so the crown cannot become a sticker.
+      const base = cy + r * 0.48;
+      shoulders(base, 0.88, 1.18);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.88, base);
+      ctx.quadraticCurveTo(cx, base + r * 0.19, cx + r * 0.88, base);
+      ctx.moveTo(cx - r * 0.84, base - r * 0.17);
+      ctx.quadraticCurveTo(cx, base + r * 0.01, cx + r * 0.84, base - r * 0.17);
+      strike();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.78, base - r * 0.18);
+      ctx.quadraticCurveTo(cx - r * 0.78, cy - r * 0.18, cx - r * 0.62, cy - r * 0.42);
+      ctx.quadraticCurveTo(cx - r * 0.46, cy - r * 0.2, cx - r * 0.28, cy - r * 0.1);
+      ctx.quadraticCurveTo(cx - r * 0.14, cy - r * 0.43, cx, cy - r * 0.72);
+      ctx.quadraticCurveTo(cx + r * 0.14, cy - r * 0.43, cx + r * 0.28, cy - r * 0.1);
+      ctx.quadraticCurveTo(cx + r * 0.46, cy - r * 0.2, cx + r * 0.62, cy - r * 0.42);
+      ctx.quadraticCurveTo(cx + r * 0.78, cy - r * 0.18, cx + r * 0.78, base - r * 0.18);
+      strike();
+      lozenge(cx - r * 0.62, cy - r * 0.46, r * 0.14);
+      lozenge(cx, cy - r * 0.78, r * 0.15);
+      lozenge(cx + r * 0.62, cy - r * 0.46, r * 0.14);
+      break;
+    }
+    case 'palmette': {
+      // A three-petal anthemion: each petal owns a separate contour and grows
+      // from one double waist. The former crossing side curves collapsed into
+      // an M/tent at 30px.
+      const base = cy + r * 0.62;
+      shoulders(base, 0.62);
+      ctx.beginPath();
+      ctx.moveTo(cx, base - r * 0.08);
+      ctx.quadraticCurveTo(cx - r * 0.2, cy - r * 0.35, cx, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx + r * 0.2, cy - r * 0.35, cx, base - r * 0.08);
+      ctx.moveTo(cx - r * 0.1, base - r * 0.04);
+      ctx.bezierCurveTo(
+        cx - r * 0.32,
+        cy + r * 0.2,
+        cx - r * 0.76,
+        cy - r * 0.02,
+        cx - r * 0.68,
+        cy - r * 0.5,
+      );
+      ctx.quadraticCurveTo(cx - r * 0.36, cy - r * 0.28, cx - r * 0.1, base - r * 0.04);
+      ctx.moveTo(cx + r * 0.1, base - r * 0.04);
+      ctx.bezierCurveTo(
+        cx + r * 0.32,
+        cy + r * 0.2,
+        cx + r * 0.76,
+        cy - r * 0.02,
+        cx + r * 0.68,
+        cy - r * 0.5,
+      );
+      ctx.quadraticCurveTo(cx + r * 0.36, cy - r * 0.28, cx + r * 0.1, base - r * 0.04);
+      strike();
+      // Two outer leaves complete the five-leaf anthemion and make the tool
+      // materially broader than the terminal rosette/fleuron families.
+      leaf(cx - r * 0.7, cy + r * 0.02, -1.02, r * 0.38, r * 0.18);
+      leaf(cx + r * 0.7, cy + r * 0.02, 1.02, r * 0.38, r * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, base - r * 0.02);
+      ctx.lineTo(cx + r * 0.58, base - r * 0.02);
+      ctx.moveTo(cx - r * 0.49, base - r * 0.18);
+      ctx.lineTo(cx + r * 0.49, base - r * 0.18);
+      strike(Math.max(0.9, tool * 0.76));
+      break;
+    }
+    case 'sprig': {
+      const base = cy + r * 0.84;
+      shoulders(base, 0.36);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.bezierCurveTo(cx - r * 0.16, cy + r * 0.25, cx + r * 0.12, cy - r * 0.26, cx, cy - r * 0.78);
+      strike();
+      for (const [dy, side, angle] of [
+        [0.42, -1, -0.86], [0.19, 1, 0.86], [-0.08, -1, -0.82], [-0.32, 1, 0.82],
+      ] as const) {
+        const px = cx + side * r * 0.29;
+        const py = cy + dy * r;
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.02, py + r * 0.11);
+        ctx.lineTo(px, py);
+        strike(Math.max(0.86, tool * 0.7));
+        leaf(px + side * r * 0.12, py - r * 0.05, angle, r * 0.3, r * 0.14);
+      }
+      leaf(cx, cy - r * 0.73, 0, r * 0.34, r * 0.15);
+      break;
+    }
+    case 'laurel': {
+      // One broad, gently turning branch with five attached leaves. Earlier
+      // paired stems became either a wishbone or a dense heraldic crest at
+      // 30px; this asymmetric brass strike keeps a botanical silhouette while
+      // every leaf remains large enough to survive the shelf bake.
+      const base = cy + r * 0.76;
+      shoulders(base, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.22, base);
+      ctx.bezierCurveTo(
+        cx - r * 0.36,
+        cy + r * 0.22,
+        cx + r * 0.28,
+        cy - r * 0.14,
+        cx + r * 0.18,
+        cy - r * 0.76,
+      );
+      strike();
+      for (const [px, py, angle] of [
+        [-0.38, 0.32, -1.02], [0.22, 0.13, 1.02],
+        [-0.18, -0.12, -0.98], [0.42, -0.36, 0.92],
+      ] as const) {
+        leaf(cx + r * px, cy + r * py, angle, r * 0.43, r * 0.22);
+      }
+      leaf(cx + r * 0.18, cy - r * 0.7, 0.12, r * 0.44, r * 0.22);
+      break;
+    }
+    case 'shield': {
+      // Interlaced heraldic lozenge and cross. This replaces the outlined
+      // shield badge entirely and grows into the neighbouring side rules.
+      shoulders(cy, 0.72, 1.18);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.lineTo(cx + r * 0.7, cy);
+      ctx.lineTo(cx, cy + r * 0.9);
+      ctx.lineTo(cx - r * 0.7, cy);
+      ctx.closePath();
+      strike();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.61);
+      ctx.lineTo(cx + r * 0.45, cy);
+      ctx.lineTo(cx, cy + r * 0.61);
+      ctx.lineTo(cx - r * 0.45, cy);
+      ctx.closePath();
+      ctx.moveTo(cx - r * 0.54, cy);
+      ctx.lineTo(cx + r * 0.54, cy);
+      ctx.moveTo(cx, cy - r * 0.68);
+      ctx.lineTo(cx, cy + r * 0.68);
+      strike(Math.max(0.84, tool * 0.68));
+      break;
+    }
+    case 'fleuron': {
+      // Three broad open petals share a continuous waist and ledge. There are
+      // no interior veins to alias into an insect-sized knot on pale vellum.
+      const base = cy + r * 0.68;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx, base - r * 0.1);
+      ctx.quadraticCurveTo(cx - r * 0.22, cy - r * 0.28, cx, cy - r * 0.88);
+      ctx.quadraticCurveTo(cx + r * 0.22, cy - r * 0.28, cx, base - r * 0.1);
+      ctx.moveTo(cx - r * 0.1, base - r * 0.08);
+      ctx.bezierCurveTo(
+        cx - r * 0.28,
+        cy + r * 0.16,
+        cx - r * 0.75,
+        cy + r * 0.04,
+        cx - r * 0.68,
+        cy - r * 0.42,
+      );
+      ctx.quadraticCurveTo(cx - r * 0.36, cy - r * 0.2, cx - r * 0.1, base - r * 0.08);
+      ctx.moveTo(cx + r * 0.1, base - r * 0.08);
+      ctx.bezierCurveTo(
+        cx + r * 0.28,
+        cy + r * 0.16,
+        cx + r * 0.75,
+        cy + r * 0.04,
+        cx + r * 0.68,
+        cy - r * 0.42,
+      );
+      ctx.quadraticCurveTo(cx + r * 0.36, cy - r * 0.2, cx + r * 0.1, base - r * 0.08);
+      strike();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.54, base - r * 0.03);
+      ctx.lineTo(cx + r * 0.54, base - r * 0.03);
+      ctx.moveTo(cx - r * 0.46, base - r * 0.19);
+      ctx.lineTo(cx + r * 0.46, base - r * 0.19);
+      strike(Math.max(0.9, tool * 0.76));
+      break;
+    }
+    case 'compass': {
+      // A compass rose built from two open axes and four lance outlines. There
+      // is no centre rivet or filled star to turn it into hardware.
+      shoulders(cy, 0.84, 1.16);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.92);
+      ctx.lineTo(cx + r * 0.2, cy - r * 0.24);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx - r * 0.2, cy - r * 0.24);
+      ctx.closePath();
+      ctx.moveTo(cx, cy + r * 0.92);
+      ctx.lineTo(cx + r * 0.2, cy + r * 0.24);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx - r * 0.2, cy + r * 0.24);
+      ctx.closePath();
+      ctx.moveTo(cx - r * 0.86, cy);
+      ctx.lineTo(cx - r * 0.22, cy - r * 0.18);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx - r * 0.22, cy + r * 0.18);
+      ctx.closePath();
+      ctx.moveTo(cx + r * 0.86, cy);
+      ctx.lineTo(cx + r * 0.22, cy - r * 0.18);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx + r * 0.22, cy + r * 0.18);
+      ctx.closePath();
+      strike();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.46, cy - r * 0.46);
+      ctx.lineTo(cx + r * 0.46, cy + r * 0.46);
+      ctx.moveTo(cx + r * 0.46, cy - r * 0.46);
+      ctx.lineTo(cx - r * 0.46, cy + r * 0.46);
+      strike(Math.max(0.85, tool * 0.64));
+      break;
+    }
+    case 'rosette': {
+      // A five-petal rose on a stem and leafed foot. The asymmetric plant
+      // construction prevents the old four loops becoming a propeller/button.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy + r * 0.18, cx, cy - r * 0.2);
+      strike();
+      leaf(cx - r * 0.36, cy + r * 0.28, -0.92, r * 0.34, r * 0.16);
+      leaf(cx + r * 0.36, cy + r * 0.16, 0.92, r * 0.34, r * 0.16);
+      for (let i = 0; i < 5; i += 1) {
+        const a = (i * Math.PI * 2) / 5;
+        ctx.save();
+        ctx.translate(cx, cy - r * 0.34);
+        ctx.rotate(a);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(-r * 0.2, -r * 0.1, -r * 0.2, -r * 0.48, 0, -r * 0.6);
+        ctx.bezierCurveTo(r * 0.2, -r * 0.48, r * 0.2, -r * 0.1, 0, 0);
+        strike(Math.max(0.92, tool * 0.78));
+        ctx.restore();
+      }
+      break;
+    }
+    case 'fleur-de-lis': {
+      // Three visibly separate rising petals, one low waist and a short split
+      // foot. The former closed centre/side loops merged into an eye-shaped
+      // lozenge at 30px; these open lobes preserve the fleur silhouette.
+      const waist = cy + r * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(cx, waist);
+      ctx.quadraticCurveTo(cx - r * 0.2, cy - r * 0.28, cx, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx + r * 0.2, cy - r * 0.28, cx, waist);
+      ctx.moveTo(cx - r * 0.05, waist - r * 0.02);
+      ctx.bezierCurveTo(
+        cx - r * 0.28, cy - r * 0.08,
+        cx - r * 0.78, cy - r * 0.2,
+        cx - r * 0.82, cy - r * 0.62,
+      );
+      ctx.quadraticCurveTo(cx - r * 0.44, cy - r * 0.42, cx - r * 0.05, waist - r * 0.02);
+      ctx.moveTo(cx + r * 0.05, waist - r * 0.02);
+      ctx.bezierCurveTo(
+        cx + r * 0.28, cy - r * 0.08,
+        cx + r * 0.78, cy - r * 0.2,
+        cx + r * 0.82, cy - r * 0.62,
+      );
+      ctx.quadraticCurveTo(cx + r * 0.44, cy - r * 0.42, cx + r * 0.05, waist - r * 0.02);
+      strike();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.38, waist + r * 0.04);
+      ctx.lineTo(cx + r * 0.38, waist + r * 0.04);
+      ctx.moveTo(cx - r * 0.2, waist + r * 0.13);
+      ctx.quadraticCurveTo(cx - r * 0.1, cy + r * 0.62, cx, cy + r * 0.78);
+      ctx.quadraticCurveTo(cx + r * 0.1, cy + r * 0.62, cx + r * 0.2, waist + r * 0.13);
+      strike(Math.max(0.9, tool * 0.76));
+      break;
+    }
+    case 'starflower': {
+      // A six-point foliate flower is built from open lozenges on a stem,
+      // rather than the stock five-point star which read as an app icon.
+      const flowerY = cy - r * 0.3;
+      const base = cy + r * 0.76;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, flowerY + r * 0.34);
+      strike();
+      for (let i = 0; i < 6; i += 1) {
+        const angle = (Math.PI * 2 * i) / 6;
+        const px = cx + Math.cos(angle) * r * 0.38;
+        const py = flowerY + Math.sin(angle) * r * 0.38;
+        leaf(px, py, angle + Math.PI / 2, r * 0.33, r * 0.13);
+      }
+      leaf(cx - r * 0.38, cy + r * 0.3, -0.9, r * 0.3, r * 0.14);
+      leaf(cx + r * 0.38, cy + r * 0.17, 0.9, r * 0.3, r * 0.14);
+      break;
+    }
+    case 'acanthus': {
+      // A strong central staff keeps the bilateral S-scroll from collapsing
+      // into the U/horseshoe seen in the first narrow companion proof.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy, cx, cy - r * 0.86);
+      ctx.moveTo(cx, cy + r * 0.42);
+      ctx.bezierCurveTo(cx - r * 0.22, cy + r * 0.32, cx - r * 0.78, cy + r * 0.12, cx - r * 0.68, cy - r * 0.25);
+      ctx.quadraticCurveTo(cx - r * 0.58, cy - r * 0.52, cx - r * 0.28, cy - r * 0.45);
+      ctx.moveTo(cx, cy + r * 0.15);
+      ctx.bezierCurveTo(cx + r * 0.22, cy + r * 0.05, cx + r * 0.78, cy - r * 0.14, cx + r * 0.68, cy - r * 0.5);
+      ctx.quadraticCurveTo(cx + r * 0.58, cy - r * 0.72, cx + r * 0.3, cy - r * 0.64);
+      strike();
+      leaf(cx - r * 0.58, cy - r * 0.34, -0.82, r * 0.36, r * 0.17);
+      leaf(cx + r * 0.58, cy - r * 0.59, 0.82, r * 0.36, r * 0.17);
+      leaf(cx - r * 0.34, cy + r * 0.24, -1.02, r * 0.32, r * 0.15);
+      leaf(cx + r * 0.34, cy - r * 0.02, 1.02, r * 0.32, r * 0.15);
+      break;
+    }
+    case 'sunrise': {
+      // The rays grow directly out of a ruled horizon. With no detached disc
+      // this reads as a binder's sunrise, never an asterisk or brass rivet.
+      const horizon = cy + r * 0.42;
+      shoulders(horizon, 0.82, 1.18);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.78, horizon);
+      ctx.quadraticCurveTo(cx, cy - r * 0.62, cx + r * 0.78, horizon);
+      ctx.moveTo(cx - r * 0.65, horizon);
+      ctx.quadraticCurveTo(cx, cy - r * 0.34, cx + r * 0.65, horizon);
+      strike();
+      for (const [dx, top] of [[-0.72, -0.18], [-0.43, -0.52], [0, -0.78], [0.43, -0.52], [0.72, -0.18]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * dx * 0.72, cy + r * 0.18);
+        ctx.lineTo(cx + r * dx, cy + r * top);
+        strike(Math.max(0.9, tool * 0.74));
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, horizon + r * 0.16);
+      ctx.lineTo(cx + r * 0.58, horizon + r * 0.16);
+      strike(Math.max(0.9, tool * 0.75));
+      break;
+    }
+    case 'oak-spray': {
+      // An upright oak-and-acorn press tool replaces the diagonal leaf chain
+      // which aliased into a scratch on the first true-size proof.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.1, cy + r * 0.05, cx, cy - r * 0.72);
+      ctx.moveTo(cx, cy + r * 0.23);
+      ctx.lineTo(cx - r * 0.48, cy - r * 0.05);
+      ctx.moveTo(cx, cy - r * 0.05);
+      ctx.lineTo(cx + r * 0.48, cy - r * 0.3);
+      strike();
+      leaf(cx - r * 0.56, cy - r * 0.08, -0.92, r * 0.46, r * 0.23);
+      leaf(cx + r * 0.56, cy - r * 0.33, 0.92, r * 0.46, r * 0.23);
+      leaf(cx, cy - r * 0.68, 0, r * 0.4, r * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.08, cy + r * 0.02);
+      ctx.quadraticCurveTo(cx + r * 0.28, cy + r * 0.2, cx + r * 0.3, cy + r * 0.45);
+      ctx.quadraticCurveTo(cx + r * 0.12, cy + r * 0.65, cx - r * 0.06, cy + r * 0.45);
+      ctx.quadraticCurveTo(cx, cy + r * 0.2, cx - r * 0.08, cy + r * 0.02);
+      strike(Math.max(0.9, tool * 0.82));
+      break;
+    }
+    case 'thistle': {
+      // A broad cut thistle head on one stem, with two long tied leaves. The
+      // scalloped crown is continuous rather than a halo of prickly dots.
+      const base = cy + r * 0.76;
+      shoulders(base, 0.55);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.06);
+      ctx.moveTo(cx - r * 0.54, cy - r * 0.34);
+      ctx.quadraticCurveTo(cx - r * 0.38, cy - r * 0.72, cx - r * 0.18, cy - r * 0.54);
+      ctx.quadraticCurveTo(cx, cy - r * 0.94, cx + r * 0.18, cy - r * 0.54);
+      ctx.quadraticCurveTo(cx + r * 0.38, cy - r * 0.72, cx + r * 0.54, cy - r * 0.34);
+      ctx.quadraticCurveTo(cx, cy + r * 0.05, cx - r * 0.54, cy - r * 0.34);
+      strike();
+      leaf(cx - r * 0.42, cy + r * 0.27, -1.02, r * 0.42, r * 0.17);
+      leaf(cx + r * 0.42, cy + r * 0.16, 1.02, r * 0.42, r * 0.17);
+      break;
+    }
+    case 'ivy-knot': {
+      // An upright ivy cutting with three large attached leaves. The attempted
+      // quatrefoil knot collapsed into a tiny X/hardware mark on a 30px spine;
+      // this botanical companion is honest, asymmetric and stroke-readable.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.55);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.bezierCurveTo(cx - r * 0.16, cy + r * 0.22, cx + r * 0.14, cy - r * 0.18, cx, cy - r * 0.72);
+      ctx.moveTo(cx - r * 0.02, cy + r * 0.18);
+      ctx.lineTo(cx - r * 0.43, cy - r * 0.02);
+      ctx.moveTo(cx + r * 0.02, cy - r * 0.1);
+      ctx.lineTo(cx + r * 0.45, cy - r * 0.34);
+      strike();
+      leaf(cx - r * 0.52, cy - r * 0.05, -0.96, r * 0.44, r * 0.24);
+      leaf(cx + r * 0.54, cy - r * 0.38, 0.96, r * 0.44, r * 0.24);
+      leaf(cx, cy - r * 0.7, 0.05, r * 0.42, r * 0.23);
+      break;
+    }
+    case 'oak-volutes': {
+      // Paired volutes are anchored by a visible central staff and lower
+      // scrolls. The first proof omitted that mass and read as a flying bird.
+      const base = cy + r * 0.65;
+      shoulders(base, 0.48);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy - r * 0.72);
+      ctx.moveTo(cx, base);
+      ctx.bezierCurveTo(cx - r * 0.1, cy + r * 0.15, cx - r * 0.72, cy + r * 0.18, cx - r * 0.72, cy - r * 0.26);
+      ctx.quadraticCurveTo(cx - r * 0.7, cy - r * 0.62, cx - r * 0.36, cy - r * 0.55);
+      ctx.moveTo(cx, base);
+      ctx.bezierCurveTo(cx + r * 0.1, cy + r * 0.15, cx + r * 0.72, cy + r * 0.18, cx + r * 0.72, cy - r * 0.26);
+      ctx.quadraticCurveTo(cx + r * 0.7, cy - r * 0.62, cx + r * 0.36, cy - r * 0.55);
+      ctx.moveTo(cx - r * 0.48, cy + r * 0.34);
+      ctx.quadraticCurveTo(cx - r * 0.72, cy + r * 0.57, cx - r * 0.42, cy + r * 0.59);
+      ctx.moveTo(cx + r * 0.48, cy + r * 0.34);
+      ctx.quadraticCurveTo(cx + r * 0.72, cy + r * 0.57, cx + r * 0.42, cy + r * 0.59);
+      strike();
+      leaf(cx - r * 0.55, cy - r * 0.5, -0.88, r * 0.4, r * 0.19);
+      leaf(cx + r * 0.55, cy - r * 0.5, 0.88, r * 0.4, r * 0.19);
+      leaf(cx - r * 0.34, cy + r * 0.12, -1.05, r * 0.32, r * 0.15);
+      leaf(cx + r * 0.34, cy + r * 0.12, 1.05, r * 0.32, r * 0.15);
+      break;
+    }
+    case 'wheat-saltire': {
+      // One tied, upright sheaf replaces the crossed saltire, whose inevitable
+      // X read as crossed swords/hardware. Five broad grains remain legible at
+      // shelf size and the ledge reads as the binder's tied foot.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy, cx, cy - r * 0.82);
+      strike();
+      for (const [px, py, angle] of [
+        [-0.28, 0.3, -0.92], [0.28, 0.08, 0.92],
+        [-0.27, -0.18, -0.88], [0.27, -0.4, 0.88],
+      ] as const) {
+        leaf(cx + r * px, cy + r * py, angle, r * 0.4, r * 0.2);
+      }
+      leaf(cx, cy - r * 0.76, 0, r * 0.42, r * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.32, cy + r * 0.5);
+      ctx.lineTo(cx + r * 0.32, cy + r * 0.5);
+      strike(Math.max(0.9, tool * 0.74));
+      break;
+    }
+    case 'pomegranate': {
+      // Open split fruit with a crown calyx, two side leaves and a ruled foot.
+      // The broken waist prevents the fruit from becoming a coin or roundel.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.62, cy + r * 0.35, cx - r * 0.5, cy - r * 0.22);
+      ctx.quadraticCurveTo(cx - r * 0.42, cy - r * 0.55, cx - r * 0.14, cy - r * 0.52);
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx + r * 0.62, cy + r * 0.35, cx + r * 0.5, cy - r * 0.22);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy - r * 0.55, cx + r * 0.14, cy - r * 0.52);
+      ctx.moveTo(cx - r * 0.28, cy - r * 0.5);
+      ctx.lineTo(cx - r * 0.12, cy - r * 0.8);
+      ctx.lineTo(cx, cy - r * 0.58);
+      ctx.lineTo(cx + r * 0.12, cy - r * 0.8);
+      ctx.lineTo(cx + r * 0.28, cy - r * 0.5);
+      strike();
+      leaf(cx - r * 0.52, cy + r * 0.34, -1.08, r * 0.32, r * 0.14);
+      leaf(cx + r * 0.52, cy + r * 0.22, 1.08, r * 0.32, r * 0.14);
+      break;
+    }
+    case 'tulip': {
+      // A three-petal open tulip grows from one curved stem and a double leaf
+      // foot. It cannot collapse to the round rosette or upright fleuron.
+      const base = cy + r * 0.76;
+      shoulders(base, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.12, cx, cy - r * 0.2);
+      ctx.moveTo(cx - r * 0.56, cy - r * 0.48);
+      ctx.quadraticCurveTo(cx - r * 0.3, cy - r * 0.8, cx, cy - r * 0.5);
+      ctx.quadraticCurveTo(cx + r * 0.3, cy - r * 0.8, cx + r * 0.56, cy - r * 0.48);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy - r * 0.08, cx, cy - r * 0.2);
+      ctx.quadraticCurveTo(cx - r * 0.42, cy - r * 0.08, cx - r * 0.56, cy - r * 0.48);
+      strike();
+      leaf(cx - r * 0.4, cy + r * 0.27, -1.02, r * 0.42, r * 0.16);
+      leaf(cx + r * 0.4, cy + r * 0.18, 1.02, r * 0.42, r * 0.16);
+      break;
+    }
+    case 'pinecone': {
+      // The needle fans now rise behind the cone instead of projecting as
+      // insect legs. Three joined courses make the upright cone unmistakable.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.56);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.16, cy + r * 0.42);
+        ctx.quadraticCurveTo(cx + side * r * 0.5, cy - r * 0.05, cx + side * r * 0.76, cy - r * 0.58);
+        ctx.moveTo(cx + side * r * 0.2, cy + r * 0.36);
+        ctx.quadraticCurveTo(cx + side * r * 0.58, cy - r * 0.12, cx + side * r * 0.9, cy - r * 0.3);
+        strike(Math.max(0.9, tool * 0.76));
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.78);
+      ctx.bezierCurveTo(cx - r * 0.52, cy - r * 0.42, cx - r * 0.46, cy + r * 0.32, cx, cy + r * 0.5);
+      ctx.bezierCurveTo(cx + r * 0.46, cy + r * 0.32, cx + r * 0.52, cy - r * 0.42, cx, cy - r * 0.78);
+      for (const yy of [-0.34, 0, 0.3] as const) {
+        ctx.moveTo(cx - r * (0.34 - Math.abs(yy) * 0.12), cy + r * yy);
+        ctx.quadraticCurveTo(cx, cy + r * (yy + 0.24), cx + r * (0.34 - Math.abs(yy) * 0.12), cy + r * yy);
+      }
+      strike();
+      break;
+    }
+    case 'fern-palmette': {
+      // Symmetric split fern, authored as a five-frond palmette rather than a
+      // repeated diagonal leaf trail. All fronds rise from the same ledge.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy - r * 0.78);
+      strike();
+      for (const [side, dy, reach] of [
+        [-1, 0.35, 0.72], [1, 0.35, 0.72], [-1, -0.02, 0.58], [1, -0.02, 0.58],
+      ] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r * (dy + 0.12));
+        ctx.quadraticCurveTo(cx + side * r * reach * 0.48, cy + r * (dy - 0.12), cx + side * r * reach, cy + r * (dy - 0.2));
+        strike();
+        leaf(cx + side * r * (reach + 0.06), cy + r * (dy - 0.22), side * 1.05, r * 0.3, r * 0.13);
+      }
+      leaf(cx, cy - r * 0.72, 0, r * 0.36, r * 0.15);
+      break;
+    }
+    case 'ginkgo': {
+      // Two broad, deeply notched fans grow from visible curved stems. The
+      // earlier narrow arcs became antennae/a lamp on the true-size spine.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.08, base);
+      ctx.quadraticCurveTo(cx - r * 0.18, cy + r * 0.08, cx - r * 0.42, cy - r * 0.18);
+      ctx.moveTo(cx + r * 0.08, base);
+      ctx.quadraticCurveTo(cx + r * 0.2, cy + r * 0.02, cx + r * 0.42, cy - r * 0.28);
+      strike();
+      for (const [fx, fy, side] of [[-0.42, -0.18, -1], [0.42, -0.28, 1]] as const) {
+        const px = cx + r * fx;
+        const py = cy + r * fy;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.quadraticCurveTo(px - side * r * 0.02, py - r * 0.64, px + side * r * 0.5, py - r * 0.48);
+        ctx.quadraticCurveTo(px + side * r * 0.39, py - r * 0.29, px + side * r * 0.26, py - r * 0.36);
+        ctx.quadraticCurveTo(px + side * r * 0.18, py - r * 0.2, px, py);
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + side * r * 0.18, py - r * 0.48);
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + side * r * 0.36, py - r * 0.4);
+        strike(Math.max(0.95, tool * 0.82));
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 /* -------------------------------- the toolist ------------------------------ */
 
 /**
  * Strike one ornament onto the decorated surface.
  *
- * ONE toolist, switching on the part kind and nothing else. Every part that
- * could land on the caller's lettering-piece asks `reserved` first and answers
- * in the way a binder would: a rule skips that station, a semé skips that row,
- * a stamp moves into the next free compartment, a vertical rule parts round it,
- * and a panel GROWS to frame it — because a panel around a label is a real
- * binding and a panel across one is a mistake.
+ * ONE toolist, switching on the part kind and nothing else. The rows describe
+ * complete titleless compositions, so each part is painted at its authored
+ * station without a second caller-owned furniture pass.
  */
 function drawDecoration(
   ctx: FlatCtx,
   d: DesignBox,
   design: BookDesign,
   spec: DecorSpec,
-  reserved: Reserved | null,
 ): void {
   const { x, y, w, h } = d;
   if (w < spec.floor) return;
   const seed = design.seed;
   const [, board] = surfaceAt(design, 0.5);
+  const blind = mix(board, FLAT.ink, 0.58);
+  const resolveTool = (preferred: string, floor: number): string => {
+    if (colourContrast(preferred, board) >= floor) return preferred;
+    // Gold on vellum/parchment is still gold leaf, but the surviving shelf
+    // mark is its sepia impression. Darkening the authored flat pigment gives
+    // it a real local hierarchy without a highlight, shadow or light model.
+    for (const amount of [0.22, 0.34, 0.46, 0.58]) {
+      const candidate = mix(preferred, FLAT.ink, amount);
+      if (colourContrast(candidate, board) >= floor) return candidate;
+    }
+    return blind;
+  };
   const foil = spec.blind
-    ? FLAT.inkSoft
-    : rubbed(design.gilt ? FLAT.gilt : FLAT.inkSoft, board, design.wear);
+    ? blind
+    : resolveTool(toolingColour(design, board, false), 2.1);
+  const stamp = spec.blind
+    ? blind
+    : resolveTool(emblemColour(design, board, false), 2.35);
   const ink = inkWidth(w);
   const rand = mulberry32((seed ^ 0x5eed1) >>> 0);
-
-  /** The largest clear stretch of the field, for a stamp that must move. */
-  const freeCentre = (): number | null => {
-    if (reserved === null) return y + h * 0.5;
-    const above = reserved.y0 - (y + h * 0.06);
-    const below = y + h * 0.94 - reserved.y1;
-    if (above < h * 0.12 && below < h * 0.12) return null;
-    return above > below ? (y + h * 0.06 + reserved.y0) / 2 : (reserved.y1 + y + h * 0.94) / 2;
-  };
 
   for (const part of spec.parts) {
     switch (part.k) {
@@ -5188,7 +8423,6 @@ function drawDecoration(
         for (let i = 0; i < part.at.length; i++) {
           const t = part.at[i] as number;
           const py = y + h * t;
-          if (overlaps(reserved, py - weight, py + weight)) continue;
           stroke(ctx, x + w * part.from, py, x + w * part.to, py, foil, weight, seed + 400 + i + t * 100);
         }
         break;
@@ -5200,49 +8434,20 @@ function drawDecoration(
           const px = x + w * f;
           const top = y + h * part.top;
           const bottom = y + h * part.bottom;
-          // A rule outside the lettering-piece's own width runs straight past
-          // it; one underneath it parts, so the label is never struck through.
-          //
-          // Measured against the reserved rectangle rather than the LABEL_SPAN
-          // constant. `spine-rule` sits at 0.15/0.85 — outside that constant,
-          // inside the plate that several designs actually draw — so the old
-          // test said "clears it" and the rule went through the title.
-          const under = crossesReserved(reserved, px, weight * 0.5, x, w);
-          if (!under || reserved === null || !overlaps(reserved, top, bottom)) {
-            stroke(ctx, px, top, px, bottom, foil, weight, seed + 410 + i);
-            continue;
-          }
-          const pad = h * 0.02;
-          if (reserved.y0 - pad > top + h * 0.04) {
-            stroke(ctx, px, top, px, reserved.y0 - pad, foil, weight, seed + 412 + i);
-          }
-          if (bottom > reserved.y1 + pad + h * 0.04) {
-            stroke(ctx, px, reserved.y1 + pad, px, bottom, foil, weight, seed + 414 + i);
-          }
+          stroke(ctx, px, top, px, bottom, foil, weight, seed + 410 + i);
         }
         break;
       }
       case 'run': {
         const bh = Math.max(1.4, h * part.height);
         const cy = y + h * part.at;
-        if (overlaps(reserved, cy - bh, cy + bh)) break;
         drawRun(ctx, part.glyph, x + w * 0.14, x + w * 0.86, cy, bh, part.count, foil, Math.max(1, w * 0.05), seed + 420);
         break;
       }
       case 'frame': {
         const weight = Math.max(1, w * part.weight);
-        const pad = h * 0.045;
-        let top = y + h * part.top;
-        let bottom = y + h * part.bottom;
-        if (part.grows && reserved !== null) {
-          top = Math.min(top, reserved.y0 - pad);
-          bottom = Math.max(bottom, reserved.y1 + pad);
-        } else if (
-          overlaps(reserved, top - weight, top + weight) ||
-          overlaps(reserved, bottom - weight, bottom + weight)
-        ) {
-          break;
-        }
+        const top = y + h * part.top;
+        const bottom = y + h * part.bottom;
         if (bottom - top < h * 0.08) break;
         for (const grow of part.double ? [0, w * 0.03] : [0]) {
           drawFrame(
@@ -5259,67 +8464,96 @@ function drawDecoration(
         }
         break;
       }
+      case 'compartments':
+        drawCompartments(ctx, d, part, foil, blind, seed + 432);
+        break;
+      case 'bands':
+        drawMaterialBands(ctx, d, design, part, foil, seed + 436);
+        break;
+      case 'focal': {
+        // At true shelf width anything below ~68% of the field regresses to a
+        // twig or pictogram. Broad means broad here; the authored `size` can
+        // make a tool larger, never smaller than the readability floor.
+        const width = Math.min(w * Math.max(part.size, 0.8), h * 0.17);
+        drawOpenBinderTool(
+          ctx,
+          part.glyph,
+          x + w * 0.5,
+          y + h * part.at,
+          width,
+          stamp,
+          ink,
+        );
+        break;
+      }
+      case 'binding':
+        drawBindingArchetype(
+          ctx,
+          d,
+          design,
+          part,
+          foil,
+          blind,
+          stamp,
+          seed + 438,
+        );
+        break;
       case 'plate': {
         const py = y + h * part.top;
         const ph = Math.max(3, h * part.height);
-        if (overlaps(reserved, py, py + ph)) break;
         drawPlate(ctx, part.shape, x + w * part.inset, py, w * (1 - part.inset * 2), ph, part.ruled, foil, ink, seed + 440);
         break;
       }
       case 'stamp': {
         const s = Math.min(w * part.size, h * part.size * 0.16);
-        let cy = y + h * part.at;
-        if (overlaps(reserved, cy - s, cy + s)) {
-          const moved = freeCentre();
-          if (moved === null) break;
-          cy = moved;
-          if (overlaps(reserved, cy - s, cy + s)) break;
-        }
-        drawStamp(ctx, part.glyph, x + w * 0.5, cy, s, foil, Math.max(1, w * 0.055));
+        const cy = y + h * part.at;
+        drawStamp(ctx, part.glyph, x + w * 0.5, cy, s, stamp, Math.max(1, w * 0.055));
         break;
       }
       case 'seme': {
         const s = Math.min(w * part.size, h * part.size * 0.12);
         for (let row = 0; row < part.rows; row++) {
           const cy = y + h * (part.top + ((part.bottom - part.top) * row) / (part.rows - 1 || 1));
-          if (overlaps(reserved, cy - s, cy + s)) continue;
           for (let col = 0; col < 2; col++) {
             const cxx = x + w * (row % 2 === 0 ? 0.32 + col * 0.36 : 0.5 + col * 0.36);
             if (cxx > x + w * 0.86) continue;
-            drawStamp(ctx, part.glyph, cxx, cy, s, foil, Math.max(0.9, w * 0.04));
+            drawStamp(ctx, part.glyph, cxx, cy, s, stamp, Math.max(0.9, w * 0.04));
           }
         }
         break;
       }
       case 'trail': {
-        const s = Math.min(w * 0.2, h * 0.026);
+        // Botanical tooling has to survive the actual shelf, not only the
+        // enlarged component card. A roughly one-pixel increase in the stem,
+        // branch and leaf envelope turns the former hairline scratches into a
+        // connected sprig while retaining plenty of quiet cloth around it.
+        const s = Math.min(w * 0.19, h * 0.024);
         const stemX = x + w * 0.5;
         const top = y + h * part.top;
         const bottom = y + h * part.bottom;
-        // The gap has to clear a whole LEAF, not just the stem: a trail cut
-        // flush with the lettering-piece drops half a leaf onto it.
-        const gap = s + h * 0.02;
-        const runs: (readonly [number, number])[] =
-          reserved !== null && overlaps(reserved, top, bottom)
-            ? [
-                [top, reserved.y0 - gap],
-                [reserved.y1 + gap, bottom],
-              ]
-            : [[top, bottom]];
+        const runs: (readonly [number, number])[] = [[top, bottom]];
         for (const [a, bb] of runs) {
           if (bb - a < h * 0.06) continue;
-          stroke(ctx, stemX, a, stemX, bb, foil, Math.max(1, w * 0.05), seed + 450 + a);
+          ctx.beginPath();
+          ctx.moveTo(stemX, a);
+          ctx.bezierCurveTo(stemX + w * 0.08, a + (bb - a) * 0.3, stemX - w * 0.08, a + (bb - a) * 0.7, stemX, bb);
+          ctx.strokeStyle = foil;
+          ctx.lineWidth = Math.max(1.3, w * 0.055);
+          ctx.lineCap = 'round';
+          ctx.stroke();
           const leaves = Math.max(2, Math.round((part.count * (bb - a)) / (bottom - top)));
           for (let i = 0; i < leaves; i++) {
             const ly = a + ((bb - a) * (i + 0.5)) / leaves;
             const dir = i % 2 === 0 ? 1 : -1;
+            const leafX = stemX + w * 0.15 * dir;
+            stroke(ctx, stemX, ly + s * 0.18, leafX, ly, foil, Math.max(1.05, w * 0.042), seed + 452 + i);
             if (part.glyph === 'acorn') {
-              drawStamp(ctx, 'acorn', stemX + w * 0.2 * dir, ly, s * 0.8, foil, Math.max(0.9, w * 0.04));
+              drawStamp(ctx, 'acorn', leafX, ly, s * 0.8, stamp, Math.max(1, w * 0.042));
             } else {
               ctx.save();
-              ctx.translate(stemX + w * 0.18 * dir, ly);
+              ctx.translate(leafX, ly);
               ctx.scale(dir, 1);
-              drawStamp(ctx, 'leaf', 0, 0, s * (part.glyph === 'laurel' ? 0.8 : 0.9), foil, Math.max(0.9, w * 0.04));
+              drawStamp(ctx, 'leaf', 0, 0, s * (part.glyph === 'laurel' ? 0.78 : 0.9), stamp, Math.max(1, w * 0.042));
               ctx.restore();
             }
           }
@@ -5330,12 +8564,11 @@ function drawDecoration(
         const s = Math.max(1.2, Math.min(w * part.size, h * part.size * 0.14));
         for (let i = 0; i < part.at.length; i++) {
           const cy = y + h * (part.at[i] as number);
-          if (overlaps(reserved, cy - s, cy + s)) continue;
           const cols = part.cols === 2 ? [0.14, 0.86] : [0.5];
           for (const f of cols) {
             ctx.beginPath();
             ctx.ellipse(x + w * f, cy, s, s, 0, 0, TAU);
-            ctx.fillStyle = foil;
+            ctx.fillStyle = stamp;
             ctx.fill();
             if (!part.domed) continue;
             ctx.strokeStyle = FLAT.ink;
@@ -5343,7 +8576,7 @@ function drawDecoration(
             ctx.stroke();
             ctx.beginPath();
             ctx.ellipse(x + w * f, cy, s * 0.42, s * 0.42, 0, 0, TAU);
-            ctx.strokeStyle = mix(foil, FLAT.ink, 0.4);
+            ctx.strokeStyle = mix(stamp, FLAT.ink, 0.4);
             ctx.stroke();
           }
         }
@@ -5358,12 +8591,11 @@ function drawDecoration(
           [x + w * 0.16, y + h * 0.95, 1, -1],
           [x + w * 0.84, y + h * 0.95, -1, -1],
         ] as const) {
-          if (overlaps(reserved, cy0 - arm * 1.6, cy0 + arm * 1.6)) continue;
           if (part.glyph === 'shell') {
             ctx.save();
             ctx.translate(cx0, cy0);
             ctx.scale(sx, sy);
-            drawStamp(ctx, 'shell', 0, 0, arm * 0.9, foil, lw);
+            drawStamp(ctx, 'shell', 0, 0, arm * 0.9, stamp, lw);
             ctx.restore();
             continue;
           }
@@ -5374,9 +8606,7 @@ function drawDecoration(
       }
       case 'band': {
         const bh = h * part.height;
-        let top = y + h * part.at;
-        if (overlaps(reserved, top, top + bh)) top = y + h * 0.04;
-        if (overlaps(reserved, top, top + bh)) break;
+        const top = y + h * part.at;
         const fill = part.fill === 'cream' ? FLAT.cream : (clothPair(design.accent)[0] as string);
         panel(ctx, x + w * 0.06, top, w * 0.88, bh, fill, {
           radius: w * 0.16,
@@ -5396,8 +8626,10 @@ function drawDecoration(
         // book rather than as a pill painted on the cloth.
         const rw = Math.max(2, w * 0.19);
         const rh = Math.min(h * 0.17, rw * 6);
-        if (overlaps(reserved, y - rh * 0.24, y + rh * 0.76)) break;
-        const colour = RIBBONS[normIndex(design.accent, RIBBONS.length)] as string;
+        const colour =
+          typeof design.accent === 'string'
+            ? (clothPair(design.accent)[0] as string)
+            : (RIBBONS[normIndex(design.accent, RIBBONS.length)] as string);
         panel(ctx, x + w * part.at - rw / 2, y - rh * 0.24, rw, rh, colour, {
           radius: rw * 0.42,
           seed: seed + 490 + Math.floor(rand() * 4),
@@ -5430,8 +8662,7 @@ function drawFrame(
   ctx.lineCap = 'round';
 
   if (head === 'square') {
-    wobbleRect(ctx, x, y, w, h, Math.min(w * 0.2, h * 0.1), seed);
-    ctx.stroke();
+    drawSquareFillet(ctx, x, y, w, h, colour, weight, seed);
     return;
   }
   const rise = Math.min(h * 0.34, w * 0.62);
@@ -5521,35 +8752,34 @@ function drawPlate(
 const CORD_SPAN = { top: 0.1, bottom: 0.92 } as const;
 
 /**
- * How much taller the lettering compartment is than its neighbours.
+ * How much taller the focal compartment is than its neighbours.
  *
  * Not decoration — it is how a corded spine is actually laid out, and the
  * reason `RIB_STATIONS` has an enlarged second compartment too. Cut five equal
- * slices instead and the book comes out a ladder with no rung tall enough to
- * carry its own title, which is exactly what the first pass did.
+ * slices instead and the book comes out as an undifferentiated ladder.
  */
-const TITLE_COMPARTMENT_WEIGHT = 2.1;
+const FOCAL_COMPARTMENT_WEIGHT = 2.1;
 
 /**
  * Where `n` sewn cords sit, as fractions of the spine height.
  *
  * A binder divides the spine into `n + 1` compartments and the cords land on
  * the divisions between them — never flush with head or tail, which would read
- * as the book having been cut off rather than sewn. The compartment the label
- * wants (`labelAt`) is given roughly twice the room of its neighbours.
+ * as the book having been cut off rather than sewn. The preferred focal
+ * compartment (`focusAt`) is given roughly twice the room of its neighbours.
  */
-export function cordStations(n: number, labelAt = 0.24): readonly number[] {
-  const count = clamp(Math.round(n), 0, 5);
+export function cordStations(n: number, focusAt = 0.24): readonly number[] {
+  const count = clamp(Math.round(n), 0, 3);
   if (count === 0) return [];
   const cells = count + 1;
   const span = CORD_SPAN.bottom - CORD_SPAN.top;
-  // Which cell an equal cut would have put the label in — good enough to pick
-  // the one to enlarge, and it keeps the answer a pure function of (n, labelAt).
-  const home = clamp(Math.floor(((labelAt - CORD_SPAN.top) / span) * cells), 0, cells - 1);
+  // Which cell an equal cut would have put the focus in — good enough to pick
+  // the one to enlarge, and it keeps the answer a pure function of (n, focusAt).
+  const home = clamp(Math.floor(((focusAt - CORD_SPAN.top) / span) * cells), 0, cells - 1);
   const weights: number[] = [];
   let total = 0;
   for (let i = 0; i < cells; i += 1) {
-    const wt = i === home ? TITLE_COMPARTMENT_WEIGHT : 1;
+    const wt = i === home ? FOCAL_COMPARTMENT_WEIGHT : 1;
     weights.push(wt);
     total += wt;
   }
@@ -5575,7 +8805,6 @@ function drawRaisedCords(
   ctx: FlatCtx,
   d: DesignBox,
   design: BookDesign,
-  reserved: Reserved | null,
 ): void {
   if (design.bands <= 0) return;
   const { x, y, w, h } = d;
@@ -5584,14 +8813,11 @@ function drawRaisedCords(
   if (w < 7) return;
   const [, board] = surfaceAt(design, 0.5);
   const cordH = Math.max(2, Math.min(h * 0.022, w * 0.42));
-  const foil = rubbed(design.gilt || design.bandGilt ? FLAT.gilt : FLAT.inkSoft, board, design.wear);
+  const foil = toolingColour(design, board, !(design.gilt || design.bandGilt));
   const rule = Math.max(0.8, w * 0.045);
 
-  for (const [i, t] of cordStations(design.bands, design.labelAt).entries()) {
+  for (const [i, t] of cordStations(design.bands, design.focusAt).entries()) {
     const cy = y + h * t;
-    // The cord's whole body, and the rules riding it, must clear the reserved
-    // band — a cord half under a lettering-piece reads as a printing fault.
-    if (overlaps(reserved, cy - cordH * 2, cy + cordH * 2)) continue;
     panel(ctx, x + w * 0.04, cy - cordH / 2, w * 0.92, cordH, board, {
       radius: cordH * 0.5,
       seed: design.seed + 300 + i,
@@ -5612,7 +8838,7 @@ function drawRaisedCords(
  * that separates a bound book from a printed box, and the moment they grow past
  * a thirtieth of the spine they read as extra bands instead.
  */
-function drawEndbands(ctx: FlatCtx, d: DesignBox, design: BookDesign, reserved: Reserved | null): void {
+function drawEndbands(ctx: FlatCtx, d: DesignBox, design: BookDesign): void {
   const style = design.headTail;
   if (style === null) return;
   const { x, y, w, h } = d;
@@ -5630,7 +8856,6 @@ function drawEndbands(ctx: FlatCtx, d: DesignBox, design: BookDesign, reserved: 
     [0, y + h * 0.035],
     [1, y + h * 0.965 - band],
   ] as const) {
-    if (overlaps(reserved, by, by + band)) continue;
     const seed = design.seed + 400 + end * 7;
     switch (style) {
       case 1: {
@@ -5670,75 +8895,39 @@ function drawEndbands(ctx: FlatCtx, d: DesignBox, design: BookDesign, reserved: 
         }
         break;
       }
+      case 3: {
+        // One continuous silk roll: a broad accent thread over a narrow cream
+        // core. It differs from both wrapped and chevron sewing without dots,
+        // teeth, isolated cells or a wallpaper-like repeat.
+        panel(ctx, bx, by, bw, band, accent, {
+          radius: band * 0.5,
+          seed,
+          width: Math.max(0.8, inkWidth(w) * 0.42),
+        });
+        stroke(
+          ctx,
+          bx + band * 0.28,
+          by + band * 0.36,
+          bx + bw - band * 0.28,
+          by + band * 0.36,
+          FLAT.cream,
+          Math.max(0.8, band * 0.24),
+          seed + 3,
+        );
+        break;
+      }
       default: {
-        // Blocks: alternating cream and accent, the commonest machine endband.
-        const cells = 5;
-        for (let i = 0; i < cells; i += 1) {
-          fillBandOutlined(ctx, bx + (bw * i) / cells, by, bw / cells, band, i % 2 === 0 ? FLAT.cream : accent, seed + i);
-        }
+        // Legacy/invalid values resolve to the proven woven chevron rather
+        // than resurrecting the retired machine-block teeth.
+        panel(ctx, bx, by, bw, band, FLAT.cream, {
+          radius: band * 0.4,
+          seed,
+          width: Math.max(0.8, inkWidth(w) * 0.4),
+        });
         break;
       }
     }
   }
-}
-
-/** One endband cell: filled, and outlined only once round the whole run. */
-function fillBandOutlined(
-  ctx: FlatCtx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  colour: string,
-  seed: number,
-): void {
-  wobbleRect(ctx, x, y, w, h, h * 0.22, seed);
-  ctx.fillStyle = colour;
-  ctx.fill();
-  ctx.strokeStyle = FLAT.ink;
-  ctx.lineWidth = Math.max(0.7, h * 0.16);
-  ctx.stroke();
-}
-
-/**
- * Where the lettering-piece goes — THE one answer, for both callers.
- *
- * `spines.ts` sets a real title at the hi-res LOD and this module draws a ruled
- * placeholder at the lo one, and the two must land on exactly the same
- * rectangle: a book whose label jumps when the LOD flips is worse than a book
- * with no label at all. So the caller asks here rather than recomputing.
- *
- * `runLen` is how much room the lettering needs *along* the spine. A real spine
- * label is cut to its title, so the plate grows about its own centre inside the
- * free compartment rather than truncating the words — which is the difference
- * between "The Long Winter" and "The Long…".
- */
-export function bookLabelBox(d: DesignBox, design: BookDesign, runLen = 0): DesignBox {
-  const { x, y, w, h } = d;
-  const lw = w * (LABEL_SPAN.right - LABEL_SPAN.left);
-  const span = freeSpan(design);
-  const room = (span.bottom - span.top) * h;
-  // The resting height, then as much of the compartment as the run asks for.
-  const rest = Math.min(h * 0.24, lw * 2.4, room);
-  const lh = clamp(runLen, rest, Math.max(rest, room));
-  const cy = clamp(y + h * design.labelAt + rest / 2, y + h * span.top, y + h * span.bottom);
-  const ly = clamp(cy - lh / 2, y + h * span.top, y + h * span.bottom - lh);
-  return { x: x + w * LABEL_SPAN.left, y: ly, w: lw, h: lh };
-}
-
-/** The cream lettering-piece, ruled to stand in for a title at the lo LOD. */
-function drawLabelPlate(ctx: FlatCtx, d: DesignBox, design: BookDesign, ink: number): DesignBox {
-  const { x: lx, y: ly, w: lw, h: lh } = bookLabelBox(d, design);
-  panel(ctx, lx, ly, lw, lh, FLAT.cream, {
-    radius: lw * 0.18,
-    seed: design.seed + 3,
-    width: Math.max(1, ink * 0.7),
-  });
-  for (let i = 0; i < 3; i++) {
-    const ry = ly + lh * (0.28 + i * 0.22);
-    stroke(ctx, lx + lw * 0.2, ry, lx + lw * (0.8 - i * 0.12), ry, FLAT.inkSoft, Math.max(0.9, lw * 0.07), design.seed + i);
-  }
-  return { x: lx, y: ly, w: lw, h: lh };
 }
 
 /* ========================================================================== *
@@ -5746,45 +8935,30 @@ function drawLabelPlate(ctx: FlatCtx, d: DesignBox, design: BookDesign, ink: num
  * ========================================================================== */
 
 export interface DrawBookSpineOptions {
-  /**
-   * A band of the spine the caller will fill itself (its title plate), in
-   * canvas px — usually straight out of `bookLabelBox`. Tooling that would
-   * cross it is skipped, and a growable panel frames it instead.
-   */
-  reserved?: { y0: number; y1: number; x0?: number; x1?: number } | null;
-  /**
-   * The caller draws its own lettering-piece, so the design's `label-plate`
-   * decoration must not draw a second one underneath it.
-   */
-  ownLabel?: boolean;
   /** Skip the contact shadow (a compositor that draws its own). Default false. */
   noContact?: boolean;
 }
 
-/** Where the drawing put things, so the caller can place its own on top. */
+/** Where the drawing put things, so the caller can add one optional ornament. */
 export interface BookSpineFurniture {
   /** The drawn body inside the footprint — narrower for many of the shapes. */
   body: DesignBox;
-  /** The surface tooling and the label sit on (the case, for a boxed book). */
+  /** The surface tooling and ornament sit on (the case, for a boxed book). */
   decor: DesignBox;
-  /** The lettering-piece this design drew, or null when it drew none. */
-  label: DesignBox | null;
   /** Top of the clear compartment, absolute px: below head bands and leather. */
   freeTop: number;
   /** Bottom of the clear compartment, absolute px: above tail bands. */
   freeBottom: number;
-  /** Whether this design wants a cream lettering-piece at all. */
-  wantsLabel: boolean;
 }
 
 /**
  * Draw one book, bound.
  *
  * Replaces `flatShelf.drawSpine` in the spine renderer: it covers the same
- * ground — silhouette, cloth, turned board, bands, label, contact shadow — and
- * adds the shape, material and ornament axes on top. The title, the ornament
- * stamp and the charm ribbon stay the caller's, which is why this returns the
- * free compartment rather than filling it.
+ * ground — silhouette, cloth, turned board, bands and contact shadow — and adds
+ * the shape, material and ornament axes on top. One optional ornament stamp and
+ * the charm ribbon stay the caller's, which is why this returns the free
+ * compartment rather than filling it.
  *
  * `x, y, w, h` is the FOOTPRINT: the slot the shelf composer gave this book.
  * Many shapes stand narrower inside it (see `shapeBoxes`), every end profile is
@@ -5822,22 +8996,23 @@ export function drawBookSpine(
   drawShapeMarks(ctx, foot, body, spec, design, ink);
 
   // 3. tooling, on whichever surface ended up in front.
-  const reserved: Reserved | null = opts.reserved ?? null;
-  const wantsLabel = hasDecoration(design, 'label-plate') && fitsLabelPlate(decor);
+  const selfCorded = spec.marks.includes('cords');
   for (const mark of design.decorations) {
-    if (mark === 'label-plate' || mark === 'plain') continue;
-    drawDecoration(ctx, decor, design, decorSpec(mark), reserved);
+    if (mark === 'plain' || SPINE_TEXT_FURNITURE.has(mark)) continue;
+    if (selfCorded && ADDED_BAND_DECORATIONS.has(mark)) continue;
+    drawDecoration(ctx, decor, design, decorSpec(mark));
   }
 
-  // 3b. the studio's own marks, over the preset's tooling and under the
-  // lettering-piece: cords are sewn INTO the book, a label is stuck ON it.
-  drawRaisedCords(ctx, decor, design, reserved);
-  drawEndbands(ctx, decor, design, reserved);
+  // 3b. the studio's own construction marks, over the preset's tooling.
+  const authoredCords = design.decorations.some((mark) =>
+    decorSpec(mark).parts.some((part) =>
+      part.k === 'binding' && bindingOwnsPhysicalCords(part),
+    ),
+  );
+  if (!selfCorded && !authoredCords) drawRaisedCords(ctx, decor, design);
+  drawEndbands(ctx, decor, design);
 
-  // 4. the lettering-piece, unless the caller is about to set a real title.
-  const label = wantsLabel && opts.ownLabel !== true ? drawLabelPlate(ctx, decor, design, ink) : null;
-
-  // 5. where the book meets the plank. Last, and the only shadow in the app.
+  // 4. where the book meets the plank. Last, and the only shadow in the app.
   if (opts.noContact !== true) {
     contactShadow(ctx, x + w / 2, y + h, w * 0.62, Math.max(1.5, w * 0.14), 0.18);
   }
@@ -5846,10 +9021,8 @@ export function drawBookSpine(
   return {
     body,
     decor,
-    label,
     freeTop: decor.y + decor.h * claim.top,
     freeBottom: decor.y + decor.h * claim.bottom,
-    wantsLabel,
   };
 }
 
@@ -5857,39 +9030,112 @@ export function drawBookSpine(
  * The clear stretch of the decorated surface, as fractions of it.
  *
  * Everything a design puts near the head or the tail pushes these in, so the
- * caller's title and ornament land in a compartment rather than across a band.
+ * caller's one optional ornament lands in a compartment rather than across a band.
  * All three vocabularies declare their own claim, which is what stops this from
  * being a switch that has to be extended every time an entry is added — a new
- * ornament that forgets to claim its room simply claims none, and the gate
- * catches it by striking through the reserved band.
+ * ornament that forgets to claim its room simply claims none.
  */
 function freeSpan(design: BookDesign): { top: number; bottom: number } {
   const shape = shapeSpec(design.shape);
   let top = Math.max(0.06, materialHeadClaim(design.material), shape.claimTop);
   let bottom = Math.min(0.94, materialFootClaim(design.material), shape.claimBottom);
+  const dividers: { at: number; gap: number }[] = [];
+  let authoredPhysicalCords = false;
   for (const mark of design.decorations) {
+    if (SPINE_TEXT_FURNITURE.has(mark)) continue;
     const d = decorSpec(mark);
     top = Math.max(top, d.claimTop);
     bottom = Math.min(bottom, d.claimBottom);
+    for (const part of d.parts) {
+      if (part.k === 'rule') {
+        for (const at of part.at) dividers.push({ at, gap: 0.028 });
+      } else if (part.k === 'compartments') {
+        for (const at of part.divisions) dividers.push({ at, gap: 0.03 });
+      } else if (part.k === 'bands') {
+        for (const at of part.at) dividers.push({ at, gap: Math.max(0.035, part.height * 1.8) });
+      } else if (part.k === 'binding') {
+        authoredPhysicalCords ||= bindingOwnsPhysicalCords(part);
+        switch (part.archetype) {
+          case 'terminal': {
+            const head = 0.135 + (part.variant % 2) * 0.007;
+            dividers.push(
+              { at: head, gap: 0.028 },
+              { at: head + 0.03, gap: 0.028 },
+              { at: 0.835 - (part.variant % 3) * 0.006, gap: 0.032 },
+            );
+            break;
+          }
+          case 'publisher-panel': {
+            const stationSets: readonly (readonly number[])[] = [
+              [0.27, 0.72], [], [0.72], [0.24, 0.68], [], [0.7], [0.34],
+            ];
+            const stations = stationSets[part.variant] ?? [];
+            for (const at of stations) dividers.push({ at, gap: 0.035 });
+            break;
+          }
+          case 'corded-leather': {
+            const stationSets: readonly (readonly number[])[] = [
+              [0.18, 0.49, 0.82], [0.16, 0.42, 0.8], [0.2, 0.54, 0.84],
+              [0.15, 0.38, 0.76], [0.21, 0.47, 0.79], [0.17, 0.52, 0.85],
+              [0.19, 0.44, 0.81], [0.14, 0.5, 0.78], [0.2, 0.46, 0.83],
+              [0.17, 0.48, 0.82], [0.15, 0.41, 0.75], [0.22, 0.56, 0.84],
+              [0.18, 0.5, 0.8], [0.16, 0.45, 0.83],
+            ];
+            const stations = stationSets[part.variant] ?? stationSets[0] as readonly number[];
+            for (const at of stations) dividers.push({ at, gap: 0.052 });
+            break;
+          }
+          case 'ceremonial-crown': {
+            const cordSets: readonly (readonly number[])[] = [
+              [0.23, 0.72], [0.28], [0.2, 0.76], [0.18, 0.79], [0.24, 0.7],
+            ];
+            for (const at of cordSets[part.variant] ?? cordSets[0] as readonly number[]) {
+              dividers.push({ at, gap: 0.05 });
+            }
+            break;
+          }
+          case 'diagonal-botanical':
+            dividers.push({ at: 0.2, gap: 0.03 }, { at: 0.69, gap: 0.04 }, { at: 0.82, gap: 0.03 });
+            break;
+          case 'laureate':
+            dividers.push({ at: 0.25, gap: 0.03 }, { at: 0.76, gap: 0.03 });
+            break;
+          case 'structural-sewing': {
+            const stations = design.material === 'paper-wrapper'
+              ? part.variant === 7 ? [0.17, 0.5, 0.83] : [0.18, 0.82]
+              : part.variant === 4 ? [0.22, 0.79] : [0.19, 0.5, 0.81];
+            for (const at of stations) dividers.push({ at, gap: 0.045 });
+            break;
+          }
+        }
+      }
+    }
   }
-  // The studio's cords claim the compartment they bound, so the caller's title
-  // lands BETWEEN two cords rather than across one. Whichever gap round the
-  // label's resting place is largest wins.
-  const stations = cordStations(design.bands, design.labelAt);
-  if (stations.length > 0) {
-    const edges = [top, ...stations.filter((t) => t > top && t < bottom), bottom];
+
+  // Connected compartment fillets, material-bodied bands and studio cords all
+  // divide the available field.  Pick a real bay for the optional emblem rather
+  // than letting it collide with a transverse member.  Prefer the bay holding
+  // the authored focus, then the roomiest bay.
+  if (!shape.marks.includes('cords') && !authoredPhysicalCords) {
+    for (const at of cordStations(design.bands, design.focusAt)) {
+      dividers.push({ at, gap: 0.05 });
+    }
+  }
+  const activeDividers = dividers
+    .filter(({ at }) => at > top && at < bottom)
+    .sort((a, b) => a.at - b.at);
+  if (activeDividers.length > 0) {
+    const edges = [top, ...activeDividers.map(({ at }) => at), bottom];
     let bestTop = top;
     let bestBottom = bottom;
     let best = -1;
-    // Clear of the cord AND of the gilt rules riding its shoulders — 0.022 for
-    // the cord, another 0.015 for the rule, and a hair of air.
-    const gap = 0.05;
     for (let i = 0; i < edges.length - 1; i += 1) {
-      const a = (edges[i] as number) + gap;
-      const b = (edges[i + 1] as number) - gap;
-      // Prefer the compartment the label already wants to sit in; fall back to
-      // the roomiest one so a five-cord spine still has somewhere to be titled.
-      const holds = design.labelAt >= a && design.labelAt <= b ? 1 : 0;
+      const leftGap = i === 0 ? 0 : (activeDividers[i - 1]?.gap ?? 0.03);
+      const rightGap = i === activeDividers.length ? 0 : (activeDividers[i]?.gap ?? 0.03);
+      const a = (edges[i] as number) + leftGap;
+      const b = (edges[i + 1] as number) - rightGap;
+      // Prefer the authored focal compartment; fall back to the roomiest one.
+      const holds = design.focusAt >= a && design.focusAt <= b ? 1 : 0;
       const score = b - a + holds;
       if (score > best) {
         best = score;
@@ -5902,7 +9148,7 @@ function freeSpan(design: BookDesign): { top: number; bottom: number } {
   }
   if (design.headTail !== null) {
     // Clear of the endband itself, which stands at 0.035 and is up to 0.026 of
-    // the height tall — a title crossing one reads as a printing fault.
+    // the height tall — an ornament crossing one reads as a construction fault.
     top = Math.max(top, 0.08);
     bottom = Math.min(bottom, 0.92);
   }

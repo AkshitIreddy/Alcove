@@ -396,6 +396,73 @@
   color: var(--ink-graphite-soft);
 }
 
+/* An intentionally empty script image is a request, not a broken `<img>`.
+   The preview uses the same visual grammar as the editable placeholder but is
+   deliberately inert: choosing the picture belongs to the inserted page. */
+.nb-ins-image-placeholder {
+  display: flex;
+  min-height: 112px;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: 11px 15px 12px 14px / 14px 11px 15px 12px;
+}
+
+.nb-ins-image-placeholder > svg {
+  flex: 0 0 58px;
+  width: 58px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(-1deg);
+}
+
+.nb-ins-image-placeholder-plus {
+  stroke: var(--wash-terracotta-deep);
+  stroke-width: 3;
+}
+
+.nb-ins-image-placeholder > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nb-ins-image-placeholder strong,
+.nb-ins-image-placeholder small {
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+}
+
+.nb-ins-image-placeholder strong {
+  text-transform: uppercase;
+  color: var(--wash-terracotta-deep);
+}
+
+.nb-ins-image-placeholder em {
+  display: -webkit-box;
+  max-height: 3.6em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-family: var(--font-accent);
+  font-size: 16px;
+  font-style: normal;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.nb-ins-image-placeholder small {
+  color: var(--ink-graphite-soft);
+}
+
 /* Containers: tinted cards with a name chip */
 .nb-ins-container {
   position: relative;

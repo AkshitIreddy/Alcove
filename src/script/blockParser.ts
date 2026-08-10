@@ -129,7 +129,19 @@ const LIST_RE = /^([ \t]*)([-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
 const TASK_RE = /^\[([ xX])\][ \t]?(.*)$/;
 const QUOTE_RE = /^\s*>[ \t]?(.*)$/;
 const TABLE_RE = /^\s*\|/;
-const IMAGE_RE = /^\s*!\[([^\]]*)\]\(([^)]*)\)\s*(\{.*)?$/;
+// The alt group accepts backslash escapes so `\]` does not terminate the
+// image and `\n` can carry a caption line break without splitting the block.
+const IMAGE_RE =
+  /^\s*!\[((?:\\.|[^\]\\]|\\(?=\]\())*)\]\(([^)]*)\)\s*(\{.*)?$/;
+
+/** Reverse only the image-alt escapes emitted by the canonical printer. */
+function decodeImageAlt(source: string): string {
+  return source.replace(/\\(\\|\]|n|r)/g, (_match, escaped: string) => {
+    if (escaped === "n") return "\n";
+    if (escaped === "r") return "\r";
+    return escaped;
+  });
+}
 const FETCH_LINE_RE = /^\s*fetch\s*:\s*(.*)$/i;
 /**
  * An equation on its own line. Both shapes a writer reaches for are here:
@@ -220,6 +232,33 @@ export function parseDoc(source: string): ScriptDoc {
   const topIsImageRow = (): boolean =>
     stack.length > 0 && stack[stack.length - 1].block.name === "image-row";
   const lineSpan = (l: SrcLine): Span => ({ srcStart: l.start, srcEnd: l.end });
+
+  /**
+   * An empty Markdown destination is intentional only when the image declares
+   * a human-supplied placeholder. A non-empty string matters here: a bare
+   * `{placeholder}` already receives the attr parser's missing-value warning
+   * and must not accidentally silence the more useful missing-source warning.
+   */
+  const hasImagePlaceholder = (attrs: Attrs): boolean =>
+    typeof attrs.placeholder === "string" && attrs.placeholder.trim() !== "";
+  const hasImageAsset = (attrs: Attrs): boolean =>
+    typeof attrs.asset === "string" && attrs.asset.trim() !== "";
+
+  const warnMissingImageSource = (
+    src: string,
+    attrs: Attrs,
+    line: SrcLine,
+  ): void => {
+    if (src.trim() !== "" || hasImagePlaceholder(attrs) || hasImageAsset(attrs)) {
+      return;
+    }
+    warn(
+      "image-missing-src",
+      "image has no source — nothing will render",
+      lineSpan(line),
+      "![alt](path/to/image.png), ![alt](){placeholder=\"image to add\"}, an exported {asset=images/...}, or a 'fetch:' line",
+    );
+  };
 
   /**
    * Strip a trailing ` {attrs}` (whitespace before the brace required —
@@ -1159,17 +1198,10 @@ export function parseDoc(source: string): ScriptDoc {
           diags.push(...res.diags);
           attrs = res.attrs;
         }
-        if (m[2].trim() === "") {
-          warn(
-            "image-missing-src",
-            "image has no source — nothing will render",
-            lineSpan(line),
-            "![alt](path/to/image.png) or a 'fetch:' line",
-          );
-        }
+        warnMissingImageSource(m[2], attrs, line);
         target().push({
           kind: "image",
-          alt: m[1],
+          alt: decodeImageAlt(m[1]),
           src: m[2].trim(),
           attrs,
           srcStart: line.start,
@@ -1209,6 +1241,7 @@ export function parseDoc(source: string): ScriptDoc {
           alt = attrs.alt;
           delete attrs.alt;
         }
+        warnMissingImageSource(src, attrs, line);
         target().push({
           kind: "image",
           alt,

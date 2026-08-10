@@ -20,24 +20,49 @@
  */
 
 import {
+  ACTIVE_CHARMS,
   CHARMS,
   CHARM_COLORS,
   CHARM_COLOR_LABELS,
   CHARM_LABELS,
   charmColorCss,
   isCharmKind,
+  normalizeCharmKind,
   type CharmKind,
 } from './charms';
 import {
-  COVER_FRAME_COUNT,
-  COVER_MEDALLION_COUNT,
+  ACTIVE_COVER_HANDS,
+  ACTIVE_COVER_HAND_INDICES,
+  ACTIVE_COVER_FRAME_INDICES,
+  COVER_FONT_KIN,
+  COVER_TEXTURES,
   deriveCoverParams,
+  normalizeCoverHandIndex,
+  normalizeCoverFrameIndex,
   type CoverOverrides,
   type CoverParams,
 } from './covers';
+import {
+  MATERIALS,
+  bindingMaterialFor,
+  bookPresetAuthoredFocalGlyph,
+  bookPresetWantsCoverTitle,
+  bookPreset,
+  bookPresetHasAuthoredFocal,
+  materialLookFor,
+  presetForSeed,
+  type BroadFocalGlyph,
+  type BookPresetId,
+} from './bookDesign';
 import { normaliseHex } from './customColour';
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
+  ACTIVE_EDGE_TREATMENTS,
+  ACTIVE_HEAD_TAIL_STYLES,
+  ACTIVE_HEAD_TAIL_OPTIONS,
+  ACTIVE_ORNAMENT_INDICES,
+  ACTIVE_ORNAMENTS,
+  ACTIVE_TITLE_PLATES,
   BINDING_MATERIALS,
   EDGE_LABELS,
   EDGE_TREATMENTS,
@@ -62,8 +87,13 @@ import {
   heightForFormat,
   isBindingMaterial,
   isEdgeTreatment,
+  isActiveOrnamentIndex,
   isSpineFormat,
   isTitlePlateStyle,
+  normalizeEdgeTreatment,
+  normalizeHeadTailStyle,
+  normalizeOrnamentIndex,
+  normalizeTitlePlateStyle,
   textureFromMaterial,
   thicknessClassFor,
   type BindingMaterial,
@@ -94,6 +124,15 @@ export type {
  * stay free to reorganise).
  */
 export {
+  ACTIVE_COVER_HANDS,
+  ACTIVE_COVER_HAND_INDICES,
+  ACTIVE_CHARMS,
+  ACTIVE_EDGE_TREATMENTS,
+  ACTIVE_HEAD_TAIL_OPTIONS,
+  ACTIVE_HEAD_TAIL_STYLES,
+  ACTIVE_ORNAMENT_INDICES,
+  ACTIVE_ORNAMENTS,
+  ACTIVE_TITLE_PLATES,
   BINDING_MATERIALS,
   CHARMS,
   CHARM_COLORS,
@@ -130,10 +169,57 @@ export {
   thicknessClassFor,
 };
 
-/** Title faces, index-aligned with SpineParams.font / CoverParams.titleFont. */
+/** Seed-era cover-title faces, index-aligned with the shared `SpineParams.font`. */
 export const TITLE_FONTS = ['Caveat', 'Kalam', 'Patrick Hand'] as const;
 
-/** `ornament: -1` means "no stamp" — the 13th option in the studio's list. */
+/** Quiet furniture allowed when the covering itself supplies the focal field. */
+const SURFACE_LED_FRAMES: ReadonlySet<number> = new Set([0, 2, 20, 24]);
+const SURFACE_LED_TITLE_PLATES: ReadonlySet<TitlePlateStyle> = new Set([
+  'none',
+  'debossed',
+  'blind-lettered',
+  'gilt-direct',
+  'twin-rules',
+]);
+
+/**
+ * Board-scale counterparts for the focal tools authored into named bindings.
+ * Several historical glyphs deliberately converge on the final clean cover
+ * vocabulary; this is semantic normalization, not a second random choice.
+ */
+const COVER_EMBLEM_FOR_AUTHORED_FOCAL: Readonly<
+  Partial<Record<BroadFocalGlyph, number>>
+> = {
+  crown: 20,
+  sprig: 13,
+  laurel: 1,
+  palmette: 43,
+  fleuron: 12,
+  rosette: 23,
+  'fleur-de-lis': 26,
+  starflower: 2,
+  acanthus: 12,
+  sunrise: 5,
+  'oak-spray': 13,
+  thistle: 14,
+  'ivy-knot': 1,
+  'oak-volutes': 28,
+  'wheat-saltire': 29,
+  pomegranate: 30,
+  tulip: 31,
+  pinecone: 13,
+  'fern-palmette': 56,
+  ginkgo: 31,
+  compass: 0,
+  shield: 0,
+};
+
+function authoredCoverEmblem(binding: BookPresetId): number {
+  const glyph = bookPresetAuthoredFocalGlyph(binding);
+  return glyph === null ? ORNAMENT_NONE : (COVER_EMBLEM_FOR_AUTHORED_FOCAL[glyph] ?? ORNAMENT_NONE);
+}
+
+/** `ornament: -1` means "no stamp" — after the sixteen live binder tools. */
 export const ORNAMENT_NONE = -1;
 
 /* ------------------------------- the style ------------------------------- */
@@ -167,6 +253,20 @@ export interface BookStyle {
    * header.)
    */
   clothHex: string | null;
+  /** Spine ground only; null inherits `clothHex`/pigment. */
+  spineBaseHex: string | null;
+  /** Spine's second leather/cloth/paper role; null uses the seeded partner. */
+  spineAccentHex: string | null;
+  /** Front/back board ground only; null inherits `clothHex`/pigment. */
+  coverBaseHex: string | null;
+  /** Cover insets, figured cloth and secondary binding; null uses its partner. */
+  coverAccentHex: string | null;
+  /** Rules, frames and front-cover title tooling; null follows gilt/blind tooling. */
+  toolingHex: string | null;
+  /** Spine stamp and cover medallion; null follows the tooling convention. */
+  emblemHex: string | null;
+  /** Clasps, corner plates and other fittings; null follows gilt/base metal. */
+  hardwareHex: string | null;
   /** Extra hue rotation in degrees, ±12. */
   hueJitter: number;
   /** Raised cords, 0–5. */
@@ -175,13 +275,14 @@ export interface BookStyle {
   bandGilt: boolean;
   /** Striped head/tail endbands. */
   headTail: boolean;
-  /** Endband variant: 0 blocks, 1 chevron, 2 wrapped cord. */
+  /** Endband variant: 1 woven chevron, 2 wrapped cord, 3 solid silk roll. */
   headTailStyle: number;
-  /** Ornament stamp 0–11, or ORNAMENT_NONE. */
+  /** Ornament stamp index into `ORNAMENT_LABELS`, or ORNAMENT_NONE. */
   ornament: number;
+  /** Front-cover title treatment. */
   titlePlate: TitlePlateStyle;
-  /** Title face index, 0–2. */
-  titleFont: 0 | 1 | 2;
+  /** Front-cover title hand, normalized into the curated manual specimen case. */
+  titleFont: number;
   /** Wear, 0 (pristine) → 1 (well-loved). */
   wear: number;
   edge: EdgeTreatment;
@@ -237,6 +338,7 @@ export interface BookStyle {
   charmColor: number | string;
   /* cover */
   coverFrame: number;
+  /** Binder's stamp index; -1 intentionally leaves a closed composition bare. */
   coverMedallion: number;
   cornerProtectors: boolean;
   insetPlate: boolean;
@@ -366,7 +468,9 @@ function isOrnamentIndex(v: unknown): v is number {
   return intIn(v, ORNAMENT_NONE, ORNAMENT_COUNT - 1) !== undefined;
 }
 function isFontIndex(v: unknown): v is number {
-  return intIn(v, 0, TITLE_FONTS.length - 1) !== undefined;
+  return typeof v === 'number' && ACTIVE_COVER_HAND_INDICES.includes(
+    Math.round(v) as (typeof ACTIVE_COVER_HAND_INDICES)[number],
+  );
 }
 function isCharmColorIndex(v: unknown): v is number {
   return intIn(v, 0, CHARM_COLORS.length - 1) !== undefined;
@@ -426,12 +530,12 @@ export function normalizeThemeDefaults(raw: unknown): SpineThemeDefaults {
   if (ht !== undefined) out.headTailChance = ht;
 
   const orn = poolOf(src.ornaments, isOrnamentIndex);
-  if (orn) out.ornaments = orn.map((o) => Math.round(o));
+  if (orn) out.ornaments = [...new Set(orn.map((o) => normalizeOrnamentIndex(o)))];
   const oc = chance(src.ornamentChance);
   if (oc !== undefined) out.ornamentChance = oc;
 
   const plates = poolOf(src.titlePlates ?? src.titlePlate, isTitlePlateStyle);
-  if (plates) out.titlePlates = plates;
+  if (plates) out.titlePlates = [...new Set(plates.map(normalizeTitlePlateStyle))];
 
   const fonts = poolOf(src.titleFonts ?? src.fonts, isFontIndex);
   if (fonts) out.titleFonts = fonts.map((f) => Math.round(f));
@@ -440,19 +544,17 @@ export function normalizeThemeDefaults(raw: unknown): SpineThemeDefaults {
   if (wear) out.wear = wear;
 
   const edges = poolOf(src.edges ?? src.edgeTreatments ?? src.edge, isEdgeTreatment);
-  if (edges) out.edges = edges;
+  if (edges) out.edges = [...new Set(edges.map(normalizeEdgeTreatment))];
 
   const charms = poolOf(src.charms ?? src.charm, isCharmKind);
-  if (charms) out.charms = charms;
+  if (charms) out.charms = [...new Set(charms.map(normalizeCharmKind))];
   const cc = chance(src.charmChance);
   if (cc !== undefined) out.charmChance = cc;
   const charmColors = poolOf(src.charmColors, isCharmColorIndex);
   if (charmColors) out.charmColors = charmColors.map((c) => Math.round(c));
 
-  const cp = chance(src.cornerProtectorChance);
-  if (cp !== undefined) out.cornerProtectorChance = cp;
-  const ip = chance(src.insetPlateChance);
-  if (ip !== undefined) out.insetPlateChance = ip;
+  // Independent cover hardware is no longer an active axis. Old themes still
+  // parse, but these probabilities deliberately do not enter the live model.
 
   return out;
 }
@@ -487,28 +589,79 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
     if (clothHex !== null) o.clothHex = clothHex;
   }
 
+  const readRole = (
+    key:
+      | 'spineBaseHex'
+      | 'spineAccentHex'
+      | 'coverBaseHex'
+      | 'coverAccentHex'
+      | 'toolingHex'
+      | 'emblemHex',
+  ): void => {
+    if (raw[key] === null) o[key] = null;
+    else {
+      const value = normaliseHex(raw[key]);
+      if (value !== null) o[key] = value;
+    }
+  };
+  readRole('spineBaseHex');
+  readRole('spineAccentHex');
+  readRole('coverBaseHex');
+  readRole('coverAccentHex');
+  readRole('toolingHex');
+  readRole('emblemHex');
+  // `hardwareHex` belonged only to corner plates and hanging fittings. Those
+  // surfaces are retired, so old persisted values are deliberately discarded
+  // instead of surviving as an invisible customization.
+
   const hue = num(raw.hueJitter);
   if (hue !== undefined) o.hueJitter = clamp(hue, -12, 12);
 
-  const bands = intIn(raw.raisedBands, 0, MAX_RAISED_BANDS);
-  if (bands !== undefined) o.raisedBands = bands;
+  if (typeof raw.raisedBands === 'number' && Number.isFinite(raw.raisedBands)) {
+    o.raisedBands = clamp(Math.round(raw.raisedBands), 0, MAX_RAISED_BANDS);
+  }
   if (typeof raw.bandGilt === 'boolean') o.bandGilt = raw.bandGilt;
   if (typeof raw.headTail === 'boolean') o.headTail = raw.headTail;
-  const hts = intIn(raw.headTailStyle, 0, 2);
-  if (hts !== undefined) o.headTailStyle = hts;
+  if (typeof raw.headTailStyle === 'number' && Number.isInteger(raw.headTailStyle)) {
+    o.headTailStyle = normalizeHeadTailStyle(raw.headTailStyle);
+  }
 
-  const ornament = intIn(raw.ornament, ORNAMENT_NONE, ORNAMENT_COUNT - 1);
-  if (ornament !== undefined) o.ornament = ornament;
+  /*
+   * One emblem, two renderer compatibility fields. Prefer an explicit active
+   * cover medallion, then an active spine tool, then a semantic replacement
+   * for either retired index. An explicit None keeps both faces bare.
+   */
+  const rawMedallion =
+    typeof raw.coverMedallion === 'number' && Number.isInteger(raw.coverMedallion)
+      ? raw.coverMedallion
+      : undefined;
+  const rawOrnament =
+    typeof raw.ornament === 'number' && Number.isInteger(raw.ornament)
+      ? raw.ornament
+      : undefined;
+  if (rawMedallion !== undefined || rawOrnament !== undefined) {
+    let emblem = ORNAMENT_NONE;
+    if (isActiveOrnamentIndex(rawMedallion)) emblem = rawMedallion;
+    else if (isActiveOrnamentIndex(rawOrnament)) emblem = rawOrnament;
+    else if (rawMedallion !== undefined && rawMedallion !== ORNAMENT_NONE) {
+      emblem = normalizeOrnamentIndex(rawMedallion);
+    } else if (rawOrnament !== undefined && rawOrnament !== ORNAMENT_NONE) {
+      emblem = normalizeOrnamentIndex(rawOrnament);
+    }
+    o.ornament = emblem;
+    o.coverMedallion = emblem;
+  }
 
-  if (isTitlePlateStyle(raw.titlePlate)) o.titlePlate = raw.titlePlate;
+  if (isTitlePlateStyle(raw.titlePlate)) o.titlePlate = normalizeTitlePlateStyle(raw.titlePlate);
 
-  const font = intIn(raw.titleFont, 0, TITLE_FONTS.length - 1);
-  if (font !== undefined) o.titleFont = font as 0 | 1 | 2;
+  if (typeof raw.titleFont === 'number' && Number.isFinite(raw.titleFont)) {
+    o.titleFont = normalizeCoverHandIndex(raw.titleFont);
+  }
 
   const wear = num(raw.wear);
   if (wear !== undefined) o.wear = clamp(wear, 0, 1);
 
-  if (isEdgeTreatment(raw.edge)) o.edge = raw.edge;
+  if (isEdgeTreatment(raw.edge)) o.edge = normalizeEdgeTreatment(raw.edge);
 
   // `height` wins over `format`; a lone `format` picks its band's mid height.
   if (isSpineFormat(raw.format)) o.format = raw.format;
@@ -527,7 +680,7 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
 
   if (typeof raw.gilt === 'boolean') o.gilt = raw.gilt;
 
-  if (isCharmKind(raw.charm)) o.charm = raw.charm;
+  if (isCharmKind(raw.charm)) o.charm = normalizeCharmKind(raw.charm);
   // A hex first, because a reader's own colour is the one value here that
   // cannot be re-derived from anything else — an index that failed to read
   // still lands on a colourway, a hex that gets dropped is simply gone.
@@ -538,12 +691,11 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
     if (charmColor !== undefined) o.charmColor = charmColor;
   }
 
-  const frame = intIn(raw.coverFrame, 0, COVER_FRAME_COUNT - 1);
-  if (frame !== undefined) o.coverFrame = frame;
-  const medallion = intIn(raw.coverMedallion, 0, COVER_MEDALLION_COUNT - 1);
-  if (medallion !== undefined) o.coverMedallion = medallion;
-  if (typeof raw.cornerProtectors === 'boolean') o.cornerProtectors = raw.cornerProtectors;
-  if (typeof raw.insetPlate === 'boolean') o.insetPlate = raw.insetPlate;
+  if (typeof raw.coverFrame === 'number' && Number.isInteger(raw.coverFrame)) {
+    o.coverFrame = normalizeCoverFrameIndex(raw.coverFrame);
+  }
+  if (typeof raw.cornerProtectors === 'boolean') o.cornerProtectors = false;
+  if (typeof raw.insetPlate === 'boolean') o.insetPlate = false;
 
   return Object.keys(o).length > 0 ? o : null;
 }
@@ -603,6 +755,13 @@ export interface ResolveBookStyleOptions {
    * `overrides.thickness` still wins.
    */
   pageCount?: number;
+  /**
+   * Exact named/composed binding selected outside `cover_meta`.
+   * Null means the book's seeded binding; omitted has the same art meaning.
+   * The cover needs this even though only SpineParams persists the pin: both
+   * faces must wear the same exact MaterialLook.
+   */
+  binding?: BookPresetId | null;
 }
 
 /**
@@ -624,6 +783,8 @@ export function resolveBookStyle(
 ): ResolvedBookStyle {
   const s = seed >>> 0;
   const base = deriveSpineParams(s);
+  const effectiveBinding = opts.binding ?? presetForSeed(s).id;
+  const bindingOwnsFocal = bookPresetHasAuthoredFocal(effectiveBinding);
   const theme = normalizeThemeDefaults(themeDefaults);
   const over = normalizeBookStyleOverrides(overrides) ?? {};
   const rnd: RandomFn = mulberry32((s ^ 0xb00c57e1) >>> 0);
@@ -651,6 +812,14 @@ export function resolveBookStyle(
   const material: BindingMaterial =
     over.material ??
     (theme.materials ? pick(theme.materials, rMaterial) : (base.material ?? 'cloth'));
+  const exactMaterial =
+    over.material !== undefined
+      ? materialLookFor(material)
+      : bookPreset(effectiveBinding).material;
+  const materialSpec = MATERIALS[exactMaterial];
+  const surfaceLed =
+    materialSpec.split !== 'none' ||
+    (materialSpec.grain !== 'none' && materialSpec.grainCount > 3);
 
   const pigment =
     over.pigment ?? (theme.pigments ? pick(theme.pigments, rPigment) : base.palette);
@@ -681,7 +850,7 @@ export function resolveBookStyle(
   const headTail =
     over.headTail ??
     (theme.headTailChance !== undefined ? rHeadTail < theme.headTailChance : base.headTail);
-  const headTailStyle = clamp(Math.round(over.headTailStyle ?? base.headTailStyle ?? 0), 0, 2);
+  const headTailStyle = normalizeHeadTailStyle(over.headTailStyle ?? base.headTailStyle);
 
   let ornament: number;
   if (over.ornament !== undefined) {
@@ -694,20 +863,20 @@ export function resolveBookStyle(
         : (base.ornamentOn ?? true);
     ornament = on ? fromTheme : ORNAMENT_NONE;
   }
-  ornament = clamp(Math.round(ornament), ORNAMENT_NONE, ORNAMENT_COUNT - 1);
+  ornament = normalizeOrnamentIndex(ornament);
+  if (bindingOwnsFocal || surfaceLed) ornament = ORNAMENT_NONE;
 
-  const titlePlate: TitlePlateStyle =
+  let titlePlate: TitlePlateStyle = normalizeTitlePlateStyle(
     over.titlePlate ??
-    (theme.titlePlates ? pick(theme.titlePlates, rPlate) : (base.titlePlate ?? 'none'));
+      (theme.titlePlates ? pick(theme.titlePlates, rPlate) : (base.titlePlate ?? 'none')),
+  );
+  if (surfaceLed && !SURFACE_LED_TITLE_PLATES.has(titlePlate)) {
+    titlePlate = gilt ? 'gilt-direct' : 'blind-lettered';
+  }
 
-  const titleFont = clamp(
-    Math.round(
-      over.titleFont ?? (theme.titleFonts ? pick(theme.titleFonts, rFont) : base.font),
-    ),
-    0,
-    2,
-  ) as 0 | 1 | 2;
-
+  const titleFont = normalizeCoverHandIndex(
+    over.titleFont ?? (theme.titleFonts ? pick(theme.titleFonts, rFont) : base.font),
+  );
   let wear: number;
   if (over.wear !== undefined) {
     wear = over.wear;
@@ -719,8 +888,9 @@ export function resolveBookStyle(
   }
   wear = clamp(wear, 0, 1);
 
-  const edge: EdgeTreatment =
-    over.edge ?? (theme.edges ? pick(theme.edges, rEdge) : (base.edge ?? 'plain'));
+  const edge: EdgeTreatment = normalizeEdgeTreatment(
+    over.edge ?? (theme.edges ? pick(theme.edges, rEdge) : (base.edge ?? 'plain')),
+  );
 
   const height = clamp(
     over.height ?? base.height ?? 232 + base.hJitter,
@@ -737,16 +907,11 @@ export function resolveBookStyle(
     SPINE_THICKNESS_RANGE.max,
   );
 
-  let charm: CharmKind;
-  if (over.charm !== undefined) {
-    charm = over.charm;
-  } else if (theme.charms || theme.charmChance !== undefined) {
-    const pool = theme.charms ?? CHARMS.filter((c) => c !== 'none');
-    const on = theme.charmChance !== undefined ? rCharmOn < theme.charmChance : true;
-    charm = on ? pick(pool, rCharm) : 'none';
-  } else {
-    charm = base.charm ?? 'none';
-  }
+  // Applied charms are retired as a surface class. Preserve the historical
+  // random draws so changing this rule never reshuffles later seeded choices.
+  void rCharm;
+  void rCharmOn;
+  const charm: CharmKind = 'none';
 
   /**
    * The charm's colourway.
@@ -773,29 +938,15 @@ export function resolveBookStyle(
 
   // Cover-only knobs: the seed's own rolls unless the studio pins them.
   const coverBase = deriveCoverParams(s);
-  const coverFrame = clamp(
-    Math.round(over.coverFrame ?? coverBase.frame),
-    0,
-    COVER_FRAME_COUNT - 1,
-  );
-  const coverMedallion = clamp(
-    Math.round(
-      over.coverMedallion ??
-        (ornament >= 0 ? ornament % COVER_MEDALLION_COUNT : coverBase.medallion),
-    ),
-    0,
-    COVER_MEDALLION_COUNT - 1,
-  );
-  const cornerProtectors =
-    over.cornerProtectors ??
-    (theme.cornerProtectorChance !== undefined
-      ? rCorner < theme.cornerProtectorChance
-      : (coverBase.cornerProtectors ?? false));
-  const insetPlate =
-    over.insetPlate ??
-    (theme.insetPlateChance !== undefined
-      ? rInset < theme.insetPlateChance
-      : (coverBase.insetPlate ?? false));
+  let coverFrame = normalizeCoverFrameIndex(over.coverFrame ?? coverBase.frame);
+  if (surfaceLed && !SURFACE_LED_FRAMES.has(coverFrame)) coverFrame = 2;
+  // One emblem axis drives both faces. A binding-authored centrepiece spends
+  // that focal budget itself, so the compatibility fields stay bare.
+  const coverMedallion = bindingOwnsFocal || surfaceLed ? ORNAMENT_NONE : ornament;
+  const cornerProtectors = false;
+  const insetPlate = false;
+  void rCorner;
+  void rInset;
 
   const style: BookStyle = {
     material,
@@ -804,6 +955,13 @@ export function resolveBookStyle(
     // pigment a book is bound in; it may not invent a colour the reader typed,
     // and a dice that rolled one would be handing out "your own" colours.
     clothHex: over.clothHex ?? null,
+    spineBaseHex: over.spineBaseHex ?? null,
+    spineAccentHex: over.spineAccentHex ?? null,
+    coverBaseHex: over.coverBaseHex ?? null,
+    coverAccentHex: over.coverAccentHex ?? null,
+    toolingHex: over.toolingHex ?? null,
+    emblemHex: over.emblemHex ?? null,
+    hardwareHex: over.hardwareHex ?? null,
     hueJitter: clamp(hueJitter, -12, 12),
     raisedBands,
     bandGilt,
@@ -831,13 +989,52 @@ export function resolveBookStyle(
   };
 
   const pinned = new Set(Object.keys(over) as (keyof BookStyle)[]);
+  // A binding may author a front-cover label even when the seed's latent title
+  // treatment is `none`. Resolve that inherited choice once for cover drawing;
+  // keeping the latent value on `style` still lets persistence distinguish
+  // "untouched" from an explicit reader-picked None.
+  const renderedTitlePlate = effectiveBookTitlePlate(
+    s,
+    style,
+    opts.binding ?? null,
+    pinned.has('titlePlate'),
+  );
+  const renderedStyle =
+    renderedTitlePlate === style.titlePlate
+      ? style
+      : { ...style, titlePlate: renderedTitlePlate };
   return {
     seed: s,
     style,
-    spine: spineParamsFor(base, style, pinned),
-    cover: coverParamsFor(s, style),
+    spine: spineParamsFor(base, renderedStyle, pinned),
+    cover: coverParamsFor(
+      s,
+      renderedStyle,
+      opts.binding ?? null,
+      pinned.has('material'),
+    ),
     pinned,
   };
+}
+
+/**
+ * Resolve the title treatment a reader actually sees on the front cover.
+ *
+ * `none` is overloaded in old data: when it is merely the seed/default value,
+ * a binding-authored label plate is allowed to show; when the reader pinned
+ * None, it must suppress that label. Spines do not consume this value; it is
+ * retained on SpineParams only as seed-era compatibility data for cover-only
+ * readers that still derive a cover from the shared parameter object.
+ */
+export function effectiveBookTitlePlate(
+  seed: number,
+  style: Pick<BookStyle, 'titlePlate'>,
+  binding: BookPresetId | null,
+  titlePlatePinned: boolean,
+): TitlePlateStyle {
+  if (titlePlatePinned || style.titlePlate !== 'none') return style.titlePlate;
+  const preset = binding === null ? presetForSeed(seed >>> 0) : bookPreset(binding);
+  return bookPresetWantsCoverTitle(preset.id) ? 'label' : 'none';
 }
 
 /** Project a resolved style onto renderable SpineParams. */
@@ -851,22 +1048,30 @@ export function spineParamsFor(
     materialPinned: pinned.has('material'),
     palette: style.pigment,
     clothHex: style.clothHex,
+    spineBaseHex: style.spineBaseHex,
+    spineAccentHex: style.spineAccentHex,
+    toolingHex: style.toolingHex,
+    emblemHex: style.emblemHex,
+    hardwareHex: style.hardwareHex,
     hueJitter: style.hueJitter,
     // The legacy 0|1|2 texture bucket is kept in sync so any consumer that
     // still branches on it (older cover code, tests) agrees with the material.
     texture: textureFromMaterial(style.material),
     material: style.material,
-    // ornament stays 0–11 (covers derive their medallion from it); the
-    // "none" option rides on ornamentOn.
+    // Ornament stays an append-only table index (covers derive their
+    // medallion from it); the "none" option rides on ornamentOn.
     ornament: style.ornament >= 0 ? style.ornament : base.ornament,
     ornamentOn: style.ornament >= 0,
-    font: style.titleFont,
+    font: Math.max(0, COVER_FONT_KIN[style.titleFont] ?? 0) as 0 | 1 | 2,
     gilt: style.gilt,
     raisedBands: style.raisedBands,
     bandGilt: style.bandGilt,
     headTail: style.headTail,
     headTailStyle: style.headTailStyle,
     titlePlate: style.titlePlate,
+    raisedBandsPinned: pinned.has('raisedBands'),
+    ornamentPinned: pinned.has('ornament'),
+    headTailPinned: pinned.has('headTail') || pinned.has('headTailStyle'),
     wear: style.wear,
     edge: style.edge,
     format: style.format,
@@ -878,16 +1083,47 @@ export function spineParamsFor(
 }
 
 /** Project a resolved style onto renderable CoverParams. */
-export function coverParamsFor(seed: number, style: BookStyle): CoverParams {
+export function coverParamsFor(
+  seed: number,
+  style: BookStyle,
+  binding: BookPresetId | null = null,
+  materialPinned = false,
+): CoverParams {
+  const bindingPreset = binding === null ? presetForSeed(seed >>> 0) : bookPreset(binding);
+  // A reader's explicit coarse material chip is allowed to replace the named
+  // covering on both faces. Otherwise preserve the preset's exact MaterialLook
+  // (brocade, tree calf, vellum…), not the seed/theme's unrelated seven-way
+  // BindingMaterial roll.
+  const materialLook = materialPinned
+    ? materialLookFor(style.material)
+    : bindingPreset.material;
+  const covering = Math.max(0, COVER_TEXTURES.indexOf(materialLook));
+  const coverMaterial = materialPinned
+    ? style.material
+    : (bindingMaterialFor(materialLook) as BindingMaterial);
+  const bindingEmblem = authoredCoverEmblem(bindingPreset.id);
   const overrides: CoverOverrides = {
     palette: style.pigment,
     clothHex: style.clothHex,
-    texture: textureFromMaterial(style.material),
+    coverBaseHex: style.coverBaseHex,
+    coverAccentHex: style.coverAccentHex,
+    toolingHex: style.toolingHex,
+    emblemHex: style.emblemHex,
+    hardwareHex: style.hardwareHex,
+    texture: textureFromMaterial(coverMaterial),
+    covering,
     frame: style.coverFrame,
-    medallion: style.coverMedallion,
+    // A binding-authored focal suppresses the optional shelf ornament, but its
+    // semantic counterpart still belongs on the front board. This is why the
+    // crowned Welcome spine and its held cover remain the same book.
+    medallion: bindingEmblem >= 0 ? bindingEmblem : style.coverMedallion,
     titleFont: style.titleFont,
     gilt: style.gilt,
-    material: style.material,
+    raisedBands: style.raisedBands,
+    bandGilt: style.bandGilt,
+    headTail: style.headTail,
+    headTailStyle: style.headTailStyle,
+    material: coverMaterial,
     titlePlate: style.titlePlate,
     cornerProtectors: style.cornerProtectors,
     insetPlate: style.insetPlate,
@@ -907,25 +1143,219 @@ export function bookStyleToOverrides(style: BookStyle): BookStyleOverrides {
 }
 
 /**
- * The character a brand-new book arrives with.
+ * Ordinary proportions for a book nobody has deliberately redressed.
  *
- * There used to be a global "new books wear this palette" setting, which is
- * the wrong shape of answer twice over: it made every book a reader owned the
- * same colour, and it was never actually applied to anything. A library is
- * interesting because its books are not alike, so a new book rolls its whole
- * vocabulary instead — silhouette dressing, tooling, plate, format, charm,
- * cover fittings, the lot.
+ * Eight-to-fifty-eight pixels is a useful manual range and a dangerous dice:
+ * crossed independently with 132-to-300px heights it can make a paving slab
+ * or a ruler. Fresh books stay inside a recognisable width/height envelope;
+ * the Studio's explicit sliders still retain the whole legal range.
+ */
+export const FRESH_BOOK_PROPORTION_RANGE = { min: 0.06, max: 0.205 } as const;
+
+const FRESH_FORMAT_POOL: readonly SpineFormat[] = [
+  'pocket',
+  'pocket',
+  'duodecimo',
+  'duodecimo',
+  'duodecimo',
+  'duodecimo',
+  'duodecimo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'octavo',
+  'quarto',
+  'quarto',
+  'quarto',
+  'folio',
+];
+
+/** Calm board frames: a structural rule, never a second ornament programme. */
+const FRESH_COVER_FRAMES: readonly number[] = [0, 0, 0, 2, 2, 5, 24, 24, 24];
+
+/** One-stroke binder's tools that stay legible at shelf scale. */
+const FRESH_EMBLEMS: readonly number[] = [
+  0, 1, 2, 5, 12, 13, 14, 20,
+  23, 26, 28, 29, 30, 31, 43, 56,
+];
+
+type FreshFurniture = 'none' | 'bands' | 'emblem';
+type FreshPreset = ReturnType<typeof presetForSeed>;
+
+function freshFormatFor(preset: FreshPreset, r: number): SpineFormat {
+  const name = `${preset.id} ${preset.label}`.toLowerCase();
+  if (name.includes('folio')) return pick(['folio', 'folio', 'quarto'] as const, r);
+  if (name.includes('quarto')) return pick(['quarto', 'quarto', 'octavo'] as const, r);
+  if (name.includes('octavo')) return pick(['octavo', 'octavo', 'duodecimo'] as const, r);
+  if (preset.tags.includes('pocket')) {
+    return pick(['pocket', 'pocket', 'pocket', 'duodecimo'] as const, r);
+  }
+  if (preset.tags.includes('heavy')) {
+    return pick(['octavo', 'quarto', 'quarto', 'folio'] as const, r);
+  }
+  if (preset.group === 'wrappers') {
+    return pick(['pocket', 'duodecimo', 'duodecimo', 'octavo'] as const, r);
+  }
+  return pick(FRESH_FORMAT_POOL, r);
+}
+
+function freshDimensions(
+  preset: FreshPreset,
+  formatRoll: number,
+  heightRollA: number,
+  heightRollB: number,
+  profileRoll: number,
+  thicknessRoll: number,
+): { height: number; thickness: number } {
+  const format = freshFormatFor(preset, formatRoll);
+  const span = SPINE_FORMATS[format];
+  // A triangular roll favours the recognisable centre of a format without
+  // turning the five format bands into five identical heights.
+  const height = Math.round(
+    span.min + ((heightRollA + heightRollB) / 2) * (span.max - span.min),
+  );
+
+  let lo: number;
+  let hi: number;
+  if (preset.group === 'wrappers' || preset.tags.includes('pocket')) {
+    [lo, hi] = [0.065, 0.115];
+  } else if (preset.tags.includes('heavy')) {
+    [lo, hi] = [0.14, 0.2];
+  } else if (profileRoll < 0.16) {
+    [lo, hi] = [0.07, 0.1];
+  } else if (profileRoll < 0.84) {
+    [lo, hi] = [0.105, 0.155];
+  } else {
+    [lo, hi] = [0.16, 0.2];
+  }
+
+  const ratio = lo + thicknessRoll * (hi - lo);
+  const minWidth = Math.max(
+    SPINE_THICKNESS_RANGE.min,
+    Math.ceil(height * FRESH_BOOK_PROPORTION_RANGE.min),
+  );
+  const maxWidth = Math.min(
+    SPINE_THICKNESS_RANGE.max,
+    Math.floor(height * FRESH_BOOK_PROPORTION_RANGE.max),
+  );
+  return {
+    height,
+    thickness: Math.round(clamp(height * ratio, minWidth, maxWidth)),
+  };
+}
+
+function freshTitlePlateFor(preset: FreshPreset, r: number): TitlePlateStyle {
+  if (preset.decorations.includes('label-plate')) return 'label';
+  const material = MATERIALS[preset.material];
+  if (material.group === 'vellum') return 'vellum-slip';
+  if (material.group === 'paper') return r < 0.72 ? 'paper-slip' : 'ink-panel';
+  if (material.group === 'leather') {
+    return preset.gilt
+      ? (r < 0.62 ? 'morocco-label' : 'gilt-direct')
+      : (r < 0.62 ? 'blind-lettered' : 'debossed');
+  }
+  if (material.group === 'split') return r < 0.68 ? 'label' : 'blind-lettered';
+  if (preset.gilt) return r < 0.64 ? 'gilt-direct' : 'double-fillet';
+  return r < 0.62 ? 'blind-lettered' : 'debossed';
+}
+
+function freshEdgeFor(preset: FreshPreset, r: number): EdgeTreatment {
+  // The held-book painter has two genuinely distinct text-block finishes.
+  // Gilded bindings may spend one quiet accent on the edge; everything else
+  // stays honest cream instead of choosing a catalogue name with identical art.
+  return preset.gilt && r >= 0.58 ? 'gilt' : 'plain';
+}
+
+function freshFurnitureFor(preset: FreshPreset, r: number): FreshFurniture {
+  const authored = preset.decorations.filter(
+    (decoration) => decoration !== 'plain' && decoration !== 'label-plate',
+  );
+  const material = MATERIALS[preset.material];
+  const busySurface = material.grain !== 'none' && material.grainCount > 3;
+
+  // A named binding already carrying a panel, stamp, band programme or figured
+  // covering needs no second designer. Only a quiet binding enters this roll.
+  if (authored.length > 0 || busySurface || preset.tier === 'niche') return 'none';
+  if (r < 0.09 && preset.shape !== 'ribbed') return 'bands';
+  if (r < 0.17) return 'emblem';
+  return 'none';
+}
+
+/**
+ * The restrained character a brand-new book arrives with.
  *
- * With ONE deliberate hole: `pigment` and `hueJitter` are left unset, so the
- * room's palette still tints a new book. Colour is the axis a library theme
- * exists to control ("themes only *bias* per-book art"), and a creation-time
- * roll that pinned it would make every room's shelves the same rainbow and
- * quietly kill the feature. Everything a theme does NOT speak for is the
- * book's own from the moment it is made.
+ * The exact named binding selected by `presetForSeed` is the authority: this
+ * function deliberately omits `material`, `pigment` and `hueJitter`, so it
+ * cannot collapse brocade/tree-calf/vellum into a coarse material chip or pin
+ * a room's colour at creation time. It only supplies an ordinary proportion,
+ * quiet cover structure, finish and — on an otherwise bare preset — at most
+ * ONE secondary furniture programme.
+ *
+ * Every off switch is explicit. Seed defaults used to leak five cords, a stamp,
+ * a charm, a medallion and corner hardware back into the same book whenever a
+ * field happened not to be present. The complete neutral baseline below makes
+ * the one chosen programme genuinely exclusive.
+ *
+ * Spine text is not part of this recipe. `titlePlate` and `titleFont` remain
+ * because the front cover still carries the book title.
  */
 export function freshBookStyleOverrides(seed: number): BookStyleOverrides {
-  const { pigment: _pigment, hueJitter: _hueJitter, ...rest } = randomBookStyleOverrides(seed);
-  return rest;
+  const s = seed >>> 0;
+  const preset = presetForSeed(s);
+  const rnd = mulberry32((s ^ 0xf2e5b00c) >>> 0);
+
+  // Consume a fixed draw budget before interpreting any decision. A later
+  // compatibility guard may turn an accent off, but it never reshuffles every
+  // other feature on the book.
+  const dimensions = freshDimensions(preset, rnd(), rnd(), rnd(), rnd(), rnd());
+  const titlePlate = normalizeTitlePlateStyle(freshTitlePlateFor(preset, rnd()));
+  const titleFont = pick([0, 0, 0, 1, 1, 2] as const, rnd());
+  const edge = normalizeEdgeTreatment(freshEdgeFor(preset, rnd()));
+  const wear = Math.min(0.46, rnd() * rnd() * 0.58);
+  const headTailChance =
+    MATERIALS[preset.material].group === 'paper'
+      ? 0.12
+      : MATERIALS[preset.material].group === 'leather' ||
+          MATERIALS[preset.material].group === 'vellum' ||
+          MATERIALS[preset.material].group === 'split'
+        ? 0.52
+        : 0.34;
+  const headTail = rnd() < headTailChance;
+  const headTailStyle = pick(ACTIVE_HEAD_TAIL_STYLES, rnd());
+  const furniture = freshFurnitureFor(preset, rnd());
+  const furnitureDetail = rnd();
+  const frameRoll = rnd();
+
+  const bands = furniture === 'bands' ? 1 + Math.floor(furnitureDetail * 2) : 0;
+  const emblem =
+    furniture === 'emblem' ? pick(FRESH_EMBLEMS, furnitureDetail) : ORNAMENT_NONE;
+  const coverFrame = pick(FRESH_COVER_FRAMES, frameRoll);
+
+  const result: BookStyleOverrides = {
+    height: dimensions.height,
+    thickness: dimensions.thickness,
+    raisedBands: bands,
+    bandGilt: bands > 0 && preset.gilt,
+    headTail,
+    headTailStyle,
+    ornament: emblem,
+    titlePlate,
+    titleFont,
+    wear,
+    edge,
+    gilt: preset.gilt,
+    charm: 'none',
+    coverFrame,
+    coverMedallion: emblem,
+    cornerProtectors: false,
+    insetPlate: false,
+  };
+  return result;
 }
 
 /**
@@ -935,7 +1365,10 @@ export function freshBookStyleOverrides(seed: number): BookStyleOverrides {
  */
 export function randomBookStyleOverrides(seed: number): BookStyleOverrides {
   const rnd = mulberry32((seed ^ 0x5a4d0e) >>> 0);
-  const charmPool = CHARMS;
+  const emblem =
+    rnd() < 0.34
+      ? pick(ACTIVE_ORNAMENT_INDICES, rnd())
+      : ORNAMENT_NONE;
   return {
     material: pick(BINDING_MATERIALS, rnd()),
     pigment: Math.floor(rnd() * PIGMENT_COUNT),
@@ -944,23 +1377,35 @@ export function randomBookStyleOverrides(seed: number): BookStyleOverrides {
     // every press of "randomise" repaint everything about the book EXCEPT the
     // thing the reader is looking at.
     clothHex: null,
+    // Role colours inherit on the general dice. Named Surprise directions use
+    // `bookSurprise.ts`, which chooses the whole palette as one guarded recipe
+    // instead of rolling seven unrelated hexes.
+    spineBaseHex: null,
+    spineAccentHex: null,
+    coverBaseHex: null,
+    coverAccentHex: null,
+    toolingHex: null,
+    emblemHex: null,
+    hardwareHex: null,
     hueJitter: (rnd() * 2 - 1) * 8,
-    raisedBands: Math.floor(rnd() * (MAX_RAISED_BANDS + 1)),
+    // Automatic bindings stop at two cords; the third remains a deliberate
+    // manual Studio choice so random shelves never fall back into ladder backs.
+    raisedBands: Math.floor(rnd() * 3),
     bandGilt: rnd() < 0.5,
     headTail: rnd() < 0.6,
-    headTailStyle: Math.floor(rnd() * 3),
-    ornament: rnd() < 0.15 ? ORNAMENT_NONE : Math.floor(rnd() * ORNAMENT_COUNT),
-    titlePlate: pick(TITLE_PLATES, rnd()),
-    titleFont: Math.floor(rnd() * 3) as 0 | 1 | 2,
+    headTailStyle: pick(ACTIVE_HEAD_TAIL_STYLES, rnd()),
+    ornament: emblem,
+    titlePlate: pick(ACTIVE_TITLE_PLATES, rnd()),
+    titleFont: pick(ACTIVE_COVER_HAND_INDICES, rnd()),
     wear: rnd() * rnd(),
-    edge: pick(EDGE_TREATMENTS, rnd()),
+    edge: pick(ACTIVE_EDGE_TREATMENTS, rnd()),
     height: heightForFormat(pick(SPINE_FORMAT_IDS, rnd())),
     gilt: rnd() < 0.4,
-    charm: rnd() < 0.45 ? 'none' : pick(charmPool.filter((c) => c !== 'none'), rnd()),
+    charm: 'none',
     charmColor: Math.floor(rnd() * CHARM_COLORS.length),
-    coverFrame: Math.floor(rnd() * COVER_FRAME_COUNT),
-    coverMedallion: Math.floor(rnd() * COVER_MEDALLION_COUNT),
-    cornerProtectors: rnd() < 0.3,
-    insetPlate: rnd() < 0.45,
+    coverFrame: pick(ACTIVE_COVER_FRAME_INDICES, rnd()),
+    coverMedallion: emblem,
+    cornerProtectors: false,
+    insetPlate: false,
   };
 }

@@ -35,13 +35,11 @@ const SUSPECTS = opt('presets', '').split(',').filter(Boolean);
  * and the numbered slots differ only in the brass struck on them.
  */
 const ORNAMENTS = opt('ornaments', '').split(',').filter(Boolean).map(Number);
-/** Lettering-piece treatments, by id — the third axis, same arrangement. */
-const PLATES = opt('plates', '').split(',').filter(Boolean);
 /** The book a suspect has to stand next to without looking like an intruder. */
 const FOIL = opt('foil', 'plain-cloth');
 
-if (SUSPECTS.length === 0 && ORNAMENTS.length === 0 && PLATES.length === 0) {
-  console.error('nothing to judge: pass --presets=…, --ornaments=… or --plates=…');
+if (SUSPECTS.length === 0 && ORNAMENTS.length === 0) {
+  console.error('nothing to judge: pass --presets=… or --ornaments=…');
   process.exit(2);
 }
 
@@ -100,18 +98,15 @@ await page.evaluate(() => globalThis.__shelfEmptyLibrary());
 await page.waitForTimeout(1200);
 
 // foil, suspect, foil, suspect, … so no two suspects touch.
-const under = SUSPECTS.length > 0 ? SUSPECTS : ORNAMENTS.length > 0 ? ORNAMENTS : PLATES;
+const under = SUSPECTS.length > 0 ? SUSPECTS : ORNAMENTS;
 const cast = [];
 const stamps = [];
-const labels = [];
 under.forEach((_, i) => {
   cast.push(FOIL, SUSPECTS[i] ?? FOIL);
   stamps.push(-1, ORNAMENTS[i] ?? -1);
-  labels.push('none', PLATES[i] ?? 'none');
 });
 cast.push(FOIL);
 stamps.push(-1);
-labels.push('none');
 
 const perFloor = Math.ceil(cast.length / 2);
 const titles = cast.map((_, i) => (i % 2 === 1 ? `No ${(i + 1) / 2}` : 'Ordinary'));
@@ -132,7 +127,7 @@ await page.waitForTimeout(2500);
 
 const applied = await page
   .evaluate(
-    async ([plan, brass, plates]) => {
+    async ([plan, brass]) => {
       const w = globalThis.__shelfWorld;
       const out = [];
       let n = 0;
@@ -141,7 +136,6 @@ const applied = await page
         for (const b of books) {
           const id = plan[n];
           const stamp = brass[n] ?? -1;
-          const plate = plates[n] ?? 'none';
           n += 1;
           if (id === undefined) continue;
           await globalThis.__shelfSaveBinding(b.id, id);
@@ -149,18 +143,17 @@ const applied = await page
           // height, no charm, no wear. If the row still has an intruder in it,
           // the intruder is the thing being judged.
           await globalThis.__shelfSetBookStyle(b.id, {
-            titlePlate: plate,
             ornament: stamp,
             charm: 'none',
             wear: 0,
             height: 232,
           });
-          out.push({ floor, slot: b.slot, preset: id, ornament: stamp, plate });
+          out.push({ floor, slot: b.slot, preset: id, ornament: stamp });
         }
       }
       return { out, seen: [0, 1].map((f) => (w.store.get(f) ?? []).length) };
     },
-    [cast, stamps, labels],
+    [cast, stamps],
   )
   .then((r) => {
     console.log(`store rows per floor: ${JSON.stringify(r.seen)}`);
@@ -169,8 +162,7 @@ const applied = await page
 console.log(`pinned ${applied.length}:`);
 for (const a of applied) {
   const brass = a.ornament >= 0 ? `  orn ${a.ornament}` : '';
-  const plate = a.plate !== 'none' ? `  plate ${a.plate}` : '';
-  console.log(`  f${a.floor} s${String(a.slot).padStart(2)}  ${a.preset}${brass}${plate}`);
+  console.log(`  f${a.floor} s${String(a.slot).padStart(2)}  ${a.preset}${brass}`);
 }
 await page.waitForTimeout(4500);
 

@@ -188,14 +188,14 @@ function coverage(s) {
 /*
  * 5, 6, 8 — and NOT 4. The stamp is about fifteen screen pixels across inside a
  * 27px box, so a 4×4 grid gives the mark itself a two-cell view: at that rung
- * thirty-eight of the fifty report as one mark, which is a fact about the grid
+ * many stamps report as one mark, which is a fact about the grid
  * and not about the drawings. Five cells is a three-cell view of the mark,
  * which is roughly what a reader scanning a shelf actually resolves.
  */
 const LADDER = [5, 6, 8];
 
 if (flag('sweep')) {
-  console.log('\n  distinct stamp signatures rung by rung (of 50):\n');
+  console.log(`\n  distinct stamp signatures rung by rung (of ${shots.length}):\n`);
   for (const c of [3, 4, ...LADDER, 10, 12]) {
     const set = new Set(shots.map((s) => signature(s, c)));
     console.log(

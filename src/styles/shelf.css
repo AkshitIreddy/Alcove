@@ -643,12 +643,13 @@
   will-change: transform, opacity;
   pointer-events: none;
 
-  /* The flat cloth face showing until the cover canvas paints over it. The
-     gradient this replaces was a lighting model the canvas book beside it does
-     not have, so a book mid-pull changed material the instant it left the
-     shelf. */
-  background: var(--wash-terracotta);
-  border: var(--stroke-ink);
+  /* The canvas paints the complete binding, including its one ink outline.
+     A terracotta fallback and a second DOM border remained visible around the
+     transparent bowed corners after the canvas arrived, reading as a duplicate
+     orange cover behind books of every colour. The shelf ghost owns the few
+     frames before this face paints, so this wrapper must stay transparent. */
+  background: transparent;
+  border: 0;
   border-radius: 10px 18px 18px 10px / 12px 16px 16px 12px;
   /* The lift is the ink edge plus --shadow-lg, which is a ZERO-blur offset
      plate (tokens.css). A book held above the shelf is the loudest place a

@@ -3,6 +3,7 @@ import { For, Match, Show, Switch, createSignal, onCleanup, onMount, type JSX } 
 import { render } from 'solid-js/web';
 import type { Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { load as loadSettings, save as saveSettings, settings } from '../../data/settings';
 import { usePanelKeys } from '../../state/panelKeys';
 import {
   parseUpdateNotes,
@@ -130,6 +131,9 @@ export function UpdateDialog(props: UpdateDialogProps): JSX.Element {
   };
 
   onMount(() => {
+    // The updater can appear before App's ordinary settings hydration finishes.
+    // Load the persisted choice before presenting this destructive option.
+    void loadSettings();
     closeRef?.focus();
     window.addEventListener('keydown', onKeyDown, true);
   });
@@ -221,6 +225,24 @@ export function UpdateDialog(props: UpdateDialogProps): JSX.Element {
           <div id="nb-update-notes" class="nb-update-notes">
             <For each={notes}>{(block) => <NoteBlock block={block} />}</For>
           </div>
+
+          <Show when={!busy()}>
+            <label class="nb-update-welcome font-ui">
+              <input
+                type="checkbox"
+                checked={settings.refreshWelcomeBookOnUpdate}
+                onChange={(event) => void saveSettings({
+                  refreshWelcomeBookOnUpdate: event.currentTarget.checked,
+                })}
+              />
+              <span>
+                <strong>Keep the Welcome book current</strong>
+                <small>
+                  Replace its pages and binding with the newest guide, even if you edited them.
+                </small>
+              </span>
+            </label>
+          </Show>
 
           <Show when={busy()}>
             <div

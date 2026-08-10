@@ -11,9 +11,9 @@
  * somewhere else.
  *
  * The art is far cheaper since the flat restyle, but the shape still holds: a
- * spine is a stack of shapes plus a text stencil read back off a canvas, and
- * the main thread's whole share of one is a `drawImage` of a finished
- * `ImageBitmap` into the atlas page.
+ * spine is a stack of silhouettes, material fields and tooling, and the main
+ * thread's whole share of one is a `drawImage` of a finished `ImageBitmap`
+ * into the atlas page.
  *
  * This worker used to paint the case furniture and the flora layers too. It
  * does not any more: the case is a few dozen flat path fills (cheaper to draw
@@ -34,25 +34,12 @@
  * gone, and everything left in `src/art` reaches for `OffscreenCanvas` first,
  * so the shim went with it.
  *
- * ## Fonts
- *
- * `document.fonts` does not exist here and a worker does not inherit the
- * document's faces, so the three handwriting families are re-registered on
- * `self.fonts` from the same @fontsource woff2 files the app loads. If that
- * fails the worker still runs — `renderSpine` falls back to the generic
- * cursive face exactly as it already does when the document's fonts are slow,
- * and the host is told which faces made it (see {@link ArtReady.fonts}).
- *
  * ## Determinism
  *
  * Same seed, same bytes: nothing here reads time, randomness or DPI. A spine
  * drawn in the worker is byte-identical to the same spine drawn on the main
  * thread, which is what lets the fallback path be a silent one.
  */
-
-import caveatUrl from '@fontsource-variable/caveat/files/caveat-latin-wght-normal.woff2?url';
-import kalamUrl from '@fontsource/kalam/files/kalam-latin-400-normal.woff2?url';
-import patrickUrl from '@fontsource/patrick-hand/files/patrick-hand-latin-400-normal.woff2?url';
 
 import { setFlatScheme } from '../../art/flat';
 import { renderSpine, type Ctx2D } from '../../art/spines';
@@ -64,38 +51,6 @@ import {
 } from './artJobs';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
-
-/* ------------------------------- fonts ----------------------------------- */
-
-/**
- * The faces `spines.ts` asks for by name. Weight/style are left at the
- * defaults; the variable Caveat file covers its whole weight axis, and the
- * spine renderer only ever asks for the regular of the other two.
- */
-const FONT_FACES: ReadonlyArray<{ family: string; url: string; descriptors?: FontFaceDescriptors }> = [
-  { family: 'Caveat Variable', url: caveatUrl, descriptors: { weight: '400 700' } },
-  { family: 'Kalam', url: kalamUrl },
-  { family: 'Patrick Hand', url: patrickUrl },
-];
-
-async function loadFonts(): Promise<string[]> {
-  const set = (scope as unknown as { fonts?: FontFaceSet }).fonts;
-  if (set === undefined || typeof FontFace === 'undefined') return [];
-  const loaded: string[] = [];
-  await Promise.all(
-    FONT_FACES.map(async ({ family, url, descriptors }) => {
-      try {
-        const face = new FontFace(family, `url(${url}) format('woff2')`, descriptors);
-        await face.load();
-        set.add(face);
-        loaded.push(family);
-      } catch {
-        // A missing face is survivable — the fallback cursive still draws.
-      }
-    }),
-  );
-  return loaded;
-}
 
 /* ------------------------------- drawing --------------------------------- */
 
@@ -109,7 +64,7 @@ function paintSpine(job: SpineJob): ImageBitmap {
   // main thread's `setFlatScheme` never reached it and every off-thread spine
   // used to come out in the house palette regardless of the room on screen.
   setFlatScheme(job.scheme);
-  renderSpine(ctx as unknown as Ctx2D, job.params, 0, 0, h, job.scale, job.title, {
+  renderSpine(ctx as unknown as Ctx2D, job.params, 0, 0, h, job.scale, {
     hiRes: job.hiRes,
     rowPhase: job.rowPhase,
     depth: job.depth,
@@ -130,10 +85,9 @@ function paintSpine(job: SpineJob): ImageBitmap {
  */
 const queue: ArtJob[] = [];
 let running = false;
-let ready = false;
 
 function runNext(): void {
-  if (running || !ready) return;
+  if (running) return;
   const job = queue.shift();
   if (job === undefined) return;
   running = true;
@@ -168,8 +122,4 @@ scope.addEventListener('message', (event: MessageEvent<ArtJob>) => {
   runNext();
 });
 
-void loadFonts().then((fonts) => {
-  ready = true;
-  post({ kind: 'ready', version: ART_PROTOCOL_VERSION, fonts });
-  runNext();
-});
+post({ kind: 'ready', version: ART_PROTOCOL_VERSION });

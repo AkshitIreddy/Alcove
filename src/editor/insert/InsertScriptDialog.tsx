@@ -31,7 +31,8 @@ import {
 } from 'solid-js';
 import { For } from 'solid-js';
 import { parse, type Diag, type ScriptDoc } from '../../script';
-import { getPage, savePageDoc, setPageScript } from '../../data/pages';
+import { getPage, setPageScript } from '../../data/pages';
+import type { PageDoc } from '../../data/types';
 import { usePanelKeys } from '../../state/panelKeys';
 import { scriptDocToTiptap } from '../script/toTiptap';
 import {
@@ -147,6 +148,7 @@ export default function InsertScriptDialog(
         hasNode: (name) => editor?.schema.nodes[name] !== undefined,
       });
       const content = (json.content ?? []) as JSONContent[];
+      let insertedDoc: PageDoc | undefined;
       if (editor !== null) {
         // Frontmatter paper style applies to the whole page.
         const pageStyle = (json.attrs as Record<string, unknown> | undefined)
@@ -160,17 +162,21 @@ export default function InsertScriptDialog(
           // Inserts at the cursor, replacing the selection if there is one.
           editor.chain().focus().insertContent(content).run();
         }
+        // TipTap dispatch is synchronous, including appended plugin
+        // transactions. This is the final snapshot its PageEditor debounce
+        // has just queued.
+        insertedDoc = editor.getJSON() as PageDoc;
       } else {
         // No live editor registered — append to the persisted document.
         const page = await getPage(props.pageId);
         if (page !== null) {
-          await savePageDoc(props.pageId, {
+          insertedDoc = {
             ...page.doc,
             content: [...(page.doc.content ?? []), ...content],
-          });
+          };
         }
       }
-      await setPageScript(props.pageId, text);
+      await setPageScript(props.pageId, text, insertedDoc);
       props.onNotify?.('script inserted');
       props.onClose();
     } finally {

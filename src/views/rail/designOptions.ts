@@ -20,6 +20,7 @@ import {
   ROLLABLE_MATERIALS,
   ROLLABLE_SHAPES,
   SHAPE_LABELS,
+  bookDesignTag,
   bookPreset,
   drawBookSpine,
   ownBindingId,
@@ -1093,18 +1094,28 @@ export interface BindingCardOptions {
   /**
    * The book's own cloth, so the card previews THIS book rebound: an index
    * into `flat.CLOTHS`, or the `#rrggbb` the reader typed in the studio. The
-   * hex reaches `artKey` for free — it is interpolated between `|` separators
-   * like the index was, so two readers' greens are two cards.
+   * The resolved design tag carries that value and every secondary role, so
+   * two readers' greens — or two different tooling inks — are two cards.
    */
   cloth?: number | string;
-  accent?: number;
+  /** True when `cloth` is the dedicated spine-face role, not shared cloth. */
+  baseColourPinned?: boolean;
+  /** The book's secondary spine colour, including a reader-picked hex. */
+  accent?: number | string;
+  /** Rules, frames and spine tooling, matching the live shelf spine. */
+  tooling?: string | null;
+  /** Centred spine stamps, matching the live shelf spine. */
+  emblem?: string | null;
+  /** Clasps and fittings, matching the live shelf spine. */
+  hardware?: string | null;
   gilt?: boolean;
-  labelAt?: number;
+  /** Preferred focal compartment for cords and the optional ornament. */
+  focusAt?: number;
   /** The book's art seed — decides the accent and the material's grain. */
   seed: number;
 }
 
-/** The sixty-two bindings, grouped by the material they are covered in. */
+/** The active quality collection, grouped by its covering material. */
 export function bindingOptions(book: BindingCardOptions): readonly PickerOption[] {
   return BOOK_PRESETS.map((preset) => {
     const design = resolveBookDesign({ ...book, preset: preset.id });
@@ -1113,9 +1124,9 @@ export function bindingOptions(book: BindingCardOptions): readonly PickerOption[
       name: preset.label,
       blurb: `${MATERIAL_LOOK_LABELS[preset.material]} · ${preset.decorations.join(', ')}`,
       group: MATERIAL_LOOK_LABELS[preset.material],
-      // The cloth and the gilt are the book's, not the preset's, so two books
-      // showing the same preset are two different pictures.
-      artKey: `bind|${preset.id}|${design.cloth}|${design.accent}|${design.gilt ? 'g' : 'n'}|${design.labelAt.toFixed(2)}`,
+      // The cloth, accent, tooling, emblem, hardware and gilt are the book's,
+      // not the preset's, so two books on one binding remain two pictures.
+      artKey: `bind|${bookDesignTag(design)}`,
       terms: `${preset.shape} ${preset.material} ${preset.decorations.join(' ')}`,
       draw: (ctx: FlatCtx, w: number, h: number) => drawBindingCard(ctx, w, h, design),
     };
@@ -1127,16 +1138,14 @@ export function bindingOptions(book: BindingCardOptions): readonly PickerOption[
 /**
  * The three axes as their own pickers, each holding the other two still.
  *
- * The 189 presets are curated whole bindings; these are for the reader who
+ * The named presets are curated whole bindings; these are for the reader who
  * wants THIS book's shape with THAT covering. 50 × 50 × 50 cannot be a table,
  * so a composed choice is an id (`ownBindingId`) resolved on read, and every
  * cache key that already carried a binding id carries this one unchanged.
  *
- * Each list is the ROLLABLE half of its axis, not all fifty. The tiering that
- * keeps the dice off the oddities exists per axis as well as per preset, and
- * these three lists had been exported and gated with no consumer since — this
- * is the consumer. The full fifty stay reachable through the preset sheet,
- * which is where the odd ones were always meant to be found on purpose.
+ * Each list is the active quality half of its axis, not the append-only
+ * archive. Retired constructions remain readable for migration but cannot be
+ * chosen for a new binding through either this sheet or the preset picker.
  *
  * Every tile draws the WHOLE book rebound, not a swatch of the axis: a spine
  * shape is not a thing you can look at on its own, and the question a reader
@@ -1173,9 +1182,9 @@ export function ownAxisOptions(
       id,
       name,
       blurb: `${SHAPE_LABELS[preset.shape]} · ${MATERIAL_LOOK_LABELS[preset.material]}`,
-      // Keyed on the composed id, which spells out all four axes, plus the
-      // book's own colours — the same rule the whole-preset cards follow.
-      artKey: `own|${id}|${design.cloth}|${design.accent}|${design.gilt ? 'g' : 'n'}|${design.labelAt.toFixed(2)}`,
+      // The complete tag carries the composed id and every book-owned role —
+      // the same rule the whole-preset cards follow.
+      artKey: `own|${bookDesignTag(design)}`,
       terms: `${name} ${value}`,
       draw: (ctx: FlatCtx, w: number, h: number) => drawBindingCard(ctx, w, h, design),
     };

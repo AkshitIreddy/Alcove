@@ -12,10 +12,9 @@
  *     ribbon:    { cloth, weight, tail, material, charm, charmTone, preset },
  *   }
  *
- * `src/data/books.ts` (group A territory) has no bookmark helpers, so we code
- * defensively against the raw blob here: reads validate every field, writes go
- * through the public `updateBook` patch API and spread the rest of cover_meta
- * through untouched (cover art overrides, page defaults…).
+ * Reads validate every field; writes go through `mutateBookCoverMeta`, the
+ * per-book lane shared with cover art and page defaults. Spreading a Book row
+ * read before that lane would let a late ribbon write erase a Studio choice.
  *
  * ## Why the ribbon is a design, not a colour
  *
@@ -50,7 +49,7 @@
  */
 import { createSignal } from 'solid-js';
 import { FLAT } from '../art/flat';
-import { getBook, updateBook } from '../data/books';
+import { mutateBookCoverMeta } from '../data/books';
 import type { Book } from '../data/types';
 
 /* ========================================================================== *
@@ -146,11 +145,9 @@ export async function saveBookmarks(
   bookId: string,
   bookmarks: readonly Bookmark[],
 ): Promise<void> {
-  const book = await getBook(bookId);
-  if (book === null) return;
-  await updateBook(bookId, {
-    coverMeta: mergeBookmarksIntoMeta(book.coverMeta, bookmarks),
-  });
+  await mutateBookCoverMeta(bookId, (meta) =>
+    mergeBookmarksIntoMeta(meta, bookmarks),
+  );
 }
 
 /* ========================================================================== *
@@ -1210,7 +1207,5 @@ export async function saveRibbonDesign(design: RibbonDesign): Promise<void> {
   setOpenBook({ id, design: stamped });
   applyRibbonDesign(stamped);
   if (id === null) return;
-  const book = await getBook(id);
-  if (book === null) return;
-  await updateBook(id, { coverMeta: mergeRibbonIntoMeta(book.coverMeta, stamped) });
+  await mutateBookCoverMeta(id, (meta) => mergeRibbonIntoMeta(meta, stamped));
 }

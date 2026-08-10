@@ -105,6 +105,8 @@ export const DEFAULT_SETTINGS: Settings = {
   playAmbienceInTray: false,
   backupFolder: null,
   perfHud: false,
+  // Replacing a reader's edited guide is always an explicit opt-in.
+  refreshWelcomeBookOnUpdate: false,
 
   telemetry: false,
 };

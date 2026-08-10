@@ -387,14 +387,14 @@ function ExportRoom(props: {
         <h3 class="nb-tr-h3">How to pack it</h3>
         <div class="nb-tr-options">
           <Toggle
-            label="bring the pictures"
-            hint="media files referenced by these pages"
+            label="bring pictures & videos"
+            hint="local media files referenced by these pages"
             checked={options.includeAssets}
             onChange={(next) => setOptions('includeAssets', next)}
           />
           <Toggle
             label="keep covers & spines"
-            hint="each book's painted cover, charms and spine"
+            hint="each book's cover, binding and spine"
             checked={options.includeCoverStyling}
             onChange={(next) => setOptions('includeCoverStyling', next)}
           />

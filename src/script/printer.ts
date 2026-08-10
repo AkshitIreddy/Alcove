@@ -91,6 +91,19 @@ function escapeBracketed(s: string): string {
   return s.replace(/[\\\]]/g, (m) => "\\" + m);
 }
 
+/**
+ * Keep image alt text on one physical source line and prevent a literal `]`
+ * from closing the Markdown image early. The block parser reverses exactly
+ * these four escapes; unknown backslash sequences remain literal.
+ */
+function escapeImageAlt(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/\]/g, "\\]")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
 function printCode(text: string): string {
   let fence = "`";
   while (text.includes(fence)) fence += "`";
@@ -249,7 +262,10 @@ function printBlock(block: Block, inImageRow: boolean): string {
       return lines.join("\n");
     }
     case "image":
-      return `![${block.alt}](${block.src})` + printAttrs(block.attrs);
+      return (
+        `![${escapeImageAlt(block.alt)}](${block.src})` +
+        printAttrs(block.attrs)
+      );
     case "mathBlock":
       // Always the fenced form, even for a one-liner: the body is verbatim,
       // and `$$ … $$` on one line cannot hold a formula containing `$$`.

@@ -1,10 +1,13 @@
 /**
- * shots-now/shape-board.mjs — the fifty silhouettes, at the size they are
- * really seen, and then big enough to work on.
+ * shots-now/shape-board.mjs — the active silhouettes plus the archival fifty,
+ * at the size they are really seen and then big enough to work on.
  *
- * Two boards, because they answer different questions:
+ * Four boards, because they answer different questions:
  *
- *   shapes-shelf.png   every shape at 34 world px wide, shoulder to shoulder,
+ *   active-shapes-shelf.png / active-shapes-detail.png show only what the
+ *                      current picker and Surprise action can hand out. This
+ *                      pair is the reader-facing quality gate.
+ *   shapes-shelf.png   every historical shape at 34 world px, shoulder to shoulder,
  *                      the way a reader meets them. This is the one that tells
  *                      you whether a distinction exists; it is deliberately
  *                      unlabelled and unspaced, because a labelled specimen in
@@ -13,9 +16,8 @@
  *                      you are looking at is exactly the shelf's pixels rather
  *                      than a cleaner redraw at a bigger size.
  *
- * The order is `SPINE_SHAPES`, i.e. picker order: family, then tier. Anything
- * demoted to `oddity` sinks to the end of its family and is drawn with its
- * caption struck, so "the dice cannot hand this out" is visible on the board.
+ * Retired captions are struck on the archival detail board. None of those
+ * silhouettes reaches the current picker or Surprise pool.
  *
  * Usage: node shots-now/shape-board.mjs [--url=http://localhost:1420]
  */
@@ -72,13 +74,49 @@ await page.evaluate(async () => {
     c.height = H + PAD * 2;
     const ctx = c.getContext('2d');
     const design = { ...base, shape, material: 'smooth-cloth', decorations: ['plain'] };
-    bd.drawBookSpine(ctx, PAD, PAD, W, H, design, { ownLabel: true, noContact: true });
+    bd.drawBookSpine(ctx, PAD, PAD, W, H, design, { noContact: true });
     return c;
   }
 
   const ground = flat.FLAT?.recess ?? '#e9e2d0';
   document.body.innerHTML = '';
   document.body.style.cssText = `margin:0;background:${ground};`;
+
+  function makeShelf(id, shapes) {
+    const shelf = document.createElement('div');
+    shelf.id = id;
+    shelf.style.cssText =
+      `display:flex;align-items:flex-end;gap:1px;padding:18px 14px;background:${ground};width:max-content;`;
+    for (const shape of shapes) shelf.append(draw(shape));
+    document.body.append(shelf);
+  }
+
+  function makeDetail(id, shapes, archival) {
+    const detail = document.createElement('div');
+    detail.id = id;
+    detail.style.cssText =
+      `display:grid;grid-template-columns:repeat(10,1fr);gap:4px 2px;padding:14px;background:${ground};` +
+      'width:max-content;font:11px "Nunito Sans",system-ui,sans-serif;color:#4f3120;';
+    const active = new Set(bd.ROLLABLE_SHAPES);
+    for (const shape of shapes) {
+      const cell = document.createElement('div');
+      cell.style.cssText = 'text-align:center;';
+      const c = draw(shape);
+      c.style.cssText = `width:${c.width * 2.6}px;height:${c.height * 2.6}px;image-rendering:pixelated;`;
+      const cap = document.createElement('div');
+      cap.textContent = shape;
+      cap.style.cssText =
+        'margin-top:2px;line-height:1.15;' +
+        (archival && !active.has(shape) ? 'text-decoration:line-through;opacity:.42;' : '');
+      cell.append(c, cap);
+      detail.append(cell);
+    }
+    document.body.append(detail);
+  }
+
+  /* The actual reader-facing quality gate: retired shapes are absent. */
+  makeShelf('active-shelf-board', bd.ROLLABLE_SHAPES);
+  makeDetail('active-detail-board', bd.ROLLABLE_SHAPES, false);
 
   /* ---- board 1: shoulder to shoulder, one to one ---- */
   const shelf = document.createElement('div');
@@ -112,8 +150,12 @@ await page.evaluate(async () => {
 });
 
 await page.waitForTimeout(700);
+await page.locator('#active-shelf-board').screenshot({ path: 'shots-now/out/active-shapes-shelf.png' });
+await page.locator('#active-detail-board').screenshot({ path: 'shots-now/out/active-shapes-detail.png' });
 await page.locator('#shelf-board').screenshot({ path: 'shots-now/out/shapes-shelf.png' });
 await page.locator('#detail-board').screenshot({ path: 'shots-now/out/shapes-detail.png' });
+console.log('  shot shots-now/out/active-shapes-shelf.png');
+console.log('  shot shots-now/out/active-shapes-detail.png');
 console.log('  shot shots-now/out/shapes-shelf.png');
 console.log('  shot shots-now/out/shapes-detail.png');
 await browser.close();

@@ -38,7 +38,7 @@
  *
  * Usage:
  *   node shots-now/roster-board.mjs                 # every axis
- *   node shots-now/roster-board.mjs --only=ornaments,plates
+ *   node shots-now/roster-board.mjs --only=bindings,ornaments
  *   node shots-now/roster-board.mjs --url=http://localhost:1420
  */
 import { chromium } from 'playwright';
@@ -319,7 +319,7 @@ const AXES = [
             decorations: ['plain'],
             bands: 0,
             headTail: null,
-          }, { ownLabel: true, noContact: true });
+          }, { noContact: true });
         }),
       );
       return R.board('shapes', entries, cells, 25, 10, 26);
@@ -342,7 +342,7 @@ const AXES = [
         R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
           bd.drawBookSpine(ctx, 0, 0, 34 * s, 232 * s, {
             ...base, shape: 'flat', material: e.id, decorations: ['plain'], bands: 0, headTail: null,
-          }, { ownLabel: true, noContact: true });
+          }, { noContact: true });
         }),
       );
       return R.board('coverings', entries, cells, 25, 10, 26);
@@ -365,7 +365,7 @@ const AXES = [
         R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
           bd.drawBookSpine(ctx, 0, 0, 34 * s, 232 * s, {
             ...base, shape: 'flat', material: 'smooth-cloth', decorations: [e.id], bands: 0, headTail: null,
-          }, { ownLabel: true, noContact: true });
+          }, { noContact: true });
         }),
       );
       return R.board('tooling', entries, cells, 25, 10, 26);
@@ -387,7 +387,7 @@ const AXES = [
       }));
       const cells = entries.map((e) =>
         R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
-          sp.renderSpine(ctx, { ...params, w: 34, binding: e.id }, 0, 0, 232 * s, s, 'Bellanote', {
+          sp.renderSpine(ctx, { ...params, w: 34, binding: e.id }, 0, 0, 232 * s, s, {
             hiRes: true,
           });
         }),
@@ -404,48 +404,22 @@ const AXES = [
       const flat = await import('/src/art/flat.ts');
       const R = globalThis.__roster;
       // Deliberately the kindest spine in the vocabulary: a wide-ish octavo,
-      // no raised cords crowding the panel, a plain plate. If a stamp cannot
+      // no raised cords crowding the panel. If a stamp cannot
       // be told apart HERE it cannot be told apart anywhere.
-      const params = { ...sp.deriveSpineParams(0x51e5a3), raisedBands: 0, headTail: false, titlePlate: 'label' };
+      const params = { ...sp.deriveSpineParams(0x51e5a3), raisedBands: 0, headTail: false };
       const entries = sp.ORNAMENT_LABELS.map((label, i) => ({ id: `${i} ${label}`, label, oddity: false }));
       const cells = entries.map((_, i) =>
         R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
           sp.renderSpine(
             ctx,
             { ...params, w: 34, ornament: i, ornamentOn: true, charm: 'none' },
-            0, 0, 232 * s, s, 'Bellanote', { hiRes: true },
+            0, 0, 232 * s, s, { hiRes: true },
           );
         }),
       );
-      // Scored on the compartment below the label, where the stamp is struck.
+      // Scored on the free compartment where the stamp is struck.
       return R.board('ornaments', entries, cells, 25, 12, 12, {
         sigCrop: { x: 0.05, y: 0.5, w: 0.9, h: 0.34 },
-      });
-    },
-  },
-  {
-    key: 'plates',
-    note: '50 lettering-piece treatments, same title, same spine',
-    fn: async () => {
-      const sp = await import('/src/art/spines.ts');
-      const flat = await import('/src/art/flat.ts');
-      const R = globalThis.__roster;
-      const params = sp.deriveSpineParams(0x51e5a3);
-      const entries = sp.TITLE_PLATES.map((id) => ({
-        id,
-        label: sp.TITLE_PLATE_LABELS[id] ?? id,
-        oddity: false,
-      }));
-      const cells = entries.map((e) =>
-        R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
-          sp.renderSpine(ctx, { ...params, w: 34, titlePlate: e.id, charm: 'none' }, 0, 0, 232 * s, s, 'Bellanote', {
-            hiRes: true,
-          });
-        }),
-      );
-      // Scored on the lettering band, where the plate is.
-      return R.board('plates', entries, cells, 25, 12, 12, {
-        sigCrop: { x: 0, y: 0.14, w: 1, h: 0.34 },
       });
     },
   },
@@ -471,7 +445,7 @@ const AXES = [
       }));
       const cells = entries.map((e) =>
         R.cell(34, 232, flat.FLAT.recess, (ctx, s) => {
-          sp.renderSpine(ctx, { ...params, w: 34, edge: e.id, pageBlock: 0.2, charm: 'none' }, 0, 0, 232 * s, s, 'Bellanote', {
+          sp.renderSpine(ctx, { ...params, w: 34, edge: e.id, pageBlock: 0.2, charm: 'none' }, 0, 0, 232 * s, s, {
             hiRes: true,
           });
         }),
@@ -501,7 +475,7 @@ const AXES = [
           sp.renderSpine(
             ctx,
             { ...params, w: 34, charm: e.kind, charmColor: e.col, ornamentOn: false },
-            0, 0, 232 * s, s, 'Bellanote', { hiRes: true },
+            0, 0, 232 * s, s, { hiRes: true },
           );
         }),
       );
@@ -524,7 +498,7 @@ const AXES = [
           const d = bd.resolveBookDesign({ seed: 0x51e5, cloth: i, accent: 22 });
           bd.drawBookSpine(ctx, 0, 0, 34 * s, 232 * s, {
             ...d, shape: 'flat', material: 'smooth-cloth', decorations: ['plain'], bands: 0, headTail: null,
-          }, { ownLabel: true, noContact: true });
+          }, { noContact: true });
         }),
       );
       return R.board('cloths', entries, cells, 25, 10, 26);

@@ -11,35 +11,126 @@
  * colour, one ink outline, rounded corners, nothing axis-true. The params it
  * has always carried are mapped onto that vocabulary rather than thrown away —
  * `palette` picks the cloth, `bands`/`raisedBands`/`gilt` decide the dressing,
- * `ornament` still picks one of twelve stamps — so a book keeps the identity
+ * `ornament` still picks from its append-only stamp table — so a book keeps the identity
  * it was created with and simply stops pretending to be a photograph.
  *
  * The pigment tables, the studio vocabulary and the row compositor below are
  * untouched: they are data and layout, and nothing about them was painterly.
  */
 
-import { CHARM_COLORS, CHARM_KINDS_WITH_ART, charmColorCss, type CharmKind } from './charms';
+import { CHARM_COLORS, type CharmKind } from './charms';
 import {
-  bookLabelBox,
-  bookSpineBoxes,
+  bookPresetHasAuthoredFocal,
   drawBookSpine,
-  fitsLabelPlate,
-  hasDecoration,
+  drawOpenBinderTool,
   materialLookFor,
   resolveBookDesign,
   type BookDesign,
   type BookPresetId,
+  type BroadFocalGlyph,
   type DesignBox,
 } from './bookDesign';
-import { CLOTH_LABELS, CLOTHS, FLAT, inkWidth, panel, stroke as inkLine, wobbleRect } from './flat';
+import { normaliseHex } from './customColour';
+import { CLOTH_LABELS, CLOTHS, FLAT, inkWidth, stroke as inkLine, wobbleRect } from './flat';
 // `drawSpine` is no longer called from here — `drawBookSpine` covers the same
 // ground and adds the shape and material axes. `flatSpineFor` survives for the
-// one field the binding still takes from the old seeded spec: where the label
-// sits. `flatShelf.drawSpine` itself stays: `drawCaseCard` and `drawBookRow`
+// one field the binding still takes from the old seeded spec: its focal
+// compartment. `flatShelf.drawSpine` itself stays: `drawCaseCard` and `drawBookRow`
 // draw books at card scale, where a binding's fine work would be a smudge.
 import { flatSpineFor } from './flatShelf';
 import { clamp, mulberry32, type RandomFn } from './noise';
-import { textWidth } from './textMetrics';
+import { colourContrast } from './titleContrast';
+
+/* ---------------------- front-cover title graphemes ---------------------- */
+
+/** The small `Intl.Segmenter` surface used here, typed without raising the app's ES2020 lib. */
+interface GraphemeSegmenterLike {
+  segment(input: string): Iterable<{ readonly index: number }>;
+}
+
+type GraphemeSegmenterConstructor = new (
+  locales?: string | readonly string[],
+  options?: { granularity: 'grapheme' },
+) => GraphemeSegmenterLike;
+
+const GraphemeSegmenter = (
+  Intl as unknown as { readonly Segmenter?: GraphemeSegmenterConstructor }
+).Segmenter;
+
+/** One shared segmenter: cover-title fitting may remove several clusters in a row. */
+const TITLE_GRAPHEME_SEGMENTER = GraphemeSegmenter === undefined
+  ? null
+  : new GraphemeSegmenter(undefined, { granularity: 'grapheme' });
+
+const UNICODE_MARK = /^\p{M}$/u;
+
+function isRegionalIndicator(point: string): boolean {
+  const code = point.codePointAt(0) ?? -1;
+  return code >= 0x1f1e6 && code <= 0x1f1ff;
+}
+
+/**
+ * Conservative fallback for the old browser that has no `Intl.Segmenter`.
+ *
+ * Alcove ships on WebView2, where Segmenter is present; this path keeps a
+ * degraded or test host safe too. It covers combining marks, variation and
+ * skin-tone modifiers, keycaps, emoji tag sequences, flags, CRLF and ZWJ emoji
+ * families. In doubtful suffixes it removes the whole joined run rather than
+ * risk leaving half a visible glyph behind.
+ */
+function fallbackLastGraphemeStart(points: readonly string[]): number {
+  const end = points.length - 1;
+  if (end < 0) return 0;
+
+  if (points[end] === '\n' && end > 0 && points[end - 1] === '\r') return end - 1;
+
+  if (isRegionalIndicator(points[end]!)) {
+    let first = end;
+    while (first > 0 && isRegionalIndicator(points[first - 1]!)) first -= 1;
+    const runLength = points.length - first;
+    return points.length - (runLength % 2 === 0 ? 2 : 1);
+  }
+
+  const isExtend = (point: string): boolean => {
+    const code = point.codePointAt(0) ?? -1;
+    return UNICODE_MARK.test(point)
+      || code === 0x200c // zero-width non-joiner
+      || code === 0x200d // a trailing joiner belongs to the preceding glyph
+      || (code >= 0xfe00 && code <= 0xfe0f) // variation selectors
+      || (code >= 0xe0100 && code <= 0xe01ef) // variation selectors supplement
+      || (code >= 0x1f3fb && code <= 0x1f3ff) // emoji skin tones
+      || (code >= 0xe0020 && code <= 0xe007f); // emoji tag sequences
+  };
+
+  let start = end;
+  while (start > 0 && isExtend(points[start]!)) start -= 1;
+
+  // Emoji sequences bind the base on each side of a ZWJ into one grapheme.
+  while (start > 0 && points[start - 1] === '\u200d') {
+    start -= 1;
+    while (start > 0 && isExtend(points[start - 1]!)) start -= 1;
+    if (start > 0) start -= 1;
+  }
+  return start;
+}
+
+/**
+ * Remove exactly one user-perceived character from the end of a title.
+ *
+ * Never use `slice(0, -1)` in a fitting loop: JavaScript indexes UTF-16 code
+ * units, so that can leave half an emoji or detach an accent from its letter.
+ * Front-cover shortening goes through this one boundary rule.
+ */
+export function withoutLastGrapheme(value: string): string {
+  if (value.length === 0) return value;
+  if (TITLE_GRAPHEME_SEGMENTER !== null) {
+    let lastStart = 0;
+    for (const segment of TITLE_GRAPHEME_SEGMENTER.segment(value)) lastStart = segment.index;
+    return value.slice(0, lastStart);
+  }
+  const points = Array.from(value);
+  return points.slice(0, fallbackLastGraphemeStart(points)).join('');
+}
 
 /* ------------------------------ studio vocab ------------------------------ */
 
@@ -154,7 +245,7 @@ export const SPINE_TAGS: readonly SpineTag[] = [
 ];
 
 /**
- * Title panel treatments on the spine (and, mirrored, on the cover).
+ * Front-cover title treatments.
  *
  * Fifty lettering-piece treatments, from "nothing at all" through paper slips,
  * sunk morocco labels, ruled boxes, roundels and gilt cartouches. The first
@@ -164,10 +255,9 @@ export const SPINE_TAGS: readonly SpineTag[] = [
  * commonest answer and because `PLATE_WEIGHTS` and the studio's picker both
  * lead with it.
  *
- * What each id MEANS lives in `TITLE_PLATE_SPECS` below — a plate is a ground,
- * a silhouette, a frame, a pair of end marks and a lettering colour, and it is
- * data rather than fifty branches so that `drawTitlePlate` stays one function
- * you can read in a screenful.
+ * Spines deliberately carry no names or lettering pieces. These ids remain
+ * persisted because the front cover still gives its title a composed ground,
+ * frame and lettering treatment.
  */
 export const TITLE_PLATES = [
   'none',
@@ -291,8 +381,23 @@ export const EDGE_TREATMENTS = [
 ] as const;
 export type EdgeTreatment = (typeof EDGE_TREATMENTS)[number];
 
-/** Maximum raised bands (cords) across a spine. */
-export const MAX_RAISED_BANDS = 5;
+/** Maximum manual raised cords; four equal stations turn a back into a ladder. */
+export const MAX_RAISED_BANDS = 3;
+
+/** Woven/sewn endbands which remain legible as construction at shelf size. */
+export const ACTIVE_HEAD_TAIL_STYLES = [1, 2, 3] as const;
+export const ACTIVE_HEAD_TAIL_OPTIONS = [
+  { index: 1, label: 'woven chevron' },
+  { index: 2, label: 'wrapped cord' },
+  { index: 3, label: 'solid silk roll' },
+] as const;
+
+/** Unknown historical teeth become the continuous woven chevron. */
+export function normalizeHeadTailStyle(value: unknown): (typeof ACTIVE_HEAD_TAIL_STYLES)[number] {
+  return typeof value === 'number' && ACTIVE_HEAD_TAIL_STYLES.includes(value as 1 | 2 | 3)
+    ? value as 1 | 2 | 3
+    : 1;
+}
 
 /**
  * Legal spine height range in world px. Widened at both ends from the old
@@ -351,12 +456,14 @@ export const MATERIAL_LABELS: Readonly<Record<BindingMaterial, string>> = {
 };
 
 /**
- * Display names for the 50 ornament stamps, index-aligned with `drawOrnament`.
+ * Display names for the binder's-brass stamps, index-aligned with
+ * `drawOrnament`.
  *
  * The first twelve are the originals and keep their indices: `ornament` is
  * persisted per book, so shifting one would restamp somebody's book with a
  * different tool. Everything from 12 up is the binder's own brass: fleurons,
- * acorns, thistles, anchors, keys, bees, shells, crowns, lyres, hourglasses.
+ * natural-history marks, learning tools and small heraldic emblems. New tools
+ * are append-only: inserting one would restamp an existing library.
  *
  * Every one of them is vetted at true size. A stamp is struck at roughly a
  * third of the spine's width — 20–60 world px on an ordinary octavo, less on a
@@ -366,11 +473,11 @@ export const MATERIAL_LABELS: Readonly<Record<BindingMaterial, string>> = {
  */
 export const ORNAMENT_LABELS: readonly string[] = [
   'Diamond',
-  'Laurel spray',
-  'Star',
-  'Blot',
+  'Broad laurel branch',
+  'Foliate starflower',
+  'Acanthus arabesque',
   'Chevron',
-  'Sun',
+  'Rising sun',
   'Moon',
   'Keyhole',
   'Laurel wreath',
@@ -378,8 +485,8 @@ export const ORNAMENT_LABELS: readonly string[] = [
   'Tree',
   'Crescent & stars',
   'Fleuron',
-  'Acorn',
-  'Thistle',
+  'Oak and acorn spray',
+  'Thistle bloom',
   'Anchor',
   'Key',
   'Compass rose',
@@ -388,44 +495,192 @@ export const ORNAMENT_LABELS: readonly string[] = [
   'Crown',
   'Lyre',
   'Hourglass',
-  'Rosette',
+  'Stemmed rosette',
   'Trefoil',
   'Quatrefoil',
   'Fleur-de-lis',
-  'Ivy leaf',
-  'Oak leaf',
-  'Wheatsheaf',
-  'Pomegranate',
-  'Tulip',
+  'Paired ivy leaves',
+  'Acanthus volutes',
+  'Wheat sheaf',
+  'Split pomegranate',
+  'Open tulip',
   'Heraldic rose',
   'Comet',
   'Lantern',
   'Inkpot',
   'Open book',
   'Spectacles',
-  'Pine cone',
+  'Pine cone and needle fans',
   'Beehive',
   'Butterfly',
   'Swallow',
   'Fish',
-  'Horseshoe',
+  'Five-leaf anthemion',
   'Bell',
   'Little ship',
   'Mountain',
   'Wave',
   'Snowflake',
   'Heart',
+  'Owl',
+  'Stag',
+  'Fox',
+  'Cat',
+  'Hare',
+  'Moth',
+  'Split fern palmette',
+  'Paired ginkgo fans',
+  'Mushroom',
+  'Telescope',
+  'Globe',
+  'Classical column',
+  'Torch',
+  'Balance scales',
+  'Castle',
+  'Lamp of learning',
 ];
 
 /** Number of ornament stamps (a book may also have none). */
 export const ORNAMENT_COUNT = ORNAMENT_LABELS.length;
+
+/**
+ * The binder's tools offered by the Studio and used by every automatic draw.
+ *
+ * `ORNAMENT_LABELS` remains index-addressed so old JSON can be read, but it is
+ * not a product catalogue. This is. A persisted retired index is translated
+ * through `normalizeOrnamentIndex` before it reaches either face of the book;
+ * no hidden legacy symbol can therefore leak back through a seed, a theme, or
+ * a cover-only compatibility row.
+ *
+ * The final refutation removed four more attractive-at-detail tools which did
+ * not survive the 30px shelf: acanthus 3, ivy 27, pine cone 38 and ginkgo 57.
+ * Their persisted indices normalize to the closest clean broad tool below.
+ */
+export const ACTIVE_ORNAMENT_INDICES = [
+  0, 1, 2, 5, 12, 13, 14, 20,
+  23, 26, 28, 29, 30, 31, 43, 56,
+] as const;
+
+export interface ActiveOrnamentOption {
+  readonly index: number;
+  readonly label: string;
+}
+
+/** One authoritative reader-facing ornament catalogue. */
+export const ACTIVE_ORNAMENTS: readonly ActiveOrnamentOption[] =
+  ACTIVE_ORNAMENT_INDICES.map((index) => ({
+    index,
+    label: ORNAMENT_LABELS[index] ?? `Binder's tool ${index + 1}`,
+  }));
+
+const ACTIVE_ORNAMENT_SET: ReadonlySet<number> = new Set(ACTIVE_ORNAMENT_INDICES);
+
+/** The semantic binder-tool programme shared by the narrow spine renderer. */
+const ACTIVE_ORNAMENT_GLYPHS: Readonly<Record<(typeof ACTIVE_ORNAMENT_INDICES)[number], BroadFocalGlyph>> = {
+  0: 'shield',
+  1: 'laurel',
+  2: 'starflower',
+  5: 'sunrise',
+  12: 'fleuron',
+  13: 'oak-spray',
+  14: 'thistle',
+  20: 'crown',
+  23: 'rosette',
+  26: 'fleur-de-lis',
+  28: 'oak-volutes',
+  29: 'wheat-saltire',
+  30: 'pomegranate',
+  31: 'tulip',
+  43: 'palmette',
+  56: 'fern-palmette',
+};
+
+/** Total semantic lookup for the active catalogue; retired values normalise first. */
+export function ornamentGlyph(value: unknown): BroadFocalGlyph | null {
+  const index = normalizeOrnamentIndex(value);
+  return index === -1
+    ? null
+    : ACTIVE_ORNAMENT_GLYPHS[index as (typeof ACTIVE_ORNAMENT_INDICES)[number]] ?? null;
+}
+
+/** Semantic replacements for every historical stamp that left the catalogue. */
+const RETIRED_ORNAMENT_REPLACEMENTS: Readonly<Record<number, number>> = {
+  3: 12,  // acanthus companion collapsed to a Y/horseshoe -> open fleuron
+  4: 0,   // chevron -> lozenge
+  7: 12,  // keyhole -> fleuron
+  8: 1,   // laurel wreath closes into a ring at shelf scale -> open laurel branch
+  9: 12,  // quill scratch -> fleuron
+  10: 13, // tree -> acorn
+  6: 12,  // moon pictogram -> one-piece fleuron
+  11: 12, // crescent-and-stars cluster -> one-piece fleuron
+  15: 0,  // anchor -> geometric lozenge
+  16: 0,  // key -> lozenge
+  17: 0,  // compass pictogram -> geometric lozenge
+  18: 23, // bee/insect -> rosette
+  19: 12, // scallop/umbrella silhouette -> one-piece fleuron
+  21: 23, // lyre -> rosette
+  22: 0,  // hourglass -> lozenge
+  24: 12, // three-dot trefoil -> fleuron
+  25: 23, // four-dot quatrefoil -> rosette
+  27: 1,  // ivy companion became twin flowers/hardware -> open laurel branch
+  32: 23, // dot-cluster rose -> rosette
+  33: 2,  // comet -> star
+  34: 0,  // lantern hardware -> lozenge
+  35: 0,  // inkpot hardware -> lozenge
+  36: 12, // open-book pictogram -> fleuron
+  37: 0,  // spectacles/rings -> lozenge
+  38: 13, // pine-cone companion became a bug/lamp -> oak-and-acorn spray
+  39: 23, // beehive -> rosette
+  40: 12, // butterfly -> fleuron
+  41: 12, // swallow -> fleuron
+  42: 12, // fish -> fleuron
+  44: 20, // bell -> crown
+  45: 0,  // ship -> geometric lozenge
+  46: 0,  // mountain -> lozenge
+  47: 12, // wave -> fleuron
+  48: 23, // snowflake -> binder's rosette
+  49: 23, // heart -> rosette
+  50: 0,  // owl -> lozenge
+  51: 20, // stag -> crown
+  52: 13, // fox -> acorn
+  53: 12, // cat -> fleuron
+  54: 13, // hare -> acorn
+  55: 12, // moth -> fleuron
+  57: 31, // paired ginkgo companion became a Y-sprout -> open tulip
+  58: 13, // mushroom -> acorn
+  59: 0,  // telescope -> geometric lozenge
+  60: 0,  // globe -> geometric lozenge
+  61: 0,  // column/goblet hardware -> lozenge
+  62: 20, // torch hardware -> crown
+  63: 0,  // scales -> lozenge
+  64: 20, // castle -> crown
+  65: 0,  // lamp hardware -> lozenge
+};
+
+export function isActiveOrnamentIndex(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && ACTIVE_ORNAMENT_SET.has(value);
+}
+
+/**
+ * Hard-normalise a stored or generated stamp into the active binder's case.
+ * `-1` is the explicit bare-binding choice and remains bare.
+ */
+export function normalizeOrnamentIndex(value: unknown, fallback = 12): number {
+  if (value === -1) return -1;
+  if (isActiveOrnamentIndex(value)) return value;
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    const replacement = RETIRED_ORNAMENT_REPLACEMENTS[value];
+    if (replacement !== undefined && ACTIVE_ORNAMENT_SET.has(replacement)) return replacement;
+  }
+  return ACTIVE_ORNAMENT_SET.has(fallback) ? fallback : ACTIVE_ORNAMENT_INDICES[0];
+}
 
 /** What each stamp feels like, index-aligned with ORNAMENT_LABELS. */
 export const ORNAMENT_TAGS: readonly (readonly SpineTag[])[] = [
   ['plain', 'formal', 'severe'], // 0  diamond
   ['botanical', 'refined', 'antique'], // 1  laurel spray
   ['celestial', 'bright', 'plain'], // 2  star
-  ['whimsical', 'rustic', 'plain'], // 3  blot
+  ['ornate', 'formal', 'antique'], // 3  arabesque
   ['modern', 'plain', 'utilitarian'], // 4  chevron
   ['celestial', 'bright', 'ornate'], // 5  sun
   ['celestial', 'romantic', 'cool'], // 6  moon
@@ -465,19 +720,35 @@ export const ORNAMENT_TAGS: readonly (readonly SpineTag[])[] = [
   ['whimsical', 'romantic', 'airy'], // 40 butterfly
   ['natural', 'airy', 'romantic'], // 41 swallow
   ['nautical', 'natural', 'whimsical'], // 42 fish
-  ['rustic', 'whimsical', 'antique'], // 43 horseshoe
+  ['ornate', 'refined', 'formal'], // 43 anthemion
   ['formal', 'antique', 'heavy'], // 44 bell
   ['nautical', 'whimsical', 'cosy'], // 45 little ship
   ['natural', 'severe', 'cool'], // 46 mountain
   ['nautical', 'natural', 'cool'], // 47 wave
   ['celestial', 'cool', 'refined'], // 48 snowflake
   ['romantic', 'whimsical', 'warm'], // 49 heart
+  ['scholarly', 'natural', 'antique'], // 50 owl
+  ['heraldic', 'natural', 'formal'], // 51 stag
+  ['natural', 'whimsical', 'rustic'], // 52 fox
+  ['cosy', 'whimsical', 'natural'], // 53 cat
+  ['natural', 'airy', 'whimsical'], // 54 hare
+  ['natural', 'romantic', 'antique'], // 55 moth
+  ['botanical', 'natural', 'refined'], // 56 fern frond
+  ['botanical', 'airy', 'refined'], // 57 ginkgo leaf
+  ['botanical', 'cosy', 'whimsical'], // 58 mushroom
+  ['scholarly', 'celestial', 'antique'], // 59 telescope
+  ['scholarly', 'formal', 'modern'], // 60 globe
+  ['formal', 'antique', 'severe'], // 61 classical column
+  ['scholarly', 'heraldic', 'bright'], // 62 torch
+  ['formal', 'scholarly', 'severe'], // 63 balance scales
+  ['heraldic', 'antique', 'heavy'], // 64 castle
+  ['scholarly', 'cosy', 'antique'], // 65 lamp of learning
 ];
 
-/* --------------------------- title-plate specs ---------------------------- */
+/* ----------------------- front-cover title metadata ---------------------- */
 
 /** The ground a plate is filled with. `none` sets the title on bare covering. */
-export type PlateGround =
+type PlateGround =
   | 'none'
   | 'cream'
   | 'creamDeep'
@@ -490,8 +761,8 @@ export type PlateGround =
   | 'moss'
   | 'plum';
 
-/** The plate's silhouette. All of them are long and narrow — a spine label. */
-export type PlateShape =
+/** The front-cover title field's silhouette. */
+type PlateShape =
   | 'rect'
   | 'capsule'
   | 'oval'
@@ -519,7 +790,7 @@ export type PlateShape =
  * Every plate with a ground used to be `flush` by omission, and that is most of
  * why fifty labels read as fifty stickers.
  */
-export type PlateSeat = 'proud' | 'flush' | 'sunk';
+type PlateSeat = 'proud' | 'flush' | 'sunk';
 
 /**
  * The small hardware struck at a plate's corners or ends.
@@ -529,10 +800,10 @@ export type PlateSeat = 'proud' | 'flush' | 'sunk';
  * linen tag is "stitched down at both ends", the paper slip has "corners
  * already lifting", the vellum slip is "cut a shade proud of its panel".
  */
-export type PlateStud = 'none' | 'pins' | 'stitches' | 'lift' | 'proud-cut';
+type PlateStud = 'none' | 'pins' | 'stitches' | 'lift' | 'proud-cut';
 
 /** Rules and beading struck around the plate. */
-export type PlateFrame =
+type PlateFrame =
   | 'none'
   | 'single'
   | 'double'
@@ -547,7 +818,7 @@ export type PlateFrame =
   | 'gothic';
 
 /** The marks that close the lettering off, head and tail. */
-export type PlateEnds =
+type PlateEnds =
   | 'none'
   | 'rule'
   | 'double-rule'
@@ -558,13 +829,13 @@ export type PlateEnds =
   | 'bracket';
 
 /** Which ink a plate's frame, ground pattern and lettering are struck in. */
-export type PlateInk = 'gilt' | 'ink' | 'soft' | 'cream' | 'auto';
+type PlateInk = 'gilt' | 'ink' | 'soft' | 'cream' | 'auto';
 
 /** A ground texture struck INTO the plate, under the lettering. */
-export type PlateGrain = 'none' | 'hatch' | 'stipple' | 'rule';
+type PlateGrain = 'none' | 'hatch' | 'stipple' | 'rule';
 
-/** One lettering-piece treatment, as the numbers `drawTitlePlate` reads. */
-export interface TitlePlateSpec {
+/** Metadata behind one front-cover title treatment. */
+interface TitlePlateSpec {
   id: TitlePlateStyle;
   label: string;
   /** One line for the studio card. */
@@ -603,7 +874,7 @@ function plate(
 }
 
 /**
- * The fifty lettering-piece treatments, keyed by id.
+ * The fifty front-cover title treatments, keyed by id.
  *
  * Composed rather than drawn: a plate is (ground × silhouette × frame × ends ×
  * grain × lettering ink), and every one of those pieces was drawn once and
@@ -611,7 +882,7 @@ function plate(
  * entry is a composition somebody chose, not a number somebody incremented,
  * and no two share all six slots.
  */
-export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>> = {
+const COVER_TITLE_TREATMENT_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>> = {
   /* ---- nothing, and the three originals ---- */
 
   none: plate('none', 'None', 'The title struck straight onto the covering, and nothing else.',
@@ -905,22 +1176,99 @@ export const TITLE_PLATE_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSpec>
 /** Display names for the title-plate treatments. */
 export const TITLE_PLATE_LABELS: Readonly<Record<TitlePlateStyle, string>> =
   Object.fromEntries(
-    TITLE_PLATES.map((id) => [id, TITLE_PLATE_SPECS[id].label]),
+    TITLE_PLATES.map((id) => [id, COVER_TITLE_TREATMENT_SPECS[id].label]),
   ) as Record<TitlePlateStyle, string>;
+
+/**
+ * Front-cover title furniture that survived the systemic reset.
+ *
+ * Every entry is a continuous title programme: direct lettering, a ruled or
+ * filleted field, one coherent cartouche, or a structural shaped panel. Beads,
+ * ropes, dots, scallops, wallpaper grounds, dangling slips and duplicate crest
+ * stickers remain readable only so old rows can be translated below.
+ */
+export const ACTIVE_TITLE_PLATES = [
+  'none',
+  'gilt',
+  'label',
+  'debossed',
+  'morocco-label',
+  'double-fillet',
+  'blind-panel',
+  'gilt-cartouche',
+  'ruled-box',
+  'leather-onlay',
+  'inlay-strip',
+  'gilt-band',
+  'twin-rules',
+  'gilt-direct',
+  'ink-panel',
+] as const satisfies readonly TitlePlateStyle[];
+
+export const ACTIVE_TITLE_PLATE_OPTIONS = ACTIVE_TITLE_PLATES.map((id) => ({
+  id,
+  label: TITLE_PLATE_LABELS[id],
+}));
+
+const ACTIVE_TITLE_PLATE_SET: ReadonlySet<string> = new Set(ACTIVE_TITLE_PLATES);
+
+const RETIRED_TITLE_PLATE_REPLACEMENTS: Readonly<Partial<Record<TitlePlateStyle, TitlePlateStyle>>> = {
+  'paper-slip': 'label',
+  roundel: 'ruled-box',
+  'scroll-plate': 'gilt-cartouche',
+  'stone-tablet': 'blind-panel',
+  'oval-medallion': 'ruled-box',
+  'bead-frame': 'double-fillet',
+  'rope-frame': 'double-fillet',
+  'dotted-rule': 'ruled-box',
+  'notched-corners': 'ruled-box',
+  'scallop-edge': 'ruled-box',
+  'vellum-slip': 'label',
+  'linen-tag': 'label',
+  'ribbon-band': 'gilt-band',
+  'ivory-plate': 'label',
+  'ebony-plate': 'ink-panel',
+  'copper-plate': 'morocco-label',
+  'enamel-plate': 'morocco-label',
+  'crest-plate': 'gilt-cartouche',
+  'hatched-ground': 'blind-panel',
+  'stippled-ground': 'blind-panel',
+  'wreathed-plate': 'gilt-cartouche',
+  'starred-ends': 'gilt-cartouche',
+  'triple-fillet': 'double-fillet',
+  'lozenge-plate': 'ruled-box',
+  'shield-plate': 'gilt-cartouche',
+  'corner-brackets': 'ruled-box',
+  'sunk-panel': 'blind-panel',
+  'blind-lettered': 'debossed',
+  'arched-plate': 'ruled-box',
+  pedimented: 'ruled-box',
+  'chamfered-plate': 'ruled-box',
+  'stepped-frame': 'double-fillet',
+  'fleuron-ends': 'gilt-cartouche',
+  'lozenge-ends': 'ruled-box',
+  'gothic-panel': 'morocco-label',
+};
+
+export function isActiveTitlePlateStyle(value: unknown): value is (typeof ACTIVE_TITLE_PLATES)[number] {
+  return typeof value === 'string' && ACTIVE_TITLE_PLATE_SET.has(value);
+}
+
+/** Hard-normalise old title furniture into one active continuous treatment. */
+export function normalizeTitlePlateStyle(value: unknown): (typeof ACTIVE_TITLE_PLATES)[number] {
+  if (isActiveTitlePlateStyle(value)) return value;
+  if (typeof value === 'string' && isTitlePlateStyle(value)) {
+    const replacement = RETIRED_TITLE_PLATE_REPLACEMENTS[value];
+    if (isActiveTitlePlateStyle(replacement)) return replacement;
+  }
+  return 'none';
+}
 
 /** Mood words for the title-plate treatments. */
 export const TITLE_PLATE_TAGS: Readonly<Record<TitlePlateStyle, readonly SpineTag[]>> =
   Object.fromEntries(
-    TITLE_PLATES.map((id) => [id, TITLE_PLATE_SPECS[id].tags]),
+    TITLE_PLATES.map((id) => [id, COVER_TITLE_TREATMENT_SPECS[id].tags]),
   ) as Record<TitlePlateStyle, readonly SpineTag[]>;
-
-/** The spec for a plate id, total: junk falls back to the plain paper label. */
-export function titlePlateSpec(id: unknown): TitlePlateSpec {
-  return (
-    (typeof id === 'string' ? TITLE_PLATE_SPECS[id as TitlePlateStyle] : undefined) ??
-    TITLE_PLATE_SPECS.none
-  );
-}
 
 /* ------------------------------- edge specs ------------------------------- */
 
@@ -1064,7 +1412,7 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   'all-edges-gilt': edge('all-edges-gilt', 'All edges gilt', 'Gilt on solid gold, the full presentation binding.',
     ['gilded', 'fancy', 'formal'],
-    { ground: 'gilt', pattern: 'none', density: 0.2, mark: 'giltPale', mark2: 'ochre', gild: 'all', cut: 'smooth' }),
+    { ground: 'gilt', pattern: 'none', density: 0, mark: 'giltPale', mark2: 'ochre', gild: 'all', cut: 'smooth' }),
 
   gauffered: edge('gauffered', 'Gauffered', 'Gilt, then tooled with heated brass into a lattice.',
     ['ornate', 'gilded', 'fancy'],
@@ -1080,7 +1428,7 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   uncut: edge('uncut', 'Uncut', 'Folded sheets still joined at the head, waiting for a paperknife.',
     ['antique', 'natural', 'scholarly'],
-    { ground: 'creamDeep', pattern: 'stripe', density: 0.3, mark: 'cream', mark2: 'cream', gild: 'none', cut: 'deckle' }),
+    { ground: 'creamDeep', pattern: 'none', density: 0, mark: 'cream', mark2: 'cream', gild: 'none', cut: 'deckle' }),
 
   burnished: edge('burnished', 'Burnished', 'Rubbed with an agate until the paper takes a sheen.',
     ['refined', 'pale', 'plain'],
@@ -1088,7 +1436,7 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   'antique-gilt': edge('antique-gilt', 'Antique gilt', 'Old gold gone dull and brown at the corners.',
     ['antique', 'gilded', 'muted'],
-    { ground: 'ochre', pattern: 'fleck', density: 0.3, mark: 'timber', mark2: 'timber', gild: 'all', cut: 'rough', foil: 'ochre' }),
+    { ground: 'ochre', pattern: 'none', density: 0, mark: 'timber', mark2: 'timber', gild: 'all', cut: 'rough', foil: 'ochre' }),
 
   'red-under-gold': edge('red-under-gold', 'Red under gold', 'Gold laid over a red stain, so the edge burns where it wears.',
     ['gilded', 'ornate', 'warm'],
@@ -1152,7 +1500,7 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   'charcoal-edge': edge('charcoal-edge', 'Charcoal edges', 'Rubbed black, so the closed book is a solid dark slab.',
     ['dark', 'modern', 'severe'],
-    { ground: 'ink', pattern: 'fleck', density: 0.35, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'rough' }),
+    { ground: 'ink', pattern: 'none', density: 0, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'rough' }),
 
   'ink-edge': edge('ink-edge', 'Ink edges', 'Dipped in ink to the depth of a fingernail.',
     ['dark', 'severe', 'cool'],
@@ -1180,7 +1528,7 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   'violet-edge': edge('violet-edge', 'Violet edges', 'A deep purple that reads almost black at a distance.',
     ['dark', 'romantic', 'cool'],
-    { ground: 'plum', pattern: 'fleck', density: 0.2, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
+    { ground: 'plum', pattern: 'none', density: 0, mark: 'slate', mark2: 'slate', gild: 'none', cut: 'smooth' }),
 
   // Density 0.25 is not a shrug: `band` derives its count from it, and this is
   // the one entry in the table whose whole idea is TWO bands and no more.
@@ -1202,15 +1550,15 @@ export const EDGE_SPECS: Readonly<Record<EdgeTreatment, EdgeSpec>> = {
 
   silvered: edge('silvered', 'Silvered', 'White metal leaf instead of gold; cooler, and it tarnishes.',
     ['cool', 'refined', 'formal'],
-    { ground: 'slate', pattern: 'none', density: 0.1, mark: 'cream', mark2: 'cream', gild: 'all', cut: 'smooth', foil: 'cream' }),
+    { ground: 'slate', pattern: 'none', density: 0, mark: 'cream', mark2: 'cream', gild: 'all', cut: 'smooth', foil: 'cream' }),
 
   'copper-edge': edge('copper-edge', 'Copper', 'Copper leaf, gone a little green in the hollows.',
     ['warm', 'antique', 'ornate'],
-    { ground: 'timber', pattern: 'fleck', density: 0.3, mark: 'moss', mark2: 'moss', gild: 'all', cut: 'smooth', foil: 'terracotta' }),
+    { ground: 'timber', pattern: 'none', density: 0, mark: 'moss', mark2: 'moss', gild: 'all', cut: 'smooth', foil: 'terracotta' }),
 
   'verdigris-edge': edge('verdigris-edge', 'Verdigris', 'The blue-green bloom that grows on old bronze.',
     ['antique', 'cool', 'natural'],
-    { ground: 'sage', pattern: 'stone', density: 0.5, mark: 'moss', mark2: 'cream', gild: 'none', cut: 'rough' }),
+    { ground: 'sage', pattern: 'none', density: 0, mark: 'moss', mark2: 'cream', gild: 'none', cut: 'rough' }),
 
   foxed: edge('foxed', 'Foxed', 'Rust-brown spots through the paper, and no way back.',
     ['antique', 'rustic', 'muted'],
@@ -1226,6 +1574,82 @@ export const EDGE_LABELS: Readonly<Record<EdgeTreatment, string>> = Object.fromE
   EDGE_TREATMENTS.map((id) => [id, EDGE_SPECS[id].label]),
 ) as Record<EdgeTreatment, string>;
 
+/**
+ * Reader-facing page edges that are visibly distinct in the shipping cover
+ * painter at held-book size.  The old fifty-name catalogue remains above only
+ * as a persistence vocabulary; almost all of it fell through to the same cream
+ * sliver and therefore lied in the Studio.
+ */
+export const ACTIVE_EDGE_TREATMENTS = [
+  'plain',
+  'gilt',
+  'stained-red',
+  'sepia-edge',
+  'deckle',
+  'red-under-gold',
+] as const satisfies readonly EdgeTreatment[];
+
+export const ACTIVE_EDGE_OPTIONS = ACTIVE_EDGE_TREATMENTS.map((id) => ({
+  id,
+  label: EDGE_LABELS[id],
+}));
+
+const ACTIVE_EDGE_SET: ReadonlySet<string> = new Set(ACTIVE_EDGE_TREATMENTS);
+
+const RETIRED_GILT_EDGES: ReadonlySet<EdgeTreatment> = new Set([
+  'gilt',
+  'top-gilt',
+  'fore-edge-gilt',
+  'all-edges-gilt',
+  'gauffered',
+  'antique-gilt',
+  'red-under-gold',
+  'painted-fore-edge',
+]);
+
+const RETIRED_RED_EDGES: ReadonlySet<EdgeTreatment> = new Set([
+  'stained-red',
+  'rose-edge',
+]);
+
+const RETIRED_UMBER_EDGES: ReadonlySet<EdgeTreatment> = new Set([
+  'sepia-edge',
+  'tea-stained',
+  'antique-gilt',
+  'well-thumbed',
+]);
+
+const RETIRED_ROUGH_EDGES: ReadonlySet<EdgeTreatment> = new Set([
+  'rough-cut',
+  'deckle',
+  'uncut',
+  'foxed',
+]);
+
+const RETIRED_BURNISHED_EDGES: ReadonlySet<EdgeTreatment> = new Set([
+  'red-under-gold',
+  'burnished',
+  'two-tone',
+]);
+
+export function isActiveEdgeTreatment(value: unknown): value is (typeof ACTIVE_EDGE_TREATMENTS)[number] {
+  return typeof value === 'string' && ACTIVE_EDGE_SET.has(value);
+}
+
+/** Hard-normalise every historical edge to one of six honest held-book finishes. */
+export function normalizeEdgeTreatment(value: unknown): (typeof ACTIVE_EDGE_TREATMENTS)[number] {
+  if (isActiveEdgeTreatment(value)) return value;
+  if (typeof value === 'string' && isEdgeTreatment(value)) {
+    if (RETIRED_GILT_EDGES.has(value)) return 'gilt';
+    if (RETIRED_RED_EDGES.has(value)) return 'stained-red';
+    if (RETIRED_UMBER_EDGES.has(value)) return 'sepia-edge';
+    if (RETIRED_ROUGH_EDGES.has(value)) return 'deckle';
+    if (RETIRED_BURNISHED_EDGES.has(value)) return 'red-under-gold';
+    return 'plain';
+  }
+  return 'plain';
+}
+
 /** Mood words for the text-block edge treatments. */
 export const EDGE_TAGS: Readonly<Record<EdgeTreatment, readonly SpineTag[]>> =
   Object.fromEntries(
@@ -1235,15 +1659,11 @@ export const EDGE_TAGS: Readonly<Record<EdgeTreatment, readonly SpineTag[]>> =
 /**
  * The spec for an edge id, total: junk falls back to `plain`.
  *
- * This is the seam `art/covers.ts` should read. The cover paints the fore-edge
- * sliver, and it currently branches on three id strings by hand — which was
- * fine at four treatments and is a lie at fifty, since the other forty-six
- * would all fall through to plain cream.
+ * This is the seam `art/covers.ts` should read.  The active catalogue is kept
+ * deliberately equal to what the held-cover renderer can prove visually.
  */
 export function edgeSpec(id: unknown): EdgeSpec {
-  return (
-    (typeof id === 'string' ? EDGE_SPECS[id as EdgeTreatment] : undefined) ?? EDGE_SPECS.plain
-  );
+  return EDGE_SPECS[normalizeEdgeTreatment(id)];
 }
 
 export function isBindingMaterial(v: unknown): v is BindingMaterial {
@@ -1291,20 +1711,27 @@ export interface SpineParams {
    * has ever consulted.
    */
   clothHex?: string | null;
+  /** Spine ground only; null inherits the shared cloth/pigment. */
+  spineBaseHex?: string | null;
+  /** Spine's secondary covering role. */
+  spineAccentHex?: string | null;
+  /** Spine tooling and front-cover title trim. */
+  toolingHex?: string | null;
+  /** Spine stamp and cover medallion. */
+  emblemHex?: string | null;
+  /** Clasps and corner fittings. */
+  hardwareHex?: string | null;
   /** Extra per-book hue rotation, ±6°. */
   hueJitter: number;
   /** 0–3 horizontal bands. */
   bands: BandSpec[];
-  /**
-   * Ornament stamp 0–11: diamond/laurel/star/blot/chevron/sun/moon/keyhole/
-   * laurel-wreath/quill/tree/crescent-with-stars.
-   */
+  /** Ornament stamp index into the append-only `ORNAMENT_LABELS` table. */
   ornament: number;
   /** Cover texture: 0 = cloth, 1 = leather, 2 = paper. */
   texture: 0 | 1 | 2;
-  /** Title face: 0 = Caveat, 1 = Kalam, 2 = Patrick Hand. */
+  /** Front-cover title face: 0 = Caveat, 1 = Kalam, 2 = Patrick Hand. */
   font: 0 | 1 | 2;
-  /** Gilt (gold) bands/ornament/title. */
+  /** Gilt (gold) bands, ornament and front-cover title. */
   gilt: boolean;
   /** Lean angle in degrees, ±1.2 — applied by the shelf compositor. */
   lean: number;
@@ -1329,7 +1756,7 @@ export interface SpineParams {
   /**
    * Whether `material` was CHOSEN rather than inherited.
    *
-   * The 62 bindings each carry a covering of their own, and a book that hands
+   * Every active binding carries an exact covering of its own, and a book that hands
    * one down unasked flattens the whole table into the seven the studio knows.
    * So the covering only overrules its binding when the reader actually
    * touched the chip — which is exactly what `resolveBookStyle` reports.
@@ -1341,10 +1768,16 @@ export interface SpineParams {
   bandGilt?: boolean;
   /** Endband stripe variant: 0 = blocks, 1 = chevron, 2 = wrapped cord. */
   headTailStyle?: number;
-  /** False = no ornament stamp ("none" in the studio's 12 + none). */
+  /** False = no ornament stamp (the Studio's explicit “None” choice). */
   ornamentOn?: boolean;
-  /** Title panel treatment. */
+  /** Front-cover title treatment, carried here for seed compatibility. */
   titlePlate?: TitlePlateStyle;
+  /** True when the raised-cord count was explicitly chosen in the Studio. */
+  raisedBandsPinned?: boolean;
+  /** True when the ornament was explicitly chosen rather than inherited. */
+  ornamentPinned?: boolean;
+  /** True when endbands were explicitly enabled/disabled by the reader. */
+  headTailPinned?: boolean;
   /** Wear, 0 (pristine) → 1 (well-loved): scuffs, bumped corners, sun-fade. */
   wear?: number;
   /** Text-block edge treatment. */
@@ -1377,7 +1810,7 @@ export interface SpineParams {
    *
    * Null/absent is the normal case and is NOT the same as a default: it means
    * "whatever `presetForSeed` says", so a book that has never been dressed
-   * still gets one of the 62 bindings rather than a house wrapper. It is last
+   * still gets one vetted binding rather than a house wrapper. It is last
    * in the params on purpose — `deriveSpineParams` appends its draw, so adding
    * it reshuffles nothing that came before.
    */
@@ -1411,7 +1844,7 @@ export interface SpineParams {
   proud?: number;
   /** Extra sun-fade on the side facing the key, 0–1 (independent of `wear`). */
   sunFade?: number;
-  /** How much of the foil title has rubbed away, 0 (crisp) → 1 (ghost). */
+  /** How much of the foil tooling has rubbed away, 0 (crisp) → 1 (ghost). */
   foilWear?: number;
   /** The book's own bump/knock history: 0–1, drives corner and cap damage. */
   knock?: number;
@@ -1549,12 +1982,6 @@ export const PIGMENT_LABELS: readonly string[] = PIGMENTS.map((p) => p.name);
 /** Mood words for the pigment duos, index-aligned with PIGMENT_LABELS. */
 export const PIGMENT_TAGS: readonly (readonly SpineTag[])[] = PIGMENTS.map((p) => p.tags);
 
-const FONTS: readonly string[] = [
-  '"Caveat Variable", "Caveat", cursive',
-  '"Kalam", cursive',
-  '"Patrick Hand", cursive',
-];
-
 const GOLD = '#c9a227';
 
 /**
@@ -1578,7 +2005,8 @@ export function deriveSpineParams(seed: number): SpineParams {
   }
   bands.sort((a, b) => a.y - b.y);
 
-  const ornament = Math.floor(rnd() * ORNAMENT_COUNT);
+  const ornament =
+    ACTIVE_ORNAMENT_INDICES[Math.floor(rnd() * ACTIVE_ORNAMENT_INDICES.length)] ?? 12;
   const texture = Math.floor(rnd() * 3) as 0 | 1 | 2;
   const font = Math.floor(rnd() * 3) as 0 | 1 | 2;
   // Gold is the reference row's sparkle: rather more than half its spines
@@ -1611,7 +2039,8 @@ export function deriveSpineParams(seed: number): SpineParams {
   const raisedBands =
     cordRoll < cordBias.none ? 0 : 1 + Math.floor(rnd() * cordBias.max);
   const bandGilt = rnd() < (gilt ? 0.75 : 0.34);
-  const headTailStyle = Math.floor(rnd() * 3);
+  const headTailStyle =
+    ACTIVE_HEAD_TAIL_STYLES[Math.floor(rnd() * ACTIVE_HEAD_TAIL_STYLES.length)] ?? 1;
   const ornamentOn = rnd() < 0.82;
   const titlePlate = pickWeighted(rnd(), PLATE_WEIGHTS);
   // Skew hard toward the low end: most books are gently read, few are ruins.
@@ -1624,10 +2053,11 @@ export function deriveSpineParams(seed: number): SpineParams {
   // which is the quietest way this codebase has found to lose a vocabulary: add
   // a charm or a colourway there and the seed would simply never roll it, with
   // nothing failing anywhere.
-  const charm: CharmKind =
-    charmRoll < 0.66
-      ? 'none'
-      : (CHARM_KINDS_WITH_ART[Math.floor(rnd() * CHARM_KINDS_WITH_ART.length)] ?? 'none');
+  // Applied tags, seals, clasps and tassels were tiny stickers on the shelf.
+  // Keep the old stream consumption stable, but new seed defaults stay clean;
+  // the integrated ribbon remains an explicit Studio choice.
+  if (charmRoll >= 0.66) rnd();
+  const charm: CharmKind = 'none';
   const charmColor = Math.floor(rnd() * CHARM_COLORS.length);
 
   // --- painterly rebuild rolls (appended: earlier fields keep their values) ---
@@ -1669,6 +2099,11 @@ export function deriveSpineParams(seed: number): SpineParams {
     seed: seed >>> 0,
     silhouette,
     palette,
+    spineBaseHex: null,
+    spineAccentHex: null,
+    toolingHex: null,
+    emblemHex: null,
+    hardwareHex: null,
     hueJitter,
     bands,
     ornament,
@@ -1682,13 +2117,13 @@ export function deriveSpineParams(seed: number): SpineParams {
     twoToneSplit,
     headTail,
     material,
-    raisedBands,
+    raisedBands: clamp(raisedBands, 0, MAX_RAISED_BANDS),
     bandGilt,
     headTailStyle,
     ornamentOn,
-    titlePlate,
+    titlePlate: normalizeTitlePlateStyle(titlePlate),
     wear,
-    edge,
+    edge: normalizeEdgeTreatment(edge),
     height,
     charm,
     charmColor,
@@ -1779,15 +2214,15 @@ const MATERIAL_WEIGHTS: ReadonlyArray<readonly [BindingMaterial, number]> = [
 
 /** `none` = chance of zero cords; `max` = cords drawn as 1 + floor(r*max). */
 const MATERIAL_CORD_BIAS: Readonly<Record<BindingMaterial, { none: number; max: number }>> = {
-  leather: { none: 0.1, max: 5 },
-  vellum: { none: 0.3, max: 4 },
-  cloth: { none: 0.48, max: 3 },
-  linen: { none: 0.55, max: 3 },
+  leather: { none: 0.1, max: 2 },
+  vellum: { none: 0.3, max: 2 },
+  cloth: { none: 0.48, max: 2 },
+  linen: { none: 0.55, max: 2 },
   paper: { none: 0.74, max: 2 },
   silk: { none: 0.78, max: 2 },
   // Marbled boards are the classic half-leather binding: the spine IS leather,
   // so cords are the norm.
-  marbled: { none: 0.24, max: 5 },
+  marbled: { none: 0.24, max: 2 },
 };
 
 /** Added to the wear multiplier — soft bindings age faster than leather. */
@@ -1802,35 +2237,13 @@ const MATERIAL_WEAR_BIAS: Readonly<Record<BindingMaterial, number>> = {
 };
 
 /**
- * How often each lettering-piece turns up on a book nobody has dressed.
+ * How often each front-cover title treatment turns up on an untouched book.
  *
- * Heavily skewed, and deliberately: a shelf where every book wears a different
- * one of fifty plates reads as a sample sheet. `none`, the paper label and the
- * two plain rules carry most of the weight — the ordinary answers — and the
- * shaped cartouches, enamels and gothic panels are rare enough that finding
- * one feels like finding something. Everything not named here gets `1`, so
- * adding a treatment cannot silently fall out of the roll.
- *
- * CHECKED AND CLEARED, second "too weird" report (2026-08-04). The reader said
- * the randomiser hands out spines that do not read as books and named the new
- * book creator, so all three of a rolled spine's dressing axes were put on a
- * real shelf beside plain cloth octavos — `shots-now/suspect-row.mjs`, with
- * `--plates=`, `--ornaments=` and a hand-composed `own:` binding per
- * decoration. None of them is the problem, and the reason is the same in every
- * case: a plate is a LABEL and a stamp is a third of the spine's width, so at
- * 20–45 world px they are small marks on a book rather than objects competing
- * with it. What went instead was six SILHOUETTES (`art/bookDesign.ts`) — a
- * wire coil reads as a step-ladder from across the room and no weighting of
- * this table would have helped. Do not spend a third pass here.
- *
- * The one thing left on this axis that IS wrong is not in this file:
- * `randomBookStyleOverrides` in `art/bookStyle.ts` — which is what dresses
- * every NEW book, through `freshBookStyleOverrides` — reaches past these tables
- * and picks `pick(TITLE_PLATES, …)` and `pick(EDGE_TREATMENTS, …)` UNIFORMLY.
- * So the skew described above applies to a seeded spine and to nothing a reader
- * actually makes: the 21 treatments that fall through to weight 1 here are ~42%
- * of a new book's plates. That does not make a book weird — it makes a shelf a
- * sample sheet, which is the complaint this comment was written to prevent.
+ * This is cover-only metadata retained on the shared seeded params. It is
+ * heavily skewed so closed covers do not read as a fifty-treatment sample
+ * sheet: `none`, paper and plain ruled fields are ordinary, while shaped
+ * cartouches, enamels and gothic panels stay rare. Everything not named here
+ * gets `1`, so adding a treatment cannot silently fall out of the seed roll.
  */
 const PLATE_WEIGHT_OVERRIDES: Readonly<Partial<Record<TitlePlateStyle, number>>> = {
   none: 150,
@@ -1864,7 +2277,7 @@ const PLATE_WEIGHT_OVERRIDES: Readonly<Partial<Record<TitlePlateStyle, number>>>
   'crest-plate': 2,
 };
 
-const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = TITLE_PLATES.map(
+const PLATE_WEIGHTS: ReadonlyArray<readonly [TitlePlateStyle, number]> = ACTIVE_TITLE_PLATES.map(
   (id) => [id, PLATE_WEIGHT_OVERRIDES[id] ?? 1] as const,
 );
 
@@ -1913,7 +2326,7 @@ const EDGE_WEIGHT_OVERRIDES: Readonly<Partial<Record<EdgeTreatment, number>>> = 
   'painted-fore-edge': 1,
 };
 
-const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = EDGE_TREATMENTS.map(
+const EDGE_WEIGHTS: ReadonlyArray<readonly [EdgeTreatment, number]> = ACTIVE_EDGE_TREATMENTS.map(
   (id) => [id, EDGE_WEIGHT_OVERRIDES[id] ?? 1] as const,
 );
 
@@ -1986,7 +2399,7 @@ export interface SpinePaletteCss {
   bottom: string;
   /** Deep ink used for bands/edges. */
   ink: string;
-  /** Ornament/title color (gold when the book is gilt). */
+  /** Ornament/rule color (gold when the book is gilt). */
   accent: string;
   /** The shared gilt gold. */
   gold: string;
@@ -2010,22 +2423,7 @@ export function getSpinePalette(params: SpineParams): SpinePaletteCss {
 
 /* ------------------------------- canvases -------------------------------- */
 
-export type Canvas2D = OffscreenCanvas | HTMLCanvasElement;
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-
-function makeCanvas(w: number, h: number): Canvas2D {
-  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  return c;
-}
-
-function get2d(c: Canvas2D): Ctx2D {
-  const ctx = (c as OffscreenCanvas).getContext('2d');
-  if (!ctx) throw new Error('spines: 2d context unavailable');
-  return ctx as Ctx2D;
-}
 
 /* ------------------------------ geometry --------------------------------- */
 
@@ -2064,7 +2462,7 @@ function strokePts(ctx: Ctx2D, pts: readonly Pt[], close: boolean): void {
 }
 
 /**
- * The 50 procedural ornament stamps — a binder's brass, drawn as paths.
+ * The procedural ornament stamps — a binder's brass, drawn as paths.
  *
  * Index-aligned with `ORNAMENT_LABELS`. The unit box is roughly [-1, 1] in
  * both axes and `s` is the half-size in canvas px, so a stamp is struck about
@@ -2129,14 +2527,69 @@ export function drawOrnament(
   const line = (x0: number, y0: number, x1: number, y1: number): void => {
     strokePts(ctx, [pt(x0, y0), pt(x1, y1)], false);
   };
+  /** Short ruled shoulders make a motif part of the binding, not a sticker. */
+  const shoulders = (y = 0.68, inner = 0.58, outer = 1.18): void => {
+    line(-outer, y, -inner, y);
+    line(inner, y, outer, y);
+  };
+  /** One broad outlined binder's leaf with an explicit midrib. */
+  const openLeaf = (
+    x: number,
+    y: number,
+    rx: number,
+    ry: number,
+    rot: number,
+  ): void => {
+    ctx.save();
+    ctx.translate(cx + x * s, cy + y * s);
+    ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.moveTo(0, -ry * s);
+    ctx.quadraticCurveTo(rx * s, 0, 0, ry * s);
+    ctx.quadraticCurveTo(-rx * s, 0, 0, -ry * s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -ry * s * 0.62);
+    ctx.lineTo(0, ry * s * 0.62);
+    ctx.stroke();
+    ctx.restore();
+  };
+  const openTool = (glyph: BroadFocalGlyph): void => {
+    const colour = typeof ctx.strokeStyle === 'string'
+      ? ctx.strokeStyle
+      : typeof ctx.fillStyle === 'string'
+        ? ctx.fillStyle
+        : FLAT.gilt;
+    drawOpenBinderTool(
+      ctx,
+      glyph,
+      cx,
+      cy,
+      s * 2.05,
+      colour,
+      Math.max(ctx.lineWidth, s * 0.13),
+    );
+  };
 
-  switch (kind) {
-    case 0: { // diamond — a solid lozenge with a hairline keeping it open
-      // A stroked lozenge is a RING at 15px, filed in with the star, the sun,
-      // the laurel wreath, the acorn and the oak leaf — six stamps whose only
-      // shared property was "an outline round some cloth". A binder's lozenge
-      // is a solid tool; filled, it is the only pointed solid in the table.
-      fillPoly([pt(0, -1), pt(0.62, 0), pt(0, 1), pt(-0.62, 0)]);
+  // Every shipping stamp takes the same broad open-tool lane. The historical
+  // switch below remains an index-addressed archive for migration diagnosis,
+  // but can no longer leak a tiny pictogram into a current spine.
+  const activeGlyph = ornamentGlyph(kind);
+  if (activeGlyph !== null) {
+    openTool(activeGlyph);
+    return;
+  }
+
+  // The historical switch stays useful as a drawing archive, but callers can
+  // only reach the current binder's case. This is the final defence for old
+  // SpineParams constructed outside `bookStyle.ts`.
+  switch (normalizeOrnamentIndex(kind)) {
+    case 0: { // diamond — an integrated heraldic lozenge tool
+      shoulders(0, 0.67, 1.2);
+      strokePts(ctx, [pt(0, -0.98), pt(0.67, 0), pt(0, 0.98), pt(-0.67, 0)], true);
+      strokePts(ctx, [pt(0, -0.56), pt(0.38, 0), pt(0, 0.56), pt(-0.38, 0)], true);
+      line(0, -0.56, 0, 0.56);
       break;
     }
     case 1: { // laurel spray — two mirrored stems with FILLED leaves
@@ -2165,42 +2618,41 @@ export function drawOrnament(
       strokePts(ctx, [pt(-0.2, 1), pt(0, 0.84), pt(0.2, 1)], false);
       break;
     }
-    case 2: { // star (5-point)
+    case 2: { // star — a star-flower growing from a foliate binder's foot
+      shoulders(0.82, 0.52, 1.18);
+      line(0, 0.78, 0, 0.02);
+      openLeaf(-0.42, 0.27, 0.19, 0.38, -0.86);
+      openLeaf(0.42, 0.14, 0.19, 0.38, 0.86);
       const star: Pt[] = [];
       for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? 1 : 0.45;
+        const r = i % 2 === 0 ? 0.58 : 0.28;
         const a = -Math.PI / 2 + (i * Math.PI) / 5;
-        star.push(pt(Math.cos(a) * r, Math.sin(a) * r));
+        star.push(pt(Math.cos(a) * r, Math.sin(a) * r - 0.48));
       }
       strokePts(ctx, star, true);
       break;
     }
-    case 3: { // blot — a splat, and a droplet that flew off it
-      /*
-       * Eight vertices at radius 0.55–0.95 is a CIRCLE with a rough edge, and
-       * a rough edge two pixels deep is no edge at all: rendered at the size
-       * this is really struck (`shots-now/out/ornaments-before-rest.png`) the
-       * inkblot came out as a rounded square, one of eight stamps in the table
-       * that all reduced to the same solid lump.
-       *
-       * A blot is recognised by two things and neither of them is roughness:
-       * lobes that reach much further than the body, and the satellite droplet
-       * beside it. Ten vertices alternating 0.42 and 1.0 give the lobes; the
-       * droplet is the only detached mark in the table and does the rest.
-       *
-       * Solid, too. It was filled at 0.8 alpha — a lighter ink, which is a
-       * shading trick rather than a flat colour, and which cost the faintest
-       * stamps in the table the little contrast they had.
-       */
-      const splat: Pt[] = [];
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2 + rnd() * 0.2;
-        const r = (i % 2 === 0 ? 0.98 : 0.42) * (0.86 + rnd() * 0.28);
-        splat.push({ x: cx + Math.cos(a) * r * s, y: cy + Math.sin(a) * r * s });
-      }
-      tracePoly(ctx, splat, true);
-      ctx.fill();
-      disc(0.78, 0.74, 0.22);
+    case 3: { // arabesque — one mirrored S-scroll with leaf terminals
+      // The discarded blot was literally a disease-like splatter. A binder's
+      // arabesque earns the same amount of visual energy through a continuous
+      // line: mirrored scrolls grow from one stem and close in four solid
+      // leaves. There are no detached pips to become spots at shelf size.
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.96);
+      ctx.quadraticCurveTo(cx - s * 0.08, cy + s * 0.26, cx - s * 0.62, cy + s * 0.18);
+      ctx.quadraticCurveTo(cx - s * 1.02, cy + s * 0.1, cx - s * 0.7, cy - s * 0.34);
+      ctx.quadraticCurveTo(cx - s * 0.48, cy - s * 0.64, cx - s * 0.15, cy - s * 0.5);
+      ctx.moveTo(cx, cy + s * 0.96);
+      ctx.quadraticCurveTo(cx + s * 0.08, cy + s * 0.26, cx + s * 0.62, cy + s * 0.18);
+      ctx.quadraticCurveTo(cx + s * 1.02, cy + s * 0.1, cx + s * 0.7, cy - s * 0.34);
+      ctx.quadraticCurveTo(cx + s * 0.48, cy - s * 0.64, cx + s * 0.15, cy - s * 0.5);
+      ctx.stroke();
+      blob(-0.68, -0.42, 0.34, 0.13, -0.62);
+      blob(0.68, -0.42, 0.34, 0.13, 0.62);
+      blob(-0.38, 0.28, 0.29, 0.12, 0.46);
+      blob(0.38, 0.28, 0.29, 0.12, -0.46);
+      fillPoly([pt(0, -1.02), pt(0.25, -0.56), pt(0, -0.23), pt(-0.25, -0.56)]);
+      fillPoly([pt(-0.23, 0.9), pt(0, 0.64), pt(0.23, 0.9), pt(0, 1.08)]);
       break;
     }
     case 4: { // chevron — two stacked zigzags
@@ -2213,20 +2665,22 @@ export function drawOrnament(
       }
       break;
     }
-    case 5: { // sun — circle + 8 rays
-      // 20 samples, not 12: at 14px a 12-gon reads as a lumpy pentagon.
-      const circle: Pt[] = [];
-      for (let i = 0; i < 20; i++) {
-        const a = (i / 20) * Math.PI * 2;
-        circle.push({
-          x: cx + Math.cos(a) * 0.55 * s,
-          y: cy + Math.sin(a) * 0.55 * s,
-        });
-      }
-      strokePts(ctx, circle, true);
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        strokePts(ctx, [pt(Math.cos(a) * 0.7, Math.sin(a) * 0.7), pt(Math.cos(a) * 1.05, Math.sin(a) * 1.05)], false);
+    case 5: { // sun — a classical rising-sun tool, never a full asterisk
+      shoulders(0.64, 0.54, 1.18);
+      line(-0.56, 0.64, 0.56, 0.64);
+      ctx.beginPath();
+      ctx.arc(cx, cy + s * 0.64, s * 0.5, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 5; i += 1) {
+        const a = Math.PI * (1.12 + i * 0.19);
+        strokePts(
+          ctx,
+          [
+            pt(Math.cos(a) * 0.62, 0.64 + Math.sin(a) * 0.62),
+            pt(Math.cos(a) * 1.02, 0.64 + Math.sin(a) * 1.02),
+          ],
+          false,
+        );
       }
       break;
     }
@@ -2246,9 +2700,11 @@ export function drawOrnament(
        * are. Solid ink, for the same reason as the blot above.
        */
       ctx.beginPath();
-      ctx.arc(cx - s * 0.1, cy, s * 0.88, 0, Math.PI * 2, false);
-      ctx.arc(cx + s * 0.42, cy, s * 0.8, 0, Math.PI * 2, true);
-      ctx.fill();
+      ctx.arc(cx - s * 0.08, cy, s * 0.88, -Math.PI * 0.62, Math.PI * 0.62);
+      ctx.arc(cx + s * 0.34, cy, s * 0.73, Math.PI * 0.62, -Math.PI * 0.62, true);
+      ctx.closePath();
+      ctx.stroke();
+      bow(-0.04, 0, 0.58, -Math.PI * 0.58, Math.PI * 0.58);
       break;
     }
     case 7: { // keyhole
@@ -2338,23 +2794,24 @@ export function drawOrnament(
     /* ---------------------------- the brass ------------------------------ */
 
     case 12: { // fleuron — the printer's leaf, a three-lobed palmette
-      // The lobes have to sweep UP and out. Laid flat they read as wings and
-      // the whole mark turns into a small bird.
-      fillPoly([pt(0, -1), pt(0.22, -0.34), pt(0, 0.12), pt(-0.22, -0.34)]);
-      blob(-0.44, -0.36, 0.44, 0.17, -0.95);
-      blob(0.44, -0.36, 0.44, 0.17, 0.95);
-      line(0, 0.08, 0, 0.82);
-      blob(0, 0.9, 0.24, 0.1);
+      openTool('fleuron');
       break;
     }
-    case 13: { // acorn
-      blob(0, 0.3, 0.44, 0.56);
-      // The cup: a filled half-ellipse sitting on the nut.
+    case 13: { // acorn — a complete oak sprig, not an isolated nut pictogram
+      shoulders(0.88, 0.46, 1.18);
       ctx.beginPath();
-      ctx.ellipse(cx, cy - 0.18 * s, 0.56 * s, 0.34 * s, 0, Math.PI, Math.PI * 2);
-      ctx.closePath();
-      ctx.fill();
-      line(0, -0.52, 0.08, -0.94);
+      ctx.moveTo(cx, cy + s * 0.88);
+      ctx.bezierCurveTo(cx - s * 0.1, cy + s * 0.32, cx + s * 0.14, cy - s * 0.34, cx, cy - s * 0.92);
+      ctx.stroke();
+      openLeaf(-0.42, 0.28, 0.22, 0.46, -0.86);
+      openLeaf(0.4, -0.14, 0.22, 0.45, 0.86);
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.34, cy - s * 0.48);
+      ctx.quadraticCurveTo(cx, cy - s * 0.7, cx + s * 0.34, cy - s * 0.48);
+      ctx.quadraticCurveTo(cx + s * 0.3, cy - s * 0.12, cx, cy + s * 0.04);
+      ctx.quadraticCurveTo(cx - s * 0.3, cy - s * 0.12, cx - s * 0.34, cy - s * 0.48);
+      ctx.stroke();
+      line(-0.32, -0.48, 0.32, -0.48);
       break;
     }
     case 14: { // thistle
@@ -2386,22 +2843,7 @@ export function drawOrnament(
       break;
     }
     case 17: { // compass rose
-      for (let i = 0; i < 4; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 2;
-        const px = Math.cos(a);
-        const py = Math.sin(a);
-        fillPoly([
-          pt(px, py),
-          pt(-py * 0.24, px * 0.24),
-          pt(-px * 0.2, -py * 0.2),
-          pt(py * 0.24, -px * 0.24),
-        ]);
-      }
-      for (let i = 0; i < 4; i++) {
-        const a = -Math.PI / 4 + (i * Math.PI) / 2;
-        line(0, 0, Math.cos(a) * 0.6, Math.sin(a) * 0.6);
-      }
-      disc(0, 0, 0.15);
+      openTool('compass');
       break;
     }
     case 18: { // bee
@@ -2413,32 +2855,27 @@ export function drawOrnament(
       line(0.1, -0.64, 0.28, -0.94);
       break;
     }
-    case 19: { // scallop shell
-      const fan: Pt[] = [pt(0, 0.72)];
-      for (let i = 0; i <= 8; i++) {
-        const a = Math.PI * (1.06 + (i / 8) * 0.88);
-        fan.push(pt(Math.cos(a) * 0.98, 0.62 + Math.sin(a) * 1.3));
-      }
-      strokePts(ctx, fan, true);
-      for (let i = 1; i < 5; i++) {
-        const a = Math.PI * (1.1 + (i / 5) * 0.8);
-        line(0, 0.72, Math.cos(a) * 0.82, 0.62 + Math.sin(a) * 1.08);
+    case 19: { // scallop shell — ribs seated into a flat binder's ledge
+      shoulders(0.68, 0.52, 1.2);
+      line(-0.54, 0.68, 0.54, 0.68);
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.86, cy + s * 0.56);
+      ctx.quadraticCurveTo(cx - s * 0.72, cy - s * 0.62, cx, cy - s * 0.88);
+      ctx.quadraticCurveTo(cx + s * 0.72, cy - s * 0.62, cx + s * 0.86, cy + s * 0.56);
+      ctx.lineTo(cx + s * 0.5, cy + s * 0.68);
+      ctx.lineTo(cx - s * 0.5, cy + s * 0.68);
+      ctx.closePath();
+      ctx.stroke();
+      for (const [bx, ex, ey] of [
+        [-0.38, -0.56, -0.46], [-0.18, -0.28, -0.7], [0, 0, -0.84],
+        [0.18, 0.28, -0.7], [0.38, 0.56, -0.46],
+      ] as const) {
+        line(bx, 0.64, ex, ey);
       }
       break;
     }
     case 20: { // crown
-      fillPoly([
-        pt(-0.92, 0.52),
-        pt(-0.92, -0.3),
-        pt(-0.46, 0.12),
-        pt(0, -0.6),
-        pt(0.46, 0.12),
-        pt(0.92, -0.3),
-        pt(0.92, 0.52),
-      ]);
-      disc(-0.92, -0.44, 0.14);
-      disc(0, -0.76, 0.15);
-      disc(0.92, -0.44, 0.14);
+      openTool('crown');
       break;
     }
     case 21: { // lyre
@@ -2459,19 +2896,7 @@ export function drawOrnament(
       break;
     }
     case 23: { // rosette — eight petals with the bays cut between them
-      // Eight overlapping ellipses in one ink is a CIRCLE: they merge, the
-      // centre disc is invisible inside the merge, and it landed in the same
-      // cluster as the bee, the trefoil, the tulip and the lantern. A rosette
-      // is read from its BAYS, so it is drawn as the outline that has them —
-      // sixteen points alternating 1.0 and 0.46, which at 15px is a mark with
-      // eight bites out of it and nothing else in the table has that.
-      const rose: Pt[] = [];
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * Math.PI * 2;
-        const r = i % 2 === 0 ? 1 : 0.46;
-        rose.push(pt(Math.cos(a) * r, Math.sin(a) * r));
-      }
-      fillPoly(rose);
+      openTool('rosette');
       break;
     }
     case 24: { // trefoil
@@ -2495,13 +2920,7 @@ export function drawOrnament(
       break;
     }
     case 26: { // fleur-de-lis
-      // Lance, two petals curling DOWN and out, a band across the waist and a
-      // foot below it. The petals swept up read as a pair of horns.
-      fillPoly([pt(0, -1), pt(0.19, -0.4), pt(0.16, 0.3), pt(-0.16, 0.3), pt(-0.19, -0.4)]);
-      blob(-0.54, -0.06, 0.46, 0.18, -0.55);
-      blob(0.54, -0.06, 0.46, 0.18, 0.55);
-      fillPoly([pt(-0.54, 0.3), pt(0.54, 0.3), pt(0.54, 0.5), pt(-0.54, 0.5)]);
-      fillPoly([pt(-0.3, 0.5), pt(0.3, 0.5), pt(0.17, 0.98), pt(-0.17, 0.98)]);
+      openTool('fleur-de-lis');
       break;
     }
     case 27: { // ivy leaf
@@ -2597,11 +3016,15 @@ export function drawOrnament(
       break;
     }
     case 32: { // heraldic rose
+      // Five overlapping discs became one near-solid coin at shelf size. A
+      // heraldic rose is the five PETALS and their bays, so each petal is a
+      // separate broad strike around a small boss; the paper-coloured gaps do
+      // more work than another interior line ever could at fifteen pixels.
       for (let i = 0; i < 5; i++) {
         const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-        disc(Math.cos(a) * 0.54, Math.sin(a) * 0.54, 0.42);
+        blob(Math.cos(a) * 0.64, Math.sin(a) * 0.64, 0.33, 0.23, a);
       }
-      disc(0, 0, 0.25);
+      disc(0, 0, 0.18);
       break;
     }
     case 33: { // comet — a head and one wedge of tail
@@ -2693,17 +3116,27 @@ export function drawOrnament(
       ]);
       break;
     }
-    case 41: { // swallow
-      fillPoly([
-        pt(-1, -0.4),
-        pt(-0.16, 0.05),
-        pt(0, -0.12),
-        pt(0.16, 0.05),
-        pt(1, -0.4),
-        pt(0.34, 0.36),
-        pt(0, 0.64),
-        pt(-0.34, 0.36),
-      ]);
+    case 41: { // swallow — a side-on bird, not a mirrored moustache
+      strokePts(
+        ctx,
+        [
+          pt(1, -0.16), // beak
+          pt(0.62, -0.34),
+          pt(0.34, -0.28),
+          pt(-0.18, -0.92), // high swept wing
+          pt(-0.48, -0.72),
+          pt(-0.24, -0.14),
+          pt(-0.98, 0.12), // forked tail
+          pt(-0.46, 0.28),
+          pt(-0.88, 0.66),
+          pt(-0.08, 0.4),
+          pt(0.48, 0.28),
+          pt(0.72, 0.04),
+        ],
+        true,
+      );
+      strokePts(ctx, [pt(-0.2, -0.66), pt(0.12, -0.12), pt(0.46, 0.12)], false);
+      disc(0.58, -0.17, 0.07);
       break;
     }
     case 42: { // fish — stroked outline, one filled eye
@@ -2716,15 +3149,34 @@ export function drawOrnament(
       disc(0.44, -0.12, 0.11);
       break;
     }
-    case 43: { // horseshoe
-      ctx.save();
-      ctx.lineWidth = Math.max(1.4, ctx.lineWidth * 2);
-      bow(0, -0.08, 0.66, Math.PI * 0.18, Math.PI * 0.82, true);
-      ctx.restore();
-      for (let i = 0; i < 5; i++) {
-        const a = Math.PI * (1.16 + (i / 4) * 0.68);
-        disc(Math.cos(a) * 0.66, -0.08 + Math.sin(a) * 0.66, 0.09);
+    case 43: { // anthemion — a classical seven-leaf palmette
+      // This replaces the nailed horseshoe. Each leaf shares one foot, so the
+      // fan reads as a single brass impression rather than a repeated symbol.
+      // Filled lancets retain their hierarchy after the shelf downsample.
+      const leaves = [
+        [-0.78, -0.4, -0.18, 0.14],
+        [-0.54, -0.72, -0.12, 0.08],
+        [-0.28, -0.94, -0.07, 0.02],
+        [0, -1.08, 0, -0.04],
+        [0.28, -0.94, 0.07, 0.02],
+        [0.54, -0.72, 0.12, 0.08],
+        [0.78, -0.4, 0.18, 0.14],
+      ] as const;
+      for (const [tx, ty, bx, by] of leaves) {
+        fillPoly([
+          pt(0, 0.38),
+          pt(bx - 0.11, by + 0.08),
+          pt(tx, ty),
+          pt(bx + 0.11, by + 0.08),
+        ]);
       }
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.86, cy + s * 0.18);
+      ctx.quadraticCurveTo(cx - s * 0.62, cy + s * 0.72, cx, cy + s * 0.58);
+      ctx.quadraticCurveTo(cx + s * 0.62, cy + s * 0.72, cx + s * 0.86, cy + s * 0.18);
+      ctx.stroke();
+      fillPoly([pt(-0.58, 0.66), pt(0, 0.52), pt(0.58, 0.66), pt(0.42, 0.88), pt(-0.42, 0.88)]);
+      fillPoly([pt(-0.32, 0.9), pt(0.32, 0.9), pt(0.2, 1.08), pt(-0.2, 1.08)]);
       break;
     }
     case 44: { // bell
@@ -2788,6 +3240,248 @@ export function drawOrnament(
         heart.push(pt(hx * 1.02, hy * 1.02));
       }
       fillPoly(heart);
+      break;
+    }
+    case 50: { // owl — horned head, two great eyes and a distinct feathered body
+      strokePts(ctx, [
+        pt(-0.82, 0),
+        pt(-0.82, -0.68),
+        pt(-0.64, -1),
+        pt(-0.38, -0.74),
+        pt(0, -0.82),
+        pt(0.38, -0.74),
+        pt(0.64, -1),
+        pt(0.82, -0.68),
+        pt(0.82, 0),
+        pt(0.54, 0.22),
+        pt(0, 0.32),
+        pt(-0.54, 0.22),
+      ], true);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 0.52 * s, 0.54 * s, 0.52 * s, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ring(-0.3, -0.3, 0.27);
+      ring(0.3, -0.3, 0.27);
+      disc(-0.3, -0.3, 0.07);
+      disc(0.3, -0.3, 0.07);
+      fillPoly([pt(0, -0.04), pt(0.16, 0.18), pt(-0.16, 0.18)]);
+      strokePts(ctx, [pt(-0.44, 0.38), pt(-0.18, 0.82), pt(0, 0.92)], false);
+      strokePts(ctx, [pt(0.44, 0.38), pt(0.18, 0.82), pt(0, 0.92)], false);
+      break;
+    }
+    case 51: { // stag — shield-like head and antlers kept outside it
+      fillPoly([
+        pt(0, -0.55),
+        pt(0.42, -0.2),
+        pt(0.28, 0.62),
+        pt(0, 0.98),
+        pt(-0.28, 0.62),
+        pt(-0.42, -0.2),
+      ]);
+      for (const side of [-1, 1]) {
+        line(side * 0.22, -0.42, side * 0.62, -0.98);
+        line(side * 0.42, -0.7, side * 0.84, -0.7);
+        line(side * 0.56, -0.88, side * 0.86, -1.08);
+      }
+      break;
+    }
+    case 52: { // fox — the unmistakable mask, not a miniature animal scene
+      strokePts(
+        ctx,
+        [
+          pt(-0.92, -0.9),
+          pt(-0.36, -0.58),
+          pt(0, -0.74),
+          pt(0.36, -0.58),
+          pt(0.92, -0.9),
+          pt(0.7, 0.18),
+          pt(0, 0.94),
+          pt(-0.7, 0.18),
+        ],
+        true,
+      );
+      fillPoly([pt(-0.48, -0.18), pt(-0.12, 0.02), pt(-0.5, 0.18)]);
+      fillPoly([pt(0.48, -0.18), pt(0.12, 0.02), pt(0.5, 0.18)]);
+      disc(0, 0.48, 0.13);
+      break;
+    }
+    case 53: { // cat — seated in profile, with its tail clearly outside
+      fillPoly([
+        pt(-0.28, 0.88),
+        pt(-0.42, 0.48),
+        pt(-0.36, 0.04),
+        pt(-0.14, -0.28),
+        pt(-0.2, -0.62),
+        pt(0.02, -0.94), // near ear
+        pt(0.18, -0.62),
+        pt(0.52, -0.86), // far ear
+        pt(0.5, -0.5),
+        pt(0.82, -0.28), // muzzle
+        pt(0.5, -0.08),
+        pt(0.4, 0.68),
+        pt(0.68, 0.9),
+      ]);
+      ctx.save();
+      ctx.lineWidth = Math.max(1.4, ctx.lineWidth * 1.45);
+      strokePts(ctx, [pt(-0.18, 0.68), pt(-0.72, 0.46), pt(-0.82, -0.14), pt(-0.56, -0.46)], false);
+      ctx.restore();
+      break;
+    }
+    case 54: { // hare — side profile, swept ears and a separate white-tail cue
+      blob(-0.16, 0.42, 0.64, 0.48, -0.08);
+      blob(0.42, -0.18, 0.34, 0.3, -0.08);
+      blob(0.2, -0.68, 0.16, 0.58, -0.34);
+      blob(0.46, -0.68, 0.13, 0.5, -0.18);
+      fillPoly([pt(0.62, -0.3), pt(0.98, -0.1), pt(0.62, 0.02)]);
+      disc(-0.78, 0.3, 0.16);
+      break;
+    }
+    case 55: { // moth — separate swept wings, long body and visible antennae
+      strokePts(ctx, [
+        pt(-0.18, -0.46),
+        pt(-0.94, -0.82),
+        pt(-0.78, 0.02),
+        pt(-0.38, 0.66),
+        pt(-0.16, 0.16),
+      ], true);
+      strokePts(ctx, [
+        pt(0.18, -0.46),
+        pt(0.94, -0.82),
+        pt(0.78, 0.02),
+        pt(0.38, 0.66),
+        pt(0.16, 0.16),
+      ], true);
+      fillPoly([pt(-0.14, -0.5), pt(0.14, -0.5), pt(0.18, 0.7), pt(0, 1), pt(-0.18, 0.7)]);
+      disc(0, -0.68, 0.2);
+      line(-0.08, -0.82, -0.48, -1);
+      line(0.08, -0.82, 0.48, -1);
+      break;
+    }
+    case 56: { // fern frond — one curved rachis, paired solid leaflets
+      strokePts(ctx, [pt(-0.28, 0.98), pt(-0.08, 0.38), pt(0.08, -0.3), pt(0, -1)], false);
+      for (let i = 0; i < 5; i++) {
+        const y = 0.55 - i * 0.32;
+        const reach = 0.62 - i * 0.07;
+        blob(-reach * 0.56, y + 0.05, reach * 0.48, 0.13, -0.42);
+        blob(reach * 0.56, y - 0.08, reach * 0.48, 0.13, 0.42);
+      }
+      break;
+    }
+    case 57: { // ginkgo — a fan with a shallow cleft and long stem
+      fillPoly([
+        pt(0, -0.08),
+        pt(-0.82, -0.42),
+        pt(-0.92, -0.9),
+        pt(-0.38, -0.78),
+        pt(0, -1),
+        pt(0.38, -0.78),
+        pt(0.92, -0.9),
+        pt(0.82, -0.42),
+      ]);
+      ctx.save();
+      ctx.lineWidth = Math.max(1.2, ctx.lineWidth * 1.2);
+      line(0, -0.12, 0, 1);
+      ctx.restore();
+      break;
+    }
+    case 58: { // mushroom — one cap and one broad stem
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 0.3 * s, 0.92 * s, 0.55 * s, 0, Math.PI, Math.PI * 2);
+      ctx.lineTo(cx + 0.92 * s, cy - 0.18 * s);
+      ctx.lineTo(cx - 0.92 * s, cy - 0.18 * s);
+      ctx.closePath();
+      ctx.fill();
+      fillPoly([pt(-0.3, -0.16), pt(0.3, -0.16), pt(0.48, 0.92), pt(-0.48, 0.92)]);
+      break;
+    }
+    case 59: { // telescope — short optical tube over a bold triangular tripod
+      strokePts(ctx, [
+        pt(-0.62, -0.62),
+        pt(0.5, -0.36),
+        pt(0.42, -0.06),
+        pt(-0.7, -0.34),
+      ], true);
+      strokePts(ctx, [pt(0.46, -0.42), pt(0.8, -0.34), pt(0.7, 0.02), pt(0.38, -0.06)], true);
+      strokePts(ctx, [pt(-0.64, -0.6), pt(-0.9, -0.64), pt(-0.96, -0.4), pt(-0.7, -0.34)], true);
+      disc(0, -0.02, 0.17);
+      ctx.save();
+      ctx.lineWidth = Math.max(1.5, ctx.lineWidth * 1.55);
+      strokePts(ctx, [pt(0, 0.1), pt(-0.68, 0.96), pt(0.64, 0.96), pt(0, 0.1)], false);
+      line(0, 0.1, 0, 0.96);
+      ctx.restore();
+      break;
+    }
+    case 60: { // globe — sphere, meridian and a proper stand
+      ring(0, -0.22, 0.7);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 0.22 * s, 0.3 * s, 0.7 * s, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      bow(0, -0.22, 0.7, Math.PI * 0.08, Math.PI * 0.92);
+      line(0, 0.5, 0, 0.82);
+      line(-0.5, 0.92, 0.5, 0.92);
+      break;
+    }
+    case 61: { // classical column — capital, shaft and stepped base
+      fillPoly([pt(-0.78, -0.94), pt(0.78, -0.94), pt(0.62, -0.68), pt(-0.62, -0.68)]);
+      fillPoly([pt(-0.44, -0.62), pt(0.44, -0.62), pt(0.32, 0.62), pt(-0.32, 0.62)]);
+      fillPoly([pt(-0.58, 0.62), pt(0.58, 0.62), pt(0.74, 0.9), pt(-0.74, 0.9)]);
+      break;
+    }
+    case 62: { // torch — detached pointed flame, broad cup and tapered footed grip
+      fillPoly([
+        pt(0, -1.22),
+        pt(-0.12, -0.78),
+        pt(-0.48, -0.5),
+        pt(-0.36, -0.18),
+        pt(0, -0.1),
+        pt(0.42, -0.28),
+        pt(0.5, -0.62),
+        pt(0.2, -0.96),
+      ]);
+      fillPoly([pt(-0.66, 0.14), pt(0.66, 0.14), pt(0.32, 0.4), pt(-0.32, 0.4)]);
+      fillPoly([pt(-0.2, 0.36), pt(0.2, 0.36), pt(0.12, 0.9), pt(-0.12, 0.9)]);
+      fillPoly([pt(-0.3, 0.9), pt(0.3, 0.9), pt(0.22, 1.04), pt(-0.22, 1.04)]);
+      break;
+    }
+    case 63: { // balance scales — one beam, two bowls, no fine chains
+      line(0, -0.8, 0, 0.82);
+      line(-0.86, -0.48, 0.86, -0.48);
+      fillPoly([pt(-0.92, 0.18), pt(-0.34, 0.18), pt(-0.48, 0.46), pt(-0.78, 0.46)]);
+      fillPoly([pt(0.92, 0.18), pt(0.34, 0.18), pt(0.48, 0.46), pt(0.78, 0.46)]);
+      line(-0.72, -0.46, -0.78, 0.18);
+      line(-0.48, -0.46, -0.34, 0.18);
+      line(0.72, -0.46, 0.78, 0.18);
+      line(0.48, -0.46, 0.34, 0.18);
+      fillPoly([pt(-0.48, 0.82), pt(0.48, 0.82), pt(0.7, 1), pt(-0.7, 1)]);
+      break;
+    }
+    case 64: { // castle — a single battlement silhouette
+      fillPoly([
+        pt(-0.92, 0.88),
+        pt(-0.92, -0.72),
+        pt(-0.56, -0.72),
+        pt(-0.56, -0.36),
+        pt(-0.22, -0.36),
+        pt(-0.22, -0.78),
+        pt(0.22, -0.78),
+        pt(0.22, -0.36),
+        pt(0.56, -0.36),
+        pt(0.56, -0.72),
+        pt(0.92, -0.72),
+        pt(0.92, 0.88),
+      ]);
+      break;
+    }
+    case 65: { // lamp of learning — symmetric oil bowl and centred flame
+      fillPoly([pt(-0.76, 0.08), pt(0.76, 0.08), pt(0.54, 0.56), pt(-0.54, 0.56)]);
+      fillPoly([pt(-0.34, -0.06), pt(0.34, -0.06), pt(0.24, 0.1), pt(-0.24, 0.1)]);
+      strokePts(ctx, [
+        pt(0, -0.06),
+        pt(-0.28, -0.48),
+        pt(0, -1),
+        pt(0.28, -0.48),
+      ], true);
+      strokePts(ctx, [pt(-0.62, 0.58), pt(-0.44, 0.78), pt(0.44, 0.78), pt(0.62, 0.58)], false);
       break;
     }
 
@@ -3350,761 +4044,6 @@ export function clothForPalette(palette: number): number {
   return (CLOTH_FOR_PIGMENT[slot] ?? 0) % CLOTHS.length;
 }
 
-/**
- * …and room for *lettering* inside a plate. Stricter than `fitsLabelPlate`,
- * because a plate only has to look like a plate whereas a title has to be
- * read: below about 6px of glyph the run is a grey smear, and forcing a
- * legible size into a sliver's label spills the letters out over the cloth.
- */
-function fitsTitle(d: DesignBox): boolean {
-  return fitsLabelPlate(d) && d.w * 0.62 * 0.62 >= 6;
-}
-
-/**
- * One shared 8x8 canvas for text measurement.
- *
- * A shelf bakes a few hundred spines in a burst and the old code allocated a
- * canvas per book to ask how wide a glyph was.
- */
-let measureCanvasCtx: Ctx2D | null = null;
-function measureCtx(): Ctx2D {
-  if (measureCanvasCtx === null) measureCanvasCtx = get2d(makeCanvas(8, 8));
-  return measureCanvasCtx;
-}
-
-/** A title, fitted to a binding's free compartment but not yet drawn. */
-interface TitleRun {
-  text: string;
-  fontPx: number;
-  family: string;
-  /** The glyph run's own length. */
-  len: number;
-  /** What the plate must be, along the spine, to hold it: `len` plus padding. */
-  runLen: number;
-}
-
-/**
- * Fit the title to the compartment this binding leaves free — measure only.
- *
- * Measuring and painting are separate because the plate's rectangle has to be
- * known before `drawBookSpine` runs (it is passed in as `reserved`, so tooling
- * that would cross the lettering is skipped and a gilt panel grows to frame it
- * instead) while the lettering itself has to be painted after, on top of the
- * cloth. One function that did both could only ever be called too late.
- *
- * The size is decided by the plate's *width* — a run of letters has to sit
- * inside it across the spine — and the plate is then cut to the run's length.
- * Shrinking and ellipsising only happen when even the whole compartment is too
- * short, which for a real book title is rare. How short that is depends on the
- * binding: a corded book's 0.30–0.60 compartment is a good deal less than a
- * plain wrapper's whole spine.
- */
-function measureSpineTitle(
-  decor: DesignBox,
-  design: BookDesign,
-  title: string,
-  font: number,
-  scale: number,
-): TitleRun {
-  const lw = decor.w * 0.62;
-  const pad = Math.max(2, lw * 0.16);
-  // `decor.h` as the requested run is a stand-in for "as long as you'll give
-  // me": `bookLabelBox` clamps it to the compartment, which is never taller
-  // than the box itself. That keeps the compartment's extent in ONE place.
-  const maxRun = Math.max(pad * 2, bookLabelBox(decor, design, decor.h).h - pad * 2);
-  const family = FONTS[font % FONTS.length] as string;
-  const m = measureCtx();
-
-  let fontPx = Math.min(lw * 0.58, 17 * scale);
-  const minFont = Math.max(4.5, fontPx * 0.55);
-  const runOf = (t: string): number => {
-    m.font = `${fontPx.toFixed(2)}px ${family}`;
-    return textWidth(m, t);
-  };
-
-  let text = title;
-  /*
-   * One measurement, not a walk down in 6% steps. A run's width is linear in
-   * its font size for a given family, so the size that fits is arithmetic
-   * rather than a search — and every step of that search was a fresh
-   * `measureText` against a fresh `m.font`, with nothing cacheable about it
-   * because each step measures the same string at a size it will never use
-   * again. See the same change in `covers.ts`, and the profile that found it.
-   */
-  const atStart = runOf(text);
-  if (atStart > maxRun) fontPx = Math.max(minFont, (fontPx * maxRun) / atStart);
-  if (runOf(text) > maxRun) {
-    while (text.length > 1 && runOf(`${text}…`) > maxRun) text = text.slice(0, -1);
-    const trimmed = text.replace(/[\s,;:.-]+$/u, '');
-    text = `${trimmed.length > 0 ? trimmed : text}…`;
-  }
-
-  m.font = `${fontPx.toFixed(2)}px ${family}`;
-  const len = textWidth(m, text);
-  return { text, fontPx, family, len, runLen: len + pad * 2 };
-}
-
-/* --------------------------- drawing one plate ---------------------------- */
-
-const PLATE_GROUND_HEX: Readonly<Record<Exclude<PlateGround, 'none'>, string>> = {
-  cream: FLAT.cream,
-  creamDeep: FLAT.creamDeep,
-  gilt: FLAT.gilt,
-  giltPale: FLAT.giltPale,
-  ink: FLAT.ink,
-  timber: FLAT.timber,
-  terracotta: FLAT.terracotta,
-  slate: FLAT.slate,
-  moss: FLAT.moss,
-  plum: FLAT.plum,
-};
-
-const PLATE_INK_HEX: Readonly<Record<Exclude<PlateInk, 'auto'>, string>> = {
-  gilt: FLAT.gilt,
-  ink: FLAT.ink,
-  soft: FLAT.inkSoft,
-  cream: FLAT.cream,
-};
-
-/** Resolve a plate ink, with `auto` meaning "gilt on a gilded book". */
-function plateInk(which: PlateInk, gilt: boolean): string {
-  if (which === 'auto') return gilt ? FLAT.gilt : FLAT.inkSoft;
-  return PLATE_INK_HEX[which];
-}
-
-/**
- * Trace one plate silhouette into the current path.
- *
- * Every shape is fitted to the SAME box — the compartment `bookLabelBox` cut
- * for the lettering — which is always tall and narrow. That constraint is why
- * there is no circle here and why `oval` is a long capsule rather than a disc:
- * a shape that only reads when it is as wide as it is tall has no business on
- * a spine, however handsome it is on a specimen board.
- */
-function tracePlate(
-  ctx: Ctx2D,
-  b: DesignBox,
-  shape: PlateShape,
-  radius: number,
-  seed: number,
-): void {
-  const { x, y, w, h } = b;
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const poly = (pts: readonly Pt[]): void => tracePoly(ctx, pts, true);
-
-  switch (shape) {
-    case 'capsule':
-      wobbleRect(ctx, x, y, w, h, Math.min(w / 2, h / 2), seed);
-      return;
-    case 'oval':
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
-      ctx.closePath();
-      return;
-    case 'lozenge': {
-      // A long diamond with FLAT CHEEKS over the middle, not a true rhombus.
-      // The true rhombus is the shape the blurb describes and the wrong shape
-      // to letter: the plate narrows to a point exactly where the first and
-      // last glyphs sit, so on the board the run visibly hung out past its own
-      // label at both ends. Points at head and tail still read as a lozenge.
-      const cheek = h * 0.22;
-      poly([
-        { x: cx, y },
-        { x: x + w, y: y + cheek },
-        { x: x + w, y: y + h - cheek },
-        { x: cx, y: y + h },
-        { x, y: y + h - cheek },
-        { x, y: y + cheek },
-      ]);
-      return;
-    }
-    case 'pediment': {
-      // A gable over the head, which is what the treatment is named for and
-      // what the shield it used to borrow could not say — a shield points at
-      // the TAIL, so "Pedimented" and "Shield" drew the same plate upside down
-      // from each other and neither of them had a gable.
-      const gable = Math.min(h * 0.13, w * 0.7);
-      const c = Math.min(w * 0.16, h * 0.03);
-      poly([
-        { x: cx, y },
-        { x: x + w, y: y + gable },
-        { x: x + w, y: y + gable + c },
-        { x: x + w - c * 0.4, y: y + gable + c },
-        { x: x + w - c * 0.4, y: y + h },
-        { x: x + c * 0.4, y: y + h },
-        { x: x + c * 0.4, y: y + gable + c },
-        { x, y: y + gable + c },
-        { x, y: y + gable },
-      ]);
-      return;
-    }
-    case 'shield':
-      poly([
-        { x, y },
-        { x: x + w, y },
-        { x: x + w, y: y + h * 0.74 },
-        { x: cx, y: y + h },
-        { x, y: y + h * 0.74 },
-      ]);
-      return;
-    case 'octagon': {
-      const c = Math.min(w * 0.3, h * 0.12);
-      poly([
-        { x: x + c, y },
-        { x: x + w - c, y },
-        { x: x + w, y: y + c },
-        { x: x + w, y: y + h - c },
-        { x: x + w - c, y: y + h },
-        { x: x + c, y: y + h },
-        { x, y: y + h - c },
-        { x, y: y + c },
-      ]);
-      return;
-    }
-    case 'arch': {
-      // A round head at the top, square shoulders at the tail.
-      const r = w / 2;
-      ctx.beginPath();
-      ctx.moveTo(x, y + r);
-      ctx.arc(cx, y + r, r, Math.PI, 0);
-      ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x, y + h);
-      ctx.closePath();
-      return;
-    }
-    case 'scroll': {
-      // Both ends curled under: the long sides bow in, the ends bow out.
-      const e = Math.min(h * 0.1, w * 0.7);
-      ctx.beginPath();
-      ctx.moveTo(x, y + e);
-      ctx.quadraticCurveTo(cx, y - e * 0.8, x + w, y + e);
-      ctx.quadraticCurveTo(x + w - w * 0.14, cy, x + w, y + h - e);
-      ctx.quadraticCurveTo(cx, y + h + e * 0.8, x, y + h - e);
-      ctx.quadraticCurveTo(x + w * 0.14, cy, x, y + e);
-      ctx.closePath();
-      return;
-    }
-    case 'stepped': {
-      const c = Math.min(w * 0.22, h * 0.06);
-      poly([
-        { x: x + c, y },
-        { x: x + w - c, y },
-        { x: x + w - c, y: y + c },
-        { x: x + w, y: y + c },
-        { x: x + w, y: y + h - c },
-        { x: x + w - c, y: y + h - c },
-        { x: x + w - c, y: y + h },
-        { x: x + c, y: y + h },
-        { x: x + c, y: y + h - c },
-        { x, y: y + h - c },
-        { x, y: y + c },
-        { x: x + c, y: y + c },
-      ]);
-      return;
-    }
-    default:
-      wobbleRect(ctx, x, y, w, h, Math.min(w * radius, h / 2), seed);
-  }
-}
-
-/** A small filled diamond, the workhorse end mark. */
-function plateLozenge(ctx: Ctx2D, x: number, y: number, r: number): void {
-  tracePoly(
-    ctx,
-    [
-      { x, y: y - r },
-      { x: x + r * 0.62, y },
-      { x, y: y + r },
-      { x: x - r * 0.62, y },
-    ],
-    true,
-  );
-  ctx.fill();
-}
-
-/** A small filled four-point sparkle. */
-function plateStar(ctx: Ctx2D, x: number, y: number, r: number): void {
-  tracePoly(
-    ctx,
-    [
-      { x, y: y - r },
-      { x: x + r * 0.3, y: y - r * 0.3 },
-      { x: x + r, y },
-      { x: x + r * 0.3, y: y + r * 0.3 },
-      { x, y: y + r },
-      { x: x - r * 0.3, y: y + r * 0.3 },
-      { x: x - r, y },
-      { x: x - r * 0.3, y: y - r * 0.3 },
-    ],
-    true,
-  );
-  ctx.fill();
-}
-
-/** A printer's leaf: one filled body and two lobes. */
-function plateFleuron(ctx: Ctx2D, x: number, y: number, r: number, up: number): void {
-  ctx.beginPath();
-  ctx.ellipse(x, y, r * 0.4, r * 0.85, 0, 0, Math.PI * 2);
-  ctx.fill();
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(x + side * r * 0.72, y + up * r * 0.24, r * 0.5, r * 0.22, side * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-/**
- * Draw the lettering-piece the spec asks for, ground through frame.
- *
- * Composed, not branched fifty ways: the ground fills the silhouette, the
- * grain is clipped inside it, the frame runs round it and the end marks close
- * the run off. Any spec whose ground is `none` skips the first two and tools
- * straight onto the covering, which is what half the real treatments do.
- */
-function drawTitlePlate(
-  ctx: Ctx2D,
-  b: DesignBox,
-  spec: TitlePlateSpec,
-  design: BookDesign,
-  scale: number,
-): void {
-  const { x, y, w, h } = b;
-  const seed = design.seed + 3;
-  const ink = Math.max(0.8, inkWidth(w) * 0.7);
-  const frameInk = plateInk(spec.frameInk, design.gilt);
-  const pad = Math.max(1.2, w * 0.13);
-
-  ctx.save();
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  /* ---- seat: where the label meets the covering ---- */
-  // The one thing every plate was missing. A label laid on cloth is not a
-  // decal — it has a thickness, and the whole style says a thickness is a
-  // darker flat face beside a lighter one. `proud` puts that face UNDER the
-  // plate, offset by a fraction of the plate's width; `sunk` puts it INSIDE,
-  // at the head and the hinge side, so the compartment reads as dropped. It is
-  // the same flat shadow tone `contactShadow` uses, cut to the plate's own
-  // silhouette instead of to an ellipse — no blur, no direction, no light.
-  const seat = spec.seat ?? (spec.ground === 'none' ? 'flush' : 'proud');
-  const drop = Math.max(0.7, w * 0.09);
-  if (seat === 'proud') {
-    ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = FLAT.shadow;
-    tracePlate(ctx, { ...b, x: x + drop * 0.6, y: y + drop }, spec.shape, spec.radius, seed);
-    ctx.fill();
-    ctx.restore();
-  } else if (seat === 'sunk') {
-    ctx.save();
-    tracePlate(ctx, b, spec.shape, spec.radius, seed);
-    ctx.clip();
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = FLAT.shadow;
-    tracePlate(ctx, { ...b, x: x + drop * 0.9, y: y + drop * 1.4 }, spec.shape, spec.radius, seed);
-    // Even-odd against the plate's own outline leaves only the crescent along
-    // the head and the hinge side filled — the depression, drawn rather than
-    // lit.
-    tracePlate(ctx, b, spec.shape, spec.radius, seed);
-    ctx.fill('evenodd');
-    ctx.restore();
-  }
-
-  /* ---- ground ---- */
-  if (spec.ground !== 'none') {
-    tracePlate(ctx, b, spec.shape, spec.radius, seed);
-    ctx.fillStyle = PLATE_GROUND_HEX[spec.ground];
-    ctx.fill();
-    if (spec.outline > 0) {
-      ctx.strokeStyle = FLAT.ink;
-      ctx.lineWidth = ink * spec.outline;
-      ctx.stroke();
-    }
-  }
-
-  /* ---- grain, clipped inside the plate ---- */
-  if (spec.grain !== 'none' && spec.ground !== 'none') {
-    ctx.save();
-    tracePlate(ctx, b, spec.shape, spec.radius, seed);
-    ctx.clip();
-    ctx.strokeStyle = FLAT.inkSoft;
-    ctx.fillStyle = FLAT.inkSoft;
-    ctx.globalAlpha = 0.5;
-    if (spec.grain === 'hatch') {
-      const step = Math.max(2.4, w * 0.3);
-      for (let d = -h; d < w + h; d += step) {
-        inkLine(ctx, x + d, y, x + d + h, y + h, FLAT.inkSoft, Math.max(0.6, ink * 0.35), seed + d);
-      }
-    } else if (spec.grain === 'stipple') {
-      const rows = Math.max(3, Math.round(h / Math.max(2.6, w * 0.34)));
-      for (let i = 0; i < rows; i++) {
-        for (let k = 0; k < 2; k++) {
-          ctx.beginPath();
-          ctx.arc(
-            x + w * (k === 0 ? 0.32 : 0.68),
-            y + (h * (i + 0.5)) / rows,
-            Math.max(0.5, w * 0.055),
-            0,
-            Math.PI * 2,
-          );
-          ctx.fill();
-        }
-      }
-    } else {
-      const rows = Math.max(3, Math.round(h / Math.max(3.2, w * 0.42)));
-      for (let i = 1; i < rows; i++) {
-        const ry = y + (h * i) / rows;
-        inkLine(ctx, x + w * 0.16, ry, x + w * 0.84, ry, FLAT.inkSoft, Math.max(0.5, ink * 0.3), seed + i);
-      }
-    }
-    ctx.restore();
-  }
-
-  /* ---- frame ---- */
-  ctx.strokeStyle = frameInk;
-  ctx.fillStyle = frameInk;
-  const inset = (k: number, weight: number): void => {
-    const p = pad * k;
-    if (w - p * 2 <= 1.5 || h - p * 2 <= 1.5) return;
-    wobbleRect(ctx, x + p, y + p, w - p * 2, h - p * 2, Math.max(0, w * spec.radius - p), seed + k);
-    ctx.lineWidth = Math.max(0.7, ink * weight);
-    ctx.stroke();
-  };
-  switch (spec.frame) {
-    case 'single':
-      inset(0.55, 0.62);
-      break;
-    case 'double':
-      inset(0.35, 0.55);
-      inset(1, 0.42);
-      break;
-    case 'triple':
-      inset(0.28, 0.42);
-      inset(0.78, 0.85);
-      inset(1.4, 0.42);
-      break;
-    case 'dotted':
-    case 'bead': {
-      // The dotted rule was struck at `w * 0.075` with a gap of 3.6r, and on
-      // the board that came out as a row of big square-ish blobs down each
-      // side — a sprocket strip, not a border of small round tools. Both
-      // frames are finer and closer now, which is what "struck one at a time"
-      // is supposed to look like.
-      const r = Math.max(0.55, w * (spec.frame === 'bead' ? 0.05 : 0.055));
-      const gap = Math.max(1.8, r * (spec.frame === 'bead' ? 2.5 : 3));
-      const px = x + pad * 0.55;
-      const pw = w - pad * 1.1;
-      const py = y + pad * 0.55;
-      const ph = h - pad * 1.1;
-      const down = Math.max(2, Math.round(ph / gap));
-      for (let i = 0; i <= down; i++) {
-        const dy = py + (ph * i) / down;
-        for (const dx of [px, px + pw]) {
-          ctx.beginPath();
-          ctx.arc(dx, dy, r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      for (const dy of [py, py + ph]) {
-        ctx.beginPath();
-        ctx.arc(px + pw / 2, dy, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      break;
-    }
-    case 'rope': {
-      const step = Math.max(2.4, w * 0.34);
-      const px = x + pad * 0.5;
-      const pw = w - pad;
-      for (let dy = y + pad; dy < y + h - pad; dy += step) {
-        inkLine(ctx, px, dy, px + w * 0.14, dy + step * 0.7, frameInk, Math.max(0.7, ink * 0.5), seed + dy);
-        inkLine(
-          ctx,
-          px + pw,
-          dy,
-          px + pw - w * 0.14,
-          dy + step * 0.7,
-          frameInk,
-          Math.max(0.7, ink * 0.5),
-          seed + dy + 1,
-        );
-      }
-      break;
-    }
-    case 'scallop': {
-      const r = Math.max(1, w * 0.15);
-      const step = r * 2;
-      ctx.lineWidth = Math.max(0.6, ink * 0.45);
-      for (let dy = y + r; dy < y + h - r * 0.5; dy += step) {
-        ctx.beginPath();
-        ctx.arc(x, dy, r, -Math.PI / 2, Math.PI / 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x + w, dy, r, Math.PI / 2, -Math.PI / 2);
-        ctx.stroke();
-      }
-      break;
-    }
-    case 'brackets': {
-      const arm = Math.min(w * 0.5, h * 0.1);
-      ctx.lineWidth = Math.max(0.8, ink * 0.7);
-      for (const [bx, sx] of [
-        [x + pad * 0.4, 1],
-        [x + w - pad * 0.4, -1],
-      ] as const) {
-        for (const [by, sy] of [
-          [y + pad * 0.4, 1],
-          [y + h - pad * 0.4, -1],
-        ] as const) {
-          ctx.beginPath();
-          ctx.moveTo(bx + sx * arm * 0.7, by);
-          ctx.lineTo(bx, by);
-          ctx.lineTo(bx, by + sy * arm);
-          ctx.stroke();
-        }
-      }
-      break;
-    }
-    case 'notched': {
-      const c = Math.min(w * 0.24, h * 0.05);
-      ctx.lineWidth = Math.max(0.7, ink * 0.6);
-      for (const [bx, sx] of [
-        [x, 1],
-        [x + w, -1],
-      ] as const) {
-        for (const [by, sy] of [
-          [y, 1],
-          [y + h, -1],
-        ] as const) {
-          ctx.beginPath();
-          ctx.moveTo(bx + sx * c, by);
-          ctx.lineTo(bx, by + sy * c);
-          ctx.stroke();
-        }
-      }
-      break;
-    }
-    case 'wreath': {
-      // Leaves down both sides, and they must sit ON THE EDGE, not over the
-      // lettering. At `w * 0.18` on a 24px plate each leaf was 8px of gilt
-      // laid across the glyphs and the plate read as damaged. Smaller, tucked
-      // to the rule, and with a stem tick between each pair so the run reads
-      // as a bough rather than as a column of seeds.
-      const r = Math.max(0.9, w * 0.12);
-      const step = r * 2.4;
-      for (let dy = y + r * 1.4; dy < y + h - r; dy += step) {
-        for (const [dx, rot] of [
-          [x + r * 0.75, -0.75],
-          [x + w - r * 0.75, 0.75],
-        ] as const) {
-          ctx.beginPath();
-          ctx.ellipse(dx, dy, r, r * 0.42, rot, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      const stemW = Math.max(0.5, ink * 0.35);
-      for (const sx of [x + r * 0.55, x + w - r * 0.55]) {
-        inkLine(ctx, sx, y + r, sx, y + h - r * 0.6, frameInk, stemW, seed + sx);
-      }
-      break;
-    }
-    case 'gothic': {
-      // A pointed arch struck inside the head of the panel, cusped either side.
-      const p = pad * 0.7;
-      const top = y + p;
-      const spring = Math.min(y + h - p, top + w * 1.1);
-      ctx.lineWidth = Math.max(0.8, ink * 0.6);
-      ctx.beginPath();
-      ctx.moveTo(x + p, spring);
-      ctx.quadraticCurveTo(x + p, top + (spring - top) * 0.2, x + w / 2, top);
-      ctx.quadraticCurveTo(x + w - p, top + (spring - top) * 0.2, x + w - p, spring);
-      ctx.stroke();
-      inkLine(ctx, x + p, spring, x + p, y + h - p, frameInk, Math.max(0.7, ink * 0.5), seed + 7);
-      inkLine(ctx, x + w - p, spring, x + w - p, y + h - p, frameInk, Math.max(0.7, ink * 0.5), seed + 8);
-      break;
-    }
-    default:
-      break;
-  }
-
-  /* ---- corner hardware ---- */
-  // Four small marks, and each one is a promise the blurb had already made.
-  // They are struck AFTER the frame so a pin sits on top of its bead and a
-  // lifted corner covers the rule it interrupts.
-  switch (spec.stud ?? 'none') {
-    case 'pins': {
-      const r = Math.max(0.7, w * 0.09);
-      const inX = Math.min(w * 0.24, pad * 1.2);
-      const inY = Math.min(h * 0.05, pad * 1.6);
-      ctx.fillStyle = FLAT.ink;
-      for (const px of [x + inX, x + w - inX]) {
-        for (const py of [y + inY, y + h - inY]) {
-          ctx.beginPath();
-          ctx.arc(px, py, r, 0, Math.PI * 2);
-          ctx.fill();
-          // A half-round of the ground on the low side of each pin: a rivet is
-          // two flat faces, which is the whole depth model at this size.
-          ctx.fillStyle = FLAT.creamDeep;
-          ctx.beginPath();
-          ctx.arc(px - r * 0.3, py - r * 0.3, r * 0.42, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = FLAT.ink;
-        }
-      }
-      break;
-    }
-    case 'stitches': {
-      // Two crosses, head and tail, where a tag is actually sewn down.
-      const arm = Math.max(1, w * 0.16);
-      const wt = Math.max(0.6, ink * 0.5);
-      for (const sy of [y + Math.min(h * 0.045, pad * 1.5), y + h - Math.min(h * 0.045, pad * 1.5)]) {
-        const sx = x + w / 2;
-        inkLine(ctx, sx - arm, sy - arm, sx + arm, sy + arm, FLAT.inkSoft, wt, seed + sy);
-        inkLine(ctx, sx - arm, sy + arm, sx + arm, sy - arm, FLAT.inkSoft, wt, seed + sy + 1);
-      }
-      break;
-    }
-    case 'lift': {
-      // One corner peeled back: a wedge of the covering shows through, and the
-      // slip's own paper folds over beside it. Head-left, because that is the
-      // corner a thumb catches when a book is pulled off a shelf.
-      const c = Math.min(w * 0.42, h * 0.05);
-      ctx.save();
-      ctx.globalAlpha = 0.34;
-      ctx.fillStyle = FLAT.shadow;
-      tracePoly(ctx, [
-        { x: x + c * 0.2, y: y - c * 0.1 },
-        { x: x + c * 1.5, y: y - c * 0.1 },
-        { x: x + c * 0.2, y: y + c * 1.3 },
-      ], true);
-      ctx.fill();
-      ctx.restore();
-      tracePoly(ctx, [
-        { x: x - c * 0.35, y: y + c * 0.3 },
-        { x: x + c * 1.1, y: y - c * 0.35 },
-        { x: x + c * 0.3, y: y + c * 1.15 },
-      ], true);
-      ctx.fillStyle = FLAT.creamDeep;
-      ctx.fill();
-      ctx.strokeStyle = FLAT.ink;
-      ctx.lineWidth = Math.max(0.6, ink * 0.5);
-      ctx.stroke();
-      break;
-    }
-    case 'proud-cut': {
-      // "Cut a shade proud of its panel": a second outline running just outside
-      // the first, which is how a label that stands off its ground reads when
-      // you are not allowed to bevel it.
-      ctx.strokeStyle = FLAT.inkSoft;
-      ctx.lineWidth = Math.max(0.6, ink * 0.45);
-      const o = Math.max(0.8, w * 0.1);
-      tracePlate(ctx, { x: x - o, y: y - o * 0.6, w: w + o * 2, h: h + o * 1.2 }, spec.shape, spec.radius, seed + 9);
-      ctx.stroke();
-      break;
-    }
-    default:
-      break;
-  }
-
-  /* ---- end marks ---- */
-  if (spec.ends !== 'none') {
-    const r = Math.min(w * 0.2, 4 * scale);
-    const yTop = y + pad * 1.1 + r;
-    const yBot = y + h - pad * 1.1 - r;
-    if (yBot - yTop > r * 2) {
-      const mx = x + w / 2;
-      for (const [ey, up] of [
-        [yTop, -1],
-        [yBot, 1],
-      ] as const) {
-        switch (spec.ends) {
-          case 'rule':
-            inkLine(ctx, x + w * 0.2, ey, x + w * 0.8, ey, frameInk, Math.max(0.7, ink * 0.6), seed + ey);
-            break;
-          case 'double-rule':
-            inkLine(ctx, x + w * 0.14, ey - r * 0.35, x + w * 0.86, ey - r * 0.35, frameInk, Math.max(0.7, ink * 0.6), seed + ey);
-            inkLine(ctx, x + w * 0.14, ey + r * 0.35, x + w * 0.86, ey + r * 0.35, frameInk, Math.max(0.6, ink * 0.4), seed + ey + 1);
-            break;
-          case 'dots':
-            for (const t of [0.3, 0.5, 0.7]) {
-              ctx.beginPath();
-              ctx.arc(x + w * t, ey, Math.max(0.5, r * 0.28), 0, Math.PI * 2);
-              ctx.fill();
-            }
-            break;
-          case 'lozenge':
-            plateLozenge(ctx, mx, ey, r * 0.8);
-            break;
-          case 'star':
-            plateStar(ctx, mx, ey, r * 0.9);
-            break;
-          case 'fleuron':
-            plateFleuron(ctx, mx, ey, r, up);
-            break;
-          default:
-            ctx.lineWidth = Math.max(0.7, ink * 0.6);
-            ctx.beginPath();
-            ctx.moveTo(x + w * 0.2, ey + up * r * 0.6);
-            ctx.lineTo(x + w * 0.2, ey);
-            ctx.lineTo(x + w * 0.8, ey);
-            ctx.lineTo(x + w * 0.8, ey + up * r * 0.6);
-            ctx.stroke();
-            break;
-        }
-      }
-    }
-  }
-
-  ctx.restore();
-}
-
-/**
- * Set the measured run down the spine, on the plate its treatment asks for.
- *
- * Flat means flat: no foil ramp, no relief copy, no burnished glint travelling
- * along the run. The one liberty is a hair of baseline wobble per glyph, which
- * is the same liberty every other shape in this style takes.
- *
- * `spec` is `none` for the bindings that carry no lettering-piece — a plain
- * wrapper, limp vellum, blind-tooled calf. Those books get their title stamped
- * directly onto the covering, which is what the real thing does; painting a
- * cream panel onto all 62 presets is what made a third of them stop meaning
- * anything.
- */
-function paintSpineTitle(
-  ctx: Ctx2D,
-  box: DesignBox,
-  run: TitleRun,
-  design: BookDesign,
-  scale: number,
-  spec: TitlePlateSpec,
-): void {
-  drawTitlePlate(ctx, box, spec, design, scale);
-
-  const m = measureCtx();
-  m.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
-  const wob = mulberry32((design.seed ^ 0x7115) >>> 0);
-  ctx.save();
-  // A quarter turn clockwise, so the run reads top-to-bottom the way it does
-  // on a real spine and the glyph tops face the fore-edge.
-  ctx.translate(box.x + box.w / 2, box.y + (box.h - run.len) / 2);
-  ctx.rotate(Math.PI / 2);
-  ctx.font = `${run.fontPx.toFixed(2)}px ${run.family}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  // The treatment names its own lettering ink, and it has to: a cream label
-  // wants soft ink, a sunk morocco label wants gold, an ink panel wants the
-  // letters cut back to cream. `auto` is the old rule — gilt on a gilded book,
-  // soft ink otherwise — and is what every treatment with no ground uses.
-  ctx.fillStyle = plateInk(spec.letter, design.gilt);
-  let advance = 0;
-  for (const ch of run.text) {
-    ctx.fillText(ch, advance, (wob() * 2 - 1) * 0.5 * scale);
-    advance += textWidth(m, ch);
-  }
-  ctx.restore();
-}
 
 /**
  * The ornament stamp, struck straight onto the cloth.
@@ -4126,9 +4065,21 @@ function drawSpineOrnament(
   // fraction of the height. The old floor of 0.79 was right for one dressing
   // and wrong for the rest: on a corded book it lands on a cord, and on a half
   // binding 0.30 puts the stamp on the leather rather than in the panel.
-  const size = Math.min(decor.w * 0.3, 13 * scale, (bottom - top) / 2.2);
+  // A binder's tool must occupy most of a 30px shelf spine to retain its
+  // negative space. The former 0.30W cap reduced even the authored open tools
+  // to isolated 15px pictograms; 0.38W yields a 75–80% broad strike.
+  const size = Math.min(decor.w * 0.38, 15 * scale, (bottom - top) / 2.2);
   if (size < 2.4 || decor.w < 12) return;
-  const colour = params.gilt ? FLAT.gilt : FLAT.inkSoft;
+  const preferred = normaliseHex(params.emblemHex ?? params.toolingHex)
+    ?? (params.gilt ? FLAT.gilt : FLAT.inkSoft);
+  const ground = normaliseHex(params.spineBaseHex ?? params.clothHex)
+    ?? CLOTHS[clothForPalette(params.palette)]?.[0]
+    ?? FLAT.cream;
+  const colour = colourContrast(preferred, ground) >= 2.35
+    ? preferred
+    : [FLAT.ink, FLAT.cream, FLAT.gilt].reduce((best, candidate) =>
+        colourContrast(candidate, ground) > colourContrast(best, ground) ? candidate : best,
+      preferred);
   ctx.save();
   ctx.lineWidth = Math.max(1, size * 0.17);
   ctx.lineJoin = 'round';
@@ -4137,7 +4088,7 @@ function drawSpineOrnament(
   ctx.fillStyle = colour;
   drawOrnament(
     ctx,
-    params.ornament,
+    normalizeOrnamentIndex(params.ornament),
     decor.x + decor.w / 2,
     (top + bottom) / 2,
     size,
@@ -4146,52 +4097,10 @@ function drawSpineOrnament(
   ctx.restore();
 }
 
-/**
- * A charm, reduced to one mark: a ribbon lying down the head of the spine.
- *
- * The six charm kinds (tassel, wax seal, clasp, tag…) were six little painted
- * objects with palettes of their own, and six competing styles on one shelf is
- * exactly what this restyle exists to stop. Flat art says the same thing with
- * one shape in one of the palette's colours; the *kind* still survives in the
- * params, and the pull-out and open book are free to draw it in full.
- */
-function drawSpineRibbon(
-  ctx: Ctx2D,
-  body: DesignBox,
-  params: SpineParams,
-  design: BookDesign,
-): void {
-  const { x, y, w, h } = body;
-  const rw = Math.max(2, w * 0.2);
-  if (rw < 2.5 || h < 40) return;
-  const rh = Math.min(h * 0.16, rw * 6);
-  // ONE folding of the charm colourway, shared with `art/covers.ts` and with
-  // the Book Studio's swatch. This used to be a local table of eight FLAT
-  // constants in an order of its own — `[moss, terracotta, gilt, slate, plum,
-  // sage, ochre, mossDark]` — while the studio's swatch row was
-  // `[crimson, forest, navy, …]` and the cover had a third table again. Same
-  // index, three foldings, so a reader who pressed **Crimson** got a green
-  // ribbon on the shelf and a terracotta one in their hand, and nothing
-  // anywhere failed. `charmColorCss` is now the only place that answers this
-  // question, and it takes a reader's own hex as readily as an index.
-  const colour = charmColorCss(params.charmColor);
-  // It starts ABOVE the head so its top cap and outline are cut off by the
-  // bake's own bounds — that is what makes it read as coming out of the book
-  // rather than as a pill painted on the cloth. Right of centre for the same
-  // reason a real marker sits off to one side. A notched tail would be under
-  // a pixel at shelf scale, so the foot is rounded like everything else.
-  panel(ctx, x + w * 0.56 - rw / 2, y - rh * 0.22, rw, rh, colour, {
-    radius: rw * 0.42,
-    seed: design.seed + 5,
-    width: Math.max(1, inkWidth(rw) * 0.8),
-  });
-}
-
 export interface RenderSpineOptions {
   /**
-   * Hi-res variant: sets the book's real title on the spine label. Lo-res LOD
-   * bakes skip text entirely (illegible at that size anyway) and get the
-   * label's ruled placeholder instead.
+   * Retained for worker-message compatibility. Spines no longer carry text,
+   * so semantic zoom changes detail density without ever adding lettering.
    */
   hiRes?: boolean;
 
@@ -4212,6 +4121,33 @@ export interface RenderSpineOptions {
   neighbourRight?: string | null;
 }
 
+/** Resolve the exact binding object the spine renderer will paint. */
+export function resolveSpineBinding(params: SpineParams): BookDesign {
+  const seeded = flatSpineFor(params.seed);
+  const ownBase = normaliseHex(params.spineBaseHex);
+  return resolveBookDesign({
+    seed: params.seed,
+    cloth: ownBase ?? params.clothHex ?? clothForPalette(params.palette),
+    // The dedicated role and the shared cloth can legitimately contain the
+    // same hex. Keep their provenance: vellum/parchment stays naturally pale
+    // while inherited, but accepts a restrained colour wash when the reader
+    // explicitly picks the spine face.
+    baseColourPinned: ownBase !== null,
+    accent: params.spineAccentHex ?? undefined,
+    tooling: params.toolingHex ?? null,
+    emblem: params.emblemHex ?? null,
+    hardware: params.hardwareHex ?? null,
+    gilt: params.gilt,
+    focusAt: seeded.labelAt,
+    preset: params.binding ?? null,
+    material: params.materialPinned === true ? materialLookFor(params.material) : null,
+    bands: clamp(Math.round(params.raisedBands ?? 0), 0, MAX_RAISED_BANDS),
+    bandGilt: params.bandGilt ?? params.gilt,
+    headTail: params.headTail ? normalizeHeadTailStyle(params.headTailStyle) : null,
+    wear: params.wear ?? 0,
+  });
+}
+
 /**
  * Render one spine at (x, y) on `ctx`. hPx is the spine height in canvas px;
  * `scale` converts world px → canvas px (params.w * scale = drawn width).
@@ -4220,14 +4156,14 @@ export interface RenderSpineOptions {
  * upright into atlas rects; the shelf compositor applies lean/height when
  * placing the sprite.
  *
- * Layer order: the binding (silhouette, covering material, cords, tooling and
- * — unless we are setting one ourselves — its lettering-piece) → the title →
- * the ornament → the ribbon. `art/bookDesign.ts` owns the first of those; this
- * function owns the three that carry the book's own identity.
+ * Layer order: binding construction → restrained tooling → one optional
+ * ornament. Book titles now belong to the FRONT COVER only. Applied charms
+ * are retired at both resolver and renderer boundaries, so no ribbon or
+ * pennant can protrude above a shelf book.
  *
  * The binding is a THIRD axis on top of the params: `presetForSeed` gives every
- * book one of 62 deterministically, and `params.binding` pins it when the
- * reader has chosen in the studio. Nothing here consults `flatScheme()` — a
+ * book one vetted whole-book preset deterministically, and `params.binding`
+ * pins it when the reader has chosen in the studio. Nothing here consults `flatScheme()` — a
  * book keeps its own colours in every room, which is what lets you recognise
  * it after a repaint.
  */
@@ -4238,98 +4174,19 @@ export function renderSpine(
   y: number,
   hPx: number,
   scale: number,
-  title: string,
   opts: RenderSpineOptions = {},
 ): void {
   const w = params.w * scale;
   const h = hPx;
-  const seeded = flatSpineFor(params.seed);
-  const design = resolveBookDesign({
-    seed: params.seed,
-    // The reader's own colour when they entered one; the fold of their pigment
-    // otherwise. Checked here rather than inside `clothForPalette` because that
-    // function answers "which of the fifty", and a custom colour is none of
-    // them — folding it onto the nearest is the exact lie this replaces.
-    cloth: params.clothHex ?? clothForPalette(params.palette),
-    gilt: params.gilt,
-    labelAt: seeded.labelAt,
-    preset: params.binding ?? null,
-    // The studio's four own axes. They used to stop here: the sheet offered
-    // cords, endbands, a covering and a wear slider, `drawBookSpine` had never
-    // heard of any of them, and every one of those controls moved nothing.
-    material: params.materialPinned === true ? materialLookFor(params.material) : null,
-    bands: params.raisedBands ?? 0,
-    bandGilt: params.bandGilt ?? params.gilt,
-    headTail: params.headTail ? (params.headTailStyle ?? 0) : null,
-    wear: params.wear ?? 0,
-  });
+  const design = resolveSpineBinding(params);
+  const f = drawBookSpine(ctx, x, y, w, h, design, { noContact: false });
 
-  // Geometry BEFORE any drawing: three shapes stand narrower than their slot
-  // and `slipcased` moves the decorated surface onto the case, so the title
-  // and the ornament belong on `decor`, not on the footprint.
-  const boxes = bookSpineBoxes(design, x, y, w, h);
-
-  // Lettering is hi-res only — at the lo LOD the glyphs are a smudge, and the
-  // binding's own ruled placeholder says "this book is titled" for a fraction
-  // of the cost. But a titled book carries a *plate* at BOTH levels, so zooming
-  // in fills the label rather than conjuring one out of nothing. (Slivers
-  // under ~23 world px still pop: at the lo scale their label would be four
-  // pixels wide, and drawing it would be worse than the pop.)
-  const text = title.trim();
-  const titled = text.length > 0 && opts.hiRes === true && fitsTitle(boxes.decor);
-  // Whether this book wears a lettering-piece is the BINDING's answer, with
-  // the studio's explicit `titlePlate` able to overrule it. Plating all 62
-  // presets regardless is what would make a third of them indistinguishable.
-  //
-  // `none` from the studio is not "no plate" — it is "no OPINION": a binding
-  // that wants a label-plate still gets the house paper label, exactly as it
-  // did when this was a boolean. An explicit treatment wins over the binding.
-  const chosen = params.titlePlate ?? 'none';
-  const wanted =
-    chosen !== 'none'
-      ? titlePlateSpec(chosen)
-      : hasDecoration(design, 'label-plate')
-        ? TITLE_PLATE_SPECS.label
-        : TITLE_PLATE_SPECS.none;
-  // A sliver has no room for a ground, and a plate too small to letter reads
-  // as a smear of paint rather than as a label.
-  const spec = fitsLabelPlate(boxes.decor) ? wanted : TITLE_PLATE_SPECS.none;
-
-  const run = titled ? measureSpineTitle(boxes.decor, design, text, params.font, scale) : null;
-  const box = run !== null ? bookLabelBox(boxes.decor, design, run.runLen) : null;
-
-  const f = drawBookSpine(ctx, x, y, w, h, design, {
-    // Reserve the band the lettering will occupy even when no plate goes under
-    // it: tooling struck across a title is the one thing worse than no tooling.
-    //
-    // The x extent goes with it. It was dropped here, so the decoration painter
-    // had to guess the plate's width from a constant — and vertical rules sited
-    // just outside that constant, but inside the plate a design actually drew,
-    // ran straight through the title.
-    reserved:
-      box !== null
-        ? { y0: box.y, y1: box.y + box.h, x0: box.x, x1: box.x + box.w }
-        : null,
-    ownLabel: titled,
-    noContact: false,
-  });
-
-  if (run !== null && box !== null) paintSpineTitle(ctx, box, run, design, scale, spec);
-
-  if (params.ornamentOn ?? true) {
-    // Whatever ended up highest — our plate, or the binding's own — is the
-    // ornament's ceiling; the compartment's floor is its floor.
-    const above = box ?? f.label;
-    const top = above !== null ? above.y + above.h : f.freeTop;
-    drawSpineOrnament(ctx, f.decor, params, top, f.freeBottom, scale);
+  if ((params.ornamentOn ?? true) && !bookPresetHasAuthoredFocal(params.binding ?? design.preset)) {
+    drawSpineOrnament(ctx, f.decor, params, f.freeTop, f.freeBottom, scale);
   }
 
-  // The design's `ribbon-marker` and the charm ribbon are different objects at
-  // different x. A book that has both wears two ribbons, which reads as a
-  // mistake rather than as a well-used book.
-  if ((params.charm ?? 'none') !== 'none' && !hasDecoration(design, 'ribbon-marker')) {
-    drawSpineRibbon(ctx, f.body, params, design);
-  }
+  // Keep future-facing render context live without restoring title pixels.
+  void opts;
 }
 
 /* ========================================================================== *
@@ -4383,11 +4240,9 @@ export interface RowBookInput {
   id: string;
   /** Art seed. */
   seed: number;
-  /** Title, for the spine lettering. */
-  title: string;
   /**
    * Pre-resolved params. When omitted the composer derives them from `seed`,
-   * so a caller with no style overrides can pass ids and titles alone.
+   * so a caller with no style overrides can pass an id and seed alone.
    */
   params?: SpineParams;
 }
@@ -4398,7 +4253,6 @@ export interface RowPlacement {
   /** Index into the composer's input array. */
   index: number;
   params: SpineParams;
-  title: string;
   /** Left edge of the book's footprint, world px from the row's origin. */
   x: number;
   /** Footprint width (the thickness, widened when the book leans). */
@@ -4747,7 +4601,6 @@ export function composeShelfRow(
           id: c.input.id,
           index: c.index,
           params: c.params,
-          title: c.input.title,
           x: cursor + jitterX + (footprint - c.height * 0.94) / 2,
           width: c.height * 0.94,
           height: c.params.w,
@@ -4797,7 +4650,6 @@ export function composeShelfRow(
         id: c.input.id,
         index: c.index,
         params: c.params,
-        title: c.input.title,
         x: cursor,
         width: footprint,
         height: c.height,

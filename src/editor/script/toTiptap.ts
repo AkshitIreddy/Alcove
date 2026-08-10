@@ -29,6 +29,7 @@ import type {
   ContainerBlock,
   ContainerName,
   DiagramBlock,
+  ImageBlock,
   Inline,
   ListItem,
   ScriptDoc,
@@ -36,6 +37,10 @@ import type {
 } from '../../script/types';
 import type { PageDoc } from '../../data/types';
 import { GAP_VALUES, WASH_COLORS } from '../../script/vocab';
+import {
+  inferAssetRelPathFromSrc,
+  normalizeAssetRelPath,
+} from '../media/portableAssets';
 import type { StickerId } from '../nodes/stickers';
 import type { CalloutTint } from '../nodes/callout';
 
@@ -223,6 +228,90 @@ function extraAttrs(
     if (!exclude.includes(key)) out[key] = value;
   }
   return out;
+}
+
+/** Script image attrs translated onto the editor's media-node vocabulary. */
+function imageNodeAttrs(block: ImageBlock): Record<string, unknown> {
+  const assetRelPath =
+    normalizeAssetRelPath(block.attrs.asset) ??
+    inferAssetRelPathFromSrc(block.src);
+  const width =
+    typeof block.attrs.width === 'number'
+      ? block.attrs.width
+      : typeof block.attrs.width === 'string'
+        ? Number(block.attrs.width)
+        : NaN;
+  const attrs: Record<string, unknown> = {
+    // A local asset's display URL is environment state, never script state.
+    // Hydration/import resolves this empty source against the active root.
+    src: assetRelPath === null ? block.src : '',
+    alt: block.alt,
+    ...extraAttrs(block.attrs, ['asset', 'style', 'width']),
+  };
+  if (assetRelPath !== null) attrs.assetRelPath = assetRelPath;
+  if (Number.isFinite(width)) {
+    attrs.widthPct = Math.min(100, Math.max(10, width));
+  }
+  /* Notebook Script calls the image presentation `style`; the editor stores
+     the two implemented presentations as `frame`. Keeping this bridge here
+     makes an AI-authored polaroid placeholder look the same before and after
+     its picture is supplied. Unknown future styles remain carried for the
+     tolerant JSON mapping instead of being silently renamed. */
+  if (block.attrs.style === 'plain' || block.attrs.style === 'polaroid') {
+    attrs.frame = block.attrs.style;
+  } else if (block.attrs.style !== undefined) {
+    attrs.style = block.attrs.style;
+  }
+  return attrs;
+}
+
+/** Script's image-shaped portable-video syntax translated to the video node. */
+function videoNodeAttrs(block: ImageBlock): Record<string, unknown> {
+  const assetRelPath =
+    normalizeAssetRelPath(block.attrs.asset) ??
+    inferAssetRelPathFromSrc(block.src);
+  const width =
+    typeof block.attrs.width === 'number'
+      ? block.attrs.width
+      : typeof block.attrs.width === 'string'
+        ? Number(block.attrs.width)
+        : NaN;
+  const attrs: Record<string, unknown> = {
+    src: assetRelPath === null ? block.src : '',
+    ...extraAttrs(block.attrs, ['asset', 'media', 'width']),
+  };
+  if (assetRelPath !== null) attrs.assetRelPath = assetRelPath;
+  if (Number.isFinite(width)) {
+    attrs.widthPct = Math.min(100, Math.max(10, width));
+  }
+  if (attrs.caption === undefined && block.alt !== '') {
+    // The image-alt transport is already escaped by Notebook Script. Keep
+    // the decoded value byte-for-byte rather than trimming authored caption
+    // whitespace during an otherwise lossless round trip.
+    attrs.caption = block.alt;
+  }
+  return attrs;
+}
+
+/** Human-readable fallback when an editor schema has no image node. */
+function imageFallbackText(block: ImageBlock): string {
+  const prompt =
+    typeof block.attrs.placeholder === 'string'
+      ? block.attrs.placeholder.trim()
+      : '';
+  const caption =
+    typeof block.attrs.caption === 'string' ? block.attrs.caption.trim() : '';
+  const alt = block.alt.trim();
+  let text: string;
+  if (block.src.trim() === '' && prompt !== '') {
+    text = `Image to add: ${prompt}`;
+    if (alt !== '' && alt.toLowerCase() !== prompt.toLowerCase()) {
+      text += ` (${alt})`;
+    }
+  } else {
+    text = `Image: ${alt || block.src || 'missing source'}`;
+  }
+  return caption === '' ? `[${text}]` : `[${text} — ${caption}]`;
 }
 
 /** Build a node, omitting empty attrs/content for canonical JSON. */
@@ -512,10 +601,9 @@ function degradeToParagraphs(
         break;
       }
       case 'image': {
-        const text = child.alt !== '' ? child.alt : child.src;
-        if (text !== '') {
-          out.push(node('paragraph', {}, [{ type: 'text', text }]));
-        }
+        out.push(
+          node('paragraph', {}, [{ type: 'text', text: imageFallbackText(child) }]),
+        );
         break;
       }
       case 'container':
@@ -813,18 +901,18 @@ function mapContainer(
     }
 
     case 'image-row': {
+      if (
+        options.hasNode?.('image') === false ||
+        !hasContainerNode('image-row', options)
+      ) {
+        return mapBlocks(block.children, options);
+      }
       const out: TiptapNode[] = [];
       const images: TiptapNode[] = [];
       const rest: Block[] = [];
       for (const child of block.children) {
         if (child.kind === 'image' && images.length < 4) {
-          images.push(
-            node('image', {
-              src: child.src,
-              alt: child.alt,
-              ...extraAttrs(child.attrs),
-            }),
-          );
+          images.push(node('image', imageNodeAttrs(child)));
         } else {
           rest.push(child);
         }
@@ -874,7 +962,10 @@ function mapContainer(
     }
 
     case 'polaroid': {
-      if (!hasContainerNode('polaroid', options)) {
+      if (
+        !hasContainerNode('polaroid', options) ||
+        options.hasNode?.('image') === false
+      ) {
         return fallbackContainer(block, options);
       }
       // Schema: image? paragraph+ — first image wins, the rest degrades.
@@ -882,11 +973,7 @@ function mapContainer(
       const rest: Block[] = [];
       for (const child of block.children) {
         if (image === null && child.kind === 'image') {
-          image = node('image', {
-            src: child.src,
-            alt: child.alt,
-            ...extraAttrs(child.attrs),
-          });
+          image = node('image', imageNodeAttrs(child));
         } else {
           rest.push(child);
         }
@@ -1019,13 +1106,25 @@ function mapBlock(block: Block, options: ToTiptapOptions): TiptapNode[] {
       return [node('table', extraAttrs(block.attrs), rows)];
     }
     case 'image':
-      return [
-        node('image', {
-          src: block.src,
-          alt: block.alt,
-          ...extraAttrs(block.attrs),
-        }),
-      ];
+      if (block.attrs.media === 'video') {
+        return options.hasNode?.('video') === false
+          ? [
+              node('paragraph', {}, [
+                {
+                  type: 'text',
+                  text: `[Video: ${block.alt || block.src || 'missing source'}]`,
+                },
+              ]),
+            ]
+          : [node('video', videoNodeAttrs(block))];
+      }
+      return options.hasNode?.('image') === false
+        ? [
+            node('paragraph', {}, [
+              { type: 'text', text: imageFallbackText(block) },
+            ]),
+          ]
+        : [node('image', imageNodeAttrs(block))];
     case 'mathBlock':
       // No maths node in this schema: the formula is kept as its own source,
       // which is exactly what the reader typed and still says everything.

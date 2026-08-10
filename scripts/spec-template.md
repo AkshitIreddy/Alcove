@@ -22,6 +22,7 @@ you already know 80% of it. The other 20% is:
 - tiny fenced diagram languages: ` ```tree `, ` ```graph `, ` ```timeline `
   (any other fence language is ordinary highlighted code — section 6b)
 - `fetch:` lines that ask the app to find images for you
+- empty image placeholders the reader can click or drop a picture into
 - flat `key: value` frontmatter for page style
 - `::let name = value` variables, used as `{{name}}` (section 4)
 - `::style name {attrs}` reusable decoration, applied with `{use=name}`
@@ -353,6 +354,49 @@ A standalone fetch (outside an image-row) is a double-colon leaf:
 
 You can also use regular Markdown images anywhere: `![alt](path){rotate=2}`.
 
+### Local video
+
+Alcove writes a portable video in the same readable media shape, marked with
+`media=video`. Keep its `asset` value unchanged; it names the file carried in
+the library parcel, not a web address to invent.
+
+```
+![A field recording](){media=video, asset=videos/field-note.mp4, width=74, align=right}
+```
+
+That becomes the app's real video player. Both lossless and script-only
+library parcels carry the selected video bytes and reconnect them to the new
+library root when imported.
+
+### Images the reader will supply
+
+When the note needs a personal, private, or not-yet-created picture, write an
+image with an empty destination and a `placeholder` prompt:
+
+```
+![A labelled plant-cell diagram](){placeholder="upload a labelled plant-cell diagram", caption="Cell anatomy", style=polaroid}
+```
+
+This inserts a visible picture card instead of a broken image. The reader can
+click it or drop **one image** onto it; Alcove stores that file in the library
+and replaces that exact card. Its alt text, caption, size, alignment and style
+stay in place.
+
+- `placeholder` tells the reader what picture to supply (an action prompt).
+- The words in `![alt]` describe the finished picture for accessibility.
+- `caption` is what should be written under the finished picture.
+- Use `style=polaroid` or `style=plain` when the surrounding presentation
+  matters before the image arrives.
+
+After the reader supplies the picture, an exported note may look like
+`![A cell](){asset=images/abc123.png, caption="Cell anatomy"}`. `asset` is
+Alcove's portable reference to a file already travelling with the notebook:
+preserve it when revising an exported note, but never invent or rewrite one.
+
+Never leave `()` empty without `placeholder=...`; that is an incomplete image
+and Alcove will warn about it. Prefer `fetch:` for a general web-searchable
+subject, and a placeholder for something only the reader can provide.
+
 ## 6. Diagrams (fenced mini-languages)
 
 These are **not Mermaid** (see section 8). They are much simpler.
@@ -608,6 +652,8 @@ fetch: sleepy kitten
 fetch: kitten in a box | rotate=3
 :::
 
+![A photo of the reader's own study setup](){placeholder="add a photo of your study setup", caption="My study corner", style=polaroid}
+
 ```tree {style=watercolor}
 Cell
   Membrane
@@ -640,6 +686,7 @@ BLOCKS                              INLINE
 ---             divider             x^2^  H~2~O  sup / sub
 | a | b |       table               [t](url)     link
 ![alt](src)     image               \*           literal star
+![alt](){placeholder="add it"}       reader-supplied image
 $$ … $$         equation            $x^2$        maths
                                     [^ note ]    footnote
                                     [[Page]]     link to a page
@@ -667,4 +714,8 @@ $$ … $$         equation            $x^2$        maths
 9. Sprinkle personality: a sticky-note, a sticker, a slight `rotate`, an
    `image-row` with a `fetch:` or two. The app is warm and hand-drawn —
    notes should feel like that too.
-10. Output the note as one plain-text block, ready to paste.
+10. If only the reader can supply an image, use an empty destination together
+    with `placeholder=...`; never emit a bare `![alt]()`.
+11. Preserve `media=video` and its exported `asset=...` path when a page
+    contains local video; never replace it with a guessed URL.
+12. Output the note as one plain-text block, ready to paste.

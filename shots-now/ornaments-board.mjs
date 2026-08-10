@@ -1,5 +1,5 @@
 /**
- * shots-now/ornaments-board.mjs — the 50 binder's-brass stamps at the size
+ * shots-now/ornaments-board.mjs — every binder's-brass stamp at the size
  * they are actually struck, and then big enough to work on.
  *
  * The size matters more here than anywhere else in the app. A stamp is
@@ -9,7 +9,7 @@
  * zoom of 0.8 and turns into FIFTEEN SCREEN PIXELS. Judging these at 300px is
  * how a table of fifty came to contain marks that are four grey pixels.
  *
- * Three boards:
+ * Three boards (the count is read from `ORNAMENT_LABELS`, never typed here):
  *   ornaments-<tag>-rest.png    every stamp at the resting on-screen size,
  *                               downsampled the way the GPU does it, then
  *                               blown up 4× nearest-neighbour so a human can

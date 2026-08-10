@@ -247,14 +247,50 @@ function PreviewBlock(props: { block: Block }): JSX.Element {
     case 'table':
       return <TablePreview block={b} />;
     case 'image':
-      return (
-        <figure class="nb-ins-image">
-          <img src={b.src} alt={b.alt} loading="lazy" />
-          <Show when={b.alt !== ''}>
-            <figcaption class="font-ui">{b.alt}</figcaption>
-          </Show>
-        </figure>
-      );
+      {
+        const prompt =
+          b.src.trim() === '' && typeof b.attrs.placeholder === 'string'
+            ? b.attrs.placeholder.trim()
+            : '';
+        const caption =
+          typeof b.attrs.caption === 'string' && b.attrs.caption.trim() !== ''
+            ? b.attrs.caption.trim()
+            : b.alt;
+        if (prompt !== '') {
+          return (
+            <figure class="nb-ins-image" data-image-placeholder="">
+              <div
+                class="nb-ins-image-placeholder"
+                title={prompt}
+                aria-label={`Picture placeholder: ${prompt}`}
+              >
+                <svg viewBox="0 0 72 54" aria-hidden="true">
+                  <path d="M7 9.5 Q7 6 11 6 L61 6 Q65 6 65 10 L65 44 Q65 48 61 48 L11 48 Q7 48 7 44 Z" />
+                  <circle cx="24" cy="21" r="5" />
+                  <path d="M13 40 L28 28 L37 36 L47 24 L60 40" />
+                  <path class="nb-ins-image-placeholder-plus" d="M55 7 L55 19 M49 13 L61 13" />
+                </svg>
+                <span>
+                  <strong class="font-ui">picture needed</strong>
+                  <em>{prompt}</em>
+                  <small class="font-ui">the reader can choose or drop it here</small>
+                </span>
+              </div>
+              <Show when={caption !== ''}>
+                <figcaption class="font-ui">{caption}</figcaption>
+              </Show>
+            </figure>
+          );
+        }
+        return (
+          <figure class="nb-ins-image">
+            <img src={b.src} alt={b.alt} loading="lazy" />
+            <Show when={caption !== ''}>
+              <figcaption class="font-ui">{caption}</figcaption>
+            </Show>
+          </figure>
+        );
+      }
     case 'container':
       return <ContainerPreview block={b} />;
     case 'diagram':

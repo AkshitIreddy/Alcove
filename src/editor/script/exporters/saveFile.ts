@@ -1,7 +1,9 @@
 /**
  * src/editor/script/exporters/saveFile.ts — environment-aware "save bytes".
  *
- * - Tauri: plugin-dialog save picker → plugin-fs writeFile.
+ * - Tauri: plugin-dialog save picker → plugin-fs writeFile. The picker
+ *   grants its returned path to the runtime filesystem scope; desktop
+ *   capabilities must also grant the `fs:allow-write-file` command itself.
  * - Browser dev: object-URL anchor download (Playwright asserts on the
  *   download event in tests/e2e/import-export.spec.ts).
  */

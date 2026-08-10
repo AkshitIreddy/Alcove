@@ -40,6 +40,10 @@ describe('Alcove smoke gate', () => {
     expect(DEFAULT_SETTINGS.playAmbienceInTray).toBe(false);
   });
 
+  it('keeps replacement of an edited Welcome book explicit and type-safe', () => {
+    expect(DEFAULT_SETTINGS.refreshWelcomeBookOnUpdate).toBe(false);
+  });
+
   it('keeps visual confetti deliberately silent', () => {
     expect(taskCompletionCue(true)).toBeNull();
     expect(taskCompletionCue(false)).toBe('check-done');

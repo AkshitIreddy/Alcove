@@ -16,9 +16,8 @@
  *
  * Spines share nothing, so the pool is sized from `hardwareConcurrency`, minus
  * one for the main thread, capped at {@link MAX_WORKERS}. The cap is not about
- * the CPU: each worker holds its own copy of the spine art module and its
- * fonts, and four of those is already a lot of memory to hand a note-taking
- * app.
+ * the CPU: each worker holds its own copy of the spine art module, and four of
+ * those is already a lot of memory to hand a note-taking app.
  *
  * ## Ordering
  *
@@ -242,10 +241,9 @@ export class ArtOffload {
 
   private handle(slot: WorkerSlot, message: ArtMessage): void {
     if (message.kind === 'ready') {
-      // The worker queues jobs until its fonts settle, so it is safe to post
-      // during startup. Its ready message is ordered before every result; a
-      // stale bundle is therefore retired (and its queued jobs rejected)
-      // before the host can accept pixels produced under another protocol.
+      // Its ready message is ordered before every result; a stale bundle is
+      // therefore retired (and its queued jobs rejected) before the host can
+      // accept pixels produced under another protocol.
       if (message.version !== ART_PROTOCOL_VERSION) {
         this.retire(
           slot,

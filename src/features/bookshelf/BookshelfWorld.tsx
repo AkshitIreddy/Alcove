@@ -626,7 +626,7 @@ export default function BookshelfWorld(): JSX.Element {
       });
   }
 
-  /** Commit (or discard) the inline spine title. */
+  /** Commit (or discard) the new book's name tag beside the shelf. */
   function commitName(state: NamingState, raw: string): void {
     setNaming(null);
     const w = world;
@@ -634,7 +634,6 @@ export default function BookshelfWorld(): JSX.Element {
     if (w === null || title.length === 0 || title === state.book.title) return;
     void (async () => {
       await renameBook(state.book.id, title);
-      w.invalidateSpine(state.book.id);
       if (!disposed) await w.refreshData();
     })();
   }
@@ -803,7 +802,6 @@ export default function BookshelfWorld(): JSX.Element {
     if (w === null) return;
     void (async () => {
       await renameBook(book.id, title);
-      w.invalidateSpine(book.id);
       if (!disposed) await w.refreshData();
     })();
   }

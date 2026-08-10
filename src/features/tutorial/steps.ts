@@ -214,7 +214,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     // what keeps it out of every other reader's tour: no invite, no step.
     id: 'first-book',
     title: 'Start with one book',
-    body: 'The case is empty, so there is nothing to open yet. The invite makes your first book and lets you write its title straight up the spine — press Enter when you have named it, and it takes its place on the shelf. New book, on the rail to the left, does the same thing at any time.',
+    body: 'The case is empty, so there is nothing to open yet. The invite makes your first book and gives its cover the title you choose — press Enter when you have named it, and its clean, titleless spine takes its place on the shelf. New book, on the rail to the left, does the same thing at any time.',
     hint: 'click "write my first one" · then name it',
     task: {
       ask: 'Click "write my first one" to make a book.',
@@ -514,7 +514,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'customize-open',
     title: 'Making a book your own',
-    body: 'The brush at the top of the rail opens Customize. It holds this book alone: how it is bound, what the cover is made of and coloured with, the charms on its spine, and the paper its pages are printed on.',
+    body: 'The brush at the top of the rail opens Customize. It holds this book alone: a straight-backed binding, quiet covering and colours, raised cords or sewn endbands, a complete cover title, a continuous frame and one matched emblem, plus the finish on its page edges.',
     hint: 'rail → the brush',
     task: {
       ask: 'Open Customize — the brush at the top of the rail.',
@@ -536,7 +536,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'customize-do',
     title: 'Change how this book looks',
-    body: 'Binding sets the shape of the cover — wrapper, cloth, boards. Below it, the material and pigment rows decide what it is made of and what colour it takes, and Reroll picks a fresh one for you. Every book carries its own, so no two have to match, and every change lands on the shelf immediately — the book will look different when you put it back.',
+    body: 'Start with a binding and covering, then choose the colour, cover lettering, frame, emblem, page-edge finish and endband construction. Surprise me composes the whole outside; lock any choices you want to keep before rolling again. Every book carries its own design, and every change lands on the shelf immediately.',
     hint: 'pick a binding · then a colour',
     task: {
       ask: 'Pick a binding, a material or a colour.',

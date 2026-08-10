@@ -30,6 +30,19 @@ export {
 } from './resolver';
 
 export {
+  IMAGE_ASSET_REL_PATH_ATTRIBUTE,
+  assetRelPathForImageAttrs,
+  inferAssetRelPathFromSrc,
+  normalizeAssetRelPath,
+  portablePageDocForExport,
+  preparePageAssetsForDisplay,
+  rebasePageAssetSources,
+  type AssetSourceResolver,
+  type PersistRebasedPage,
+  type PortablePageAssets,
+} from './portableAssets';
+
+export {
   fetchImages,
   recordAssetRow,
   storeImageBytes,

@@ -3,6 +3,37 @@ import { getDb } from './db';
 import { indexPage } from './search';
 import type { CreatePageInput, Page, PageDoc, PageRow } from './types';
 
+/**
+ * Every read-modify-write for one page must observe the write invoked before
+ * it. SQLite makes each UPDATE atomic, but `savePageDoc` also has to read the
+ * current source provenance before it can decide whether the new document is
+ * an edit. Without this lane, an already-running autosave can finish after a
+ * script import and overwrite the imported document with its older snapshot.
+ *
+ * The stored tails never reject, so one failed write cannot poison later
+ * writes. Public calls still receive their own rejection. `getPage` itself is
+ * deliberately not queued: mutations call it from inside the lane and making
+ * reads re-enter the same lane would deadlock.
+ */
+const pageMutationTails = new Map<string, Promise<void>>();
+
+function inPageMutationLane<T>(
+  id: string,
+  mutation: () => Promise<T>,
+): Promise<T> {
+  const previous = pageMutationTails.get(id) ?? Promise.resolve();
+  const result = previous.then(mutation);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  pageMutationTails.set(id, tail);
+  void tail.then(() => {
+    if (pageMutationTails.get(id) === tail) pageMutationTails.delete(id);
+  });
+  return result;
+}
+
 /** A fresh, empty TipTap document — the starter content for new pages. */
 export function emptyPageDoc(): PageDoc {
   return { type: 'doc', content: [] };
@@ -95,21 +126,30 @@ export async function createPage(input: CreatePageInput): Promise<Page> {
  * page has a stored script source, the edit marks it dirty so "Export Script"
  * falls back to the canonical printer instead of the stale verbatim source.
  */
-export async function savePageDoc(
+export function savePageDoc(
   id: string,
   doc: PageDoc,
 ): Promise<Page | null> {
-  const existing = await getPage(id);
-  if (existing === null) return null;
-  const db = await getDb();
-  const updatedAt = new Date().toISOString();
-  const sourceDirty = existing.scriptSource !== null;
-  await db.execute(
-    'UPDATE pages SET doc_json = $1, source_dirty = $2, updated_at = $3 WHERE id = $4',
-    [JSON.stringify(doc), sourceDirty ? 1 : 0, updatedAt, id],
-  );
-  void indexPage(id, existing.bookId, existing.ord, doc, updatedAt); // search index (never throws)
-  return { ...existing, doc, sourceDirty, updatedAt };
+  return inPageMutationLane(id, async () => {
+    const existing = await getPage(id);
+    if (existing === null) return null;
+    const db = await getDb();
+    const updatedAt = new Date().toISOString();
+    const docJson = JSON.stringify(doc);
+    const documentChanged = docJson !== JSON.stringify(existing.doc);
+    const sourceDirty =
+      existing.scriptSource !== null &&
+      (existing.sourceDirty || documentChanged);
+    const write = await db.execute(
+      'UPDATE pages SET doc_json = $1, source_dirty = $2, updated_at = $3 WHERE id = $4',
+      [docJson, sourceDirty ? 1 : 0, updatedAt, id],
+    );
+    // A deletion outside this module may win while the mutation is in flight.
+    // Do not recreate its page in the search index or return a phantom save.
+    if (write.rowsAffected === 0) return null;
+    await indexPage(id, existing.bookId, existing.ord, doc, updatedAt);
+    return { ...existing, doc, sourceDirty, updatedAt };
+  });
 }
 
 /**
@@ -120,33 +160,60 @@ export async function savePageDoc(
  * `source_dirty` and `updated_at` untouched so merely opening an older book
  * neither invalidates its verbatim Notebook Script nor changes its recency.
  */
-export async function persistPageDocIdentity(
+export function persistPageDocIdentity(
   id: string,
   doc: PageDoc,
 ): Promise<void> {
-  const db = await getDb();
-  await db.execute('UPDATE pages SET doc_json = $1 WHERE id = $2', [
-    JSON.stringify(doc),
-    id,
-  ]);
+  return inPageMutationLane(id, async () => {
+    const db = await getDb();
+    await db.execute('UPDATE pages SET doc_json = $1 WHERE id = $2', [
+      JSON.stringify(doc),
+      id,
+    ]);
+  });
 }
 
 /**
  * Store the verbatim Notebook Script source a page was inserted from (or
  * clear it with `null`). Resets `source_dirty` — the source is clean at the
  * moment of insertion.
+ *
+ * Supplying `doc` stores the source and the exact document it produced in one
+ * UPDATE. The live editor has already queued its ordinary debounced save when
+ * the insert dialog reaches this call. If only the source were written here,
+ * that delayed snapshot would differ from the old persisted document and look
+ * like a reader edit. With both halves committed together, the later identical
+ * save is a provenance no-op while a genuinely different document is dirty.
  */
-export async function setPageScript(
+export function setPageScript(
   id: string,
   source: string | null,
+  doc?: PageDoc,
 ): Promise<Page | null> {
-  const existing = await getPage(id);
-  if (existing === null) return null;
-  const db = await getDb();
-  const updatedAt = new Date().toISOString();
-  await db.execute(
-    'UPDATE pages SET script_source = $1, source_dirty = 0, updated_at = $2 WHERE id = $3',
-    [source, updatedAt, id],
-  );
-  return { ...existing, scriptSource: source, sourceDirty: false, updatedAt };
+  return inPageMutationLane(id, async () => {
+    const existing = await getPage(id);
+    if (existing === null) return null;
+    const db = await getDb();
+    const updatedAt = new Date().toISOString();
+    const write = doc === undefined
+      ? await db.execute(
+          'UPDATE pages SET script_source = $1, source_dirty = 0, updated_at = $2 WHERE id = $3',
+          [source, updatedAt, id],
+        )
+      : await db.execute(
+          'UPDATE pages SET doc_json = $1, script_source = $2, source_dirty = 0, updated_at = $3 WHERE id = $4',
+          [JSON.stringify(doc), source, updatedAt, id],
+        );
+    if (write.rowsAffected === 0) return null;
+    if (doc !== undefined) {
+      await indexPage(id, existing.bookId, existing.ord, doc, updatedAt);
+    }
+    return {
+      ...existing,
+      doc: doc ?? existing.doc,
+      scriptSource: source,
+      sourceDirty: false,
+      updatedAt,
+    };
+  });
 }

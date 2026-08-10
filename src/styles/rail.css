@@ -1069,33 +1069,127 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   padding-top: var(--space-4);
 }
 
-/* ------------------------- flipping book preview -------------------------- */
-.nb-studio-stage {
-  position: relative;
+/* ---------------------- persistent book preview ---------------------------
+ *
+ * The controls form a genuinely long studio. A preview at the head of that
+ * scroll is absent precisely when it is most useful, so the desktop preview
+ * is portalled into a companion card BESIDE the sheet. It does not widen the
+ * rail panel (and therefore does not ask panelPush to squeeze the book world
+ * twice). A narrow window gets a compact sticky copy inside the scroller.
+ * Both are painted from the same resolved style in BookStudio.tsx.
+ */
+.nb-book-preview {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-8);
-  padding: var(--space-12) 0 var(--space-4);
+  width: 250px;
+  padding: var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink);
+  border-radius: 15px 11px 17px 13px / 12px 16px 11px 17px;
+  box-shadow: var(--shadow-lg);
 }
 
-.nb-studio-stage > .nb-reroll {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 4;
+.nb-book-preview-dock {
+  position: fixed;
+  left: calc(68px + min(340px, 78vw) + var(--space-12));
+  top: var(--space-16);
+  z-index: var(--z-menus);
+  max-height: calc(100dvh - var(--space-32));
+}
+
+.nb-book-preview-dock.is-shelf {
+  left: calc(min(376px, 84vw) + var(--space-12));
+}
+
+.nb-book-preview-inline {
+  display: none;
+}
+
+.nb-book-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nb-book-preview-head > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nb-book-preview-head strong {
+  font-family: var(--font-heading);
+  font-size: 22px; /* handwriting; never below the 20px heading floor */
+  font-weight: 600;
+  line-height: 1;
+  transform: rotate(-0.5deg);
+}
+
+.nb-book-preview-head small,
+.nb-book-preview-measure,
+.nb-book-preview-note,
+.nb-book-preview-layout-note,
+.nb-book-surprise-hint {
+  font-size: var(--text-ui-xs);
+  line-height: 1.3;
+  letter-spacing: var(--tracking-ui);
+  color: var(--ink-graphite-soft);
+}
+
+.nb-book-preview-head small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-book-preview-measure {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 7px 9px 6px 8px / 8px 6px 9px 7px;
+}
+
+.nb-book-preview-art {
+  height: 292px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.nb-book-preview-stack {
+  --nb-preview-scale: 1;
+  /* Geometry is authored in the renderer's 214×292 canvas coordinates. The
+     minimum therefore lives in that same coordinate space and is increased
+     for the scaled narrow copy below, leaving a real 24px pointer target. */
+  --nb-preview-hit-min: 24px;
+  position: relative;
+  flex: 0 0 auto;
+  transform: scale(var(--nb-preview-scale));
+  transform-origin: center top;
 }
 
 .nb-studio-flip {
-  position: relative;
+  --nb-preview-turn: 0deg;
+  position: absolute;
+  inset: 0;
   transform-style: preserve-3d;
   transition: transform calc(var(--dur-md, 0.42s) * var(--motion-scale, 1))
     var(--ease-spring, cubic-bezier(0.34, 1.3, 0.5, 1));
-  transform: rotateY(0deg);
+  transform: rotateY(var(--nb-preview-turn));
 }
 
 .nb-studio-flip.is-cover {
-  transform: rotateY(180deg);
+  --nb-preview-turn: 180deg;
 }
 
 .nb-studio-face {
@@ -1113,8 +1207,552 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   transform: rotateY(180deg);
 }
 
+/*
+ * The canvases remain the renderer's pixels; this is a transparent, semantic
+ * map laid over them. Its boxes are calculated from the same book bounds in
+ * `bookStudioPreview.ts`. On pointer hover the whole map becomes faintly
+ * visible, making the feature discoverable without leaving edit chrome over a
+ * book somebody is simply judging. Keyboard focus always shows the chosen
+ * target and its caption.
+ */
+.nb-book-preview-hotspots {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.nb-book-preview-hotspot {
+  --nb-hotspot-hit-width: max(var(--nb-hotspot-width), var(--nb-preview-hit-min));
+  --nb-hotspot-hit-height: max(var(--nb-hotspot-height), var(--nb-preview-hit-min));
+  appearance: none;
+  position: absolute;
+  /* Enlarge around the painted feature's centre, then keep the result inside
+     the renderer canvas. This avoids the old right/down drift from min-width
+     and prevents edge/corner controls being clipped out of reach. */
+  left: clamp(
+    0px,
+    calc(var(--nb-hotspot-left) - (var(--nb-hotspot-hit-width) - var(--nb-hotspot-width)) / 2),
+    calc(100% - var(--nb-hotspot-hit-width))
+  );
+  top: clamp(
+    0px,
+    calc(var(--nb-hotspot-top) - (var(--nb-hotspot-hit-height) - var(--nb-hotspot-height)) / 2),
+    calc(100% - var(--nb-hotspot-hit-height))
+  );
+  width: var(--nb-hotspot-hit-width);
+  height: var(--nb-hotspot-hit-height);
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  pointer-events: auto;
+  color: var(--ink-sepia);
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 8px 11px 7px 10px / 10px 7px 11px 8px;
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-book-preview-hotspot.is-body {
+  z-index: 1;
+}
+
+.nb-book-preview-hotspot.is-detail {
+  z-index: 2;
+}
+
+.nb-book-preview-hotspot.is-fitting {
+  z-index: 3;
+}
+
+.nb-book-preview-art:hover .nb-book-preview-hotspot,
+.nb-book-preview-hotspot:focus-visible {
+  background: color-mix(in srgb, var(--wash-lemon-light) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ink-sepia) 56%, transparent);
+}
+
+.nb-book-preview-hotspot:hover,
+.nb-book-preview-hotspot:focus-visible {
+  z-index: 5;
+  background: color-mix(in srgb, var(--wash-amber-light) 68%, transparent);
+  border-color: var(--ink-sepia);
+  transform: rotate(-1.5deg) scale(1.04);
+}
+
+.nb-book-preview-hotspot.is-absent {
+  border-color: color-mix(in srgb, var(--ink-sepia) 32%, transparent);
+  border-radius: 999px;
+}
+
+.nb-book-preview-hotspot-mark {
+  position: absolute;
+  right: -4px;
+  top: -5px;
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 999px;
+  opacity: 0;
+  transform: scale(0.72);
+  transition:
+    opacity var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-book-preview-hotspot.is-absent .nb-book-preview-hotspot-mark {
+  opacity: 0.78;
+}
+
+.nb-book-preview-hotspot:hover .nb-book-preview-hotspot-mark,
+.nb-book-preview-hotspot:focus-visible .nb-book-preview-hotspot-mark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.nb-book-preview-hotspot-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  z-index: 6;
+  width: max-content;
+  max-width: 112px;
+  padding: 2px 5px;
+  font-size: var(--text-ui-xs);
+  line-height: 1.1;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--ink-line);
+  border-radius: 6px 8px 7px 7px / 8px 6px 8px 7px;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -2px);
+  transition:
+    opacity var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-book-preview-hotspot:hover .nb-book-preview-hotspot-label,
+.nb-book-preview-hotspot:focus-visible .nb-book-preview-hotspot-label {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Destination of a preview-part jump. `scroll-margin` clears both the sheet's
+   pinned header and the narrow preview; the two-pass wash reads like a pencil
+   circling the control, then gets entirely out of the way. */
+.nb-book-studio [data-book-control] {
+  scroll-margin-block: 190px;
+}
+
+.nb-book-studio [data-book-control].is-preview-target {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--gilt-deep);
+  outline-offset: 4px;
+  border-radius: 9px 12px 8px 11px / 11px 8px 12px 9px;
+  animation: nb-preview-control-found 2.35s var(--ease-out) both;
+}
+
+@keyframes nb-preview-control-found {
+  0%,
+  100% {
+    background-color: transparent;
+    outline-color: transparent;
+  }
+
+  18%,
+  68% {
+    background-color: var(--wash-lemon-light);
+    outline-color: var(--gilt-deep);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-book-studio [data-book-control].is-preview-target {
+    animation: none;
+    background-color: var(--wash-lemon-light);
+    outline-color: var(--gilt-deep);
+  }
+}
+
 .nb-studio-facepick {
   justify-content: center;
+}
+
+.nb-book-preview-note {
+  margin: 0;
+  text-align: center;
+}
+
+.nb-book-preview-layout-note {
+  margin: calc(var(--space-4) * -1) 0 0;
+  padding: 5px var(--space-8);
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: 7px 10px 8px 9px / 9px 7px 10px 8px;
+  text-align: center;
+}
+
+.nb-book-essentials {
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 16px 13px 15px / 15px 12px 16px 13px;
+  padding: var(--space-8);
+}
+
+.nb-book-surprise-hint {
+  display: block;
+  margin-top: var(--space-4);
+}
+
+.nb-cover-more {
+  margin-top: var(--space-4);
+}
+
+.nb-book-key-colours {
+  margin-top: var(--space-12);
+  padding-top: var(--space-8);
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+.nb-book-colour-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.nb-book-colour-role {
+  position: relative;
+  min-width: 0;
+  padding: 5px;
+  background: var(--paper-cream);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: 9px 12px 10px 11px / 11px 9px 12px 10px;
+}
+
+.nb-book-colour-role.is-pinned {
+  background: var(--wash-lemon-light);
+  border-style: solid;
+  border-color: var(--ink-line);
+}
+
+.nb-book-colour-role-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.nb-book-colour-role-main > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nb-book-colour-role-main strong {
+  overflow: hidden;
+  font-size: var(--text-ui);
+  line-height: 1.15;
+  color: var(--ink-sepia);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-book-colour-role-main small {
+  overflow: hidden;
+  font-size: var(--text-ui-xs);
+  line-height: 1.15;
+  color: var(--ink-graphite-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-book-colour-role-well {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 2px;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 8px 10px 7px 9px / 9px 7px 10px 8px;
+  cursor: pointer;
+}
+
+.nb-book-colour-role-value {
+  display: block;
+  margin-top: 3px;
+  padding-left: 38px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  color: var(--ink-graphite-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-book-colour-role-reset {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  padding: 1px 3px;
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px dashed var(--ink-line);
+  border-radius: 5px 7px 6px 6px / 7px 5px 7px 6px;
+  cursor: pointer;
+}
+
+/* ------------------------- Surprise setting locks -------------------------
+ * Open outline = Surprise may change it. Filled closed lock = this exact
+ * reader-visible decision survives the next whole-book roll. The control is
+ * deliberately quieter and smaller than a dice: it describes the NEXT press,
+ * it is not itself a restyle action.
+ */
+.nb-book-setting-heading,
+.nb-book-setting-subhead,
+.nb-book-setting-chip-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.nb-book-setting-heading {
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.nb-book-setting-heading .nb-panel-row-label,
+.nb-book-setting-subhead .nb-panel-row-label {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.nb-book-setting-subhead {
+  justify-content: space-between;
+  margin: var(--space-8) 0 var(--space-4);
+}
+
+.nb-book-setting-chip-pair {
+  align-items: stretch;
+}
+
+.nb-book-section-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.nb-book-studio .nb-panel-section-title .nb-book-section-tools .nb-reroll {
+  margin-left: 0;
+}
+
+.nb-surprise-lock {
+  appearance: none;
+  display: inline-grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  padding: 3px;
+  color: var(--ink-graphite-soft);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 8px 10px 7px 9px / 10px 7px 10px 8px;
+  cursor: pointer;
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    border-color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-surprise-lock:hover,
+.nb-surprise-lock:focus-visible {
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border-color: var(--ink-line);
+  transform: rotate(-2deg);
+}
+
+.nb-surprise-lock.is-locked {
+  color: var(--ink-sepia);
+  background: var(--gilt-face);
+  border-color: var(--ink-sepia);
+  transform: rotate(-1deg);
+}
+
+.nb-surprise-lock.is-covered {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.nb-surprise-lock svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nb-surprise-lock .nb-surprise-lock-body {
+  fill: var(--paper-cream);
+}
+
+.nb-surprise-lock.is-locked .nb-surprise-lock-body {
+  fill: var(--wash-lemon-light);
+}
+
+.nb-book-colour-role > .nb-surprise-lock {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+}
+
+.nb-book-colour-role:has(> .nb-surprise-lock) .nb-book-colour-role-main {
+  padding-right: 27px;
+}
+
+.nb-book-lock-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin: var(--space-4) 0 var(--space-8);
+  padding: 5px var(--space-8);
+  color: var(--ink-graphite-soft);
+  background: var(--paper-cream);
+  border: 1px dashed var(--ink-line-soft);
+  border-radius: 8px 11px 9px 10px / 10px 8px 11px 9px;
+}
+
+.nb-book-lock-summary.is-holding {
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border-color: var(--ink-line);
+}
+
+.nb-book-lock-summary-copy {
+  min-width: 0;
+  font-size: var(--text-ui-xs);
+  line-height: 1.3;
+}
+
+.nb-book-lock-summary button {
+  flex: 0 0 auto;
+}
+
+.nb-book-colour-workshop {
+  padding: 0 var(--space-8) var(--space-8);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 12px 16px 13px 15px / 15px 12px 16px 13px;
+}
+
+.nb-book-colour-workshop > summary {
+  padding: var(--space-8) 0;
+  font-family: var(--font-heading);
+  font-size: 20px; /* handwriting floor */
+  color: var(--ink-sepia);
+  cursor: pointer;
+}
+
+.nb-book-colour-workshop > summary::marker {
+  color: var(--gilt-deep);
+}
+
+.nb-book-colour-workshop .nb-panel-footnote {
+  margin-top: 0;
+}
+
+@media (max-width: 700px) {
+  .nb-book-studio [data-book-control] {
+    scroll-margin-block-start: 270px;
+    scroll-margin-block-end: var(--space-16);
+  }
+
+  .nb-book-preview-dock {
+    display: none;
+  }
+
+  .nb-book-preview-inline {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    width: auto;
+    margin: 0 0 var(--space-12);
+    padding: var(--space-8);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .nb-book-preview-inline .nb-book-preview-art {
+    height: 140px;
+  }
+
+  .nb-book-preview-inline .nb-book-preview-stack {
+    --nb-preview-scale: 0.46;
+    /* 52.174 renderer px × .46 = 24 CSS px after the stack transform. */
+    --nb-preview-hit-min: 52.174px;
+  }
+
+  /* These children share the transformed renderer coordinate system. Give
+     their pre-transform chrome enough size to remain readable after × .46;
+     the book pixels themselves stay perfectly aligned and untouched. */
+  .nb-book-preview-inline .nb-book-preview-hotspot-mark {
+    right: -8px;
+    top: -9px;
+    width: 30px;
+    height: 30px;
+    font-size: 20px;
+  }
+
+  .nb-book-preview-inline .nb-book-preview-hotspot-label {
+    top: calc(100% + 8px);
+    max-width: 220px;
+    padding: 4px 10px;
+    font-size: 24px;
+  }
+
+  .nb-book-preview-inline .nb-book-preview-note {
+    display: none;
+  }
+
+  .nb-book-preview-inline .nb-book-preview-layout-note {
+    max-height: 34px;
+    margin-top: 0;
+    overflow: hidden;
+  }
+
+  .nb-book-colour-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ------------------------------ studio bits ------------------------------- */

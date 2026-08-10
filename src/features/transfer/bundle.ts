@@ -19,6 +19,9 @@ import {
   type ManifestBookcase,
   type ManifestPage,
 } from './format';
+import type { PageDoc } from '../../data/types';
+import { portablePageDocForExport } from '../../editor/media/portableAssets';
+import { docToScript } from '../../editor/script/fromTiptap';
 import type { ExportOptions, ExportPlan, LibrarySnapshot } from './scope';
 import { textToBytes, type ZipEntry } from './zip';
 
@@ -94,6 +97,34 @@ export interface BuildBundleInput {
   assetBytes?: ReadonlyMap<string, Uint8Array>;
 }
 
+/**
+ * Last-line portability guard for callers that constructed a snapshot by
+ * hand instead of through `loadLibrarySnapshot`.
+ */
+function portablePagePayload(page: {
+  readonly script: string;
+  readonly docJson: string;
+}): { script: string; docJson: string } {
+  try {
+    const parsed: unknown = JSON.parse(page.docJson);
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      (parsed as { type?: unknown }).type !== 'doc'
+    ) {
+      return page;
+    }
+    const portable = portablePageDocForExport(parsed as PageDoc);
+    if (portable.assetRelPaths.length === 0) return page;
+    return {
+      script: docToScript(portable.doc),
+      docJson: JSON.stringify(portable.doc),
+    };
+  } catch {
+    return page;
+  }
+}
+
 export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
   const { snapshot, plan, options } = input;
   const pagesById = new Map<string, (typeof snapshot.books)[number]['pages'][number]>();
@@ -115,8 +146,11 @@ export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
     for (const planPage of planBook.pages) {
       const page = pagesById.get(planPage.id);
       if (page === undefined) continue;
+      const portable = portablePagePayload(page);
       const body =
-        options.variant === 'markdown' ? toPlainMarkdown(page.script) : page.script;
+        options.variant === 'markdown'
+          ? toPlainMarkdown(portable.script)
+          : portable.script;
 
       if (options.layout === 'single-file') {
         const existing = bodies.get(planPage.file);
@@ -131,7 +165,7 @@ export function buildBundleFiles(input: BuildBundleInput): BuiltBundle {
       let docFile: string | null = null;
       if (options.losslessDocs && options.variant === 'bundle') {
         docFile = `docs/${page.id}.json`;
-        docEntries.push({ path: docFile, bytes: textToBytes(page.docJson) });
+        docEntries.push({ path: docFile, bytes: textToBytes(portable.docJson) });
       }
       manifestPages.push({
         id: page.id,

@@ -29,9 +29,13 @@ import {
   Texture,
   TilingSprite,
 } from 'pixi.js';
-import { clamp } from '../../art/noise';
+import { clamp, fnv1a } from '../../art/noise';
 import { SPINE_BASE_HEIGHT } from '../../art/spines';
-import { resolveBookStyle, type BookStyle } from '../../art/bookStyle';
+import {
+  freshBookStyleOverrides,
+  resolveBookStyle,
+  type BookStyle,
+} from '../../art/bookStyle';
 import { play } from '../../sound/engine';
 import { appState } from '../../state/app';
 import { panelOwnsKeyboard } from '../../state/panelKeys';
@@ -790,10 +794,13 @@ export class ShelfWorld {
       subscribeRoomDesign(() => {
         this.queueApplyLibrary();
       }),
-      // A binding is persisted outside `cover_meta`, so the studio's save does
+      // A standalone binding is persisted outside `cover_meta`, so its save does
       // not travel the `persistBookStyle` → `invalidate` path the other style
       // knobs use. Without this, picking a binding repaints the studio's own
       // preview and nothing else on the shelf.
+      // Combined binding + style writes suppress this optimistic half; their
+      // BookAppearance event below refreshes the matching row before the one
+      // invalidation that publishes the complete appearance.
       subscribeBookBindings((ids) => {
         for (const id of ids) this.factory.invalidate(id);
         this.dirty = true;
@@ -873,10 +880,26 @@ export class ShelfWorld {
         titles: readonly string[],
         floor = 0,
       ): Promise<void> => {
-        let slot = await nextFreeSlot(floor, 0, this.caseId);
+        let from = 0;
         for (const title of titles) {
-          await createBook({ title, bookcaseId: this.caseId, floor, slot });
-          slot += 1;
+          // Find a gap for EVERY insert. The Welcome book occupies floor 0,
+          // slot 3; finding only the first gap and then incrementing blindly
+          // painted a QA spine directly over it.
+          const slot = await nextFreeSlot(floor, from, this.caseId);
+          const identity = `qa-book|${this.caseId}|${floor}|${slot}|${title}`;
+          const idSeed = fnv1a(`${identity}|id`);
+          const spineSeed = fnv1a(`${identity}|spine`);
+          const styleSeed = fnv1a(`${identity}|style`);
+          await createBook({
+            id: `qa-${idSeed.toString(16).padStart(8, '0')}`,
+            title,
+            bookcaseId: this.caseId,
+            floor,
+            slot,
+            spineSeed,
+            coverMeta: { style: freshBookStyleOverrides(styleSeed) },
+          });
+          from = slot + 1;
         }
         await this.store.refreshAll();
       };
@@ -3936,11 +3959,6 @@ export class ShelfWorld {
           this.dirty = true;
         });
     });
-  }
-
-  /** Drop baked spine textures after a rename (title is baked into hi-res). */
-  invalidateSpine(bookId: string): void {
-    this.factory.invalidate(bookId);
   }
 
   /**

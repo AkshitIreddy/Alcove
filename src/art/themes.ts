@@ -104,7 +104,7 @@ export interface SpineTheming {
   materials: readonly SpineMaterial[];
   /** Pigment ramp new spines draw from (hex). */
   pigments: readonly string[];
-  /** 0–1 chance a new spine gets gilt bands/lettering. */
+  /** 0–1 chance a new spine gets gilt bands/tooling. */
   gilt: number;
   /** 0–1 bias toward raised bands vs flat. */
   bands: number;

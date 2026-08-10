@@ -2,8 +2,8 @@
  * shots-now/covers-board.mjs — every cover vocabulary on one sheet each.
  *
  * The cover is the one surface seen LARGE — the pull-out overlay and the open
- * book — so it is also the one where a lazy vocabulary is most obvious. Fifty
- * frames that turn out to be four frames with different corner dots would be
+ * book — so it is also the one where a lazy vocabulary is most obvious. Dozens
+ * of frames that turn out to be four frames with different corner dots would be
  * invisible in a count and unmissable on a board.
  *
  * ## It refuses to pass vacuously
@@ -136,7 +136,7 @@ const board = async (file, labels, cols, cell, expect, opts = {}) => {
   if (!ok) failures.push(`${file}: only ${result.distinct}/${count} distinct, wanted ${expect}`);
 };
 
-/* ---- the two vocabularies that were already fifty ---- */
+/* ---- the frame and append-only binder-stamp vocabularies ---- */
 
 const FRAME_LABELS = await p.evaluate(async () => {
   const covers = await import('/src/art/covers.ts');
@@ -160,9 +160,14 @@ await board(
   FRAME_LABELS.length,
 );
 
+const MEDALLION_LABELS = await p.evaluate(async () => {
+  const spines = await import('/src/art/spines.ts');
+  return [...spines.ORNAMENT_LABELS];
+});
+
 await board(
   'shots-now/cover-medallions.png',
-  Array.from({ length: 50 }, (_, i) => `stamp ${i}`),
+  MEDALLION_LABELS,
   10,
   (i) => ({
     seed: 0x51ee + i * 7919,
@@ -174,7 +179,7 @@ await board(
     titleFont: 0,
     gilt: true,
   }),
-  50,
+  MEDALLION_LABELS.length,
   { captions: false },
 );
 

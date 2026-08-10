@@ -7,6 +7,7 @@ import {
   type SolidNodeViewProps,
 } from '../solid';
 import { IMAGE_ALIGNMENTS, clampWidthPct, type ImageAlign } from './imageView';
+import { IMAGE_ASSET_REL_PATH_ATTRIBUTE } from './portableAssets';
 
 function isAlign(value: unknown): value is ImageAlign {
   return typeof value === 'string' &&
@@ -130,6 +131,7 @@ export const MediaVideo = Node.create({
   addAttributes() {
     return {
       src: { default: null },
+      assetRelPath: IMAGE_ASSET_REL_PATH_ATTRIBUTE,
       widthPct: {
         default: null,
         parseHTML: (element: HTMLElement) => {

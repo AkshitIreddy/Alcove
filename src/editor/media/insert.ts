@@ -20,22 +20,33 @@ export function mediaFilesFrom(transfer: DataTransfer | null): File[] {
   );
 }
 
-function imageBlocks(view: EditorView, sources: readonly string[]): PMNode[] {
+interface StoredImageSource {
+  src: string;
+  assetRelPath: string;
+}
+
+function imageBlocks(
+  view: EditorView,
+  sources: readonly StoredImageSource[],
+): PMNode[] {
   const imageType = view.state.schema.nodes.image;
   const rowType = view.state.schema.nodes.imageRow;
   if (imageType === undefined) return [];
   if (sources.length === 1 || rowType === undefined) {
-    return sources.map((src) => imageType.create({ src }));
+    return sources.map((source) => imageType.create(source));
   }
   return groupImageSources(sources).map((group) =>
     group.length === 1
-      ? imageType.create({ src: group[0] })
-      : rowType.create(null, group.map((src) => imageType.create({ src }))),
+      ? imageType.create(group[0])
+      : rowType.create(null, group.map((source) => imageType.create(source))),
   );
 }
 
-function videoBlock(view: EditorView, src: string): PMNode | null {
-  return view.state.schema.nodes.video?.create({ src }) ?? null;
+function videoBlock(
+  view: EditorView,
+  source: StoredImageSource,
+): PMNode | null {
+  return view.state.schema.nodes.video?.create(source) ?? null;
 }
 
 /** Persist and insert supported files. Returns the number successfully added. */
@@ -54,7 +65,7 @@ export async function insertMediaFiles(
         const asset = kind === 'image'
           ? await storeImageFile(file)
           : await storeVideoFile(file);
-        return { kind, src: asset.src };
+        return { kind, src: asset.src, assetRelPath: asset.relPath };
       } catch {
         return null;
       }
@@ -65,7 +76,7 @@ export async function insertMediaFiles(
   // Preserve drop order. Adjacent images still share an imageRow; a video
   // between them remains between them rather than being shuffled to the end.
   const blocks: PMNode[] = [];
-  let pendingImages: string[] = [];
+  let pendingImages: StoredImageSource[] = [];
   const flushImages = (): void => {
     blocks.push(...imageBlocks(view, pendingImages));
     pendingImages = [];
@@ -73,11 +84,14 @@ export async function insertMediaFiles(
   for (const item of stored) {
     if (item === null) continue;
     if (item.kind === 'image') {
-      pendingImages.push(item.src);
+      pendingImages.push({ src: item.src, assetRelPath: item.assetRelPath });
       continue;
     }
     flushImages();
-    const video = videoBlock(view, item.src);
+    const video = videoBlock(view, {
+      src: item.src,
+      assetRelPath: item.assetRelPath,
+    });
     if (video !== null) blocks.push(video);
   }
   flushImages();

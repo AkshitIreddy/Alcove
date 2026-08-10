@@ -191,6 +191,10 @@ function mergeStored(raw: unknown): MutableSettings {
     backupFolder:
       typeof s.backupFolder === 'string' ? s.backupFolder : d.backupFolder,
     perfHud: takeBoolean(s.perfHud, d.perfHud),
+    refreshWelcomeBookOnUpdate: takeBoolean(
+      s.refreshWelcomeBookOnUpdate,
+      d.refreshWelcomeBookOnUpdate,
+    ),
     telemetry: false,
   };
 }

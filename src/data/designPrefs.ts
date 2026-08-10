@@ -25,7 +25,10 @@
 
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
-import { isBookPresetId, type BookPresetId } from '../art/bookDesign';
+import {
+  normaliseBookPresetId,
+  type BookPresetId,
+} from '../art/bookDesign';
 import {
   DEFAULT_SHELF_DESIGN,
   isBuildId,
@@ -86,6 +89,85 @@ interface DesignBook {
 }
 
 const SETTINGS_KEY = 'studioDesigns';
+
+/**
+ * Book Studio can persist one logical appearance across two storage lanes:
+ * the binding in this settings blob and the style in the Book row. The store
+ * remains optimistic so the Studio preview answers immediately, but the Pixi
+ * world must not observe the binding half while the matching Book row is
+ * still being written. Holds are per book so unrelated edits keep flowing.
+ */
+interface BookBindingPublicationHoldState {
+  depth: number;
+  commitRequested: boolean;
+}
+
+const bookBindingPublicationHolds = new Map<
+  string,
+  BookBindingPublicationHoldState
+>();
+
+/**
+ * The binding generation renderers are allowed to see.
+ *
+ * `store.books` stays optimistic for the Studio controls. During a combined
+ * write this map deliberately stays on the prior binding, so even an unrelated
+ * room invalidation cannot bake a staged binding over the old Book style.
+ */
+const publishedBookBindings = new Map<string, BookPresetId>();
+
+function replacePublishedBookBindings(next: Record<string, BookPresetId>): void {
+  publishedBookBindings.clear();
+  for (const [bookId, binding] of Object.entries(next)) {
+    publishedBookBindings.set(bookId, binding);
+  }
+}
+
+function publishBookBindingSnapshot(bookId: string): void {
+  const binding = unwrap(store).books[bookId];
+  if (binding === undefined) publishedBookBindings.delete(bookId);
+  else publishedBookBindings.set(bookId, binding);
+}
+
+/**
+ * Withhold `subscribeBookBindings` delivery for one book until the caller
+ * releases the hold.
+ *
+ * Suppressed changes are deliberately not replayed here. A combined
+ * appearance writer publishes the canonical `BookAppearance` event after its
+ * Book row has landed, and that event refreshes the row before invalidating
+ * the spine. Replaying the binding event first would recreate the exact
+ * new-binding + old-style frame this hold exists to prevent.
+ */
+export function holdBookBindingPublication(
+  bookId: string,
+): (commit?: boolean) => void {
+  const state = bookBindingPublicationHolds.get(bookId);
+  if (state === undefined) {
+    bookBindingPublicationHolds.set(bookId, {
+      depth: 1,
+      commitRequested: false,
+    });
+  } else {
+    state.depth += 1;
+  }
+  let released = false;
+  return (commit = false) => {
+    if (released) return;
+    released = true;
+    const current = bookBindingPublicationHolds.get(bookId);
+    if (current === undefined) return;
+    if (commit) current.commitRequested = true;
+    current.depth -= 1;
+    if (current.depth > 0) return;
+    bookBindingPublicationHolds.delete(bookId);
+    if (current.commitRequested) publishBookBindingSnapshot(bookId);
+  };
+}
+
+function bookBindingPublicationHeld(bookId: string): boolean {
+  return (bookBindingPublicationHolds.get(bookId)?.depth ?? 0) > 0;
+}
 
 /* ------------------------------- validation ------------------------------ */
 
@@ -177,9 +259,12 @@ function parseBook(raw: string | null | undefined): DesignBook {
   const books: Record<string, BookPresetId> = {};
   if (s.books !== null && typeof s.books === 'object' && !Array.isArray(s.books)) {
     for (const [id, value] of Object.entries(s.books as Record<string, unknown>)) {
-      // An unknown binding id is dropped rather than kept: keeping it would
-      // pin the book to a preset that no longer draws anything.
-      if (isBookPresetId(value)) books[id] = value;
+      // Dropping a stale binding would hand authority back to this book's seed
+      // and replace it with an arbitrary style. The binding vocabulary owns
+      // the compatibility policy: retired/unknown strings recover to its
+      // conservative formal book, while non-string junk remains absent.
+      const safe = normaliseBookPresetId(value);
+      if (safe !== null) books[id] = safe;
     }
   }
   return { rooms, books };
@@ -230,7 +315,9 @@ export function loadDesignPrefs(): Promise<void> {
         'SELECT value FROM settings WHERE key = $1 LIMIT 1',
         [SETTINGS_KEY],
       );
-      setStore(reconcile(parseBook(rows[0]?.value)));
+      const loaded = parseBook(rows[0]?.value);
+      setStore(reconcile(loaded));
+      replacePublishedBookBindings(loaded.books);
     } catch {
       // No row, no table, no database: the house room is a fine answer.
     }
@@ -308,17 +395,31 @@ export function bookBinding(bookId: string | null | undefined): BookPresetId | n
   return store.books[bookId] ?? null;
 }
 
+/**
+ * Binding visible to shelf/open-book renderers at the last complete appearance
+ * boundary. Unlike `bookBinding`, this never exposes the optimistic first half
+ * of a combined binding + style write.
+ */
+export function publishedBookBinding(
+  bookId: string | null | undefined,
+): BookPresetId | null {
+  if (typeof bookId !== 'string' || bookId.length === 0) return null;
+  return publishedBookBindings.get(bookId) ?? null;
+}
+
 /** Pin (or, with null, unpin) a book's binding. */
 export async function saveBookBinding(
   bookId: string,
   preset: BookPresetId | null,
 ): Promise<void> {
   await loadDesignPrefs();
-  if (preset === null || !isBookPresetId(preset)) {
+  const safe = normaliseBookPresetId(preset);
+  if (safe === null) {
     setStore('books', bookId, undefined as unknown as BookPresetId);
   } else {
-    setStore('books', bookId, preset);
+    setStore('books', bookId, safe);
   }
+  if (!bookBindingPublicationHeld(bookId)) publishBookBindingSnapshot(bookId);
   bump();
   await persist();
 }
@@ -369,7 +470,12 @@ export function subscribeBookBindings(
           if (previous[id] !== next[id]) changed.push(id);
         }
         previous = next;
-        if (changed.length > 0) listener(changed);
+        // A combined binding + style edit owns its publication boundary. The
+        // matching BookAppearance notification will refresh the canonical row
+        // and invalidate once both halves are ready; publishing this optimistic
+        // half would let the factory bake the new binding over the old style.
+        const publishable = changed.filter((id) => !bookBindingPublicationHeld(id));
+        if (publishable.length > 0) listener(publishable);
       }),
     );
     return dispose;

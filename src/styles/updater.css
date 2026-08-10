@@ -98,6 +98,42 @@
   color: var(--wash-terracotta-deep);
 }
 
+.nb-update-welcome {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--wash-sky-light);
+  border: 1.5px dashed var(--ink-line-soft);
+  border-radius: var(--radius-hand);
+  cursor: pointer;
+}
+
+.nb-update-welcome input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--wash-moss-deep);
+}
+
+.nb-update-welcome span,
+.nb-update-welcome small {
+  display: block;
+}
+
+.nb-update-welcome strong {
+  font-size: var(--text-ui);
+}
+
+.nb-update-welcome small {
+  margin-top: 2px;
+  color: var(--ink-graphite-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .nb-update-progress {
   height: 10px;
   margin-top: var(--space-16);

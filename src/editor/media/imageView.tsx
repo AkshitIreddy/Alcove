@@ -16,6 +16,17 @@ import {
   SolidNodeViewRenderer,
   type SolidNodeViewProps,
 } from '../solid';
+import { pickMediaFiles } from './insert';
+import {
+  IMAGE_PLACEHOLDER_ATTRIBUTE,
+  imagePlaceholderPrompt,
+  persistPlaceholderImage,
+} from './imagePlaceholder';
+import {
+  IMAGE_ASSET_REL_PATH_ATTRIBUTE,
+  assetRelPathForImageAttrs,
+} from './portableAssets';
+import { MISSING_ASSET_SRC, resolveAssetSrc } from './resolver';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
 export type ImageAlign = (typeof IMAGE_ALIGNMENTS)[number];
@@ -46,6 +57,8 @@ function isFrame(value: unknown): value is ImageFrame {
 function ImageView(props: SolidNodeViewProps): JSX.Element {
   const src = (): string =>
     typeof props.node.attrs.src === 'string' ? props.node.attrs.src : '';
+  const assetRelPath = (): string | null =>
+    assetRelPathForImageAttrs(props.node.attrs);
   const alt = (): string =>
     typeof props.node.attrs.alt === 'string' ? props.node.attrs.alt : '';
   const align = (): ImageAlign =>
@@ -58,21 +71,126 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       : null;
   const caption = (): string =>
     typeof props.node.attrs.caption === 'string' ? props.node.attrs.caption : '';
+  const placeholder = (): string | null =>
+    imagePlaceholderPrompt(props.node.attrs);
+
+  const [replacing, setReplacing] = createSignal(false);
+  const [draggingOver, setDraggingOver] = createSignal(false);
+  const [replacementError, setReplacementError] = createSignal<string | null>(null);
+  let alive = true;
+  let sourceGeneration = 0;
+  onCleanup(() => {
+    alive = false;
+    sourceGeneration += 1;
+  });
+
+  /*
+   * Script insertion can create a portable image node before a page-level
+   * hydration pass has had a chance to materialize its display URL. Resolve
+   * it in the node view too, but keep the result as presentation state: an
+   * async `updateAttributes({ src })` here would make a just-inserted clean
+   * Notebook Script dirty solely because its picture finished resolving.
+   */
+  const [portableSrc, setPortableSrc] = createSignal<string | null>(null);
+  createEffect(() => {
+    const relPath = assetRelPath();
+    const generation = ++sourceGeneration;
+    setPortableSrc(null);
+    if (relPath === null) return;
+    void resolveAssetSrc(relPath).then((resolved) => {
+      if (alive && generation === sourceGeneration) setPortableSrc(resolved);
+    });
+  });
+  const displaySrc = (): string => {
+    if (assetRelPath() !== null) return portableSrc() ?? MISSING_ASSET_SRC;
+    return src().trim() === '' ? MISSING_ASSET_SRC : src();
+  };
+
+  const replaceWith = async (file: File): Promise<void> => {
+    if (replacing()) return;
+    setReplacing(true);
+    setReplacementError(null);
+    try {
+      const patch = await persistPlaceholderImage(file);
+      if (alive) props.updateAttributes(patch);
+    } catch {
+      if (alive) {
+        setReplacementError('That picture could not be saved. Try another image.');
+      }
+    } finally {
+      if (alive) setReplacing(false);
+    }
+  };
+
+  const chooseReplacement = async (event: MouseEvent): Promise<void> => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (replacing()) return;
+    const [file] = await pickMediaFiles('image/*', false);
+    if (file !== undefined) await replaceWith(file);
+  };
+
+  const dropReplacement = (event: DragEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingOver(false);
+    const file = Array.from(event.dataTransfer?.files ?? []).find((candidate) =>
+      candidate.type.startsWith('image/'),
+    );
+    if (file === undefined) {
+      setReplacementError('Drop one image file here.');
+      return;
+    }
+    void replaceWith(file);
+  };
 
   /** Live width during a corner drag (null = use the persisted attr). */
   const [dragPct, setDragPct] = createSignal<number | null>(null);
   const effectivePct = (): number | null => dragPct() ?? widthPct();
 
   let wrapperEl: HTMLElement | undefined;
+  const [rowHost, setRowHost] = createSignal<HTMLElement | undefined>();
+
+  const detectRowHost = (): void => {
+    const host = wrapperEl?.parentElement;
+    setRowHost(
+      host?.dataset.nodeViewRoot === 'image' &&
+        host.parentElement?.classList.contains('nb-image-row-track')
+        ? host
+        : undefined,
+    );
+  };
+
+  /*
+   * ProseMirror owns one host around every Solid node view. In an image row
+   * THAT host is the flex item, not `.nb-image` inside it. Width used to be
+   * written only on the nested wrapper, so the row distributed anonymous
+   * host boxes while the requested percentage shrank a child inside each box.
+   * Place the basis on the real flex item and let the visible wrapper fill it.
+   */
+  createEffect(() => {
+    const host = rowHost();
+    if (host === undefined) return;
+    const pct = effectivePct();
+    host.style.flex = pct === null ? '1 1 0' : `0 0 ${pct}%`;
+    host.style.minWidth = '0';
+    onCleanup(() => {
+      host.style.removeProperty('flex');
+      host.style.removeProperty('min-width');
+    });
+  });
 
   const startResize = (event: PointerEvent, direction: 1 | -1): void => {
     event.preventDefault();
     event.stopPropagation();
-    const container = wrapperEl?.parentElement;
+    const host = rowHost();
+    const container = host?.parentElement ?? wrapperEl?.parentElement;
     if (!container || container.clientWidth === 0) return;
     const containerWidth = container.clientWidth;
     const startX = event.clientX;
-    const startPct = effectivePct() ?? (wrapperEl ? (wrapperEl.clientWidth / containerWidth) * 100 : 100);
+    const measured = host ?? wrapperEl;
+    const startPct =
+      effectivePct() ?? (measured ? (measured.clientWidth / containerWidth) * 100 : 100);
 
     const onMove = (move: PointerEvent): void => {
       const deltaPct = ((move.clientX - startX) * direction * 100) / containerWidth;
@@ -165,12 +283,20 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     <NodeViewWrapper
       ref={(el: HTMLElement) => {
         wrapperEl = el;
+        // Solid mounts into the detached NodeView host before ProseMirror
+        // inserts that host into the row. Check now for updates, then once at
+        // the end of this task for first mount after the real parent exists.
+        detectRowHost();
+        queueMicrotask(() => {
+          if (alive) detectRowHost();
+        });
       }}
       class="nb-image"
       classList={{ 'is-selected': props.selected, 'is-resizing': dragPct() !== null }}
       data-nb-block-flow="feature"
       data-align={align()}
       data-media-frame={frame()}
+      data-image-placeholder={placeholder() === null ? undefined : ''}
       /*
        * Whether anything is actually written under the picture. A polaroid's
        * white foot is reserved with padding when it is bare and given to the
@@ -179,18 +305,96 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
        */
       data-captioned={caption().length > 0 ? '' : undefined}
       style={{
-        width: effectivePct() === null ? undefined : `${effectivePct()}%`,
-        'flex-basis': effectivePct() === null ? undefined : `${effectivePct()}%`,
+        width:
+          rowHost() !== undefined
+            ? '100%'
+            : effectivePct() === null
+              ? undefined
+              : `${effectivePct()}%`,
+        'flex-basis':
+          rowHost() !== undefined || effectivePct() === null
+            ? undefined
+            : `${effectivePct()}%`,
       }}
     >
       <figure class="nb-image-figure" contenteditable={false}>
-        <img
-          class="nb-image-img"
-          src={src()}
-          alt={alt()}
-          draggable={false}
-          ref={observeWidth}
-        />
+        <Show
+          when={placeholder()}
+          keyed
+          fallback={
+            <img
+              class="nb-image-img"
+              src={displaySrc()}
+              alt={alt()}
+              draggable={false}
+              ref={observeWidth}
+            />
+          }
+        >
+          {(prompt) => (
+            <button
+              type="button"
+              class="nb-image-placeholder"
+              classList={{
+                'is-dragging': draggingOver(),
+                'is-saving': replacing(),
+              }}
+              aria-label={`Choose an image for: ${prompt}`}
+              title={prompt}
+              aria-busy={replacing()}
+              onClick={(event) => void chooseReplacement(event)}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setDraggingOver(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.dataTransfer !== null) {
+                  event.dataTransfer.dropEffect = 'copy';
+                }
+                setDraggingOver(true);
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const next = event.relatedTarget;
+                if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+                  setDraggingOver(false);
+                }
+              }}
+              onDrop={dropReplacement}
+            >
+              <svg
+                class="nb-image-placeholder-glyph"
+                viewBox="0 0 72 54"
+                aria-hidden="true"
+              >
+                <path d="M7 9.5 Q7 6 11 6 L61 6 Q65 6 65 10 L65 44 Q65 48 61 48 L11 48 Q7 48 7 44 Z" />
+                <circle cx="24" cy="21" r="5" />
+                <path d="M13 40 L28 28 L37 36 L47 24 L60 40" />
+                <path class="nb-image-placeholder-plus" d="M55 7 L55 19 M49 13 L61 13" />
+              </svg>
+              <span class="nb-image-placeholder-copy">
+                <span class="nb-image-placeholder-kicker font-ui">
+                  {replacing() ? 'saving picture…' : 'picture needed'}
+                </span>
+                <span class="nb-image-placeholder-prompt">{prompt}</span>
+                <span class="nb-image-placeholder-action font-ui">
+                  click to choose, or drop one image here
+                </span>
+              </span>
+              <Show when={replacementError()} keyed>
+                {(message) => (
+                  <span class="nb-image-placeholder-error font-ui" role="status">
+                    {message}
+                  </span>
+                )}
+              </Show>
+            </button>
+          )}
+        </Show>
 
         <Show when={props.selected}>
           <div class="nb-image-controls">
@@ -213,14 +417,16 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               ▭
             </button>
           </div>
-          <span
-            class="nb-image-handle is-sw"
-            onPointerDown={(event) => startResize(event, -1)}
-          />
-          <span
-            class="nb-image-handle is-se"
-            onPointerDown={(event) => startResize(event, 1)}
-          />
+          <Show when={placeholder() === null}>
+            <span
+              class="nb-image-handle is-sw"
+              onPointerDown={(event) => startResize(event, -1)}
+            />
+            <span
+              class="nb-image-handle is-se"
+              onPointerDown={(event) => startResize(event, 1)}
+            />
+          </Show>
         </Show>
 
         <Show when={props.selected || caption().length > 0}>
@@ -301,6 +507,20 @@ export const MediaImage = Image.extend({
           typeof attributes.caption === 'string' && attributes.caption.length > 0
             ? { 'data-caption': attributes.caption }
             : {},
+      },
+
+      /** Stable path relative to the active library's assets root. */
+      assetRelPath: {
+        ...IMAGE_ASSET_REL_PATH_ATTRIBUTE,
+      },
+
+      /**
+       * Human-facing prompt carried by an intentionally empty-src image.
+       * Once one picture is persisted, the node view clears this attribute
+       * while leaving alt/caption/frame and every effect untouched.
+       */
+      placeholder: {
+        ...IMAGE_PLACEHOLDER_ATTRIBUTE,
       },
 
       frame: {

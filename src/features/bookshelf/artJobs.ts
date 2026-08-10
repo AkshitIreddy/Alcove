@@ -24,7 +24,8 @@ import type { SpineParams } from '../../art/spines';
  * handshake carries another value, so this is an enforced wire contract and
  * not merely a diagnostic label.
  */
-export const ART_PROTOCOL_VERSION = 3;
+// v6: titleless spine workers no longer load or report handwriting fonts.
+export const ART_PROTOCOL_VERSION = 6;
 
 /* --------------------------------- jobs ---------------------------------- */
 
@@ -32,7 +33,6 @@ export interface SpineJob {
   kind: 'spine';
   id: number;
   params: SpineParams;
-  title: string;
   /** Destination bitmap size in texture px (already scaled). */
   w: number;
   h: number;
@@ -75,12 +75,10 @@ export interface ArtFailure {
   message: string;
 }
 
-/** Sent once when the worker's fonts have settled and it can take jobs. */
+/** Sent once when the worker module is initialised and can take jobs. */
 export interface ArtReady {
   kind: 'ready';
   version: number;
-  /** Which of the three handwriting faces actually loaded in the worker. */
-  fonts: string[];
 }
 
 export type ArtResult = SpineResult | ArtFailure;
@@ -88,7 +86,7 @@ export type ArtMessage = ArtResult | ArtReady;
 
 /**
  * How long a single job may run before the host gives up on it and bakes the
- * piece itself. Generous: a titled hi-res spine on a software renderer has
+ * piece itself. Generous: a detailed hi-res spine on a software renderer has
  * been measured at 6s, and killing a merely-slow worker would trade an
  * off-thread stall for an on-thread one.
  */

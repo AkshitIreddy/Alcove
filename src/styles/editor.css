@@ -2132,15 +2132,20 @@ html[data-nb-col-resizing='true'] {
   align-items: stretch;
 }
 
-.nb-image-row-track img {
+/* ProseMirror inserts this node-view host as the row's direct child. It is the
+   flex item; the image/placeholder wrapper nested inside merely fills it. */
+.nb-image-row-track > .nb-node-view[data-node-view-root='image'] {
   flex: 1 1 0;
   min-width: 0;
-  object-fit: cover;
 }
 
-.nb-image-row-track img[data-width-pct] {
-  flex-grow: 0;
-  flex-shrink: 0;
+.nb-image-row-track > .nb-node-view[data-node-view-root='image'] > .nb-image {
+  width: 100%;
+  margin: 0;
+}
+
+.nb-image-row-track .nb-image-img {
+  object-fit: cover;
 }
 
 /* ----------------------------------------------------------------------------

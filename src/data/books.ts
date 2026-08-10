@@ -192,9 +192,10 @@ export async function countBooksInBookcase(bookcaseId: string): Promise<number> 
  * This started as all-or-nothing — pin the whole blob, but only for a book
  * with no `cover_meta.style` at all — and that guard protected almost nothing.
  * `createBook` dresses every new book with `freshBookStyleOverrides`, which
- * pins seventeen fields and *deliberately drops `pigment` and `hueJitter`* so
- * the colour still follows the room. So the typical book has a style, was
- * therefore skipped, and went on being repainted by the very field the guard
+ * pins a restrained structural recipe and *deliberately drops `material`,
+ * `pigment` and `hueJitter`* so the exact named binding and the room's colour
+ * remain authoritative. So the typical book has a style, was therefore
+ * skipped, and went on being repainted by the very colour field the guard
  * existed to hold still.
  *
  * So the merge runs the other way: the resolved face fills the gaps and the
@@ -255,7 +256,7 @@ export async function createBook(input: CreateBookInput): Promise<Book> {
   const now = new Date().toISOString();
   const spineSeed = input.spineSeed ?? randomSpineSeed();
   const book: Book = {
-    id: nanoid(),
+    id: input.id ?? nanoid(),
     bookcaseId: input.bookcaseId ?? (await readActiveBookcaseId()),
     title: input.title,
     floor: input.floor,
@@ -267,7 +268,7 @@ export async function createBook(input: CreateBookInput): Promise<Book> {
     // already said what the book should look like.
     coverMeta:
       input.coverMeta ??
-      ({ style: freshBookStyleOverrides(randomSpineSeed()) } as Record<string, unknown>),
+      ({ style: freshBookStyleOverrides(spineSeed) } as Record<string, unknown>),
     createdAt: now,
     updatedAt: now,
   };
@@ -338,12 +339,18 @@ export async function moveBook(
    cover_meta helpers — the book's free-form JSON blob, sectioned:
      { cover: {...CoverOverrides},
        pageDefaults: {...BookPageDefaults},
-       shelf: {...ShelfMeta} }
+       shelf: {...ShelfMeta},
+       style: {...BookStyleOverrides},
+       studio: {...BookStudioPrefs} }
    The data layer stays art-agnostic: `cover` is passed through as loose JSON
    (validated by src/art/covers.normalizeCoverOverrides at the render site);
    `pageDefaults` is validated here because pages consume it directly;
    `shelf` (wave-2) carries library-life flags: pin star, last-opened time,
-   cached page count (spine thickness), and the soft-delete bookkeeping.
+   cached page count (spine thickness), and the soft-delete bookkeeping;
+   `style` is the renderer's canonical spine-and-cover appearance;
+   `studio` is an art-owned, loosely typed preference envelope. The art layer
+   validates that section so this persistence module stays independent of the
+   renderer and old/new clients can safely share a library.
    -------------------------------------------------------------------------- */
 
 /** Per-book page defaults applied to current + future pages of the book. */
@@ -463,23 +470,121 @@ export async function saveBookStyleOverrides(
   id: string,
   overrides: Record<string, unknown> | null,
 ): Promise<Book | null> {
-  const book = await getBook(id);
-  if (book === null) return null;
-  return updateBook(id, {
-    coverMeta: mergeCoverMetaSection(book.coverMeta, 'style', overrides),
-  });
+  return mutateBookCoverMeta(id, (meta) =>
+    mergeCoverMetaSection(meta, 'style', overrides),
+  );
 }
 
 /** Pure merge of one section into an existing coverMeta blob (null-safe). */
 export function mergeCoverMetaSection(
   meta: Record<string, unknown> | null,
-  key: 'cover' | 'pageDefaults' | 'shelf' | 'style',
+  key: CoverMetaSection,
   value: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
+  return mergeCoverMetaSections(meta, { [key]: value });
+}
+
+export type CoverMetaSection =
+  | 'cover'
+  | 'pageDefaults'
+  | 'shelf'
+  | 'style'
+  | 'studio';
+
+/**
+ * Several independent features share the one `cover_meta` JSON column. A
+ * patch names only the sections it owns; an omitted section is never touched.
+ */
+export type CoverMetaSectionsPatch = Partial<
+  Record<CoverMetaSection, Record<string, unknown> | null>
+>;
+
+/** Merge several owned sections in one pure operation. */
+export function mergeCoverMetaSections(
+  meta: Record<string, unknown> | null,
+  patch: CoverMetaSectionsPatch,
+): Record<string, unknown> | null {
   const next: Record<string, unknown> = { ...(meta ?? {}) };
-  if (value === null || Object.keys(value).length === 0) delete next[key];
-  else next[key] = value;
+  for (const key of Object.keys(patch) as CoverMetaSection[]) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (value === null || Object.keys(value).length === 0) delete next[key];
+    else next[key] = value;
+  }
   return Object.keys(next).length > 0 ? next : null;
+}
+
+export type BookCoverMetaMutation = (
+  current: Record<string, unknown> | null,
+) => Record<string, unknown> | null;
+
+export interface BookCoverMetaMutationDeps {
+  read(bookId: string): Promise<Pick<Book, 'coverMeta'> | null>;
+  write(
+    bookId: string,
+    coverMeta: Record<string, unknown> | null,
+  ): Promise<Book | null>;
+}
+
+/**
+ * Build a per-book transaction lane for `cover_meta` read/merge/write calls.
+ *
+ * SQLite serializes statements, not a SELECT followed later by an UPDATE. A
+ * style edit, page-default edit and ribbon edit could therefore all read the
+ * same old JSON and let the last UPDATE erase the other two. Every mutation
+ * now re-reads only after the previous mutation for that book has committed.
+ * Different books retain independent lanes, and one failed mutation cannot
+ * poison the book's next edit.
+ */
+export function createBookCoverMetaMutationLane(
+  deps: BookCoverMetaMutationDeps,
+): (bookId: string, mutate: BookCoverMetaMutation) => Promise<Book | null> {
+  const tails = new Map<string, Promise<void>>();
+
+  return (bookId, mutate) => {
+    const previous = tails.get(bookId) ?? Promise.resolve();
+    const operation = previous.then(async () => {
+      const book = await deps.read(bookId);
+      if (book === null) return null;
+      return deps.write(bookId, mutate(book.coverMeta));
+    });
+    const tail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    tails.set(bookId, tail);
+    void tail.then(() => {
+      if (tails.get(bookId) === tail) tails.delete(bookId);
+    });
+    return operation;
+  };
+}
+
+const mutateCoverMetaInOrder = createBookCoverMetaMutationLane({
+  read: (bookId) => getBook(bookId),
+  write: (bookId, coverMeta) => updateBook(bookId, { coverMeta }),
+});
+
+/** Shared authority for every feature that mutates one book's cover metadata. */
+export function mutateBookCoverMeta(
+  bookId: string,
+  mutate: BookCoverMetaMutation,
+): Promise<Book | null> {
+  return mutateCoverMetaInOrder(bookId, mutate);
+}
+
+/**
+ * Commit the canonical Book Studio style and its compatibility cover as one
+ * row mutation. No observer can persist or read a half-old pair between them.
+ */
+export function saveBookAppearanceOverrides(
+  bookId: string,
+  style: Record<string, unknown> | null,
+  cover: Record<string, unknown> | null,
+): Promise<Book | null> {
+  return mutateBookCoverMeta(bookId, (meta) =>
+    mergeCoverMetaSections(meta, { style, cover }),
+  );
 }
 
 /** Persist cover-art overrides for a book (merging other sections through). */
@@ -487,11 +592,9 @@ export async function saveCoverOverrides(
   id: string,
   overrides: Record<string, unknown> | null,
 ): Promise<Book | null> {
-  const book = await getBook(id);
-  if (book === null) return null;
-  return updateBook(id, {
-    coverMeta: mergeCoverMetaSection(book.coverMeta, 'cover', overrides),
-  });
+  return mutateBookCoverMeta(id, (meta) =>
+    mergeCoverMetaSection(meta, 'cover', overrides),
+  );
 }
 
 /** Persist per-book page defaults (merging other sections through). */
@@ -499,61 +602,32 @@ export async function savePageDefaults(
   id: string,
   defaults: BookPageDefaults | null,
 ): Promise<Book | null> {
-  const book = await getBook(id);
-  if (book === null) return null;
-  return updateBook(id, {
-    coverMeta: mergeCoverMetaSection(
-      book.coverMeta,
+  return mutateBookCoverMeta(id, (meta) =>
+    mergeCoverMetaSection(
+      meta,
       'pageDefaults',
       defaults as Record<string, unknown> | null,
     ),
-  });
+  );
 }
-
-/**
- * Per-book tails for shelf metadata's read-merge-write transaction.
- *
- * SQLite serializes each statement, not the SELECT + UPDATE pair: an opening
- * timestamp and a page-count refresh can therefore both read the same old JSON
- * and the later UPDATE erases the other field. Tails never reject, so one failed
- * write is reported to its caller without poisoning the next mutation.
- */
-const shelfMetaPatchTails = new Map<string, Promise<void>>();
 
 /** Perform one shelf metadata patch after this book's preceding patch settles. */
 function patchShelfMeta(
   id: string,
   patch: ShelfMeta,
 ): Promise<Book | null> {
-  const previous = shelfMetaPatchTails.get(id) ?? Promise.resolve();
-  const operation = previous.then(async () => {
-    const book = await getBook(id);
-    if (book === null) return null;
-    const merged = { ...(readShelfMeta(book) ?? {}), ...patch };
+  return mutateBookCoverMeta(id, (meta) => {
+    const merged = { ...(readShelfMeta({ coverMeta: meta }) ?? {}), ...patch };
     // Drop keys explicitly set to undefined (used to clear trash bookkeeping).
     for (const key of Object.keys(merged) as Array<keyof ShelfMeta>) {
       if (merged[key] === undefined) delete merged[key];
     }
-    return updateBook(id, {
-      coverMeta: mergeCoverMetaSection(
-        book.coverMeta,
-        'shelf',
-        merged as Record<string, unknown>,
-      ),
-    });
+    return mergeCoverMetaSection(
+      meta,
+      'shelf',
+      merged as Record<string, unknown>,
+    );
   });
-
-  // Store a fulfilled tail even when `operation` rejects: later patches wait
-  // for the failed attempt to retire, then get a clean turn of their own.
-  const tail = operation.then(
-    () => undefined,
-    () => undefined,
-  );
-  shelfMetaPatchTails.set(id, tail);
-  void tail.then(() => {
-    if (shelfMetaPatchTails.get(id) === tail) shelfMetaPatchTails.delete(id);
-  });
-  return operation;
 }
 
 /**

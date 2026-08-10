@@ -24,6 +24,7 @@ import type { PageDoc } from '../../data/types';
 import { print } from '../../script';
 import { resolveCodeLang } from '../../script/normalize';
 import { CONTAINER_NAMES, DIAGRAM_LANGS } from '../../script/vocab';
+import { assetRelPathForImageAttrs } from '../media/portableAssets';
 import type { TiptapMark, TiptapNode } from './toTiptap';
 
 // ---------------------------------------------------------------------------
@@ -468,12 +469,77 @@ function blockFromNode(node: TiptapNode): Block[] {
         return [tableFrom(node)];
       case 'image': {
         const attrs = nodeAttrs(node);
+        const assetRelPath = assetRelPathForImageAttrs(attrs);
+        const scriptAttrs = attrsFrom(attrs, [
+          'src',
+          'alt',
+          'title',
+          'widthPct',
+          'frame',
+          'assetRelPath',
+          'asset',
+        ]);
+        if (assetRelPath !== null) scriptAttrs.asset = assetRelPath;
+        if (
+          typeof attrs.widthPct === 'number' &&
+          Number.isFinite(attrs.widthPct)
+        ) {
+          scriptAttrs.width = attrs.widthPct;
+        }
+        /* The page node calls its implemented image presentation `frame`,
+           while Notebook Script calls it `style` (and reserves `frame` for
+           universal decorative borders). Preserve either vocabulary without
+           teaching the printer an ambiguous special case. */
+        if (attrs.frame === 'plain' || attrs.frame === 'polaroid') {
+          scriptAttrs.style = attrs.frame;
+        } else if (isAttrValue(attrs.frame)) {
+          scriptAttrs.frame = attrs.frame;
+        }
         return [
           {
             kind: 'image',
-            src: typeof attrs.src === 'string' ? attrs.src : '',
+            // Local display URLs contain the current library root. The
+            // durable `asset` attr above is the complete portable reference.
+            src:
+              assetRelPath === null && typeof attrs.src === 'string'
+                ? attrs.src
+                : '',
             alt: typeof attrs.alt === 'string' ? attrs.alt : '',
-            attrs: attrsFrom(attrs, ['src', 'alt', 'title', 'widthPct']),
+            attrs: scriptAttrs,
+            ...ZERO,
+          },
+        ];
+      }
+      case 'video': {
+        const attrs = nodeAttrs(node);
+        const assetRelPath = assetRelPathForImageAttrs(attrs);
+        const scriptAttrs = attrsFrom(attrs, [
+          'src',
+          'caption',
+          'widthPct',
+          'assetRelPath',
+          'asset',
+        ]);
+        scriptAttrs.media = 'video';
+        if (assetRelPath !== null) scriptAttrs.asset = assetRelPath;
+        if (
+          typeof attrs.widthPct === 'number' &&
+          Number.isFinite(attrs.widthPct)
+        ) {
+          scriptAttrs.width = attrs.widthPct;
+        }
+        return [
+          {
+            kind: 'image',
+            src:
+              assetRelPath === null && typeof attrs.src === 'string'
+                ? attrs.src
+                : '',
+            // An absent caption is genuinely caption-free. Inventing a
+            // fallback label here makes the script-only round trip create a
+            // visible "Video" figcaption that was never in the document.
+            alt: typeof attrs.caption === 'string' ? attrs.caption : '',
+            attrs: scriptAttrs,
             ...ZERO,
           },
         ];

@@ -143,6 +143,9 @@ export const SIZE_VALUES = ["xs", "sm", "md", "lg", "xl"] as const;
 /** Which way a block's lines are ranged. */
 export const ALIGN_VALUES = ["left", "center", "right"] as const;
 
+/** Whether image-shaped Notebook Script media syntax creates a picture or player. */
+export const MEDIA_VALUES = ["image", "video"] as const;
+
 /**
  * Enum domain per attribute key. Values for these keys are fuzzy-matched
  * (Levenshtein ≤ 2) against their own domain only — never across domains.
@@ -165,6 +168,7 @@ export const ATTR_ENUM_DOMAINS: Record<string, readonly string[]> = {
   variant: CALLOUT_VARIANTS,
   gap: GAP_VALUES,
   style: IMAGE_STYLE_VALUES,
+  media: MEDIA_VALUES,
 };
 
 /**
@@ -215,8 +219,14 @@ export const KNOWN_ATTR_KEYS = [
   "query",
   "count",
   "caption",
+  "media",
   "src",
   "alt",
+  // Durable path relative to the library assets root. Exported scripts may
+  // carry it; assistants should preserve it rather than inventing one.
+  "asset",
+  // Empty-src image whose picture is deliberately supplied by the reader.
+  "placeholder",
   "shape",
   "width",
 ] as const;
@@ -827,9 +837,9 @@ export const ATTR_DOCS: Record<KnownAttrKey, AttrDoc> = {
   },
   width: {
     group: "layout",
-    does: "width in pixels",
-    values: "number",
-    where: "on images",
+    does: "share of the page or image row",
+    values: "percentage, `10` to `100`",
+    where: "on images and videos",
   },
   title: {
     group: "layout",
@@ -847,9 +857,20 @@ export const ATTR_DOCS: Record<KnownAttrKey, AttrDoc> = {
   // media
   src: {
     group: "media",
-    does: "image path",
+    does: "image or video path",
     values: "a path",
-    where: "on images (usually written as `![alt](src)`)",
+    where: "on media (usually written as `![alt](src)`)",
+  },
+  asset: {
+    group: "media",
+    does: "portable library-owned media path",
+    values: "a path relative to the library assets folder",
+    where: "on images and videos exported by Alcove; preserve it, do not invent it",
+  },
+  media: {
+    group: "media",
+    does: "turn image-shaped syntax into a video player",
+    where: "use `media=video` on a video; ordinary images need no value",
   },
   alt: {
     group: "media",
@@ -857,11 +878,17 @@ export const ATTR_DOCS: Record<KnownAttrKey, AttrDoc> = {
     values: "free text",
     where: "on images",
   },
+  placeholder: {
+    group: "media",
+    does: "picture the reader should click or drop in",
+    values: "a short prompt",
+    where: "on an empty image (`![alt](){placeholder=...}`)",
+  },
   caption: {
     group: "media",
-    does: "caption under the image",
+    does: "caption under the image or video",
     values: "free text",
-    where: "on images and `fetch:` lines",
+    where: "on images, videos and `fetch:` lines",
   },
   query: {
     group: "media",

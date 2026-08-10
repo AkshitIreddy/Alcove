@@ -96,7 +96,7 @@ const shots = await page.evaluate(async () => {
     ctx.fillStyle = '#ff00ff';
     ctx.fillRect(0, 0, cw, ch);
     const design = { ...base, shape, material: 'smooth-cloth', decorations: ['plain'] };
-    bd.drawBookSpine(ctx, PAD, PAD, W, H, design, { ownLabel: true, noContact: true });
+    bd.drawBookSpine(ctx, PAD, PAD, W, H, design, { noContact: true });
     const px = ctx.getImageData(0, 0, cw, ch).data;
     out.push({
       id: shape,

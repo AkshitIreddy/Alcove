@@ -717,10 +717,9 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
   const bookDesign = () =>
     resolveBookDesign({
       seed: WELCOME_SPINE_SEED,
-      // The welcome book's own claret, folded exactly as the shelf folds it —
-      // `pigment` in `WELCOME_BINDING` is an index into the pigment names, not
-      // into the cloths (see the long note in data/seed.ts).
-      cloth: clothForPalette(Number(WELCOME_BINDING.pigment ?? 20)),
+      // The Welcome book's named Lapis fallback, folded exactly as the shelf
+      // folds it. Its full rendered binding also pins deeper Grand-blue roles.
+      cloth: clothForPalette(Number(WELCOME_BINDING.pigment ?? 29)),
       gilt: true,
       preset: outcome().binding.id,
     });

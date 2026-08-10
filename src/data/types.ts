@@ -39,6 +39,11 @@ export interface Book {
 }
 
 export interface CreateBookInput {
+  /**
+   * Optional stable identity for controlled imports/QA fixtures. Normal app
+   * book creation omits this and receives a nanoid.
+   */
+  id?: string;
   title: string;
   /** Omit to land in whichever bookcase is currently open. */
   bookcaseId?: string;
@@ -344,6 +349,8 @@ export interface Settings {
   backupFolder: string | null;
   /** Dev overlay: FPS + texture memory. */
   perfHud: boolean;
+  /** On an app update, replace even an edited Welcome book with the shipped guide. */
+  refreshWelcomeBookOnUpdate: boolean;
 
   /** Never collected; the type forbids turning it on. */
   readonly telemetry: false;

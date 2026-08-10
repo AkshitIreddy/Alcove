@@ -38,9 +38,12 @@ import {
 import { createPage, listPages } from '../../data/pages';
 import { settings } from '../../data/settings';
 import type { PageDoc } from '../../data/types';
-import { docToScript } from '../../editor/script/fromTiptap';
 import type { BundleManifest, ManifestBook } from './format';
 import { planBookcases, type BookcasePlan, type ImportPlan } from './conflicts';
+import {
+  pageSnapshotForTransfer,
+  prepareImportedPageDoc,
+} from './pagePortability';
 import type {
   AssetSnapshot,
   BookSnapshot,
@@ -64,40 +67,22 @@ import { addRestorePoint, getRestorePoint, patchRestorePoint } from './store';
 // Pure doc helpers
 // ---------------------------------------------------------------------------
 
-interface DocNode {
-  type?: unknown;
-  text?: unknown;
-  content?: unknown;
-}
-
-function nodeText(node: unknown): string {
-  if (node === null || typeof node !== 'object') return '';
-  const record = node as DocNode;
-  if (typeof record.text === 'string') return record.text;
-  if (!Array.isArray(record.content)) return '';
-  return record.content.map(nodeText).join('');
-}
-
 /** First heading's text, else the first paragraph's, else "page N". */
-export function pageTitleFromDoc(doc: PageDoc, index: number): string {
-  const blocks = Array.isArray(doc.content) ? doc.content : [];
-  for (const block of blocks) {
-    if (block === null || typeof block !== 'object') continue;
-    if ((block as DocNode).type !== 'heading') continue;
-    const text = nodeText(block).trim();
-    if (text !== '') return text.slice(0, 80);
-  }
-  for (const block of blocks) {
-    const text = nodeText(block).trim();
-    if (text !== '') return text.slice(0, 60);
-  }
-  return `page ${index + 1}`;
-}
+export { pageTitleFromDoc } from './pagePortability';
 
 /** Plain-text length of a document — the "how full" hint in the tree. */
-export function docCharCount(doc: PageDoc): number {
-  return nodeText({ content: doc.content ?? [] }).length;
-}
+export { docCharCount } from './pagePortability';
+
+/**
+ * Build one bundle page from its real stored model.
+ *
+ * Local image URLs are presentation state tied to this library root. Both
+ * archive representations therefore use the portable document: lossless JSON
+ * carries `assetRelPath` with an empty `src`, and Notebook Script carries the
+ * same value as `{asset=...}`. A clean verbatim script is retained only when
+ * the page has no library-owned image reference to canonicalize.
+ */
+export { pageSnapshotForTransfer } from './pagePortability';
 
 // ---------------------------------------------------------------------------
 // Snapshot
@@ -168,18 +153,7 @@ export async function loadLibrarySnapshot(): Promise<LibrarySnapshot> {
   const out: BookSnapshot[] = [];
   for (const book of books) {
     const pages = await listPages(book.id);
-    const snapshots: PageSnapshot[] = pages.map((page, index) => ({
-      id: page.id,
-      bookId: book.id,
-      ord: page.ord,
-      title: pageTitleFromDoc(page.doc, index),
-      script:
-        page.scriptSource !== null && !page.sourceDirty
-          ? page.scriptSource
-          : docToScript(page.doc),
-      docJson: JSON.stringify(page.doc),
-      chars: docCharCount(page.doc),
-    }));
+    const snapshots: PageSnapshot[] = pages.map(pageSnapshotForTransfer);
     out.push({
       id: book.id,
       title: book.title,
@@ -332,6 +306,8 @@ function parseDocJson(text: string): PageDoc | null {
   }
   return null;
 }
+
+export { prepareImportedPageDoc } from './pagePortability';
 
 // ---------------------------------------------------------------------------
 // Apply
@@ -583,6 +559,7 @@ export async function applyImportPlan(
           continue;
         }
       }
+      doc = await prepareImportedPageDoc(doc);
       const page = await createPage({
         bookId: targetId,
         doc,
@@ -913,4 +890,3 @@ async function upsertPageRow(row: PageRowSnapshot): Promise<void> {
     ],
   );
 }
-

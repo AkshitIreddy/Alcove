@@ -3,9 +3,9 @@
  *
  * Every knob from docs/design/library-themes.md §4: binding material,
  * pigment + hue jitter, raised bands, endbands, ornament stamp, title plate
- * and face, wear, edge treatment, format/height/thickness, charms, and the
- * cover's frame · medallion · corner protectors · inset plate. On top of
- * those sits the BINDING — the sixty-two bound books of `art/bookDesign.ts`,
+ * and face, wear, edge treatment, format/height/thickness, and the cover's
+ * continuous frame. On top of
+ * those sits the BINDING — the quality-safe bound books of `art/bookDesign.ts`,
  * three composable axes (silhouette × material × tooling) rolled into named
  * presets.
  *
@@ -24,27 +24,34 @@
  *    it and `normalizeBookStyleOverrides` — in a file this panel does not own
  *    — drops any key it does not know.
  */
-import { For, Show, createEffect, createMemo, createSignal, on, onMount, type JSX } from 'solid-js';
 import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
+import { Portal } from 'solid-js/web';
+import {
+  ACTIVE_COVER_HANDS,
+  ACTIVE_EDGE_TREATMENTS,
+  ACTIVE_HEAD_TAIL_OPTIONS,
+  ACTIVE_ORNAMENTS,
+  ACTIVE_TITLE_PLATES,
   BINDING_MATERIALS,
-  CHARMS,
-  CHARM_COLORS,
-  CHARM_COLOR_LABELS,
-  CHARM_LABELS,
-  charmColorCss,
   EDGE_LABELS,
-  EDGE_TREATMENTS,
   MATERIAL_LABELS,
   MAX_RAISED_BANDS,
-  ORNAMENT_LABELS,
   ORNAMENT_NONE,
   SPINE_FORMATS,
   SPINE_FORMAT_IDS,
   SPINE_HEIGHT_RANGE,
   SPINE_THICKNESS_RANGE,
-  TITLE_FONTS,
   PIGMENT_LABELS,
-  TITLE_PLATES,
   TITLE_PLATE_LABELS,
   WEAR_STOPS,
   formatForHeight,
@@ -58,11 +65,15 @@ import {
 import { CLOTHS } from '../../art/flat';
 import {
   BOOK_PRESETS,
+  BOOK_SURPRISE_DIRECTIONS,
+  MATERIALS,
   ROLLABLE_DECORATIONS,
   ROLLABLE_MATERIALS,
   ROLLABLE_SHAPES,
   SHAPE_LABELS,
   bindingMaterialFor,
+  bookPresetHasAuthoredFocal,
+  bookDesignTag,
   bookPreset,
   materialLookFor,
   ownBindingId,
@@ -71,9 +82,21 @@ import {
   resolveBookDesign,
   type BookDesign,
   type BookPresetId,
+  type BookSurpriseDirectionId,
+  type MaterialLook,
   type OwnBinding,
 } from '../../art/bookDesign';
-import { COVER_ASPECT, renderCoverInto } from '../../art/covers';
+import {
+  BOOK_SURPRISE_LOCK_DEFINITIONS,
+  BOOK_SURPRISE_LOCK_IDS,
+  normalizeBookSurpriseLocks,
+  resolveBookSurpriseColourProjection,
+  surpriseBookRecipe,
+  type BookSurpriseLockId,
+  type BookSurpriseLockSet,
+  type BookSurprisePalette,
+} from '../../art/bookSurprise';
+import { ACTIVE_COVER_FRAMES, COVER_ASPECT, renderCoverInto } from '../../art/covers';
 import { flatSpineFor } from '../../art/flatShelf';
 import type { FlatScheme } from '../../art/flat';
 import {
@@ -81,9 +104,13 @@ import {
   themeSpineDefaults,
 } from '../../features/bookshelf/bookIdentity';
 import type { CoverOverrides } from '../../art/covers';
-import { PIGMENT_CLOTH_NAMES, clothForPalette, renderSpine, type Ctx2D } from '../../art/spines';
+import {
+  PIGMENT_CLOTH_NAMES,
+  clothForPalette,
+  renderSpine,
+  type Ctx2D,
+} from '../../art/spines';
 import { PALETTE_PAGE } from '../../art/customColour';
-import OwnColour from './OwnColour';
 import { getTheme } from '../../art/themes';
 import { libraryPrefs, resolveLibrary } from '../../features/bookshelf/libraryPrefs';
 import DesignPicker, { type PickerOption } from './DesignPicker';
@@ -95,17 +122,35 @@ import DesignStrip, {
   starWords,
 } from './DesignStrip';
 import { DesignCanvas } from './designArt';
-import { bindingOptions, drawBindingCard, ownAxisOptions } from './designOptions';
+import {
+  bindingOptions,
+  drawBindingCard,
+  ownAxisOptions,
+  type BindingCardOptions,
+} from './designOptions';
 import {
   activeRoomDesign,
   bookBinding,
   loadDesignPrefs,
-  saveBookBinding,
   shelfDesignOf,
 } from '../../data/designPrefs';
 import { shelfHeadroom, type ShelfHeadroom } from '../../features/bookshelf/bookFit';
-import { isHidden, rollPool, type CurationAxis } from '../../data/shelfOfMine';
+import {
+  hiddenIds,
+  isHidden,
+  rollPool,
+  type CurationAxis,
+} from '../../data/shelfOfMine';
 import { stopShelfKeys } from './shelfKeys';
+import {
+  bookPreviewGeometry,
+  previewRectStyle,
+  type BookStudioControlTarget,
+} from './bookStudioPreview';
+import {
+  reconcileBookStudioSectionRoll,
+  styleAfterBindingChange,
+} from './bookStudioComposition';
 import '../../styles/studio.css';
 
 const PREVIEW_W = 214;
@@ -155,13 +200,6 @@ interface ClothSwatch {
   readonly pigment: number;
 }
 
-interface CharmSwatch {
-  readonly id: string;
-  readonly name: string;
-  readonly index: number;
-  readonly hex: string;
-}
-
 /**
  * The three composable axes, in this panel's words and in the reader's.
  *
@@ -205,40 +243,122 @@ const CLOTH_SWATCHES: readonly ClothSwatch[] = PIGMENT_LABELS.map((name, pigment
   name: PIGMENT_CLOTH_NAMES[pigment] === '' ? name : (PIGMENT_CLOTH_NAMES[pigment] as string),
 }));
 
-/**
- * The charm's colourways, carrying their own index.
- *
- * Paired with the index rather than read back out of a `For`'s position,
- * because the row folds at twenty like every other long list in the app and
- * a folded row's third tile is not colourway three.
- */
-const CHARM_SWATCHES: readonly CharmSwatch[] = CHARM_COLORS.map((hex, index) => ({
-  id: String(index),
-  index,
-  hex,
-  name: CHARM_COLOR_LABELS[index] ?? `colour ${index + 1}`,
-}));
+/** Long chip vocabularies show a useful first folio, then open on request. */
+const COVER_CHIP_PAGE = 12;
+
+/** A compact colour role: one well, one meaning, and an explicit way home. */
+interface ColourRoleProps {
+  label: string;
+  hint: string;
+  target: BookStudioControlTarget;
+  lock?: JSX.Element;
+  /** Persisted source, used only for pin/reset state. */
+  value: string | null;
+  /** Representative flat fill the painter actually shows. */
+  visible: string;
+  onPick(hex: string): void;
+  onClear(): void;
+}
+
+function ColourRole(props: ColourRoleProps): JSX.Element {
+  return (
+    <div
+      class="nb-book-colour-role"
+      classList={{ 'is-pinned': props.value !== null }}
+      data-book-control={props.target}
+      tabIndex={-1}
+    >
+      <label class="nb-book-colour-role-main">
+        <input
+          type="color"
+          class="nb-book-colour-role-well"
+          value={props.visible}
+          aria-label={`${props.label}: pick a colour; currently ${props.visible}`}
+          onChange={(event) => props.onPick(event.currentTarget.value)}
+        />
+        <span>
+          <strong class="font-ui">{props.label}</strong>
+          <small class="font-ui">{props.hint}</small>
+        </span>
+      </label>
+      <span class="nb-book-colour-role-value font-ui">
+        {props.value === null
+          ? `inherits · ${props.visible.toUpperCase()}`
+          : props.visible.toUpperCase()}
+      </span>
+      <Show when={props.value !== null}>
+        <button
+          type="button"
+          class="nb-book-colour-role-reset font-ui"
+          aria-label={`${props.label}: inherit the book's colour`}
+          onClick={() => props.onClear()}
+        >
+          reset
+        </button>
+      </Show>
+      {props.lock}
+    </div>
+  );
+}
+
+interface SurpriseLockButtonProps {
+  id: BookSurpriseLockId;
+  label: string;
+  locked: boolean;
+  /** A whole-binding lock makes its four component locks redundant. */
+  covered?: boolean;
+  onToggle(): void;
+}
 
 /**
- * The cover's frame and medallion, in the words the chips have always used.
- *
- * Lifted out of the JSX so a chip, a removal and a dice roll can all name the
- * same entry. Both vocabularies are much larger than these two lists
- * (`COVER_FRAME_COUNT`, `COVER_MEDALLION_COUNT`), which is a gap of its own and
- * not this one's to close — what the ids have to be is STABLE, and an index
- * into a list the panel writes down is exactly that.
+ * One explicit promise to Surprise Me: closed means "keep this", open means
+ * "you may change this". It stays a real pressed button (not a decorative
+ * padlock glyph), so keyboard, touch, and assistive technology all get the
+ * same operation and state.
  */
-const COVER_FRAME_NAMES: readonly string[] = ['rules', 'corners', 'scallop', 'stitch'];
-const COVER_MEDALLION_NAMES: readonly string[] = [
-  'diamond',
-  'laurel',
-  'star',
-  'flower',
-  'chevron',
-  'sun',
-  'moon',
-  'keyhole',
-];
+function SurpriseLockButton(props: SurpriseLockButtonProps): JSX.Element {
+  const effective = (): boolean => props.locked || props.covered === true;
+  const action = (): string =>
+    props.covered === true
+      ? `${props.label} is kept by the whole binding lock`
+      : effective()
+        ? `Let Surprise Me change ${props.label}`
+        : `Keep ${props.label} when using Surprise Me`;
+
+  return (
+    <button
+      type="button"
+      class="nb-surprise-lock"
+      classList={{ 'is-locked': effective(), 'is-covered': props.covered === true }}
+      data-surprise-lock={props.id}
+      aria-label={action()}
+      aria-pressed={effective()}
+      disabled={props.covered === true}
+      data-tooltip={action().toLowerCase()}
+      onClick={(event) => {
+        // A lock is usually nested in a label row. Do not let its click also
+        // activate that row's range/colour input.
+        event.preventDefault();
+        event.stopPropagation();
+        props.onToggle();
+      }}
+    >
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <path
+          class="nb-surprise-lock-body"
+          d="M7.2 12.5 L21.2 12.2 L21.5 23.0 L6.8 23.4 Z"
+        />
+        <Show
+          when={effective()}
+          fallback={<path d="M10.1 12.4 L10.0 9.4 C9.9 5.8 12.0 3.6 15.1 3.7 C18.1 3.8 19.7 5.9 19.6 8.3" />}
+        >
+          <path d="M9.8 12.4 L9.8 8.9 C9.7 5.7 11.7 3.6 14.3 3.6 C17.2 3.6 19.0 5.7 19.0 8.8 L19.0 12.3" />
+        </Show>
+        <path d="M14.1 16.2 L14.2 19.7" />
+      </svg>
+    </button>
+  );
+}
 
 /* -------------------------- the curated chip rows ------------------------- */
 
@@ -259,11 +379,8 @@ type StyleRowAxis = Extract<
   | 'lettering'
   | 'edge'
   | 'format'
-  | 'charm'
   | 'cover-frame'
-  | 'cover-medallion'
   | 'spine-cloth'
-  | 'charm-colour'
 >;
 
 /**
@@ -276,7 +393,7 @@ type StyleRowAxis = Extract<
  * turns a draw back into an entry id, so `respectingCuration` can ask the
  * store whether that entry is still on the list and re-draw from the pool when
  * it is not. Without it a removal means "gone from the row" and nothing more —
- * you throw a stamp away, press randomise, and the app puts it back on the
+ * you throw a stamp away, reroll its section, and the app puts it back on the
  * book, which reads as the app ignoring you rather than as two features that
  * were never introduced.
  */
@@ -300,18 +417,23 @@ const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
   ornament: {
     axis: 'ornament',
     chips: [
-      { id: String(ORNAMENT_NONE), name: 'none', chipClass: 'nb-chip-ghost', sets: { ornament: ORNAMENT_NONE } },
-      ...ORNAMENT_LABELS.map((label, index) => ({
+      {
+        id: String(ORNAMENT_NONE),
+        name: 'none',
+        chipClass: 'nb-chip-ghost',
+        sets: { ornament: ORNAMENT_NONE, coverMedallion: ORNAMENT_NONE },
+      },
+      ...ACTIVE_ORNAMENTS.map(({ label, index }) => ({
         id: String(index),
         name: label.toLowerCase(),
-        sets: { ornament: index },
+        sets: { ornament: index, coverMedallion: index },
       })),
     ],
     idOf: (s) => (typeof s.ornament === 'number' ? String(s.ornament) : ''),
   },
   'title-plate': {
     axis: 'title-plate',
-    chips: TITLE_PLATES.map((p) => ({
+    chips: ACTIVE_TITLE_PLATES.map((p) => ({
       id: p,
       name: TITLE_PLATE_LABELS[p].toLowerCase(),
       sets: { titlePlate: p },
@@ -320,16 +442,16 @@ const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
   },
   lettering: {
     axis: 'lettering',
-    chips: TITLE_FONTS.map((name, index) => ({
+    chips: ACTIVE_COVER_HANDS.map(({ label, index }) => ({
       id: String(index),
-      name,
-      sets: { titleFont: index as 0 | 1 | 2 },
+      name: label,
+      sets: { titleFont: index },
     })),
     idOf: (s) => (typeof s.titleFont === 'number' ? String(s.titleFont) : ''),
   },
   edge: {
     axis: 'edge',
-    chips: EDGE_TREATMENTS.map((e) => ({
+    chips: ACTIVE_EDGE_TREATMENTS.map((e) => ({
       id: e,
       name: EDGE_LABELS[e].toLowerCase(),
       sets: { edge: e },
@@ -348,41 +470,16 @@ const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
     })),
     idOf: (s) => (typeof s.height === 'number' ? formatForHeight(s.height) : ''),
   },
-  charm: {
-    axis: 'charm',
-    chips: CHARMS.map((c) => ({
-      id: c,
-      name: CHARM_LABELS[c].toLowerCase(),
-      ...(c === 'none' ? { chipClass: 'nb-chip-ghost' } : {}),
-      sets: { charm: c },
-    })),
-    idOf: (s) => (typeof s.charm === 'string' ? s.charm : ''),
-  },
   'cover-frame': {
     axis: 'cover-frame',
-    chips: COVER_FRAME_NAMES.map((name, index) => ({
+    chips: ACTIVE_COVER_FRAMES.map(({ label, index }) => ({
       id: String(index),
-      name,
+      name: label.toLowerCase(),
       sets: { coverFrame: index },
     })),
     idOf: (s) => (typeof s.coverFrame === 'number' ? String(s.coverFrame) : ''),
   },
-  'cover-medallion': {
-    axis: 'cover-medallion',
-    chips: COVER_MEDALLION_NAMES.map((name, index) => ({
-      id: String(index),
-      name,
-      sets: { coverMedallion: index },
-    })),
-    idOf: (s) => (typeof s.coverMedallion === 'number' ? String(s.coverMedallion) : ''),
-  },
-  /*
-   * The two colour grids are not chip rows — they draw their own swatches and
-   * drive `createCuration` directly — so they are here for the DICE alone. The
-   * ids are `String(index)` on both sides because both are built off the same
-   * two swatch tables above; that coupling is the reason those tables moved out
-   * to module scope rather than being rebuilt per panel.
-   */
+  /* The cloth colour grid drives its own curation controller. */
   'spine-cloth': {
     axis: 'spine-cloth',
     chips: CLOTH_SWATCHES.map((swatch) => ({
@@ -395,20 +492,61 @@ const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
     })),
     idOf: (s) => (typeof s.pigment === 'number' ? String(s.pigment) : ''),
   },
-  'charm-colour': {
-    axis: 'charm-colour',
-    chips: CHARM_SWATCHES.map((swatch) => ({
-      id: swatch.id,
-      name: swatch.name,
-      sets: { charmColor: swatch.index },
-    })),
-    // A colour of the reader's own is a hex, not an index, and is not on this
-    // list at all — so it can never be the entry a removal is about.
-    idOf: (s) => (typeof s.charmColor === 'number' ? String(s.charmColor) : ''),
-  },
 };
 
 const CURATED_ROW_LIST: readonly CuratedRow[] = Object.values(CURATED_ROWS);
+
+const QUIET_SURFACE_FRAMES: ReadonlySet<number> = new Set([0, 2, 24, 28]);
+const QUIET_SURFACE_TITLES: ReadonlySet<string> = new Set([
+  'none',
+  'debossed',
+  'blind-lettered',
+  'gilt-direct',
+  'twin-rules',
+]);
+
+interface SurfaceCompositionContext {
+  readonly material: MaterialLook;
+  readonly binding: BookPresetId | null | undefined;
+}
+
+function materialOwnsSurface(material: MaterialLook): boolean {
+  const spec = MATERIALS[material];
+  return spec.split !== 'none' || (spec.grain !== 'none' && spec.grainCount > 3);
+}
+
+/**
+ * Final composition guard shared by manual chips and local section dice.
+ * A figured covering or binding-authored centrepiece has already spent the
+ * book's focal budget; it cannot accumulate a second emblem. Figured fields
+ * also keep only quiet direct lettering and one structural fillet.
+ */
+function reconcileActiveSurfaceComposition(
+  draw: BookStyleOverrides,
+  context: SurfaceCompositionContext,
+): BookStyleOverrides {
+  const out = { ...(normalizeBookStyleOverrides(draw) ?? {}) };
+  const surfaceLed = materialOwnsSurface(context.material);
+  const authoredFocal = bookPresetHasAuthoredFocal(context.binding);
+
+  if (surfaceLed || authoredFocal) {
+    if (out.ornament !== undefined || out.coverMedallion !== undefined) {
+      out.ornament = ORNAMENT_NONE;
+      out.coverMedallion = ORNAMENT_NONE;
+    }
+  }
+  if (surfaceLed) {
+    if (out.coverFrame !== undefined && !QUIET_SURFACE_FRAMES.has(out.coverFrame)) {
+      out.coverFrame = 2;
+    }
+    if (out.titlePlate !== undefined && !QUIET_SURFACE_TITLES.has(out.titlePlate)) {
+      out.titlePlate = out.gilt === true ? 'gilt-direct' : 'blind-lettered';
+    }
+  }
+  if (out.cornerProtectors !== undefined) out.cornerProtectors = false;
+  if (out.insetPlate !== undefined) out.insetPlate = false;
+  return out;
+}
 
 /**
  * A rolled style, with the reader's removals applied.
@@ -421,7 +559,10 @@ const CURATED_ROW_LIST: readonly CuratedRow[] = Object.values(CURATED_ROWS);
  * reader who asked to be surprised did not ask to be surprised by the six
  * things they already told the app they like.
  */
-function respectingCuration(draw: BookStyleOverrides): BookStyleOverrides {
+function respectingCuration(
+  draw: BookStyleOverrides,
+  composition?: SurfaceCompositionContext,
+): BookStyleOverrides {
   let out = draw;
   for (const row of CURATED_ROW_LIST) {
     const landed = row.idOf(out);
@@ -431,7 +572,7 @@ function respectingCuration(draw: BookStyleOverrides): BookStyleOverrides {
     if (chip === undefined || chip.id === landed) continue;
     out = { ...out, ...chip.sets };
   }
-  return out;
+  return composition ? reconcileActiveSurfaceComposition(out, composition) : out;
 }
 
 /**
@@ -464,11 +605,20 @@ function respectingCuration(draw: BookStyleOverrides): BookStyleOverrides {
  * not `undefined`, and the seed keeps its say — which is what the whole
  * `seed → theme → overrides` model promises anyway.
  */
-export function coverOverridesFromStyle(over: BookStyleOverrides): CoverOverrides {
+export function coverOverridesFromStyle(
+  over: BookStyleOverrides,
+  binding?: BookPresetId | null,
+  seed?: number,
+): CoverOverrides {
   // Projected through `bookIdentity`'s mapping rather than a second copy of it:
   // the studio must not grow its own opinion about which cover field a spine
   // field feeds. Only the FILTER belongs here.
-  const full = resolvedCoverOverrides(over as BookStyle) as Record<string, unknown>;
+  const full = resolvedCoverOverrides(over as BookStyle, {
+    binding,
+    materialPinned: Object.prototype.hasOwnProperty.call(over, 'material'),
+    seed,
+    titlePlatePinned: Object.prototype.hasOwnProperty.call(over, 'titlePlate'),
+  }) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(full)) {
     // `null` survives on purpose — on `clothHex` it is a value ("I cleared my
@@ -478,7 +628,7 @@ export function coverOverridesFromStyle(over: BookStyleOverrides): CoverOverride
   // `texture` is DERIVED from `material` rather than copied across, so it comes
   // out of that mapping with a real number even when the reader has pinned no
   // covering at all. It is the one key the filter cannot see is unset.
-  if (over.material === undefined) delete out.texture;
+  if (over.material === undefined && binding === undefined) delete out.texture;
   return out as CoverOverrides;
 }
 
@@ -487,21 +637,49 @@ export interface BookStudioProps {
   title: string;
   /** Persisted `cover_meta.style` blob (loose JSON; normalized on read). */
   style: Record<string, unknown> | null;
-  onStyleChange(next: BookStyleOverrides | null): void;
+  onStyleChange(
+    next: BookStyleOverrides | null,
+    projectionBinding?: BookPresetId | null,
+    /** True only when projectionBinding is the reader's stored binding. */
+    bindingPinned?: boolean,
+  ): void;
+  /** Persist a binding and its matching style through one ordered parent lane. */
+  onAppearanceChange?(
+    next: BookStyleOverrides | null,
+    binding: BookPresetId | null,
+    projectionBinding: BookPresetId,
+  ): void;
   pageCount?: number;
   /**
    * The book's row id, for the binding store.
    *
-   * Optional because the panel above this one (CustomizePanel, not owned
-   * here) does not pass it yet. Falling back to the art seed is safe — it is
-   * per-book, stable for the life of the book, and derivable anywhere a `Book`
-   * is in hand — but an explicit id is better and should win when it arrives.
+   * The app's two Studio hosts pass the database id. It remains optional for
+   * isolated specimen/test surfaces; those can preview from the art seed but
+   * deliberately cannot persist a binding under a pretend book key.
    */
   bookId?: string;
+  /**
+   * Whether the rail sheet that owns this studio is on screen.
+   *
+   * RailPanel deliberately keeps its contents mounted after the first open so
+   * scroll position survives a close. The preview lives outside that scroller,
+   * in a companion panel, so it needs the real visibility bit rather than the
+   * component's mounted state or it would stay behind after the sheet left.
+   */
+  open?: boolean;
+  /** The shelf sheet starts at the window edge; the in-book sheet starts after its icon rail. */
+  host?: 'book' | 'shelf';
+  /**
+   * Per-book promises to the whole-book Surprise action. JSON-safe because the
+   * parent stores them under `cover_meta.studio`, beside (not inside) style.
+   */
+  surpriseLocks?: BookSurpriseLockSet;
+  onSurpriseLocksChange?(next: BookSurpriseLockSet): void;
 }
 
 export default function BookStudio(props: BookStudioProps): JSX.Element {
   const [face, setFace] = createSignal<'spine' | 'cover'>('spine');
+  const [surpriseDirection, setSurpriseDirection] = createSignal<BookSurpriseDirectionId | null>(null);
   const [bindingSheet, setBindingSheet] = createSignal(false);
   /** Which single axis has its long sheet open, or null. */
   const [axisSheet, setAxisSheet] = createSignal<'shape' | 'material' | 'decoration' | null>(null);
@@ -509,33 +687,232 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   // stage and remounting it hands back NEW canvases. With a bare ref the draw
   // effect kept painting the detached ones and the reader came back to two
   // blank rectangles.
-  const [spineCanvas, setSpineCanvas] = createSignal<HTMLCanvasElement | undefined>();
-  const [coverCanvas, setCoverCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  const [dockSpineCanvas, setDockSpineCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  const [dockCoverCanvas, setDockCoverCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  const [inlineSpineCanvas, setInlineSpineCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  const [inlineCoverCanvas, setInlineCoverCanvas] = createSignal<HTMLCanvasElement | undefined>();
+  /** Binding shown immediately while the ordered persistence lane catches up. */
+  const [pendingBinding, setPendingBinding] = createSignal<
+    BookPresetId | null | undefined
+  >(undefined);
+  const [sessionLocks, setSessionLocks] = createSignal<BookSurpriseLockSet>(
+    normalizeBookSurpriseLocks(props.surpriseLocks),
+  );
+  let studioRoot: HTMLDivElement | undefined;
+  let highlightedControl: HTMLElement | undefined;
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  let revealFrame: number | undefined;
+  let revealRetryFrame: number | undefined;
+
+  /** Revoke any older preview click before a newer target is considered. */
+  const cancelPendingControlReveal = (): void => {
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame);
+    if (revealRetryFrame !== undefined) cancelAnimationFrame(revealRetryFrame);
+    revealFrame = undefined;
+    revealRetryFrame = undefined;
+  };
+
+  /**
+   * Carry a click on the rendered book into the long control sheet.
+   *
+   * The companion preview lives in a Portal, so DOM ancestry cannot find the
+   * sheet. The component ref is the authority instead: it also keeps two open
+   * Studio specimens from stealing one another's focus. A target inside a
+   * collapsed workshop is opened before it is measured, and focus follows the
+   * scroll so keyboard/screen-reader users arrive at the same place as pointer
+   * users. The transient wash is presentation only; the focus move is the
+   * durable state.
+   */
+  const revealControl = (target: BookStudioControlTarget): void => {
+    // A picker-return click waits two frames for the main sheet to remount. A
+    // second click made during those frames is newer authority and must cancel
+    // the queued target before it can steal focus/highlight back.
+    cancelPendingControlReveal();
+    const control = studioRoot?.querySelector<HTMLElement>(`[data-book-control="${target}"]`);
+    if (control === undefined || control === null) {
+      /*
+       * The docked preview deliberately stays available while a long binding
+       * picker replaces the normal sheet. A click on the still-visible book
+       * must therefore come home from that picker before it can reveal the
+       * requested control. Solid remounts the sheet synchronously, while two
+       * animation frames give layout/focus geometry a stable turn before the
+       * existing reveal path measures it.
+       */
+      if (bindingSheet() || axisSheet() !== null) {
+        setBindingSheet(false);
+        setAxisSheet(null);
+        revealFrame = requestAnimationFrame(() => {
+          revealFrame = undefined;
+          revealRetryFrame = requestAnimationFrame(() => {
+            revealRetryFrame = undefined;
+            revealControl(target);
+          });
+        });
+      }
+      return;
+    }
+
+    const disclosure = control.closest<HTMLDetailsElement>('details');
+    if (disclosure !== null && !disclosure.open) disclosure.open = true;
+
+    if (highlightTimer !== undefined) clearTimeout(highlightTimer);
+    highlightedControl?.classList.remove('is-preview-target');
+    highlightedControl = control;
+
+    // Restart the ink-wash animation when the same part is chosen twice.
+    control.classList.remove('is-preview-target');
+    void control.offsetWidth;
+    control.classList.add('is-preview-target');
+    const narrowPreview = window.matchMedia('(max-width: 700px)').matches;
+    control.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: narrowPreview ? 'start' : 'center',
+      inline: 'nearest',
+    });
+    requestAnimationFrame(() => control.focus({ preventScroll: true }));
+
+    highlightTimer = setTimeout(() => {
+      if (highlightedControl === control) highlightedControl = undefined;
+      control.classList.remove('is-preview-target');
+    }, 2_450);
+  };
+
+  onCleanup(() => {
+    if (highlightTimer !== undefined) clearTimeout(highlightTimer);
+    cancelPendingControlReveal();
+    highlightedControl?.classList.remove('is-preview-target');
+  });
+
+  /*
+   * The host is controlled and persists under `cover_meta.studio`; an isolated
+   * specimen has no host, so the same component remains fully usable with a
+   * session-only signal. Optimistic reflection matters here: a reader can tap
+   * several adjacent locks more quickly than an SQLite write can round-trip,
+   * and no tap may rebuild from an older prop array.
+   */
+  createEffect(
+    on(
+      () => props.surpriseLocks,
+      (incoming) => {
+        if (incoming !== undefined) setSessionLocks(normalizeBookSurpriseLocks(incoming));
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => props.bookId,
+      () => setSessionLocks(normalizeBookSurpriseLocks(props.surpriseLocks)),
+      { defer: true },
+    ),
+  );
+
+  const surpriseLocks = (): BookSurpriseLockSet => sessionLocks();
+  const lockSet = createMemo<ReadonlySet<BookSurpriseLockId>>(
+    () => new Set(surpriseLocks()),
+  );
+  const lockIsExplicit = (id: BookSurpriseLockId): boolean => lockSet().has(id);
+  const lockIsCovered = (id: BookSurpriseLockId): boolean =>
+    id.startsWith('binding.') && id !== 'binding' && lockSet().has('binding');
+  const setLocks = (next: BookSurpriseLockSet): void => {
+    const normalized = normalizeBookSurpriseLocks(next);
+    setSessionLocks(normalized);
+    props.onSurpriseLocksChange?.(normalized);
+  };
+  const toggleLock = (id: BookSurpriseLockId): void => {
+    const next = new Set(surpriseLocks());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setLocks([...next] as BookSurpriseLockSet);
+  };
+  const unlockAll = (): void => setLocks([]);
+
+  const Lock = (lockProps: { id: BookSurpriseLockId; label?: string }): JSX.Element => (
+    <SurpriseLockButton
+      id={lockProps.id}
+      label={lockProps.label ?? BOOK_SURPRISE_LOCK_DEFINITIONS[lockProps.id].label.toLowerCase()}
+      locked={lockIsExplicit(lockProps.id)}
+      covered={lockIsCovered(lockProps.id)}
+      onToggle={() => toggleLock(lockProps.id)}
+    />
+  );
 
   onMount(() => {
     void loadDesignPrefs();
   });
 
+  /* The binding participates in both faces of the live preview, so resolve it
+     before resolving the style. A cover now receives the preset's exact
+     MaterialLook (unless the reader explicitly pinned the coarse material
+     override), matching the shelf spine instead of merely sharing its colour. */
+  const bindingKey = (): string => props.bookId ?? `seed:${props.spineSeed >>> 0}`;
+  const storedBinding = (): BookPresetId | null => bookBinding(bindingKey());
+  /** The pinned binding, or null while the book's seed is still choosing. */
+  const pinned = (): BookPresetId | null => {
+    const pending = pendingBinding();
+    return pending === undefined ? storedBinding() : pending;
+  };
+  /** What the seed would pick on its own — the "follow the seed" answer. */
+  const seedBinding = (): BookPresetId => presetForSeed(props.spineSeed).id;
+
+  createEffect(
+    on(
+      bindingKey,
+      () => setPendingBinding(undefined),
+      { defer: true },
+    ),
+  );
+
+  // Hand authority back to the shared store once the optimistic value lands.
+  // Until then the preview never flashes the previous binding between a click
+  // and the first awaited database operation.
+  createEffect(() => {
+    const pending = pendingBinding();
+    if (pending !== undefined && storedBinding() === pending) {
+      setPendingBinding(undefined);
+    }
+  });
+
   const resolved = createMemo(() =>
     resolveBookStyle(props.spineSeed, themeSpineDefaults(getTheme(libraryPrefs.theme)), props.style, {
       pageCount: props.pageCount,
+      binding: pinned() ?? seedBinding(),
     }),
   );
   const style = (): BookStyle => resolved().style;
 
+  /** Canvas-aligned interaction regions shared by the dock and sticky copy. */
+  const previewGeometry = createMemo(() => {
+    return bookPreviewGeometry({
+      canvasWidth: PREVIEW_W,
+      canvasHeight: PREVIEW_H,
+      stageScale: STAGE_SCALE,
+      baseline: PREVIEW_H - STAGE_PAD_BOTTOM,
+      height: style().height,
+      thickness: style().thickness,
+      coverAspect: COVER_ASPECT,
+      raisedBands: style().raisedBands,
+      headTail: style().headTail,
+      ornament: style().ornament,
+      // Geometry follows the same effective plate the cover painter receives.
+      // `style().titlePlate` is deliberately allowed to stay at the latent
+      // `none` sentinel when an inherited binding (Library Buckram, for
+      // example) authors a label plate. Using that latent value here moved the
+      // clickable title outline away from the label actually on the canvas.
+      coverTitlePlate: resolved().cover.titlePlate,
+      coverFrame: style().coverFrame,
+      coverMedallion: style().coverMedallion,
+    });
+  });
+
   /* ------------------------------- binding ------------------------------- */
 
-  const bindingKey = (): string => props.bookId ?? `seed:${props.spineSeed >>> 0}`;
-  /** The pinned binding, or null while the book's seed is still choosing. */
-  const pinned = (): BookPresetId | null => bookBinding(bindingKey());
-  /** What the seed would pick on its own — the "follow the seed" answer. */
-  const seedBinding = (): BookPresetId => presetForSeed(props.spineSeed).id;
-
   /**
-   * The cloth every card in this panel is painted in — the reader's own colour
-   * when they entered one, the fold of their pigment otherwise.
+   * The ground every card in this panel is painted in — the reader's dedicated
+   * spine colour first, their legacy whole-book cloth next, then the fold of
+   * their pigment.
    *
-   * Exactly what `renderSpine` does with the same two fields, spelled once
+   * Exactly what `renderSpine` does with the same colour roles, spelled once
    * here and read by all three consumers (the big binding preview, the preset
    * strip, the three axis strips). Spelled per consumer it drifted: the
    * bindings and the axes each did their own `clothForPalette` and a custom
@@ -543,7 +920,28 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    * under it, so the studio disagreed with itself in one glance.
    */
   const cardCloth = (): number | string =>
-    resolved().spine.clothHex ?? clothForPalette(resolved().spine.palette);
+    resolved().spine.spineBaseHex ??
+    resolved().spine.clothHex ??
+    clothForPalette(resolved().spine.palette);
+
+  /**
+   * Every book-owned role shared by the binding stage, its preset cards and
+   * the three component sheets. Keeping one projection is what makes a colour
+   * picked above remain the same book while the reader shops below.
+   */
+  const cardOptions = (): BindingCardOptions => ({
+    seed: props.spineSeed,
+    cloth: cardCloth(),
+    // A dedicated spine-face choice tints even naturally pale coverings. The
+    // shared whole-book cloth beneath it must not dye vellum by accident.
+    baseColourPinned: typeof resolved().spine.spineBaseHex === 'string',
+    accent: resolved().spine.spineAccentHex ?? undefined,
+    tooling: resolved().spine.toolingHex ?? null,
+    emblem: resolved().spine.emblemHex ?? null,
+    hardware: null,
+    gilt: style().gilt,
+    focusAt: flatSpineFor(props.spineSeed).labelAt,
+  });
 
   /**
    * The design the shelf will draw. Built from the book's OWN cloth and gilt
@@ -552,10 +950,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    */
   const design = createMemo<BookDesign>(() =>
     resolveBookDesign({
-      seed: props.spineSeed,
-      cloth: cardCloth(),
-      gilt: style().gilt,
-      labelAt: flatSpineFor(props.spineSeed).labelAt,
+      ...cardOptions(),
       preset: pinned(),
       // The same four axes `renderSpine` feeds it, so the binding card and the
       // live preview are one book rather than two.
@@ -567,17 +962,22 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     }),
   );
 
+  const currentSurfaceContext = (): SurfaceCompositionContext => ({
+    material: design().material,
+    binding: pinned() ?? seedBinding(),
+  });
+  const emblemUnavailable = (): boolean =>
+    materialOwnsSurface(design().material) ||
+    bookPresetHasAuthoredFocal(pinned() ?? seedBinding());
+  const emblemUnavailableReason = (): string =>
+    bookPresetHasAuthoredFocal(pinned() ?? seedBinding())
+      ? 'this binding already carries its own focal tooling'
+      : 'this figured covering is the book’s focal design';
+
   /** The shelf the binding cards stand on — the room's timber and recess. */
   const roomScheme = (): FlatScheme => resolveLibrary(libraryPrefs).scheme;
 
-  const bindings = createMemo(() =>
-    bindingOptions({
-      seed: props.spineSeed,
-      cloth: cardCloth(),
-      gilt: style().gilt,
-      labelAt: flatSpineFor(props.spineSeed).labelAt,
-    }),
-  );
+  const bindings = createMemo(() => bindingOptions(cardOptions()));
 
   /**
    * The binding the axis pickers below are editing.
@@ -605,32 +1005,55 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
   const axisOptions = (axis: 'shape' | 'material' | 'decoration'): readonly PickerOption[] =>
     ownAxisOptions(
-      {
-        seed: props.spineSeed,
-        cloth: cardCloth(),
-        gilt: style().gilt,
-        labelAt: flatSpineFor(props.spineSeed).labelAt,
-      },
+      cardOptions(),
       ownParts(),
       axis,
     );
 
+  /**
+   * Apply a binding and its matching style as one optimistic UI decision.
+   * The parent owns the ordered persistence lane. A standalone/test surface
+   * without a database book id still reflects the complete style locally.
+   */
+  const applyAppearance = (
+    next: BookStyleOverrides | null,
+    binding: BookPresetId | null,
+    effectiveBinding: BookPresetId,
+  ): void => {
+    const reconciled =
+      next === null
+        ? null
+        : reconcileActiveSurfaceComposition(next, {
+            material:
+              next.material !== undefined
+                ? materialLookFor(next.material)
+                : bookPreset(effectiveBinding).material,
+            binding: effectiveBinding,
+          });
+    setPendingBinding(binding);
+    if (props.onAppearanceChange !== undefined && props.bookId !== undefined) {
+      props.onAppearanceChange(reconciled, binding, effectiveBinding);
+      return;
+    }
+    props.onStyleChange(reconciled, effectiveBinding, binding !== null);
+  };
+
+  /** A complete binding owns its covering, construction and furniture. */
+  const styleWithoutPriorBinding = (): BookStyleOverrides | null =>
+    styleAfterBindingChange(normalizeBookStyleOverrides(props.style));
+
   /** Compose and pin, keeping the three axes the reader did not touch. */
   const pickOwn = (patch: Partial<OwnBinding>): void => {
-    void saveBookBinding(bindingKey(), ownBindingId({ ...ownParts(), ...patch }));
-    // Same reason `pickBinding` does it: a composed binding names its own
-    // covering, so a stale material override would redraw it as something
-    // else and the sheet would disagree with itself in one glance.
-    unpatch('material');
+    const binding = ownBindingId({ ...ownParts(), ...patch });
+    applyAppearance(styleWithoutPriorBinding(), binding, binding);
   };
 
   const pickBinding = (id: BookPresetId): void => {
-    void saveBookBinding(bindingKey(), id);
     // A binding brings its own covering. Hand it back the say: otherwise
     // picking "Antique Vellum" over a book whose cloth chip had been touched
     // draws a morocco-grained "vellum", which is the studio disagreeing with
     // itself in the same glance.
-    unpatch('material');
+    applyAppearance(styleWithoutPriorBinding(), id, id);
   };
 
   /**
@@ -653,14 +1076,28 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    */
   const patch = (partial: Partial<BookStyle>): void => {
     const current = normalizeBookStyleOverrides(props.style) ?? {};
-    props.onStyleChange({ ...current, ...partial });
+    const draft = { ...current, ...partial };
+    const material =
+      draft.material !== undefined ? materialLookFor(draft.material) : design().material;
+    props.onStyleChange(
+      reconcileActiveSurfaceComposition(draft, {
+        ...currentSurfaceContext(),
+        material,
+      }),
+      pinned() ?? seedBinding(),
+      pinned() !== null,
+    );
   };
 
   /** Drop fields back to "whatever the seed and the room say". */
   const unpatch = (...keys: readonly (keyof BookStyle)[]): void => {
     const current = { ...(normalizeBookStyleOverrides(props.style) ?? {}) };
     for (const key of keys) delete current[key];
-    props.onStyleChange(Object.keys(current).length > 0 ? current : null);
+    props.onStyleChange(
+      Object.keys(current).length > 0 ? current : null,
+      pinned() ?? seedBinding(),
+      pinned() !== null,
+    );
   };
 
   /* ------------------------- does it fit the case? ----------------------- */
@@ -700,7 +1137,16 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
   createEffect(
     on(
-      () => [resolved(), pinned(), props.title, face(), spineCanvas(), coverCanvas()] as const,
+      () => [
+        resolved(),
+        pinned(),
+        props.title,
+        face(),
+        dockSpineCanvas(),
+        dockCoverCanvas(),
+        inlineSpineCanvas(),
+        inlineCoverCanvas(),
+      ] as const,
       () => {
         const r = resolved();
         const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -710,8 +1156,8 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         const bookH = r.style.height * scale;
         const baseline = PREVIEW_H - STAGE_PAD_BOTTOM;
 
-        const cover = coverCanvas();
-        if (cover) {
+        const paintCover = (cover: HTMLCanvasElement | undefined): void => {
+          if (!cover) return;
           cover.width = Math.round(PREVIEW_W * dpr);
           cover.height = Math.round(PREVIEW_H * dpr);
           const ctx = cover.getContext('2d');
@@ -724,10 +1170,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             renderCoverInto(ctx, boardW, bookH, r.cover, props.title);
             ctx.restore();
           }
-        }
+        };
 
-        const spine = spineCanvas();
-        if (spine) {
+        const paintSpine = (spine: HTMLCanvasElement | undefined): void => {
+          if (!spine) return;
           spine.width = Math.round(PREVIEW_W * dpr);
           spine.height = Math.round(PREVIEW_H * dpr);
           const ctx = spine.getContext('2d');
@@ -748,12 +1194,20 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             renderSpine(ctx as Ctx2D, {
               ...r.spine,
               binding: pinned() ?? seedBinding(),
-            }, 0, 0, bookH, scale, props.title, {
+            }, 0, 0, bookH, scale, {
               hiRes: true,
             });
             ctx.restore();
           }
-        }
+        };
+
+        // Desktop and narrow-window canvases are separate because the desktop
+        // preview is portalled out of the scroller. Paint both from the same
+        // resolved model so the responsive hand-off cannot show two books.
+        paintCover(dockCoverCanvas());
+        paintCover(inlineCoverCanvas());
+        paintSpine(dockSpineCanvas());
+        paintSpine(inlineSpineCanvas());
       },
     ),
   );
@@ -793,92 +1247,108 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   );
   /** What the "more" chip is offering. The REMAINING count, never the total. */
   const clothsBehind = (): number => clothList().length - shownCloths().length;
-  /* ------------------------------ charm colour ---------------------------- */
-
-  /** The ribbon's colourways, curated exactly like the pigments above. */
-  const charmCuration = createCuration<CharmSwatch>(() => ({
-    axis: 'charm-colour',
-    label: 'charm colours',
-    options: CHARM_SWATCHES,
-    activeId: typeof style().charmColor === 'number' ? String(style().charmColor) : '',
-  }));
-
-  const [allCharms, setAllCharms] = createSignal(false);
-  /**
-   * Twenty, then the rest behind a count — and never without the current one.
-   *
-   * A hex of the reader's own is not in the table at all, so there is nothing
-   * to swap forward: `cappedTo` is handed a predicate that matches nothing, no
-   * named swatch is lit, and the plain head is the honest thing to show.
+  /*
+   * Cover art is fifty frames × fifty medallions. Keep the first folio quick,
+   * always swap the current choice into it, and let the reader unfold the full
+   * vocabulary in place. This is the same shortlist-plus-current rule used by
+   * every long studio list; it exposes all the art without turning first open
+   * into one hundred chips.
    */
-  const charmList = createMemo<readonly CharmSwatch[]>(() => charmCuration.list());
-  const shownCharms = createMemo<readonly CharmSwatch[]>(() =>
-    allCharms()
-      ? charmList()
-      : cappedTo(charmList(), PALETTE_PAGE, (row) => row.index === style().charmColor),
+  const [allCoverFrames, setAllCoverFrames] = createSignal(false);
+  const coverFrameList = (): readonly StyleChip[] => CURATED_ROWS['cover-frame'].chips;
+  const shownCoverFrames = createMemo<readonly StyleChip[]>(() =>
+    allCoverFrames()
+      ? coverFrameList()
+      : cappedTo(
+          coverFrameList(),
+          COVER_CHIP_PAGE,
+          (chip) => chip.id === String(style().coverFrame),
+        ),
   );
-  const charmsBehind = (): number => charmList().length - shownCharms().length;
-  /** The reader's own charm colour, when they typed one. */
-  const ownCharm = (): string | null =>
-    typeof style().charmColor === 'string' ? (style().charmColor as string) : null;
-  /**
-   * The colour the charm's well opens on — theirs, else the ribbon's actual
-   * colour, resolved by the same fold the spine and the cover use.
-   */
-  const charmNow = (): string => charmColorCss(style().charmColor);
-
-  /** Which swatch the current pigment folds onto. */
-  const activeCloth = (): number => clothForPalette(style().pigment);
+  const coverFramesBehind = (): number => coverFrameList().length - shownCoverFrames().length;
   /** The reader's own colour, when they entered one. */
   const ownCloth = (): string | null => style().clothHex;
-  /** The colour the well opens on: theirs, else the cloth they are wearing. */
-  const clothNow = (): string => (CLOTHS[activeCloth()] ?? CLOTHS[0]!)[0];
+  /**
+   * One projection with two deliberately different answers. The wells display
+   * painter output; Surprise persists the source pigments and couples the
+   * material/wear transforms which produced that output. Treating the visible
+   * face as a source would darken buckram twice and cannot recolour vellum.
+   */
+  const colourProjection = createMemo(() =>
+    resolveBookSurpriseColourProjection(design(), resolved().cover, style()),
+  );
+  const visibleColourRoles = (): BookSurprisePalette => colourProjection().visible;
 
   /**
-   * The whole vocabulary, not one field.
-   *
-   * `randomBookStyleOverrides` already draws every knob in `BookStyle`; what
-   * it cannot reach is the binding, which lives in its own store, and the
-   * thickness, which it leaves to the page count. Rolling all three is the
-   * difference between a dice that redresses the book and one that nudges it.
-   * The binding is drawn WEIGHTED (`presetForSeed`), so the dice keeps landing
-   * on plain cloth and wrappers most of the time — the same distribution a
-   * real shelf has, and the reason the rare bindings feel rare.
+   * One coherent recipe after the reader's four binding removals have had
+   * their say. Component rows historically stored a complete `own:` id; the
+   * art helper understands both that form and direct component ids.
    */
-  const randomise = (): void => {
-    const seed = (Math.random() * 0xffffffff) >>> 0;
-    // `material` is left out on purpose: the dice rolls a BINDING two lines
-    // down, and a covering rolled beside it would overrule the very thing it
-    // just chose — a "Limp Vellum" in morocco grain.
-    const {
-      material: _material,
-      hueJitter: _hue,
-      ...draw
-      // Through the reader's removals on the way out. A dice that hands back
-      // the stamp they threw away is the app plainly not listening, and it is
-      // the half of a removal nothing on screen would ever show them.
-    } = respectingCuration(randomBookStyleOverrides(seed));
-    patch({
-      ...draw,
-      thickness:
-        SPINE_THICKNESS_RANGE.min +
-        Math.round(Math.random() * (SPINE_THICKNESS_RANGE.max - SPINE_THICKNESS_RANGE.min)),
-    } as Partial<BookStyle>);
-    unpatch('material');
-    let binding = presetForSeed(seed).id;
-    // A press has to visibly move. Redraw when the weighted pick happens to be
-    // the binding already on the book.
-    for (let tries = 0; tries < 4 && binding === design().preset; tries += 1) {
-      binding = presetForSeed((Math.random() * 0xffffffff) >>> 0).id;
-    }
-    void saveBookBinding(bindingKey(), binding);
+  const curatedSurpriseRecipe = (seed: number) => {
+    const curation = {
+      bindings: hiddenIds('binding'),
+      shapes: hiddenIds('spine-shape'),
+      materials: hiddenIds('covering'),
+      decorations: hiddenIds('marks'),
+      style: {
+        'binding-material': hiddenIds('binding-material'),
+        ornament: hiddenIds('ornament'),
+        'title-plate': hiddenIds('title-plate'),
+        lettering: hiddenIds('lettering'),
+        edge: hiddenIds('edge'),
+        format: hiddenIds('format'),
+        'cover-frame': hiddenIds('cover-frame'),
+        // The compatibility field follows the one emblem catalogue.
+        'cover-medallion': hiddenIds('ornament'),
+        'spine-cloth': hiddenIds('spine-cloth'),
+      },
+    };
+    return surpriseBookRecipe({
+      direction: surpriseDirection(),
+      seed,
+      current: {
+        binding: pinned() ?? seedBinding(),
+        style: style(),
+        pinned: resolved().pinned,
+        visibleColours: visibleColourRoles(),
+        colourSources: colourProjection().sources,
+      },
+      locks: surpriseLocks(),
+      curation,
+      // Soft only: the engine may retain it when a binding/component lock says
+      // that changing it would break the reader's explicit promise.
+      avoidBinding: design().preset,
+    });
+  };
+
+  /**
+   * Dress the whole book from one of the design vocabulary's curated
+   * directions. `surpriseBookRecipe` owns the compatible binding, proportions,
+   * finishing and six-role palette as one art-directed decision. The recipe
+   * is already lock- and curation-aware; post-processing it here would be able
+   * to overwrite a value the reader explicitly asked Surprise to keep.
+   */
+  const surprise = (): void => {
+    const recipe = curatedSurpriseRecipe((Math.random() * 0xffffffff) >>> 0);
+    const current = { ...(normalizeBookStyleOverrides(props.style) ?? {}) };
+    // The named preset owns its covering unless the reader locked the coarse
+    // cover-material override. Remove a stale pin in the SAME write: the parent
+    // is allowed to reflect props asynchronously, so patching and immediately
+    // unpatching would otherwise rebuild from an older style blob.
+    if (!lockSet().has('cover.material')) delete current.material;
+    const next = {
+      ...current,
+      ...(recipe.style as Partial<BookStyle>),
+    };
+    applyAppearance(next, recipe.preset, recipe.preset);
   };
 
   /**
    * Per-section luck: the knobs each section's dice re-rolls, keyed by the
-   * section's aria label. Draws come from randomBookStyleOverrides so they
-   * stay inside the same tasteful legal domain as the big "randomise".
-   * Format re-rolls height only — resolveBookStyle derives format from it.
+   * section's aria label. These deliberately use the low-level legal style
+   * draw because one section is being changed in isolation; the whole-book
+   * action above instead uses an art-directed recipe. Format re-rolls height
+   * only — resolveBookStyle derives format from it.
    */
   const REROLL_GROUPS = {
     /* "binding" now names the whole bound book (shape + material + tooling),
@@ -891,12 +1361,11 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
        could see. */
     pigment: ['pigment', 'clothHex'],
     'bands & endbands': ['raisedBands', 'bandGilt', 'headTail', 'headTailStyle'],
-    'ornament stamp': ['ornament'],
+    emblem: ['ornament', 'coverMedallion'],
     'title plate': ['titlePlate', 'titleFont', 'gilt'],
     'wear & edges': ['wear', 'edge'],
     format: ['height'],
-    charm: ['charm', 'charmColor'],
-    cover: ['coverFrame', 'coverMedallion', 'cornerProtectors', 'insetPlate'],
+    cover: ['coverFrame'],
   } as const satisfies Record<string, readonly (keyof BookStyle)[]>;
 
   const reroll = (keys: readonly (keyof BookStyle)[]): void => {
@@ -905,7 +1374,10 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     // BEFORE that comparison, so a section whose whole pool is one entry stops
     // re-drawing instead of spending three throws to arrive back where it was.
     const throwOnce = (): BookStyleOverrides =>
-      respectingCuration(randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0));
+      respectingCuration(
+        randomBookStyleOverrides((Math.random() * 0xffffffff) >>> 0),
+        currentSurfaceContext(),
+      );
     let draw = throwOnce();
     for (let tries = 0; tries < 3; tries += 1) {
       if (keys.some((key) => !Object.is(draw[key], style()[key]))) break;
@@ -916,13 +1388,123 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       const value = draw[key];
       if (value !== undefined) partial[key] = value;
     }
-    patch(partial as Partial<BookStyle>);
+    patch(reconcileBookStudioSectionRoll(style(), partial as Partial<BookStyle>, keys));
+  };
+
+  /**
+   * One preview, rendered in two physical homes.
+   *
+   * The desktop home is portalled beside the rail panel so the panel's own
+   * overflow can never scroll or clip it. The narrow-window home is inline and
+   * sticky; CSS shows exactly one. Both use the same signals and the same draw
+   * effect above, so changing a breakpoint cannot change the book.
+   */
+  const PreviewStage = (stageProps: { variant: 'dock' | 'inline' }): JSX.Element => {
+    const dock = stageProps.variant === 'dock';
+    return (
+      <aside
+        class={`nb-book-preview nb-book-preview-${stageProps.variant}`}
+        classList={{ 'is-shelf': props.host === 'shelf' }}
+        aria-label="Live book preview"
+      >
+        <header class="nb-book-preview-head">
+          <span>
+            <strong>your book</strong>
+            <small>{bookPreset(design().preset).label.toLowerCase()}</small>
+          </span>
+          <span class="nb-book-preview-measure font-ui">
+            {Math.round(style().thickness)} × {Math.round(style().height)} px
+          </span>
+        </header>
+        <div class="nb-book-preview-art">
+          <div
+            class="nb-book-preview-stack"
+            style={{ width: `${PREVIEW_W}px`, height: `${PREVIEW_H}px` }}
+          >
+            <div
+              class="nb-studio-flip"
+              classList={{ 'is-cover': face() === 'cover' }}
+            >
+              <canvas
+                class="nb-studio-face nb-studio-face-spine"
+                ref={dock ? setDockSpineCanvas : setInlineSpineCanvas}
+                width={PREVIEW_W}
+                height={PREVIEW_H}
+                role="img"
+                aria-label="Spine preview"
+                aria-hidden={face() !== 'spine'}
+              />
+              <canvas
+                class="nb-studio-face nb-studio-face-cover"
+                ref={dock ? setDockCoverCanvas : setInlineCoverCanvas}
+                width={PREVIEW_W}
+                height={PREVIEW_H}
+                role="img"
+                aria-label="Cover preview"
+                aria-hidden={face() !== 'cover'}
+              />
+            </div>
+            <div
+              class="nb-book-preview-hotspots"
+              role="group"
+              aria-label={`${face() === 'spine' ? 'Spine' : 'Cover'} parts — choose one to edit`}
+            >
+              <For each={previewGeometry().hotspots.filter((hotspot) => hotspot.face === face())}>
+                {(hotspot) => (
+                  <button
+                    type="button"
+                    class={`nb-book-preview-hotspot is-${hotspot.layer}`}
+                    classList={{ 'is-absent': hotspot.absent === true }}
+                    style={previewRectStyle(hotspot.rect)}
+                    aria-label={hotspot.label}
+                    onClick={() => revealControl(hotspot.target)}
+                  >
+                    <span class="nb-book-preview-hotspot-mark" aria-hidden="true">
+                      {hotspot.absent === true ? '+' : '↗'}
+                    </span>
+                    <span class="nb-book-preview-hotspot-label font-ui" aria-hidden="true">
+                      {hotspot.shortLabel}
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+        <div class="nb-chip-row nb-studio-facepick" role="group" aria-label="Preview face">
+          <button
+            type="button"
+            class="nb-chip"
+            aria-pressed={face() === 'spine'}
+            onClick={() => setFace('spine')}
+          >
+            spine
+          </button>
+          <button
+            type="button"
+            class="nb-chip"
+            aria-pressed={face() === 'cover'}
+            onClick={() => setFace('cover')}
+          >
+            cover
+          </button>
+        </div>
+        <p class="nb-book-preview-note font-ui">
+          live while you browse — click an outlined part to find its control
+        </p>
+      </aside>
+    );
   };
 
   return (
     /* Same guard as the library tab: the shelf's document-level arrows/Enter
        must not reach past an open studio. See shelfKeys.ts. */
-    <div class="nb-book-studio" on:keydown={stopShelfKeys}>
+    <div class="nb-book-studio" ref={studioRoot} on:keydown={stopShelfKeys}>
+      <Show when={props.open ?? true}>
+        <Portal>
+          <PreviewStage variant="dock" />
+        </Portal>
+      </Show>
       {/*
         Sibling Shows with callback children — see the same note in
         LibraryStudio. A picker built inside a Show's `fallback` is rebuilt
@@ -984,64 +1566,279 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       <Show when={!bindingSheet() && axisSheet() === null}>
         {(_closed) => (
           <>
-      {/* ------------------------- flipping preview ------------------------ */}
-      <div class="nb-studio-stage">
-        <RerollDice section="this book" verb="Randomise" onClick={randomise} />
+      {/* Narrow windows cannot spare a companion lane. This copy pins inside
+          the scroller; the desktop copy above lives beside the sheet. */}
+      <PreviewStage variant="inline" />
+
+      {/* ------------------------- first decisions ------------------------ */}
+      <section class="nb-panel-section nb-book-essentials" aria-label="Book size and key colours">
+        <h3 class="nb-panel-section-title">size & colours</h3>
+        <div class="nb-panel-row" data-book-control="thickness" tabIndex={-1}>
+          <span class="nb-book-setting-heading">
+            <span class="nb-panel-row-label">
+              thickness <em class="nb-panel-row-hint">{Math.round(style().thickness)}px</em>
+            </span>
+            <Lock id="thickness" />
+          </span>
+          <input
+            type="range"
+            class="nb-panel-slider"
+            min={SPINE_THICKNESS_RANGE.min}
+            max={SPINE_THICKNESS_RANGE.max}
+            step={1}
+            value={style().thickness}
+            aria-label="Spine thickness"
+            onInput={(e) => patch({ thickness: Number(e.currentTarget.value) })}
+          />
+        </div>
+        <div class="nb-book-key-colours">
+          <span class="nb-panel-row-label">
+            key colours <em class="nb-panel-row-hint">spine and cover separately</em>
+          </span>
+          <div class="nb-book-colour-grid" role="group" aria-label="Key book colours">
+            <ColourRole
+              label="spine cloth"
+              hint="main spine face"
+              target="spine-base-colour"
+              lock={<Lock id="colour.spine-base" />}
+              value={style().spineBaseHex}
+              visible={visibleColourRoles().spineBaseHex}
+              onPick={(hex) => patch({ spineBaseHex: hex })}
+              onClear={() => patch({ spineBaseHex: null })}
+            />
+            <ColourRole
+              label="spine accent"
+              hint="turn-ins and panels"
+              target="spine-accent-colour"
+              lock={<Lock id="colour.spine-accent" />}
+              value={style().spineAccentHex}
+              visible={visibleColourRoles().spineAccentHex}
+              onPick={(hex) => patch({ spineAccentHex: hex })}
+              onClear={() => patch({ spineAccentHex: null })}
+            />
+            <ColourRole
+              label="cover cloth"
+              hint="front board"
+              target="cover-base-colour"
+              lock={<Lock id="colour.cover-base" />}
+              value={style().coverBaseHex}
+              visible={visibleColourRoles().coverBaseHex}
+              onPick={(hex) => {
+                setFace('cover');
+                patch({ coverBaseHex: hex });
+              }}
+              onClear={() => patch({ coverBaseHex: null })}
+            />
+            <ColourRole
+              label="cover accent"
+              hint="frame and board details"
+              target="cover-accent-colour"
+              lock={<Lock id="colour.cover-accent" />}
+              value={style().coverAccentHex}
+              visible={visibleColourRoles().coverAccentHex}
+              onPick={(hex) => {
+                setFace('cover');
+                patch({ coverAccentHex: hex });
+              }}
+              onClear={() => patch({ coverAccentHex: null })}
+            />
+          </div>
+        </div>
+
+      </section>
+
+      {/* ---------------------------- surprise --------------------------- */}
+      <section class="nb-panel-section nb-library-surprise nb-book-surprise" aria-label="Surprise book direction">
+        <h3 class="nb-panel-section-title">surprise me</h3>
+        <div class="nb-panel-row nb-panel-row-stack">
+          <span class="nb-panel-row-label">
+            direction{' '}
+            <em class="nb-panel-row-hint">
+              {surpriseDirection() === null
+                ? 'anything handsome'
+                : BOOK_SURPRISE_DIRECTIONS.find((row) => row.id === surpriseDirection())?.label.toLowerCase()}
+            </em>
+          </span>
+          <div class="nb-chip-row" role="group" aria-label="Surprise book direction">
+            <button
+              type="button"
+              class="nb-chip"
+              aria-pressed={surpriseDirection() === null}
+              onClick={() => setSurpriseDirection(null)}
+            >
+              anything
+            </button>
+            <For each={BOOK_SURPRISE_DIRECTIONS}>
+              {(direction) => (
+                <button
+                  type="button"
+                  class="nb-chip"
+                  aria-pressed={surpriseDirection() === direction.id}
+                  onClick={() => setSurpriseDirection(direction.id)}
+                >
+                  {direction.label.toLowerCase()}
+                </button>
+              )}
+            </For>
+          </div>
+          <Show when={BOOK_SURPRISE_DIRECTIONS.find((row) => row.id === surpriseDirection())} keyed>
+            {(direction) => (
+              <small class="nb-book-surprise-hint font-ui" aria-live="polite">
+                {direction.hint}
+              </small>
+            )}
+          </Show>
+        </div>
         <div
-          class="nb-studio-flip"
-          classList={{ 'is-cover': face() === 'cover' }}
-          style={{ width: `${PREVIEW_W}px`, height: `${PREVIEW_H}px` }}
+          class="nb-book-lock-summary"
+          classList={{ 'is-holding': surpriseLocks().length > 0 }}
+          role="status"
+          aria-live="polite"
         >
-          <canvas
-            class="nb-studio-face nb-studio-face-spine"
-            ref={setSpineCanvas}
-            width={PREVIEW_W}
-            height={PREVIEW_H}
-            aria-label="Spine preview"
-          />
-          <canvas
-            class="nb-studio-face nb-studio-face-cover"
-            ref={setCoverCanvas}
-            width={PREVIEW_W}
-            height={PREVIEW_H}
-            aria-label="Cover preview"
+          <span class="nb-book-lock-summary-copy font-ui">
+            <Show
+              when={surpriseLocks().length > 0}
+              fallback={<>open locks may change; close any lock to keep that setting</>}
+            >
+              {surpriseLocks().length} of {BOOK_SURPRISE_LOCK_IDS.length} settings kept
+            </Show>
+          </span>
+          <Show when={surpriseLocks().length > 0}>
+            <button type="button" class="nb-chip nb-chip-ghost font-ui" onClick={unlockAll}>
+              unlock all
+            </button>
+          </Show>
+        </div>
+        <button type="button" class="nb-library-surprise-action" onClick={surprise}>
+          <span aria-hidden="true">⚄</span>
+          <span>
+            <strong>dress this book</strong>
+            <small>
+              binding, cloth, proportions and finishing together
+              <Show when={surpriseLocks().length > 0}> — except what you locked</Show>
+            </small>
+          </span>
+        </button>
+      </section>
+
+      {/* Height remains prominent, but below the whole-book shortcut. */}
+      <section
+        class="nb-panel-section"
+        aria-label="Book format and shelf fit"
+        data-book-control="format"
+        tabIndex={-1}
+      >
+
+        <h3 class="nb-panel-section-title">
+          format <em class="nb-panel-row-hint">{Math.round(style().height)}px tall</em>
+          <span class="nb-book-section-tools">
+            <RerollDice section="format" onClick={() => reroll(REROLL_GROUPS.format)} />
+            <Lock id="format" />
+          </span>
+        </h3>
+        <CuratedChips
+          axis="format"
+          label="Book format"
+          options={CURATED_ROWS.format.chips}
+          activeId={style().format}
+          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        />
+        <Show when={overTall()}>
+          <div class="nb-fit-note" role="status">
+            <p class="nb-panel-footnote nb-panel-footnote-tight">
+              your {headroom().name.toLowerCase()} case leaves{' '}
+              {headroom().varies ? 'at least ' : ''}
+              {Math.round(headroom().min)}px of standing room
+              {headroom().varies ? ' under its arches' : ''}.{' '}
+              <Show when={overlapping()} fallback={<>this book is trimmed to fit.</>}>
+                <>this book stands through the carpentry.</>
+              </Show>
+            </p>
+            <button
+              type="button"
+              class="nb-chip"
+              aria-pressed={overlapping()}
+              onClick={() => patch({ overlap: !overlapping() })}
+            >
+              keep my height
+            </button>
+          </div>
+        </Show>
+
+      </section>
+
+      <section class="nb-panel-section" aria-label="Cover title treatment">
+
+        <h3 class="nb-panel-section-title">
+          cover title
+          <RerollDice section="title treatment" onClick={() => reroll(REROLL_GROUPS['title plate'])} />
+        </h3>
+        <div data-book-control="title-plate" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Title plate</p>
+            <Lock id="title.plate" />
+          </div>
+          <CuratedChips
+            axis="title-plate"
+            label="Title plate"
+            options={CURATED_ROWS['title-plate'].chips}
+            activeId={style().titlePlate}
+            onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+            limit={8}
           />
         </div>
-        <div class="nb-chip-row nb-studio-facepick" role="group" aria-label="Preview face">
-          <button
-            type="button"
-            class="nb-chip"
-            aria-pressed={face() === 'spine'}
-            onClick={() => setFace('spine')}
+        <div data-book-control="title-font" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Lettering</p>
+            <Lock id="title.font" />
+          </div>
+          <CuratedChips
+            axis="lettering"
+            label="Title lettering"
+            options={CURATED_ROWS.lettering.chips}
+            activeId={String(style().titleFont)}
+            onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
           >
-            spine
-          </button>
-          <button
-            type="button"
-            class="nb-chip"
-            aria-pressed={face() === 'cover'}
-            onClick={() => setFace('cover')}
-          >
-            cover
-          </button>
+            <span
+              class="nb-book-setting-chip-pair"
+              data-book-control="title-gilt"
+              tabIndex={-1}
+            >
+              <button
+                type="button"
+                class="nb-chip nb-chip-gilt"
+                role="switch"
+                aria-checked={style().gilt}
+                onClick={() => patch({ gilt: !style().gilt })}
+              >
+                gold tooling
+              </button>
+              <Lock id="title.gilt" />
+            </span>
+          </CuratedChips>
         </div>
-      </div>
+
+      </section>
 
       {/* ------------------------------ binding ---------------------------- */}
       {/*
-        The biggest decision on the sheet, so it comes first. Its previews are
-        drawn by `drawBookSpine` — the routine that binds the book on the shelf
-        — standing on the room's own timber, because a pale vellum against reef
-        timber is a different book from the same vellum against athenaeum's.
+        The biggest manual design decision follows the quick whole-book path.
+        Its previews are drawn by `drawBookSpine` — the routine that binds the
+        book on the shelf — standing on the room's own timber, because a pale
+        vellum against reef timber is a different book from the same vellum
+        against athenaeum's.
       */}
-      <section class="nb-panel-section">
+      <section class="nb-panel-section" data-book-control="binding" tabIndex={-1}>
         <h3 class="nb-panel-section-title">
           binding <em class="nb-panel-row-hint">{bookPreset(design().preset).label.toLowerCase()}</em>
+          <span class="nb-book-section-tools">
+            <Lock id="binding" label="whole binding" />
+          </span>
         </h3>
         <div class="nb-binding-stage">
           <DesignCanvas
             class="nb-binding-preview"
-            key={`bind|${design().preset}|${design().cloth}|${design().accent}|${design().gilt ? 'g' : 'n'}|${design().labelAt.toFixed(2)}|big`}
+            key={`bind|${bookDesignTag(design())}|big`}
             w={BINDING_W}
             h={BINDING_H}
             scheme={roomScheme()}
@@ -1070,7 +1867,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             <button
               type="button"
               class="nb-chip nb-chip-ghost"
-              onClick={() => void saveBookBinding(bindingKey(), null)}
+              onClick={() =>
+                applyAppearance(styleWithoutPriorBinding(), null, seedBinding())
+              }
             >
               back to {bookPreset(seedBinding()).label.toLowerCase()}
             </button>
@@ -1103,8 +1902,12 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           read to the eye as one 24-tile grid with no idea which four tiles
           answer which question.
         */}
-        <p class="nb-panel-row-label nb-strip-label font-ui">Spine shape</p>
-        <DesignStrip
+        <div data-book-control="binding-shape" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Spine shape</p>
+            <Lock id="binding.shape" />
+          </div>
+          <DesignStrip
           label="Spine shape"
           options={axisOptions('shape')}
           activeId={ownBindingId(ownParts())}
@@ -1119,9 +1922,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           tileW={72}
           tileH={104}
           axis="spine-shape"
-        />
-        <p class="nb-panel-row-label nb-strip-label font-ui">Covered in</p>
-        <DesignStrip
+          />
+        </div>
+        <div data-book-control="binding-material" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Covered in</p>
+            <Lock id="binding.material" />
+          </div>
+          <DesignStrip
           label="Covering"
           options={axisOptions('material')}
           activeId={ownBindingId(ownParts())}
@@ -1136,9 +1944,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           tileW={72}
           tileH={104}
           axis="covering"
-        />
-        <p class="nb-panel-row-label nb-strip-label font-ui">Marks on the spine</p>
-        <DesignStrip
+          />
+        </div>
+        <div data-book-control="binding-decoration" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Marks on the spine</p>
+            <Lock id="binding.decoration" />
+          </div>
+          <DesignStrip
           label="Marks"
           options={axisOptions('decoration')}
           activeId={ownBindingId(ownParts())}
@@ -1153,8 +1966,15 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           tileW={72}
           tileH={104}
           axis="marks"
-        />
-        <div class="nb-chip-row" role="group" aria-label="Tooling">
+          />
+        </div>
+        <div
+          class="nb-chip-row"
+          role="group"
+          aria-label="Tooling"
+          data-book-control="binding-gilt"
+          tabIndex={-1}
+        >
           {/*
             Gilt is its own axis and not a consequence of the other two — the
             preset table has `double-bands` struck in foil on one binding and
@@ -1169,6 +1989,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           >
             {ownParts().gilt ? 'struck in gilt' : 'blind tooled'}
           </button>
+          <Lock id="binding.gilt" />
         </div>
         <p class="nb-panel-footnote">
           {ROLLABLE_SHAPES.length} shapes × {ROLLABLE_MATERIALS.length} coverings ×{' '}
@@ -1177,10 +1998,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         </p>
       </section>
 
-      <section class="nb-panel-section">
+      <section class="nb-panel-section" data-book-control="binding-material" tabIndex={-1}>
         <h3 class="nb-panel-section-title">
           covering
-          <RerollDice section="covering" onClick={() => reroll(REROLL_GROUPS.material)} />
+          <span class="nb-book-section-tools">
+            <RerollDice section="covering" onClick={() => reroll(REROLL_GROUPS.material)} />
+            <Lock id="cover.material" label="material override" />
+          </span>
         </h3>
         <CuratedChips
           axis="binding-material"
@@ -1204,18 +2028,24 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
         </CuratedChips>
       </section>
 
-      <section class="nb-panel-section">
+      <section class="nb-panel-section" data-book-control="palette" tabIndex={-1}>
         <h3 class="nb-panel-section-title">
-          pigment
+          base pigment
           <em class="nb-panel-row-hint">
             {ownCloth() ?? CLOTH_SWATCHES[style().pigment]?.name ?? ''}
           </em>
-          <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
+          <span class="nb-book-section-tools">
+            <RerollDice section="pigment" onClick={() => reroll(REROLL_GROUPS.pigment)} />
+            <Lock id="colour.palette" />
+          </span>
         </h3>
+        <small class="nb-book-surprise-hint font-ui">
+          the dye beneath the covering — vellum, paper and deep cloth tint it
+        </small>
         <div
           class="nb-swatch-grid"
           role="group"
-          aria-label="Spine pigment"
+          aria-label="Book base pigment"
           on:contextmenu={(event) => clothCuration.onListContext(event)}
         >
           <For each={shownCloths()}>
@@ -1271,27 +2101,43 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           </div>
         </Show>
         <clothCuration.Overlay />
-        {/*
-          The door out of the table. The fifty above are a vocabulary and a
-          vocabulary cannot contain the colour a particular reader already has
-          in mind — so this takes any hex, folds it into two faces the way the
-          fifty were folded (`palette.clothPair`), and binds the book in it.
-        */}
-        <OwnColour
-          label="Spine cloth"
-          value={ownCloth()}
-          fallback={ownCloth() ?? clothNow()}
-          onPick={(hex) => patch({ clothHex: hex })}
-          onClear={() => patch({ clothHex: null })}
-          clearLabel="back to the pigment"
-        />
         <p class="nb-panel-footnote">
           {/* The count the reader can check by opening the row, not the count
               the vocabulary ships: they may have taken some of these off it. */}
-          {clothList().length} cloths and any colour you like — and a book
-          keeps its own in every room
+          {clothList().length} shared cloths for unpinned parts. use key colours
+          above when the spine and cover should differ.
         </p>
       </section>
+
+      <details class="nb-book-colour-workshop">
+        <summary>colour workshop</summary>
+        <p class="nb-panel-footnote">
+          details inherit from the binding until you pin one here. reset hands
+          that part back without disturbing the rest of the book.
+        </p>
+        <div class="nb-book-colour-grid" role="group" aria-label="Detailed book colours">
+          <ColourRole
+            label="tooling"
+            hint="rules, type and foil"
+            target="tooling-colour"
+            lock={<Lock id="colour.tooling" />}
+            value={style().toolingHex}
+            visible={visibleColourRoles().toolingHex}
+            onPick={(hex) => patch({ toolingHex: hex })}
+            onClear={() => patch({ toolingHex: null })}
+          />
+          <ColourRole
+            label="emblems"
+            hint="stamps and medallions"
+            target="emblem-colour"
+            lock={<Lock id="colour.emblem" />}
+            value={style().emblemHex}
+            visible={visibleColourRoles().emblemHex}
+            onPick={(hex) => patch({ emblemHex: hex })}
+            onClear={() => patch({ emblemHex: null })}
+          />
+        </div>
+      </details>
 
       {/* ------------------------------- bands ----------------------------- */}
       <section class="nb-panel-section">
@@ -1299,9 +2145,12 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           bands & endbands
           <RerollDice section="bands & endbands" onClick={() => reroll(REROLL_GROUPS['bands & endbands'])} />
         </h3>
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            raised cords <em class="nb-panel-row-hint">{style().raisedBands}</em>
+        <div class="nb-panel-row" data-book-control="bands" tabIndex={-1}>
+          <span class="nb-book-setting-heading">
+            <span class="nb-panel-row-label">
+              raised cords <em class="nb-panel-row-hint">{style().raisedBands}</em>
+            </span>
+            <Lock id="bands" />
           </span>
           <input
             type="range"
@@ -1313,99 +2162,91 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             aria-label="Raised bands"
             onInput={(e) => patch({ raisedBands: Number(e.currentTarget.value) })}
           />
-        </label>
-        <div class="nb-chip-row">
-          <button
-            type="button"
-            class="nb-chip nb-chip-gilt"
-            role="switch"
-            aria-checked={style().bandGilt}
-            onClick={() => patch({ bandGilt: !style().bandGilt })}
-          >
-            gilt rules
-          </button>
-          <button
-            type="button"
-            class="nb-chip"
-            role="switch"
-            aria-checked={style().headTail}
-            aria-pressed={style().headTail}
-            onClick={() => patch({ headTail: !style().headTail })}
-          >
-            endbands
-          </button>
-          <Show when={style().headTail}>
-            <For each={['blocks', 'chevron', 'cord']}>
-              {(name, i) => (
-                <button
-                  type="button"
-                  class="nb-chip"
-                  aria-pressed={style().headTailStyle === i()}
-                  onClick={() => patch({ headTailStyle: i() })}
-                >
-                  {name}
-                </button>
-              )}
-            </For>
-          </Show>
+          <div class="nb-chip-row">
+            <button
+              type="button"
+              class="nb-chip nb-chip-gilt"
+              role="switch"
+              aria-checked={style().bandGilt}
+              onClick={() => patch({ bandGilt: !style().bandGilt })}
+            >
+              gilt rules
+            </button>
+          </div>
+        </div>
+        <div data-book-control="endbands" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label font-ui">Endbands</p>
+            <Lock id="endbands" />
+          </div>
+          <div class="nb-chip-row">
+            <button
+              type="button"
+              class="nb-chip"
+              role="switch"
+              aria-checked={style().headTail}
+              aria-pressed={style().headTail}
+              onClick={() => patch({ headTail: !style().headTail })}
+            >
+              endbands
+            </button>
+            <Show when={style().headTail}>
+              <For each={ACTIVE_HEAD_TAIL_OPTIONS}>
+                {(option) => (
+                  <button
+                    type="button"
+                    class="nb-chip"
+                    aria-pressed={style().headTailStyle === option.index}
+                    onClick={() => patch({ headTailStyle: option.index })}
+                  >
+                    {option.label}
+                  </button>
+                )}
+              </For>
+            </Show>
+          </div>
         </div>
       </section>
 
-      {/* ----------------------------- ornament ---------------------------- */}
-      <section class="nb-panel-section">
+      {/* ------------------------------ emblem ----------------------------- */}
+      <section class="nb-panel-section" data-book-control="ornament" tabIndex={-1}>
         <h3 class="nb-panel-section-title">
-          ornament stamp
-          <RerollDice section="ornament stamp" onClick={() => reroll(REROLL_GROUPS['ornament stamp'])} />
+          emblem
+          <span class="nb-book-section-tools">
+            <Show when={!emblemUnavailable()}>
+              <RerollDice section="emblem" onClick={() => reroll(REROLL_GROUPS.emblem)} />
+            </Show>
+            <Lock id="ornament" />
+          </span>
         </h3>
-        <CuratedChips
-          grid
-          axis="ornament"
-          label="Ornament stamp"
-          options={CURATED_ROWS.ornament.chips}
-          activeId={String(style().ornament)}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
-        />
-      </section>
-
-      {/* --------------------------- title & plate ------------------------- */}
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">
-          title plate
-          <RerollDice section="title plate" onClick={() => reroll(REROLL_GROUPS['title plate'])} />
-        </h3>
-        <CuratedChips
-          axis="title-plate"
-          label="Title plate"
-          options={CURATED_ROWS['title-plate'].chips}
-          activeId={style().titlePlate}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
-        />
-        <CuratedChips
-          axis="lettering"
-          label="Title lettering"
-          options={CURATED_ROWS.lettering.chips}
-          activeId={String(style().titleFont)}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+        <Show
+          when={!emblemUnavailable()}
+          fallback={
+            <p class="nb-panel-footnote nb-panel-footnote-tight">
+              {emblemUnavailableReason()}; a second emblem would compete with it
+            </p>
+          }
         >
-          {/* A switch, not a fourth hand: gilt is struck ON whichever face is
-              chosen, so it is outside the list the reader curates. */}
-          <button
-            type="button"
-            class="nb-chip nb-chip-gilt"
-            role="switch"
-            aria-checked={style().gilt}
-            onClick={() => patch({ gilt: !style().gilt })}
-          >
-            gold tooling
-          </button>
-        </CuratedChips>
+          <CuratedChips
+            grid
+            axis="ornament"
+            label="Book emblem"
+            options={CURATED_ROWS.ornament.chips}
+            activeId={String(style().ornament)}
+            onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+            limit={12}
+          />
+        </Show>
       </section>
 
       {/* ------------------------- wear & text block ----------------------- */}
-      <section class="nb-panel-section">
+      <section class="nb-panel-section" data-book-control="wear" tabIndex={-1}>
         <h3 class="nb-panel-section-title">
           wear <em class="nb-panel-row-hint">{wearLabel(style().wear)}</em>
-          <RerollDice section="wear & edges" onClick={() => reroll(REROLL_GROUPS['wear & edges'])} />
+          <span class="nb-book-section-tools">
+            <RerollDice section="wear & edges" onClick={() => reroll(REROLL_GROUPS['wear & edges'])} />
+            <Lock id="wear" />
+          </span>
         </h3>
         <input
           type="range"
@@ -1417,161 +2258,22 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           aria-label="Wear"
           onInput={(e) => patch({ wear: Number(e.currentTarget.value) })}
         />
-        <h3 class="nb-panel-section-title nb-panel-section-title-sub">edges</h3>
-        <CuratedChips
-          axis="edge"
-          label="Edge treatment"
-          options={CURATED_ROWS.edge.chips}
-          activeId={style().edge}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
-        />
-      </section>
-
-      {/* --------------------------- size & format ------------------------- */}
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">
-          format <em class="nb-panel-row-hint">{Math.round(style().height)}px tall</em>
-          <RerollDice section="format" onClick={() => reroll(REROLL_GROUPS.format)} />
-        </h3>
-        <CuratedChips
-          axis="format"
-          label="Book format"
-          options={CURATED_ROWS.format.chips}
-          activeId={style().format}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
-        />
-        {/*
-          The case's answer, printed where the height was asked for.
-
-          Shown only when it bites — a panel that warns about a fit nobody has
-          run into is a panel people stop reading. When it does bite the reader
-          gets the number, the name of the carpentry that set it, and the way
-          out; nothing is decided quietly on their behalf.
-        */}
-        <Show when={overTall()}>
-          <div class="nb-fit-note" role="status">
-            <p class="nb-panel-footnote nb-panel-footnote-tight">
-              your {headroom().name.toLowerCase()} case leaves{' '}
-              {headroom().varies ? 'at least ' : ''}
-              {Math.round(headroom().min)}px of standing room
-              {headroom().varies ? ' under its arches' : ''}.{' '}
-              <Show
-                when={overlapping()}
-                fallback={<>this book is trimmed to fit.</>}
-              >
-                <>this book stands through the carpentry.</>
-              </Show>
-            </p>
-            <button
-              type="button"
-              class="nb-chip"
-              aria-pressed={overlapping()}
-              onClick={() => patch({ overlap: !overlapping() })}
-            >
-              keep my height
-            </button>
-          </div>
-        </Show>
-        <label class="nb-panel-row">
-          <span class="nb-panel-row-label">
-            thickness <em class="nb-panel-row-hint">{Math.round(style().thickness)}px</em>
-          </span>
-          <input
-            type="range"
-            class="nb-panel-slider"
-            min={SPINE_THICKNESS_RANGE.min}
-            max={SPINE_THICKNESS_RANGE.max}
-            step={1}
-            value={style().thickness}
-            aria-label="Spine thickness"
-            onInput={(e) => patch({ thickness: Number(e.currentTarget.value) })}
+        <div data-book-control="edge" tabIndex={-1}>
+          <h3 class="nb-panel-section-title nb-panel-section-title-sub">
+            edges
+            <span class="nb-book-section-tools">
+              <Lock id="edge" />
+            </span>
+          </h3>
+          <CuratedChips
+            axis="edge"
+            label="Edge treatment"
+            options={CURATED_ROWS.edge.chips}
+            activeId={style().edge}
+            onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
+            limit={12}
           />
-        </label>
-      </section>
-
-      {/* ------------------------------- charms ---------------------------- */}
-      <section class="nb-panel-section">
-        <h3 class="nb-panel-section-title">
-          charm
-          <RerollDice section="charm" onClick={() => reroll(REROLL_GROUPS.charm)} />
-        </h3>
-        <CuratedChips
-          grid
-          axis="charm"
-          label="Charm"
-          options={CURATED_ROWS.charm.chips}
-          activeId={style().charm}
-          onPick={(chip) => patch(chip.sets as Partial<BookStyle>)}
-        />
-        <Show when={style().charm !== 'none'}>
-          <div
-            class="nb-swatch-grid nb-swatch-grid-charm"
-            role="group"
-            aria-label="Charm colour"
-            on:contextmenu={(event) => charmCuration.onListContext(event)}
-          >
-            <For each={shownCharms()}>
-              {(swatch) => (
-                <button
-                  type="button"
-                  class="nb-swatch"
-                  style={{ background: swatch.hex }}
-                  aria-label={`${swatch.name}${starWords(charmCuration.starsFor(swatch.id))}`}
-                  data-tooltip={swatch.name.toLowerCase()}
-                  /* A colour of the reader's own outranks every colourway, so
-                     none of these is lit under one — the same rule the cloth
-                     row follows, and for the same reason: a swatch left lit
-                     would be claiming credit for a colour it did not paint. */
-                  aria-pressed={style().charmColor === swatch.index}
-                  classList={{
-                    'is-active': style().charmColor === swatch.index,
-                    'nb-cur-gone': charmCuration.removed(swatch.id),
-                  }}
-                  onClick={() => patch({ charmColor: swatch.index })}
-                  on:contextmenu={(event) => charmCuration.onEntryContext(event, swatch.id)}
-                >
-                  <span class="nb-mark-wrap">
-                    <StarMark stars={charmCuration.starsFor(swatch.id)} />
-                  </span>
-                </button>
-              )}
-            </For>
-          </div>
-          <Show when={allCharms() || charmsBehind() > 0}>
-            <div class="nb-chip-row">
-              <button
-                type="button"
-                class="nb-chip nb-chip-ghost font-ui"
-                aria-expanded={allCharms()}
-                onClick={() => setAllCharms(!allCharms())}
-              >
-                {allCharms() ? 'fewer' : `${charmsBehind()} more`}
-              </button>
-            </div>
-          </Show>
-          <charmCuration.Overlay />
-          {/*
-            The door out of the charm's own table. A ribbon is the one thing on
-            a book a reader is likeliest to want to MATCH — to a cover, to a
-            room, to another book — and twenty-four names cannot contain that.
-            The hex goes straight into `charmColor`; `charms.charmColorCss`
-            lifts it onto CHARM_FLOOR so the one ink outline still has an edge
-            to be, and the cover's bake key carries it verbatim.
-          */}
-          <OwnColour
-            label="Charm colour"
-            value={ownCharm()}
-            fallback={ownCharm() ?? charmNow()}
-            onPick={(hex) => patch({ charmColor: hex })}
-            /* Drops the PIN, not just the hex — the charm goes back to the
-               colour the seed and the room chose for it. There is no named
-               colourway to fall back to the way `clothHex` falls back to a
-               pigment: this field holds one value, and an index the reader
-               pressed earlier is not a second opinion the model kept. */
-            onClear={() => unpatch('charmColor')}
-            clearLabel="back to the rolled colour"
-          />
-        </Show>
+        </div>
       </section>
 
       {/* -------------------------------- cover ---------------------------- */}
@@ -1580,55 +2282,39 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
           cover
           <RerollDice section="cover" onClick={() => reroll(REROLL_GROUPS.cover)} />
         </h3>
-        <CuratedChips
-          axis="cover-frame"
-          label="Cover frame"
-          options={CURATED_ROWS['cover-frame'].chips}
-          activeId={String(style().coverFrame)}
-          onPick={(chip) => {
-            // Turn the preview over first: a cover knob that moves nothing the
-            // reader can see reads as a dead chip.
-            setFace('cover');
-            patch(chip.sets as Partial<BookStyle>);
-          }}
-        />
-        <CuratedChips
-          grid
-          axis="cover-medallion"
-          label="Cover medallion"
-          options={CURATED_ROWS['cover-medallion'].chips}
-          activeId={String(style().coverMedallion)}
-          onPick={(chip) => {
-            setFace('cover');
-            patch(chip.sets as Partial<BookStyle>);
-          }}
-        />
-        <div class="nb-chip-row">
-          <button
-            type="button"
-            class="nb-chip"
-            role="switch"
-            aria-checked={style().cornerProtectors}
-            onClick={() => {
+        <div data-book-control="cover-frame" tabIndex={-1}>
+          <div class="nb-book-setting-subhead">
+            <p class="nb-panel-row-label nb-strip-label font-ui">Frame</p>
+            <Lock id="cover.frame" />
+          </div>
+          <CuratedChips
+            axis="cover-frame"
+            label="Cover frame"
+            options={shownCoverFrames()}
+            activeId={String(style().coverFrame)}
+            onPick={(chip) => {
+              // Turn the preview over first: a cover knob that moves nothing the
+              // reader can see reads as a dead chip.
               setFace('cover');
-              patch({ cornerProtectors: !style().cornerProtectors });
+              patch(chip.sets as Partial<BookStyle>);
             }}
-          >
-            corner protectors
-          </button>
-          <button
-            type="button"
-            class="nb-chip"
-            role="switch"
-            aria-checked={style().insetPlate}
-            onClick={() => {
-              setFace('cover');
-              patch({ insetPlate: !style().insetPlate });
-            }}
-          >
-            inset plate
-          </button>
+          />
         </div>
+        <Show when={allCoverFrames() || coverFramesBehind() > 0}>
+          <div class="nb-chip-row nb-cover-more">
+            <button
+              type="button"
+              class="nb-chip nb-chip-ghost font-ui"
+              aria-expanded={allCoverFrames()}
+              onClick={() => setAllCoverFrames(!allCoverFrames())}
+            >
+              {allCoverFrames() ? 'fewer frames' : `${coverFramesBehind()} more frames`}
+            </button>
+          </div>
+        </Show>
+        <p class="nb-panel-footnote nb-panel-footnote-tight">
+          The emblem above is shared by spine and cover, so both faces stay one binding.
+        </p>
       </section>
 
           </>
@@ -1640,15 +2326,14 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
 
 /**
  * A tiny dice button pinned to a section title — the per-field counterpart
- * of the big "randomise". Same pre-wobbled stroke idiom as the shelf dock
+ * of the art-directed whole-book surprise. Same pre-wobbled stroke idiom as the shelf dock
  * icons (fill:none paths, so a missing stylesheet can't black-box it).
  */
 function RerollDice(props: {
   section: string;
-  verb?: 'Reroll' | 'Randomise';
   onClick(): void;
 }): JSX.Element {
-  const label = (): string => `${props.verb ?? 'Reroll'} ${props.section}`;
+  const label = (): string => `Reroll ${props.section}`;
   return (
     <button
       type="button"

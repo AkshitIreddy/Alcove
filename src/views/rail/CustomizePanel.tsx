@@ -20,20 +20,34 @@
  * Persistence:
  *  - library choices go through `features/bookshelf/libraryPrefs` (the Pixi
  *    world subscribes to it, so the shelf redresses itself instantly);
- *  - book style goes to `cover_meta.style` via `saveBookStyleOverrides` when
- *    `bookId` is supplied, AND its cover-facing projection goes out through
- *    the existing `onOverridesChange` prop so the open book's cover, the
+ *  - book style and its cover-facing compatibility projection commit through
+ *    one ordered appearance lane when `bookId` is supplied, while the same
+ *    projection goes out through `onOverridesChange` so the open book, the
  *    pull-out ghost and the shelf spine all agree.
  */
 import { For, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
 import type { BookStyleOverrides } from '../../art/bookStyle';
 import { normalizeBookStyleOverrides } from '../../art/bookStyle';
+import type { BookPresetId } from '../../art/bookDesign';
 import type { CoverOverrides } from '../../art/covers';
 import type { BookStyle } from '../../art/bookStyle';
-import { readBookStyleOverrides } from '../../data/books';
+import {
+  normalizeBookSurpriseLocks,
+  type BookSurpriseLockSet,
+} from '../../art/bookSurprise';
 import type { BookPageDefaults } from '../../data/books';
 import { getBook } from '../../data/books';
-import { persistBookStyle } from '../../features/bookshelf/bookIdentity';
+import {
+  bookStyleOverridesFor,
+  createBookAppearanceHydrationGuard,
+  createOrderedBookAppearanceWriter,
+  persistBookStyle,
+} from '../../features/bookshelf/bookIdentity';
+import { saveBookBinding } from '../../data/designPrefs';
+import {
+  bookSurpriseLocksFor,
+  saveBookSurpriseLocks,
+} from '../../features/bookshelf/bookStudioPrefs';
 import {
   RULING_ORDER,
   RULING_SHORTLIST,
@@ -79,6 +93,10 @@ export interface CustomizePanelProps {
    * holding the style for the session only.
    */
   bookId?: string;
+  /** Compatibility-aware style from a host that already loaded the Book row. */
+  initialBookStyle?: Record<string, unknown> | null;
+  /** Surprise locks from the same already-loaded Book row. */
+  initialSurpriseLocks?: BookSurpriseLockSet;
   /** Page count, for the default spine thickness. */
   pageCount?: number;
   /**
@@ -86,58 +104,144 @@ export interface CustomizePanelProps {
    * the shelf's own studio button starts on the room.
    */
   initialTab?: StudioTab;
+  /** Whether the owning rail panel is visibly open (its children stay mounted after close). */
+  open?: boolean;
+  /** Positions the Book Studio's companion preview beside the correct panel chrome. */
+  host?: 'book' | 'shelf';
 }
 
 export default function CustomizePanel(props: CustomizePanelProps): JSX.Element {
   const [tab, setTab] = createSignal<StudioTab>(props.initialTab ?? 'book');
-  const [style, setStyle] = createSignal<Record<string, unknown> | null>(null);
+  const [style, setStyle] = createSignal<Record<string, unknown> | null>(
+    props.initialBookStyle ?? null,
+  );
+  const [surpriseLocks, setSurpriseLocks] = createSignal<BookSurpriseLockSet>(
+    normalizeBookSurpriseLocks(props.initialSurpriseLocks),
+  );
+  const hydration = createBookAppearanceHydrationGuard();
   /*
-   * Studio clicks can arrive faster than two cover_meta read/merge/write
-   * operations. Serialize them in click order: otherwise an older, slower
-   * write can finish last and the shelf quite correctly repaint the wrong
-   * persisted style when the book closes.
+   * One lane for BOTH halves of a book appearance. A Surprise press changes
+   * designPrefs (the binding) and cover_meta (the style); serialising only the
+   * latter still allows two rapid presses to persist a binding from one beside
+   * the colours and proportions from the other.
    */
-  let styleWrites: Promise<void> = Promise.resolve();
+  const writeAppearance = createOrderedBookAppearanceWriter({
+    saveBinding: (bookId, binding) => saveBookBinding(bookId, binding),
+    saveStyle: (write) =>
+      persistBookStyle(write.bookId, write.style, {
+        binding: write.projectionBinding,
+        bindingPinned: write.bindingPinned,
+        materialPinned: write.materialPinned,
+        seed: props.spineSeed,
+        titlePlatePinned: write.titlePlatePinned,
+      }),
+  });
 
-  // Hydrate the persisted style blob whenever the book changes.
+  // Hydrate whenever the book changes. Both app hosts already own the loaded
+  // Book row and supply its compatibility-aware floor, avoiding a second read
+  // entirely. The fallback remains for isolated/specimen callers; its ticket
+  // cannot overwrite a local edit or a later book.
   createEffect(
     on(
       () => props.bookId,
       (id) => {
+        const ticket = hydration.begin(id);
         if (id === undefined) {
           setStyle(null);
+          setSurpriseLocks(normalizeBookSurpriseLocks(props.initialSurpriseLocks));
           return;
         }
-        let stale = false;
-        void getBook(id).then((book) => {
-          if (!stale) setStyle(readBookStyleOverrides(book));
-        });
-        return () => {
-          stale = true;
-        };
+        if (props.initialBookStyle !== undefined) {
+          if (hydration.accepts(ticket)) {
+            setStyle(props.initialBookStyle);
+            setSurpriseLocks(normalizeBookSurpriseLocks(props.initialSurpriseLocks));
+          }
+          return;
+        }
+        void getBook(id)
+          .then((book) => {
+            if (hydration.accepts(ticket)) {
+              setStyle(book === null ? null : bookStyleOverridesFor(book));
+              setSurpriseLocks(bookSurpriseLocksFor(book));
+            }
+          })
+          .catch(() => undefined);
       },
     ),
   );
 
-  const changeStyle = (next: BookStyleOverrides | null): void => {
+  const reflectStyle = (
+    next: BookStyleOverrides | null,
+    projectionBinding?: BookPresetId | null,
+  ): BookStyle | null => {
     const blob = (next as Record<string, unknown> | null) ?? null;
+    hydration.invalidate();
     setStyle(blob);
     const normalized = normalizeBookStyleOverrides(blob);
     // The cover art reads cover_meta.cover — keep it in step so the open book
     // and the pull-out ghost show what the studio previewed.
+    // A binding-only choice can legitimately leave the style blob empty. It
+    // still has an exact covering that the already-open book must show now;
+    // passing null here would redraw the seed's cover until the next reopen.
     props.onOverridesChange(
       normalized === null
-        ? null
-        : coverOverridesFromStyle(normalized as Parameters<typeof coverOverridesFromStyle>[0]),
+        ? projectionBinding === undefined || projectionBinding === null
+          ? null
+          : coverOverridesFromStyle({}, projectionBinding, props.spineSeed)
+        : coverOverridesFromStyle(
+            normalized as Parameters<typeof coverOverridesFromStyle>[0],
+            projectionBinding,
+            props.spineSeed,
+          ),
     );
+    return (normalized as BookStyle | null) ?? null;
+  };
+
+  const changeStyle = (
+    next: BookStyleOverrides | null,
+    projectionBinding?: BookPresetId | null,
+    bindingPinned?: boolean,
+  ): void => {
+    const persisted = reflectStyle(next, projectionBinding);
     if (props.bookId !== undefined) {
-      // Writes cover_meta.style AND its cover projection, so the shelf spine,
-      // the pull-out ghost and the opened book all agree.
-      const bookId = props.bookId;
-      const persisted = (normalized as BookStyle | null) ?? null;
-      styleWrites = styleWrites
-        .catch(() => undefined)
-        .then(() => persistBookStyle(bookId, persisted));
+      void writeAppearance({
+        bookId: props.bookId,
+        style: persisted,
+        projectionBinding,
+        bindingPinned,
+        materialPinned:
+          persisted !== null && Object.prototype.hasOwnProperty.call(persisted, 'material'),
+        titlePlatePinned:
+          persisted !== null && Object.prototype.hasOwnProperty.call(persisted, 'titlePlate'),
+      }).catch(() => undefined);
+    }
+  };
+
+  const changeAppearance = (
+    next: BookStyleOverrides | null,
+    binding: BookPresetId | null,
+    projectionBinding: BookPresetId,
+  ): void => {
+    const persisted = reflectStyle(next, projectionBinding);
+    if (props.bookId === undefined) return;
+    void writeAppearance({
+      bookId: props.bookId,
+      style: persisted,
+      binding,
+      projectionBinding,
+      bindingPinned: binding !== null,
+      materialPinned:
+        persisted !== null && Object.prototype.hasOwnProperty.call(persisted, 'material'),
+      titlePlatePinned:
+        persisted !== null && Object.prototype.hasOwnProperty.call(persisted, 'titlePlate'),
+    }).catch(() => undefined);
+  };
+
+  const changeSurpriseLocks = (next: BookSurpriseLockSet): void => {
+    const normalized = normalizeBookSurpriseLocks(next);
+    setSurpriseLocks(normalized);
+    if (props.bookId !== undefined) {
+      void saveBookSurpriseLocks(props.bookId, normalized).catch(() => undefined);
     }
   };
 
@@ -209,12 +313,17 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
             title={props.title}
             style={style()}
             onStyleChange={changeStyle}
+            onAppearanceChange={changeAppearance}
+            surpriseLocks={surpriseLocks()}
+            onSurpriseLocksChange={changeSurpriseLocks}
             pageCount={props.pageCount}
             // The binding is keyed by book id, and without this the studio
             // falls back to `seed:<spineSeed>` — stable, but a different key
             // from the one the shelf's spine factory reads, so a pinned
             // binding would show in the panel and nowhere else.
             bookId={props.bookId}
+            open={props.open}
+            host={props.host}
           />
 
           <section class="nb-panel-section nb-panel-section-divided">

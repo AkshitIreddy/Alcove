@@ -82,6 +82,7 @@ if ((await strip('Spine shape').count()) === 0) {
  */
 const pinned = async () =>
   p.evaluate((b) => globalThis.__shelfBinding?.(b) ?? null, BOOK_ID);
+const originalBinding = await pinned();
 
 const pick = async (label, nth) => {
   const s = strip(label);
@@ -158,6 +159,19 @@ const after = await pinned();
 note(
   before !== null && after === before,
   `survives a reload (${String(before)} === ${String(after)})`,
+);
+
+// A QA run must not redress the owner's Welcome book permanently. Restore the
+// exact pre-run pin (including null, which means seed-owned) through the
+// world's own bridge after the persistence assertion has had its say.
+await p.evaluate(
+  ({ bookId, binding }) => globalThis.__shelfSaveBinding(bookId, binding),
+  { bookId: BOOK_ID, binding: originalBinding },
+);
+await p.waitForTimeout(600);
+note(
+  (await pinned()) === originalBinding,
+  `restored the pre-run binding (${String(originalBinding)})`,
 );
 
 await b.close();

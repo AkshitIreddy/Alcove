@@ -43,6 +43,21 @@
  *   v11 → v12 removes the untouched Welcome book's outer marker and striped
  *             endbands, and pins its previously seed-rolled silhouette to the
  *             solid square case. The blue between-page ribbon stays.
+ *   v12 → v13 rebinds only the untouched Welcome book as a formal crown
+ *             presentation volume: a restrained gilt fillet and one crown
+ *             replace the quill programme and applied brass corners. The
+ *             unreleased v15 edition moves that authored dressing to blue.
+ *   v13 → v14 moves every stored BOOK appearance onto the rebuilt binding
+ *             vocabulary. Pages, book identity, shelf position, room
+ *             carpentry and wallpaper are deliberately outside this step.
+ *   v14 → v15 refreshes the Welcome field guide for the rebuilt, titleless-
+ *             spine book system, portable local pictures and the optional
+ *             keep-current updater preference. As before, edited pages move
+ *             only when their reader explicitly opted in.
+ *   v15 → v16 gives the untouched Grand-blue Welcome binding its authored
+ *             Renaissance panel, engraved title hand and formal Gilt Quarto
+ *             construction. A foliate lozenge replaces the rejected velvet
+ *             crown programme; no page content changes.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -50,6 +65,9 @@
 import { parse } from '../script';
 import { materializeStableBlockIds } from '../editor/blockIdentity';
 import { scriptDocToTiptap } from '../editor/script/toTiptap';
+import { normaliseBookPresetId } from '../art/bookDesign';
+import { normalizeBookStyleOverrides } from '../art/bookStyle';
+import { normalizeCoverOverrides } from '../art/covers';
 import { createBook, deleteBook } from './books';
 import { getDb, type Db } from './db';
 import { bookBinding, loadDesignPrefs, saveBookBinding } from './designPrefs';
@@ -87,17 +105,138 @@ import type { PageDoc } from './types';
  * that carried two.
  *
  * See refreshWelcomeBook for what a bump does to a library that already has a
- * welcome book: nothing at all, unless every page in it is still ours.
+ * welcome book: nothing at all unless every page in it is still ours, or the
+ * reader explicitly opted into replacing their edited guide on updates.
  *
  * v8: forty-eight leaves, deliberately organised as a journey rather than a
  * feature list. The design follows the strongest current onboarding pattern:
  * useful sample data first, then guided action, then progressive discovery.
  * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 12;
+export const SEED_VERSION = 16;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
+
+/** Read only the one boot-time preference without hydrating the UI store. */
+async function readRefreshWelcomePreference(db: Db): Promise<boolean> {
+  const rows = await db.select<Array<{ value: string }>>(
+    'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+    ['app'],
+  );
+  if (rows.length === 0) return false;
+  try {
+    const parsed: unknown = JSON.parse(rows[0].value);
+    return parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      (parsed as Record<string, unknown>).refreshWelcomeBookOnUpdate === true;
+  } catch {
+    return false;
+  }
+}
+
+const STUDIO_DESIGNS_KEY = 'studioDesigns';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Rewrite only the BOOK half of the Studio preference blob.
+ *
+ * The room half is copied verbatim. This migration is the hard boundary of
+ * the rebuilt binding system, not an excuse to reinterpret a case's timber or
+ * wallpaper. Retired named bindings and retired `own:` components resolve
+ * through `normaliseBookPresetId` to the current formal book; junk is removed
+ * so the book's deterministic current default can take over.
+ */
+export function normalizeStoredBookBindings(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  if (!isRecord(parsed)) return raw;
+
+  const sourceBooks = isRecord(parsed.books) ? parsed.books : {};
+  const books: Record<string, string> = {};
+  for (const [bookId, binding] of Object.entries(sourceBooks)) {
+    const safe = normaliseBookPresetId(binding);
+    if (safe !== null) books[bookId] = safe;
+  }
+  return JSON.stringify({ ...parsed, books });
+}
+
+/**
+ * Move a persisted Book Studio style through the current safe validator while
+ * leaving every unrelated cover-meta section byte-for-byte equivalent.
+ *
+ * A pre-Studio `cover` section is normalized through the same active
+ * frame/emblem/title/edge/charm rules as the renderer. The canonical `style`
+ * section is rewritten too, so neither a reopen nor a later export can carry
+ * retired book furniture forward.
+ */
+export function normalizeStoredBookCoverMeta(raw: string | null): string | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  if (!isRecord(parsed)) return raw;
+
+  const next = { ...parsed };
+  if (Object.prototype.hasOwnProperty.call(parsed, 'style')) {
+    const style = normalizeBookStyleOverrides(parsed.style);
+    if (style === null) delete next.style;
+    else next.style = style;
+  }
+  if (Object.prototype.hasOwnProperty.call(parsed, 'cover')) {
+    const cover = normalizeCoverOverrides(parsed.cover);
+    if (cover === null) delete next.cover;
+    else next.cover = cover;
+  }
+  return JSON.stringify(next);
+}
+
+/**
+ * v14: force stored book appearances onto the new safe binding vocabulary.
+ *
+ * This deliberately does not select or update page rows, floor/slot columns,
+ * book titles, room preferences, or the open-book pointer. The only database
+ * surfaces in scope are the book-binding map and `cover_meta.style`.
+ */
+async function migrateBookAppearanceSystem(db: Db): Promise<void> {
+  const designRows = await db.select<Array<{ value: string }>>(
+    'SELECT value FROM settings WHERE key = $1 LIMIT 1',
+    [STUDIO_DESIGNS_KEY],
+  );
+  const storedDesigns = designRows[0]?.value;
+  if (storedDesigns !== undefined) {
+    const normalized = normalizeStoredBookBindings(storedDesigns);
+    if (normalized !== storedDesigns) {
+      await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)', [
+        STUDIO_DESIGNS_KEY,
+        normalized,
+      ]);
+    }
+  }
+
+  const books = await db.select<Array<{ id: string; cover_meta: string | null }>>(
+    'SELECT id, cover_meta FROM books WHERE cover_meta IS NOT NULL',
+  );
+  for (const book of books) {
+    const normalized = normalizeStoredBookCoverMeta(book.cover_meta);
+    if (normalized === book.cover_meta) continue;
+    await db.execute('UPDATE books SET cover_meta = $1 WHERE id = $2', [
+      normalized,
+      book.id,
+    ]);
+  }
+}
 
 export const WELCOME_BOOK_TITLE = 'Welcome to Alcove ✎';
 
@@ -161,11 +300,11 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * This is the first object a reader ever sees on the shelf, and it was warm
  * amber cloth with whatever the seed happened to give it — which read as the
  * default it was. It is the app's calling card, so it is dressed like one:
- * claret leather, four raised cords with gilt rules either side, a gilt title
- * plate and gilt edges, quarto and stout so it has some presence beside a
- * pocket paperback. Its binding preset is pinned separately to `plain-cloth`:
- * the style's explicit leather still supplies the covering, while that preset's
- * square case supplies the solid silhouette instead of the seed's old waist.
+ * grand blue presentation boards, two raised cords, one foliate lozenge and
+ * gilt edges, quarto and stout so it has some presence beside a pocket
+ * paperback. Its binding preset is pinned separately to `gilt-quarto`; that
+ * preset's square publisher case and continuous fillet supply the formal
+ * silhouette instead of the seed's old waist or the rejected velvet crown.
  *
  * ## `pigment` is not the colour its name says
  *
@@ -179,45 +318,23 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * the real shelf before it was written down (`shots-now/welcome-binding.mjs`,
  * `shots-now/defaults/board-pigment3.png`).
  *
- * ## Why claret
+ * ## Why grand blue
  *
- * Pigment 20 is captioned *Burgundy* and paints cloth **Claret** `#a44c60` —
- * verified, not assumed. Five deep candidates were photographed against the
- * default room, and claret won for reasons the names would not have given:
+ * Pigment 29 is captioned *Lapis* and paints the house Cobalt cloth. The
+ * authored role colours below pin a deeper Grand palette explicitly, so this
+ * calling card does not depend on two independently ordered colour tables:
+ * a navy-blue spine, a slightly lighter royal-blue board and warm gilt tooling.
  *
- *  - the room was Verdigris Library then, a blue-green case, so a red was the
- *    complement and the book separated from the case at any zoom. `forest`
- *    disappeared into the timber, `navy` went quiet against it;
- *  - **oxblood now folds correctly, and that is exactly why it is wrong here**
- *    — `#ae4e40` is one hop from the `oxblood` cloth in Verdigris's own six,
- *    so the calling card would have worn what a random new book wears. This is
- *    the same trap as before, arriving from the opposite direction;
- *  - `plum` (what this shipped previously) survives the fold as itself but is
- *    a muted mauve: beside gilt bands and a gilt plate it reads dusty rather
- *    than bound. Claret is the same family with the value a fine binding has.
+ * The measured spine panel and two cords keep the blue field structured at
+ * shelf scale. The front board spends the detail budget on one continuous
+ * Renaissance panel, an engraved direct-gilt title and one foliate lozenge.
  *
- * ## Re-checked when the opening room went to English Walnut, and kept
- *
- * The complement argument above died with verdigris: against a dark warm brown
- * a red is no longer the opposite colour, it is a near neighbour, and the room's
- * own six cloths open with `oxblood` — so on the face of it claret walked into
- * the trap the second bullet describes. Re-photographed rather than reasoned
- * about (`shots-now/welcome-binding.mjs --tag=hero`, and the calling card beside
- * seven newly made books in `shots-now/hero/crop-shelf-books.png`), it holds,
- * for a reason the verdigris pass never had to lean on: what separates this book
- * on a shelf of new ones is not its hue but its DRESSING — four raised cords
- * with gilt rules, wrapped endbands, a gilt plate and gilt edges, at quarto and
- * stout. Against walnut it stops being a red object on a blue case and becomes
- * the obvious thing it always should have been, a wine-coloured leather binding
- * on dark oak, which no new book is dressed to imitate.
- *
- * So: unchanged, and now deliberately unchanged. `forest`, `navy`, `aubergine`
- * and `chestnut` were re-shot in the new room and all four cost more than they
- * bought — each is a cool object in a room with nothing else cool in it, which
- * makes the calling card look like it was dropped in from another library.
+ * The cool blue deliberately separates the Welcome volume from the default
+ * walnut case and from the warmer mixed shelf, while the gold keeps it formal
+ * rather than nautical or modern.
  *
  * `thickness` is pinned, which the seed did not do before. It defaults from
- * page count, and five pages gave a sliver whose raised bands and title plate
+ * page count, and five pages gave a sliver whose raised bands and gilt tooling
  * had no room to be anything; 44 world px is the `stout` class, and it is what
  * makes the object read as a bound volume rather than a coloured stripe
  * (`shots-now/defaults/board-thickness.png`). `format` stays quarto — folio
@@ -230,46 +347,126 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * (library-themes.md §4) — so a reader can open the studio and change any of
  * it, and the room may never repaint it behind their back.
  */
-export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
-  material: 'leather',
-  // Captioned "Burgundy"; paints cloth Claret #a44c60. See the note above —
-  // the caption and the cloth are two tables, and only a render settles it.
+/** Exact pre-blue crown edition, recognised only so an untouched guide upgrades. */
+const V13_CLARET_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   pigment: 20,
   hueJitter: 0,
-  raisedBands: 4,
+  raisedBands: 2,
+  bandGilt: true,
+  gilt: true,
+  headTail: false,
+  ornament: 20,
+  titlePlate: 'gilt-direct',
+  titleFont: 0,
+  wear: 0.08,
+  edge: 'gilt',
+  format: 'quarto',
+  thickness: 44,
+  charm: 'none',
+  coverFrame: 26,
+  coverMedallion: 20,
+  cornerProtectors: false,
+  insetPlate: false,
+};
+
+/** Exact v15 Grand-blue exterior, recognized so an untouched guide upgrades. */
+const V15_BLUE_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  // Lapis is the named picker fallback; exact roles pin the authored Grand blue.
+  pigment: 29,
+  hueJitter: 0,
+  spineBaseHex: '#394c70',
+  spineAccentHex: '#2f3d5b',
+  coverBaseHex: '#475d82',
+  coverAccentHex: '#314564',
+  toolingHex: '#f1d16f',
+  emblemHex: '#f7e09a',
+  // Two cords frame the crown without turning the titleless spine into a
+  // ladder. Three remains available in the Studio for readers who deliberately
+  // want a heavily corded volume; the authored Welcome binding stays quieter.
+  raisedBands: 2,
   bandGilt: true,
   gilt: true,
   // No striped endband: at shelf scale its alternating pale/red strokes read
   // as an unexplained mark on the spine rather than as sewn thread.
   headTail: false,
-  ornament: 9, // Quill
-  titlePlate: 'gilt',
+  ornament: 20, // Crown — the same heraldic tool used on the front board
+  titlePlate: 'gilt-direct',
   titleFont: 0,
-  wear: 0.1,
+  wear: 0.05,
   edge: 'gilt',
   format: 'quarto',
   thickness: 44, // 'stout' — a five-page book would otherwise be a sliver
-  // A restrained fine-binding cover chosen from rendered shelf/held
-  // candidates: double fleurons, quill stamp, inset title plate and brass
-  // corners. The between-page marker is enough; the outer ribbon accessory
-  // made the closed book look as if it carried two bookmarks.
+  // A grand presentation-cloth hierarchy chosen as one coherent programme:
+  // one heavy-and-fine fillet with authored fleurons, direct gilt lettering,
+  // and one crown. Applied corner hardware and an inset title plaque made the
+  // crown compete with two other focal programmes. The between-page marker is enough; the outer
+  // ribbon accessory made the closed book look as if it carried two bookmarks.
   charm: 'none',
-  coverFrame: 21, // Double Fleuron
-  coverMedallion: 9, // Quill — the same device as the spine
-  cornerProtectors: true,
-  insetPlate: true,
+  coverFrame: 26, // Fillet & Fleurons — nested rules with formal corner tools
+  coverMedallion: 20, // Crown — the same device as the spine
+  cornerProtectors: false,
+  insetPlate: false,
+};
+
+/** Exact pre-release Grand Crown Velvet edition, accepted for replacement. */
+const V16_VELVET_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  ...V15_BLUE_WELCOME_BINDING,
+  titleFont: 44,
+  coverFrame: 48,
+};
+
+/**
+ * The current Grand-blue Welcome exterior.
+ *
+ * The Renaissance panel supplies one continuous architectural perimeter and
+ * restrained acanthus returns. Engraved direct gilt gives the title the same
+ * formal register without adding a label or badge. A broad foliate lozenge is
+ * the single focal on both faces; it reads as binder's tooling rather than a
+ * costume crown, shield or themed prop.
+ */
+export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  ...V15_BLUE_WELCOME_BINDING,
+  ornament: 0, // Foliate lozenge — broad, formal and legible at shelf width
+  titleFont: 44, // Engraved — reader-legible formal caps from the curated case
+  coverFrame: 48, // Renaissance Panel — banded architectural corner returns
+  coverMedallion: 0, // The same foliate lozenge as the titleless spine
 };
 
 /**
  * The binding preset pinned to an untouched Welcome book.
  *
- * `plain-cloth` is intentionally used only for its square case and unworked
- * silhouette. `WELCOME_BINDING.material` is an explicit style override, so the
- * finished book remains leather; no room palette or preset repaint can turn it
- * back into cloth. A named, validated preset is safer than persisting a second
- * hand-composed id in the seed.
+ * `gilt-quarto` supplies a square formal publisher binding. The explicit style
+ * uses two gilt cords and one broad foliate lozenge; the resolver quiets the
+ * preset fillet while that focal tool is present, avoiding two stacked ornate
+ * systems on a narrow spine. This deliberately does not pin the coarse material
+ * control: the named binding owns its smooth presentation cloth. The straight
+ * back stays unmistakably booklike at shelf width; rounded caps read as a
+ * canister.
  */
-export const WELCOME_BOOK_PRESET = 'plain-cloth';
+export const WELCOME_BOOK_PRESET = 'gilt-quarto';
+
+/** Exact v12 shipped style, used only to upgrade an untouched quill binding. */
+const V12_QUILL_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
+  material: 'leather',
+  pigment: 20,
+  hueJitter: 0,
+  raisedBands: 4,
+  bandGilt: true,
+  gilt: true,
+  headTail: false,
+  ornament: 9,
+  titlePlate: 'gilt',
+  titleFont: 0,
+  wear: 0.1,
+  edge: 'gilt',
+  format: 'quarto',
+  thickness: 44,
+  charm: 'none',
+  coverFrame: 21,
+  coverMedallion: 9,
+  cornerProtectors: true,
+  insetPlate: true,
+};
 
 /** Exact v9–v11 shipped style, used only to recognise an untouched cover. */
 const LEGACY_MARKED_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
@@ -1125,7 +1322,7 @@ Now go and write something of your own.
  * in Notebook Script, so Export Script hands the reader a truthful, editable
  * example rather than a brochure baked specially for first run.
  */
-export const WELCOME_PAGE_SOURCES: readonly string[] = [
+const WELCOME_PAGE_SOURCES_V14: readonly string[] = [
   // ----------------------------------------------------------- begin here
   `---
 paper: lined
@@ -2034,6 +2231,152 @@ The showcase ends here. Your notebook does not.
 ];
 
 /**
+ * The v15 edition changes only three leaves of the forty-eight-page guide.
+ * Keep v14 above byte-identical: it is the fingerprint that lets
+ * `refreshWelcomeBook` distinguish an untouched guide from somebody's notes.
+ */
+const WELCOME_PAGE_SOURCES_V15: readonly string[] = WELCOME_PAGE_SOURCES_V14.map(
+  (source) => {
+    if (source.includes('# Dress this book {')) {
+      return `# Dress this book {sticker=sparkle}
+
+This claret volume is showing the book studio before you even open it.
+
+::: card {title="The titleless spine"}
+Choose a straight binding, quiet cloth or leather, colour, cords and restrained rules. Add one book emblem when it earns the space; the book's name stays on its cover.
+:::
+
+::: card {title="The cover"}
+Set a complete title, continuous frame, the same emblem and plain or gilt page edges. Nothing needs to be wallpapered with tiny symbols.
+:::
+
+::: callout {variant=tip}
+Surprise me offers distinct directions, then lets you lock every part you want to keep before rolling again.
+:::
+
+::: marginalia
+A book keeps its identity when it moves to another room.
+:::
+`;
+    }
+    if (source.includes('# Notebook Script {')) {
+      return `# Notebook Script {sticker=sparkle}
+
+::let subject = The complete Alcove tour
+::style hero {color=amber, underline=marker}
+
+**{{subject}}** was written in the same text format you can export. {use=hero}
+
+::: columns {gap=lg}
+::: col
+**Familiar**
+
+Markdown headings, lists, tables, pictures, code and links.
+:::
+::: col
+**Expressive**
+
+Containers, attributes, diagrams, variables and reusable styles.
+:::
+:::
+
+::: callout {variant=tip}
+Download the format guide and attach it—or copy it when the chat accepts a long paste. An assistant may leave an intentional picture placeholder; choose or drop the real image into that card after insertion.
+:::
+`;
+    }
+    if (source.includes('# In, out, and safekeeping {')) {
+      return `# In, out, and safekeeping {sticker=book}
+
+::: columns {gap=lg}
+::: col
+**A page leaves as**
+
+- Notebook Script
+- PNG picture
+- PDF
+:::
+::: col
+**A library leaves as**
+
+- A portable parcel
+- An automatic backup
+- A manual backup
+:::
+:::
+
+::: callout {variant=info}
+Portable parcels carry local pictures and videos with the selected pages. Both lossless and script-only bundles reconnect them to the destination library rather than remembering the old machine's path.
+:::
+
+::: callout {variant=tip}
+Settings can keep this Welcome guide current on future app updates, even after edits. It is off by default and tells you that the newest guide will replace those edited Welcome pages.
+:::
+
+::: marginalia
+Your library is kept by default when the app itself is replaced.
+:::
+`;
+    }
+    return source;
+  },
+);
+
+/**
+ * v16 teaches the rebuilt binding studio and portable video path. Keep v15
+ * byte-identical above so an untouched guide from 0.5.x is still recognisable.
+ */
+export const WELCOME_PAGE_SOURCES: readonly string[] = WELCOME_PAGE_SOURCES_V15.map(
+  (source) => {
+    if (source.includes('# Dress this book {')) {
+      return `# Dress this book {sticker=sparkle}
+
+This Grand-blue volume is showing the rebuilt book studio before you even open it.
+
+::: card {title="The titleless spine"}
+Choose one of the straight binding constructions, eighteen quiet coverings, up to three raised cords and a single broad binder's tool. The book's name stays on its cover.
+:::
+
+::: card {title="The cover"}
+Set the complete title in one of ten lettering hands, choose among twelve continuous frames and sixteen matched emblems, then finish the paper block with one of six real edge treatments and three sewn endbands.
+:::
+
+::: callout {variant=tip}
+Surprise me composes a whole binding in a distinct direction. Lock any parts you love, then roll the rest again.
+:::
+
+::: marginalia
+Richness comes from one authored hierarchy, never wallpapered symbols or hardware.
+:::
+`;
+    }
+    if (source.includes('# Dressing a book {')) {
+      return `# Dressing a book {sticker=sparkle}
+
+The paintbrush at the top of the rail opens **Customize this book**, where the spine and cover are designed as one binding.
+
+::: card {title="The binding"}
+Straight cloth, calf, vellum and split-board constructions; up to three raised cords; sixteen broad emblems; three sewn endbands; and restrained material-led tooling. The spine stays titleless so its structure can breathe.
+:::
+
+::: card {title="The cover and paper block"}
+Keep the full title, choose one of ten lettering hands and twelve continuous frames, then finish the page edges in plain, gilt, stained, deckled or burnished styles.
+:::
+
+::: quote-card {color=sky}
+This Welcome book is a Grand blue Gilt Quarto with an engraved gilt title, a Renaissance panel and one foliate lozenge shared by cover and spine.
+:::
+
+::: tag {color=amber}
+\`Ctrl Alt D\` dresses the open book
+:::
+`;
+    }
+    return source;
+  },
+);
+
+/**
  * Every page this book USED to be, kept verbatim — the v7 thirty-two, then
  * the older generations already retained below.
  *
@@ -2050,6 +2393,12 @@ The showcase ends here. Your notebook does not.
  * mojibaked pencil.
  */
 export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
+  // v15 — the outgoing 0.5.x field guide, retained for the v16 refresh.
+  ...WELCOME_PAGE_SOURCES_V15,
+
+  // v14 — forty-eight leaves. This exact edition is what v15 recognises.
+  ...WELCOME_PAGE_SOURCES_V14,
+
   // v7 — thirty-two leaves. Kept by reference so the outgoing strings remain
   // byte-for-byte the exact template literals above; never edit that array.
   ...WELCOME_PAGE_SOURCES_V7,
@@ -3237,6 +3586,11 @@ Now go and write something of your own.
  */
 const EDITOR_NODE_NAMES: ReadonlySet<string> = new Set([
   'callout',
+  // `imageRow` describes the container, while its content expression still
+  // depends on the separate image node. The script bridge now asks about both
+  // before emitting a row; omitting this entry silently degraded the Welcome
+  // book's kitten photographs into fallback paragraphs.
+  'image',
   'imageRow',
   'sticker',
   'diagram',
@@ -3581,25 +3935,43 @@ async function renameLegacyWelcomeBook(db: Db): Promise<void> {
 }
 
 /**
- * v12: the Welcome book keeps one blue marker between its pages, loses the
- * outer ribbon and striped endbands, and receives a solid square case.
+ * v13: the Welcome book keeps one blue marker between its pages and its solid
+ * square case, but an untouched v12 quill binding is redressed with one crown
+ * and a restrained gilt fillet.
  *
  * This migration is deliberately all-or-nothing across the three appearance
  * axes. The complete cover style, between-page ribbon and binding choice must
  * all still be shipped/unset values before any one is changed. A reader who
- * customised even one part keeps the whole book exactly as they left it.
+ * customised even one part keeps the whole book exactly as they left it,
+ * unless they explicitly enabled replacing the edited guide on updates.
  */
-async function migrateWelcomeBookDesign(db: Db): Promise<void> {
+async function migrateWelcomeBookDesign(db: Db, force = false): Promise<void> {
   // A direct book route can seed before the shelf starts this store. Load it
   // before testing the binding or an in-memory empty value could overwrite a
   // real persisted choice.
   await loadDesignPrefs();
-  const rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
+  let rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
     'SELECT id, cover_meta FROM books WHERE title = $1',
     [WELCOME_BOOK_TITLE],
   );
+  // A reader may have renamed the guide. The deterministic seed is its stable
+  // fallback identity when they explicitly ask an update to replace edits.
+  if (force && rows.length === 0) {
+    rows = await db.select<Array<{ id: string; cover_meta: string | null }>>(
+      'SELECT id, cover_meta FROM books WHERE spine_seed = $1',
+      [WELCOME_SPINE_SEED],
+    );
+  }
   const legacyStyle = LEGACY_MARKED_WELCOME_BINDING as Record<string, unknown>;
   const legacyStyleKeys = Object.keys(legacyStyle).sort();
+  const v12Style = V12_QUILL_WELCOME_BINDING as Record<string, unknown>;
+  const v12StyleKeys = Object.keys(v12Style).sort();
+  const claretStyle = V13_CLARET_WELCOME_BINDING as Record<string, unknown>;
+  const claretStyleKeys = Object.keys(claretStyle).sort();
+  const v15BlueStyle = V15_BLUE_WELCOME_BINDING as Record<string, unknown>;
+  const v15BlueStyleKeys = Object.keys(v15BlueStyle).sort();
+  const v16VelvetStyle = V16_VELVET_WELCOME_BINDING as Record<string, unknown>;
+  const v16VelvetStyleKeys = Object.keys(v16VelvetStyle).sort();
   const currentStyle = WELCOME_BINDING as Record<string, unknown>;
   const currentStyleKeys = Object.keys(currentStyle).sort();
   const legacyRibbonKeys = Object.keys(LEGACY_CRIMSON_WELCOME_RIBBON).sort();
@@ -3618,16 +3990,46 @@ async function migrateWelcomeBookDesign(db: Db): Promise<void> {
       (key) =>
         Object.prototype.hasOwnProperty.call(raw, key) &&
         (raw as Record<string, unknown>)[key] === expected[key],
-    );
+  );
 
   for (const row of rows) {
-    if (row.cover_meta === null) continue;
-    let meta: Record<string, unknown>;
-    try {
-      const parsed: unknown = JSON.parse(row.cover_meta);
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-      meta = parsed as Record<string, unknown>;
-    } catch {
+    let meta: Record<string, unknown> = {};
+    if (row.cover_meta !== null) {
+      try {
+        const parsed: unknown = JSON.parse(row.cover_meta);
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          meta = parsed as Record<string, unknown>;
+        } else if (!force) {
+          continue;
+        }
+      } catch {
+        if (!force) continue;
+      }
+    } else if (!force) {
+      continue;
+    }
+
+    if (force) {
+      // `cover` is the old compatibility projection of `style`. Keeping a
+      // reader-authored copy here would let the open-book renderer repaint the
+      // new edition with stale furniture even after the canonical style moved.
+      const preservedMeta = { ...meta };
+      delete preservedMeta.cover;
+      await db.execute(
+        'UPDATE books SET title = $1, spine_seed = $2, cover_meta = $3, updated_at = $4 WHERE id = $5',
+        [
+          WELCOME_BOOK_TITLE,
+          WELCOME_SPINE_SEED,
+          JSON.stringify({
+            ...preservedMeta,
+            style: { ...WELCOME_BINDING },
+            ribbon: { ...WELCOME_RIBBON },
+          }),
+          new Date().toISOString(),
+          row.id,
+        ],
+      );
+      await saveBookBinding(row.id, WELCOME_BOOK_PRESET);
       continue;
     }
     const rawStyle = meta.style;
@@ -3648,8 +4050,17 @@ async function migrateWelcomeBookDesign(db: Db): Promise<void> {
           (key) => key === 'charmColor' || style[key] === legacyStyle[key],
         );
     }
+    const isV12ShippedStyle = exactRecord(rawStyle, v12Style, v12StyleKeys);
+    const isClaretShippedStyle = exactRecord(rawStyle, claretStyle, claretStyleKeys);
+    const isV15BlueShippedStyle = exactRecord(rawStyle, v15BlueStyle, v15BlueStyleKeys);
+    const isV16VelvetShippedStyle = exactRecord(
+      rawStyle,
+      v16VelvetStyle,
+      v16VelvetStyleKeys,
+    );
     // Recognising the current value makes the operation recoverable if a v12
-    // run wrote cover_meta but was interrupted before pinning the silhouette.
+    // or v13 run wrote cover_meta but was interrupted before pinning the
+    // silhouette.
     const isCurrentShippedStyle = exactRecord(rawStyle, currentStyle, currentStyleKeys);
 
     const rawRibbon = meta.ribbon;
@@ -3664,17 +4075,35 @@ async function migrateWelcomeBookDesign(db: Db): Promise<void> {
       hasLegacyRibbon ||
       hasCurrentShippedRibbon;
     const pinned = bookBinding(row.id);
-    const bindingIsShipped = pinned === null || pinned === WELCOME_BOOK_PRESET;
+    const bindingIsShipped =
+      pinned === null ||
+      pinned === 'plain-cloth' ||
+      pinned === 'velvet-ducal' ||
+      pinned === WELCOME_BOOK_PRESET;
 
     if (
-      !(isOldShippedStyle || isCurrentShippedStyle) ||
+      !(
+        isOldShippedStyle ||
+        isV12ShippedStyle ||
+        isClaretShippedStyle ||
+        isV15BlueShippedStyle ||
+        isV16VelvetShippedStyle ||
+        isCurrentShippedStyle
+      ) ||
       !ribbonIsShipped ||
       !bindingIsShipped
     ) {
       continue;
     }
 
-    if (isOldShippedStyle || !hasCurrentShippedRibbon) {
+    if (
+      isOldShippedStyle ||
+      isV12ShippedStyle ||
+      isClaretShippedStyle ||
+      isV15BlueShippedStyle ||
+      isV16VelvetShippedStyle ||
+      !hasCurrentShippedRibbon
+    ) {
       await db.execute('UPDATE books SET cover_meta = $1 WHERE id = $2', [
         JSON.stringify({
           ...meta,
@@ -3684,7 +4113,7 @@ async function migrateWelcomeBookDesign(db: Db): Promise<void> {
         row.id,
       ]);
     }
-    if (pinned === null) {
+    if (pinned !== WELCOME_BOOK_PRESET) {
       await saveBookBinding(row.id, WELCOME_BOOK_PRESET);
     }
   }
@@ -3716,6 +4145,40 @@ async function writeWelcomePages(bookId: string): Promise<void> {
   }
 }
 
+/**
+ * Replace a guide deliberately, retaining its existing page identities where
+ * the new edition has a page at the same ordinal. Page references, bookmarks
+ * and an already-open route therefore keep pointing at the corresponding
+ * leaf; only surplus leaves have to disappear.
+ */
+async function rewriteWelcomePagesInPlace(db: Db, bookId: string): Promise<void> {
+  const existing = await listPages(bookId);
+  const pageIds: string[] = [];
+
+  for (let i = 0; i < WELCOME_PAGE_SOURCES.length; i += 1) {
+    const page = existing[i];
+    if (page === undefined) {
+      const created = await createPage({ bookId, ord: i });
+      pageIds.push(created.id);
+      continue;
+    }
+    pageIds.push(page.id);
+    if (page.ord !== i) {
+      await db.execute('UPDATE pages SET ord = $1 WHERE id = $2', [i, page.id]);
+    }
+  }
+
+  const built = buildWelcomePageDocs({ bookId, pageIds });
+  for (let i = 0; i < built.length; i += 1) {
+    await setPageScript(pageIds[i], built[i].source, built[i].doc);
+  }
+
+  for (const page of existing.slice(WELCOME_PAGE_SOURCES.length)) {
+    await removePageIndex(page.id);
+    await db.execute('DELETE FROM pages WHERE id = $1', [page.id]);
+  }
+}
+
 async function createWelcomeBook(): Promise<void> {
   const book = await createBook({
     title: WELCOME_BOOK_TITLE,
@@ -3742,14 +4205,28 @@ async function createWelcomeBook(): Promise<void> {
  * Search index rows go with the pages they described; leaving them would make
  * the quick switcher offer pages that no longer exist.
  */
-async function refreshWelcomeBook(db: Db): Promise<boolean> {
-  const rows = await db.select<Array<{ id: string }>>(
+async function refreshWelcomeBook(db: Db, force = false): Promise<boolean> {
+  let rows = await db.select<Array<{ id: string }>>(
     `SELECT id FROM books WHERE title = $1`,
     [WELCOME_BOOK_TITLE],
   );
+  // A reader may rename the guide. Its deterministic seed is the stable
+  // fallback only for the explicit destructive option, never for a routine
+  // conservative migration.
+  if (force && rows.length === 0) {
+    rows = await db.select<Array<{ id: string }>>(
+      'SELECT id FROM books WHERE spine_seed = $1',
+      [WELCOME_SPINE_SEED],
+    );
+  }
   let refreshed = false;
   for (const row of rows) {
     const pages = await listPages(row.id);
+    if (force) {
+      await rewriteWelcomePagesInPlace(db, row.id);
+      refreshed = true;
+      continue;
+    }
     if (!isReplaceableWelcomeBook(pages)) continue;
     for (const page of pages) {
       await removePageIndex(page.id);
@@ -3775,6 +4252,16 @@ async function refreshWelcomeBook(db: Db): Promise<boolean> {
  *   v11          changes those untouched markers to matching blues
  *   v12          removes the untouched outer marker/endbands and pins a solid
  *                square case, preserving every explicit customisation
+ *   v13          rebinds only the exact untouched v12 exterior with a crown
+ *                and restrained fillet; pages stay unless the reader opted
+ *                into replacing an edited Welcome book on app updates
+ *   v14          replaces every retired BOOK appearance with the rebuilt
+ *                straight-backed, bookbinder-led system; rooms and pages are
+ *                outside that migration
+ *   v15          refreshes the three rebuilt-book/media/updater guide leaves,
+ *                preserving edited pages unless the reader opted in
+ *   v16          upgrades the untouched Grand-blue exterior to its authored
+ *                Renaissance panel and engraved direct-gilt title
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops
@@ -3789,12 +4276,28 @@ async function refreshWelcomeBook(db: Db): Promise<boolean> {
  */
 export async function seedIfEmpty(): Promise<boolean> {
   const db = await getDb();
-  if ((await readSeedVersion(db)) >= SEED_VERSION) return false;
+  const previousVersion = await readSeedVersion(db);
+  if (previousVersion >= SEED_VERSION) return false;
+
+  // Shelf seeding can race App's settings hydration on a direct book route.
+  // Read the persisted blob here instead of trusting the reactive default.
+  // A damaged settings row must fail closed: preserving edits is safer.
+  const refreshEditedWelcome = await readRefreshWelcomePreference(db);
 
   await cleanupOldDemoBooks(db);
   await renameLegacyWelcomeBook(db);
-  await migrateWelcomeBookDesign(db);
-  await refreshWelcomeBook(db);
+  // Run before `migrateWelcomeBookDesign`, whose first action hydrates the
+  // design preference store. Loading the old blob first would cache retired
+  // bindings for the rest of this launch even after SQLite had been repaired.
+  await migrateBookAppearanceSystem(db);
+  await migrateWelcomeBookDesign(db, refreshEditedWelcome);
+  // v16 updates the binding-studio leaves in the forty-eight-leaf field guide.
+  // The refresh
+  // helper preserves a reader-edited guide unless they explicitly opted in,
+  // while an untouched older guide receives the current onboarding content.
+  if (refreshEditedWelcome || previousVersion < 16) {
+    await refreshWelcomeBook(db, refreshEditedWelcome);
+  }
   const exists = await welcomeBookExists(db);
   if (!exists) await createWelcomeBook();
   await writeSeedVersion(db, SEED_VERSION);

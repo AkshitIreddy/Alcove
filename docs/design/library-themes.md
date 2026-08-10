@@ -41,7 +41,7 @@ repaint it.
 | **colour** — the room | `art/themes.ts` | **60** schemes over 5 families | the bookcase (`libraryPrefs`) |
 | **carpentry** — the case | `art/shelfDesign.ts` | 52 builds × 50 timber patterns, **113** presets | the bookcase (`designPrefs`) |
 | **paper** — the wall | `art/wallpaperDesign.ts` | 50 motifs × 5 scales × 4 reliefs × 6 ink slots × 50 tones × 4 edges, **126** presets | the bookcase (`designPrefs`) |
-| **binding** — a book | `art/bookDesign.ts` | 50 spine shapes × 50 materials × 50 decorations, **189** presets | the book (`designPrefs`) |
+| **binding** — a book | `art/bookDesign.ts` | 3 straight shapes, 18 construction-led materials and 59 authored spine programmes, **67** named presets | the book (`designPrefs`) |
 
 Above all four sits a fifth thing that is *not* an axis: a **room preset**
 (`ROOM_PRESETS` in `views/rail/designOptions.ts`, **69** of them across nine
@@ -274,25 +274,25 @@ scale axis invisible.
 
 ### 3.3 Binding — `art/bookDesign.ts`
 
-**50 spine shapes × 50 materials × 50 decorations, 189 presets**, picked
-deterministically from the book's seed. `drawBookSpine` replaces
+**Three straight spine shapes, eighteen construction-led materials and
+fifty-nine authored spine programmes, 67 named presets**, picked deterministically from the book's
+seed. `drawBookSpine` replaces
 `flatShelf.drawSpine` inside `renderSpine`; `flatShelf.drawSpine` still exists for
 `drawCaseCard`/`drawBookRow` at card scale.
 
 **It reads no `flatScheme()` and must not start.** A book keeps its own colours in
 every room, which is what lets the reader recognise it.
 
-Every entry declares a `group` and a `tier` (signature / shelf / niche / oddity)
-and TypeScript refuses one that does not. The exported order is DERIVED from
-them, and `presetForSeed` rolls only `ROLLABLE_PRESETS` (**179** of the 189), so a
-reader is never handed an oddity while the studio still offers all of them.
+This is a hard-reset active vocabulary, not the old 50×50×50 sample sheet.
+Rounded/capsule silhouettes, tiled surface fields, empty title furniture,
+spine text and hardware are retired and normalize into the active system.
+`BOOK_PRESETS` is the 67 authored finished-book collection; new books and
+Surprise choose only from those active constructions.
 
-A reader can also compose one axis at a time. A composed binding is an id —
-`own:shape/material/decoration/gilt` — so it rides the existing
-`Record<bookId, BookPresetId>` with no migration and no new axis for a cache key
-to forget. Gilt is its own segment because the preset table says it must be: only
-134 of the 189 rows agree with "gilt iff the decoration is a gilt one", so it is a
-choice, not a derivation.
+A reader can also compose one active axis at a time. A composed binding remains
+an `own:shape/material/decoration/gilt` id, so it rides the existing
+`Record<bookId, BookPresetId>` without another persistence axis. Every segment
+is validated against the hard-reset vocabulary before it can reach pixels.
 
 ### 3.4 Where the choices live, and the cache keys they must reach
 
@@ -357,19 +357,21 @@ Extends the existing `cover_meta` overrides. A book's look is
 `theme defaults → book overrides`, so every field is optional and unset fields
 follow the room.
 
-- **Spine:** binding material · pigment + hue jitter · raised bands · head/tail
-  bands · ornament stamp · title plate · title font · wear · edge treatment ·
-  height & thickness. The pigment folds onto one of the **fifty** house cloths
+- **Spine:** straight binding · construction-led material · pigment + hue jitter · up to
+  three raised cords · authored tooling · one optional unified emblem · wear ·
+  height & thickness. Spine text and empty title furniture do not exist. The
+  pigment folds onto one of the **fifty** house cloths
   through `spines.clothForPalette`, which is also what `covers.ts` uses — two
   different foldings meant a book that changed colour when you picked it up
   (amber was ochre on the shelf and terracotta in the hand).
 - **Bind it yourself:** shape, material, decoration and gilt, each pickable on its
   own with every other strip holding still (§3.3's `own:` ids).
-- **Charms:** ribbon marker · tassel · pressed flower · brass clasp · wax seal ·
-  dangling tag. Carried into the pull-out and the open book, so a book is
-  recognisably itself everywhere.
-- **Cover:** palette/texture/frame/medallion/gilt, corner protectors, inset title
-  plate, matching charm.
+- **Surprise:** eight directions feed a one-focal-programme composition search;
+  24 locks keep chosen decisions while the remaining surface rolls again.
+- **Cover:** palette, complete fitted title in one of ten lettering hands, one
+  of twelve continuous frames, the same optional emblem as the spine, six
+  painted page-edge finishes and three endband constructions. Charms, hardware,
+  corner protectors and inset plates are retired applied state.
 - **Page defaults** (line spacing, page style, ink) live on this tab too, since
   they are also "about this book".
 

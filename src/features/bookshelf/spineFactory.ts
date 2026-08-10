@@ -5,8 +5,8 @@
  * upright by art/spines.renderSpine into 2048² atlas pages (art/atlas
  * shelf-packing), one Pixi CanvasSource per page, sub-rect Textures per book.
  * Two buckets: lo-res (≈0.62×, effectively permanent — 2 pages hold ~1500
- * spines) and hi-res (2×, title text baked in, page-LRU capped at 4 pages
- * ≈ 64MB).
+ * spines) and hi-res (2×, sharper binding construction, page-LRU capped at 4
+ * pages ≈ 64MB).
  *
  * ## Where the painting happens
  *
@@ -35,7 +35,7 @@ import {
 } from '../../art/spines';
 import { getTheme, type LibraryTheme } from '../../art/themes';
 import { readShelfMeta } from '../../data/books';
-import { bookBinding } from '../../data/designPrefs';
+import { publishedBookBinding } from '../../data/designPrefs';
 import type { Book } from '../../data/types';
 import {
   bookStyleOverridesFor,
@@ -113,8 +113,9 @@ export {
  * Time budget for one idle slice, in ms.
  *
  * This used to be a fixed count (6 spines per slice) — which is only a budget
- * if every spine costs the same, and they emphatically do not: a titled hi-res
- * spine measured at 1102ms on a software renderer while a lo-res one took 54ms.
+ * if every spine costs the same, and they emphatically do not: a detailed
+ * hi-res spine once measured at 1102ms on a software renderer while a lo-res
+ * one took 54ms.
  * Six of the former is a seven-second frozen window, and that (not the disk
  * cache) was the bulk of the startup freeze. A slice now bakes ONE spine, then
  * keeps going only while the budget and the idle deadline both allow, so the
@@ -139,15 +140,6 @@ const RETIRE_MAX_MS = 6000;
 const observedCost: Record<SpineVariant, number> = { lo: 4, hi: 12 };
 
 /**
- * Hard cap on how long hi-res (titled) bakes wait for the handwriting fonts.
- * document.fonts.load can stall (headless first paint, cold font cache, or a
- * face that never resolves) and titles must not be held hostage: after this
- * timeout hi bakes proceed with the fallback face, and if the real fonts
- * land later the hi atlas is dropped so titles re-bake crisp.
- */
-export const FONT_WAIT_MAX_MS = 2500;
-
-/**
  * How many spine jobs may be outstanding in the worker pool at once.
  *
  * Two per thread: one painting, one already queued so a thread never idles
@@ -162,7 +154,18 @@ interface QueueItem {
   book: Book;
   variant: SpineVariant;
   priority: number;
+  /** Per-book/variant authority captured when this request was queued. */
+  generation: number;
   ctx?: SpineRowContext;
+}
+
+interface InFlightBake {
+  /** `${variant}|${book.id}` — the atlas identity this job would replace. */
+  key: string;
+  /** Whole-room authority captured at dispatch. */
+  epoch: number;
+  /** Per-book/variant authority captured at request time. */
+  generation: number;
 }
 
 type IdleHandle = number;
@@ -214,7 +217,7 @@ export class SpineFactory {
    * GPU sources per atlas page, keyed `${variant}:${page.id}` — page ids are
    * PER-MANAGER counters, so lo page 0 and hi page 0 are different canvases.
    * (Keying by bare page.id once aliased every hi texture onto the lo canvas,
-   * which is why baked spine titles never showed at LOD0.)
+   * which is why high-detail binding art never showed at LOD0.)
    */
   private readonly sources = new Map<string, CanvasSource>();
   private readonly loTextures = new Map<string, Texture>();
@@ -253,16 +256,31 @@ export class SpineFactory {
   private styleEpoch = 0;
   /** Bumped whenever every baked spine is dropped; stale worker results die. */
   private bakeEpoch = 0;
+  /**
+   * Per-book/variant authority, independent of the whole-room epoch above.
+   *
+   * A Studio edit invalidates one book while its old worker paint may still be
+   * running. The old result must not become authoritative merely because the
+   * room itself did not change. Keeping the counter on the atlas key also lets
+   * lo and hi replacements settle independently.
+   */
+  private readonly bakeGenerations = new Map<string, number>();
   private readonly listeners = new Set<(bookIds: readonly string[]) => void>();
   private idle: { cancel: () => void } | null = null;
-  private fontsReady = false;
   private destroyed = false;
 
   /* --------------------------- off-thread state -------------------------- */
 
   private readonly offload: ArtOffload;
-  /** Queue keys currently being painted by a worker. */
-  private readonly inFlight = new Set<string>();
+  /**
+   * Worker jobs by unique dispatch id.
+   *
+   * This cannot be a Set of queue keys: after invalidation, the replacement is
+   * allowed to run beside the stale job for the same key. A late old completion
+   * must delete only its own record, never the replacement's.
+   */
+  private readonly inFlight = new Map<number, InFlightBake>();
+  private nextFlightId = 1;
   /**
    * Books whose textures landed since the last flush. Batched to one listener
    * call per frame: a worker pool answers in a burst, and forty separate
@@ -330,7 +348,6 @@ export class SpineFactory {
       padding: this.gutter,
       onEvict: (page, keys) => this.handleEvict('hi', page, keys, this.hiTextures),
     });
-    this.preloadFonts();
     // Start fetching + compiling the worker bundle now: it overlaps the app's
     // own boot, so the first spine request finds threads already alive.
     this.offload.warmUp();
@@ -416,8 +433,8 @@ export class SpineFactory {
    * The announcement runs the listeners in the same tick, so `floorView`
    * re-picked, got `undefined`, and every book on every floor fell to
    * `Texture.WHITE + placeholderTint`. Measured on the demo recording: ten
-   * frames, ~0.7s, of a shelf of flat untextured slabs — no titles, no label
-   * plates, no gilt, and wearing the OUTGOING room's cloths because the
+   * frames, ~0.7s, of a shelf of flat untextured slabs — no construction,
+   * tooling or gilt, and wearing the OUTGOING room's cloths because the
    * placeholder tint comes from the cached params. Then the whole shelf
    * repainted at once. The reader did not read that as "the room changed"; the
    * reader read it as the books disappearing.
@@ -454,15 +471,9 @@ export class SpineFactory {
     const ids = new Set<string>(this.known);
     for (const variant of ['lo', 'hi'] as const) {
       const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
-      const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
-      for (const [bookId, tex] of bucket) {
+      for (const bookId of [...bucket.keys()]) {
         ids.add(bookId);
-        // A second room arriving mid-swap must not STACK generations: the book
-        // is already wearing something from before, and that something is what
-        // gets displaced. At most one retired texture per book per variant.
-        const prior = held.get(bookId);
-        if (prior !== undefined && prior !== tex && !prior.destroyed) prior.destroy(false);
-        held.set(bookId, tex);
+        this.retireActiveTexture(bookId, variant);
       }
       bucket.clear();
     }
@@ -473,6 +484,11 @@ export class SpineFactory {
     this.inFlight.clear();
     this.armRetireWatchdog();
     if (ids.size > 0) this.emit([...ids]);
+    // A second invalidation can displace a retired generation before a landed
+    // flush exists to free it. The emit above has synchronously repointed live
+    // sprites; use the normal post-frame free list rather than demolishing a
+    // Texture while Pixi may still be rendering it.
+    if (this.freeAfterFlush.length > 0) this.scheduleFlush();
   }
 
   /**
@@ -532,11 +548,39 @@ export class SpineFactory {
     const tex = held.get(bookId);
     if (tex === undefined) return;
     held.delete(bookId);
-    this.freeAfterFlush.push(tex);
+    this.deferTextureFree(tex);
     if (this.retiredLo.size + this.retiredHi.size === 0 && this.retireTimer !== null) {
       clearTimeout(this.retireTimer);
       this.retireTimer = null;
     }
+  }
+
+  /** Put a Texture on the post-announcement free list exactly once. */
+  private deferTextureFree(texture: Texture): void {
+    if (texture.destroyed || this.freeAfterFlush.includes(texture)) return;
+    this.freeAfterFlush.push(texture);
+  }
+
+  /**
+   * Move one currently published texture into the fallback generation.
+   *
+   * The live bucket is authority for NEW requests; the retired bucket is
+   * ownership for pixels a sprite may still point at. Separating them lets an
+   * invalidation request replacement art without destroying the old Texture
+   * before `onTexturesChanged` has synchronously repointed every mounted
+   * sprite. The atlas handle intentionally remains live so the retired frame
+   * cannot be reused under the reader before its replacement arrives.
+   */
+  private retireActiveTexture(bookId: string, variant: SpineVariant): boolean {
+    const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
+    const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
+    const active = bucket.get(bookId);
+    if (active === undefined) return false;
+    bucket.delete(bookId);
+    const prior = held.get(bookId);
+    if (prior !== undefined && prior !== active) this.deferTextureFree(prior);
+    held.set(bookId, active);
+    return true;
   }
 
   /**
@@ -549,7 +593,7 @@ export class SpineFactory {
     // outside `cover_meta` (in `data/designPrefs.ts`, because a binding is not
     // a `BookStyle` field), so `bookStyleOverridesFor` cannot see it and the
     // epoch alone would keep serving the old preset's params.
-    const pinned = bookBinding(book.id);
+    const pinned = publishedBookBinding(book.id);
     const key = `${this.styleEpoch}|${book.id}|${pinned ?? '-'}`;
     let resolved = this.paramsCache.get(key);
     if (resolved === undefined) {
@@ -768,18 +812,14 @@ export class SpineFactory {
    */
   private dropBakes(bookId: string): void {
     for (const variant of ['lo', 'hi'] as const) {
-      const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
-      const held = variant === 'hi' ? this.retiredHi : this.retiredLo;
-      const tex = bucket.get(bookId);
-      if (tex !== undefined) {
-        bucket.delete(bookId);
+      if (this.retireActiveTexture(bookId, variant)) {
         /*
          * A build-only change arrives after the previous room swap has
          * finished, so its active texture usually has NO older entry left in
          * `retired*`. Destroying the active one here therefore made `get()`
          * fall all the way through to Texture.WHITE until the resized bake
          * landed — the studio demo caught every visible book losing its
-         * labels, cords and gilt for two frames.
+         * silhouettes, cords and gilt for two frames.
          *
          * Retire the pixels that are actually on screen, exactly as
          * `invalidateAll` does for a colour change. The atlas handle stays
@@ -788,14 +828,6 @@ export class SpineFactory {
          * allocation. Atlas pages never reclaim an individual rect, so the
          * held frame remains valid in either case.
          */
-        const prior = held.get(bookId);
-        if (prior !== undefined && prior !== tex && !prior.destroyed) {
-          // A replacement can land immediately before another invalidation;
-          // the sprite may still point at `prior` until this flush announces
-          // `tex`, so free it only after that announcement.
-          if (!this.freeAfterFlush.includes(prior)) this.freeAfterFlush.push(prior);
-        }
-        held.set(bookId, tex);
       }
       // The retired copy STAYS. It was baked against the old clear height, so
       // it is the wrong shape for the new stand — but the sprite is scaled to
@@ -867,7 +899,7 @@ export class SpineFactory {
   }
 
   /**
-   * Drop a book's baked textures (title rename, spine reseed). The atlas
+   * Drop a book's baked textures (binding edit, spine reseed). The atlas
    * rects are released (pixels stay until page eviction) and listeners are
    * notified so live sprites fall back to placeholders + re-request.
    *
@@ -883,20 +915,27 @@ export class SpineFactory {
     this.invalidateStyle(bookId);
     let touched = false;
     for (const variant of ['lo', 'hi'] as const) {
-      const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
-      const tex = bucket.get(bookId);
-      if (tex !== undefined) {
-        bucket.delete(bookId);
-        tex.destroy(false);
-        touched = true;
-      }
-      // Same bargain as `dropBakes`: if this book is mid-swap and still
-      // wearing the outgoing room's spine, it keeps wearing it until the
-      // re-bake lands. A frame of the old title beats a frame of no book.
-      (variant === 'hi' ? this.hiAtlas : this.loAtlas).release(`${variant}|${bookId}`);
-      if (this.queue.delete(`${variant}|${bookId}`)) touched = true;
+      const key = `${variant}|${bookId}`;
+      // Revoke worker authority BEFORE announcing the invalidation. A listener
+      // may synchronously request the replacement, and that request must see a
+      // fresh generation even while the old job is still running.
+      const painting = this.hasInFlight(key);
+      this.bumpBakeGeneration(key);
+      // Keep the exact Texture mounted sprites are wearing until its
+      // replacement has landed and been announced. Destroying it here used to
+      // null Pixi's texture matrix before listeners could repoint the sprite.
+      if (this.retireActiveTexture(bookId, variant)) touched = true;
+      if (this.queue.delete(key)) touched = true;
+      // An in-flight-only book used to look untouched here, so no listener was
+      // told to request its new generation. The old result then landed as if
+      // nothing had changed. It is pending work and therefore material state.
+      if (painting) touched = true;
     }
-    if (touched) this.emit([bookId]);
+    if (touched) {
+      this.armRetireWatchdog();
+      this.emit([bookId]);
+      if (this.freeAfterFlush.length > 0) this.scheduleFlush();
+    }
   }
 
   /** Queue a bake (idempotent). Lower priority = baked sooner. */
@@ -905,13 +944,18 @@ export class SpineFactory {
     if (variant === 'hi' && !this.hiEnabled) return;
     const key = `${variant}|${book.id}`;
     if ((variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) return;
+    const generation = this.bakeGeneration(key);
+    // Repeated render-loop requests are idempotent while the authoritative job
+    // is already painting. A stale generation for the same key does NOT block
+    // this path — that is precisely how a Studio replacement overtakes it.
+    if (this.hasCurrentInFlight(key)) return;
     const existing = this.queue.get(key);
-    if (existing !== undefined) {
+    if (existing !== undefined && existing.generation === generation) {
       existing.priority = Math.min(existing.priority, priority);
       if (ctx !== undefined) existing.ctx = ctx;
       return;
     }
-    this.queue.set(key, { book, variant, priority, ctx });
+    this.queue.set(key, { book, variant, priority, generation, ctx });
     this.pump();
   }
 
@@ -941,54 +985,44 @@ export class SpineFactory {
     this.loTextures.clear();
     this.hiTextures.clear();
     this.paramsCache.clear();
+    this.bakeGenerations.clear();
     this.stands.clear();
   }
 
   /* ------------------------------ internals ------------------------------ */
 
-  /**
-   * Gate hi-res (titled) bakes on the handwriting fonts — but only briefly.
-   * Two paths flip `fontsReady`:
-   *   1. document.fonts.load resolves (the normal case, ~instant once the
-   *      @fontsource CSS is parsed);
-   *   2. the FONT_WAIT_MAX_MS timeout (headless/misbehaving font loader) —
-   *      titles bake with the fallback face rather than never appearing, and
-   *      when the real fonts do arrive the hi atlas is dropped + re-baked.
-   */
-  private preloadFonts(): void {
-    const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
-    if (fonts === undefined) {
-      this.fontsReady = true;
-      return;
+  /** Current per-book/variant authority. Missing keys begin at generation 0. */
+  private bakeGeneration(key: string): number {
+    return this.bakeGenerations.get(key) ?? 0;
+  }
+
+  /** Revoke every queued/in-flight result captured for the prior generation. */
+  private bumpBakeGeneration(key: string): number {
+    const next = this.bakeGeneration(key) + 1;
+    this.bakeGenerations.set(key, next);
+    return next;
+  }
+
+  /** Any physical worker job for this atlas key, including a revoked one. */
+  private hasInFlight(key: string): boolean {
+    for (const job of this.inFlight.values()) {
+      if (job.key === key) return true;
     }
-    let settled = false;
-    let timedOut = false;
-    const ready = (): void => {
-      if (this.destroyed) return;
-      this.fontsReady = true;
-      this.pump();
-    };
-    const timer = setTimeout(() => {
-      if (settled) return;
-      timedOut = true;
-      ready();
-    }, FONT_WAIT_MAX_MS);
-    Promise.all([
-      fonts.load('20px "Caveat Variable"'),
-      fonts.load('20px Kalam'),
-      fonts.load('20px "Patrick Hand"'),
-    ])
-      .catch(() => undefined)
-      .then(() => {
-        settled = true;
-        clearTimeout(timer);
-        if (this.destroyed) return;
-        if (timedOut && this.hiTextures.size > 0) {
-          // Some titles were baked with the fallback face — redo them.
-          this.hiAtlas.clear();
-        }
-        ready();
-      });
+    return false;
+  }
+
+  /** A worker job that is still allowed to publish for the current authority. */
+  private hasCurrentInFlight(key: string): boolean {
+    const epoch = this.bakeEpoch;
+    const generation = this.bakeGeneration(key);
+    for (const job of this.inFlight.values()) {
+      if (job.key === key && job.epoch === epoch && job.generation === generation) return true;
+    }
+    return false;
+  }
+
+  private isCurrentBake(key: string, epoch: number, generation: number): boolean {
+    return epoch === this.bakeEpoch && generation === this.bakeGeneration(key);
   }
 
   /**
@@ -1007,9 +1041,6 @@ export class SpineFactory {
   /** The queue in bake order (see {@link SpineFactory.rank}). */
   private ranked(): QueueItem[] {
     return [...this.queue.values()]
-      // Hi-res title text needs the handwriting fonts; hold hi bakes till then.
-      // The worker registers its own faces, so this gate only applies inline.
-      .filter((it) => it.variant === 'lo' || this.fontsReady || this.offload.available)
       .sort((a, b) => SpineFactory.rank(a) - SpineFactory.rank(b));
   }
 
@@ -1022,9 +1053,19 @@ export class SpineFactory {
     for (const item of this.ranked()) {
       if (this.inFlight.size >= budget) break;
       const key = `${item.variant}|${item.book.id}`;
+      if (item.generation !== this.bakeGeneration(key)) {
+        this.queue.delete(key);
+        continue;
+      }
+      if (this.hasCurrentInFlight(key)) {
+        this.queue.delete(key);
+        continue;
+      }
       this.queue.delete(key);
-      this.inFlight.add(key);
-      void this.paintOffThread(key, item);
+      const flightId = this.nextFlightId++;
+      const epoch = this.bakeEpoch;
+      this.inFlight.set(flightId, { key, epoch, generation: item.generation });
+      void this.paintOffThread(key, item, flightId, epoch);
     }
   }
 
@@ -1036,8 +1077,12 @@ export class SpineFactory {
    * holes wherever a job failed, and an eviction between dispatch and arrival
    * would hand back a rect on a page that no longer exists.
    */
-  private async paintOffThread(key: string, item: QueueItem): Promise<void> {
-    const epoch = this.bakeEpoch;
+  private async paintOffThread(
+    key: string,
+    item: QueueItem,
+    flightId: number,
+    epoch: number,
+  ): Promise<void> {
     const { book, variant, ctx: rowCtx } = item;
     const { params, scale, w, h } = this.bakeGeometry(book, variant);
 
@@ -1045,7 +1090,6 @@ export class SpineFactory {
     try {
       paint = await this.offload.spine({
         params,
-        title: book.title,
         w,
         h,
         scale,
@@ -1059,19 +1103,22 @@ export class SpineFactory {
       paint = null;
     }
 
-    this.inFlight.delete(key);
+    // Delete THIS dispatch only. A replacement for the same atlas key may have
+    // started after invalidation and must remain visible to capacity/settle
+    // checks when the revoked promise finally answers.
+    this.inFlight.delete(flightId);
     if (this.destroyed) {
       paint?.bitmap.close();
       return;
     }
-    if (epoch !== this.bakeEpoch) {
-      // The room changed while this was painting — the pixels are stale.
+    if (!this.isCurrentBake(key, epoch, item.generation)) {
+      // The room OR this exact book changed while it was painting. These pixels
+      // have no publication authority, even if they happen to arrive last.
       //
-      // PUT IT BACK. Dropping it here loses the bake permanently: the item is
-      // already out of `queue` (dispatchToWorkers deleted it) and out of
-      // `inFlight` (deleted just above), so nothing remembers this book wanted
-      // a spine. The re-queue is the same one the `paint === null` branch
-      // below already does, and for the same reason.
+      // A whole-room epoch change may still need this request put back: its
+      // Book row remains current and only the room paint changed. A per-book
+      // generation change must NOT put the old row back; invalidate() already
+      // announced the replacement and its listener supplies the refreshed row.
       //
       // On a stocked shelf this healed itself and hid for a long time — any
       // pan or floor load re-requests every visible book. On a NEW library it
@@ -1082,7 +1129,13 @@ export class SpineFactory {
       // book was what appeared to "fix" it.
       // shots-now/welcome-bake.mjs is the regression test, and it deliberately
       // checks the one-book case.
-      if (!(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) {
+      const generationStillCurrent = item.generation === this.bakeGeneration(key);
+      if (
+        generationStillCurrent &&
+        !(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id) &&
+        !this.queue.has(key) &&
+        !this.hasCurrentInFlight(key)
+      ) {
         this.queue.set(key, item);
       }
       paint?.bitmap.close();
@@ -1091,7 +1144,11 @@ export class SpineFactory {
     }
     if (paint === null) {
       // No worker (or it failed): put the item back for the inline slice.
-      if (!(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id)) {
+      if (
+        !(variant === 'hi' ? this.hiTextures : this.loTextures).has(book.id) &&
+        !this.queue.has(key) &&
+        !this.hasCurrentInFlight(key)
+      ) {
         this.queue.set(key, item);
       }
       this.scheduleSlice();
@@ -1099,7 +1156,7 @@ export class SpineFactory {
     }
 
     recordBakeSample({
-      what: `spine|${variant}|${book.title.slice(0, 40)}`,
+      what: `spine|${variant}|${book.id.slice(0, 40)}`,
       ms: paint.ms,
       kind: 'spine',
       at: performance.now() - paint.ms,
@@ -1176,7 +1233,9 @@ export class SpineFactory {
   private variantSettled(bookId: string, variant: SpineVariant): boolean {
     const key = `${variant}|${bookId}`;
     const bucket = variant === 'hi' ? this.hiTextures : this.loTextures;
-    return bucket.has(bookId) && !this.queue.has(key) && !this.inFlight.has(key);
+    // A revoked worker may still be consuming CPU, but it can no longer alter
+    // this texture. Settlement belongs to the current authority only.
+    return bucket.has(bookId) && !this.queue.has(key) && !this.hasCurrentInFlight(key);
   }
 
   private isSettled(bookId: string, hi: boolean): boolean {
@@ -1215,10 +1274,10 @@ export class SpineFactory {
 
   /**
    * Bake ordering. Two rules, both about what the user sees first:
-   *   1. EVERY lo-res spine outranks EVERY hi-res one. Lo is what makes the
-   *      shelf legible; hi only sharpens a title that is already readable, and
-   *      costs an order of magnitude more. Interleaving them meant a shelf that
-   *      was still half placeholder blocks while distant books sharpened.
+   *   1. EVERY lo-res spine outranks EVERY hi-res one. Lo establishes the
+   *      binding; hi only sharpens its construction and costs an order of
+   *      magnitude more. Interleaving them meant a shelf that was still half
+   *      placeholder blocks while distant books sharpened.
    *   2. Within a variant, nearest-to-viewport first (the caller's priority).
    */
   private static rank(item: QueueItem): number {
@@ -1228,13 +1287,7 @@ export class SpineFactory {
   private processSlice(deadline: Deadline): void {
     if (this.destroyed) return;
     const items = [...this.queue.values()]
-      // Hi-res title text needs the handwriting fonts; hold hi bakes till then.
-      .filter((it) => it.variant === 'lo' || this.fontsReady)
       .sort((a, b) => SpineFactory.rank(a) - SpineFactory.rank(b));
-    if (items.length === 0) {
-      // Everything pending is hi-res waiting on fonts; retry via preloadFonts.
-      return;
-    }
     const touchedSources = new Set<CanvasSource>();
     const bakedIds: string[] = [];
     const started = performance.now();
@@ -1261,9 +1314,8 @@ export class SpineFactory {
       } catch {
         // A failed bake leaves the placeholder; never crash the loop.
       }
-      // Track the worst cost seen so the next slice can stop before it starts
-      // a bake it cannot afford. Decays slowly so one pathological title does
-      // not throttle the queue forever.
+    // Track the worst cost seen so the next slice can stop before it starts
+    // a bake it cannot afford. Decays slowly after one expensive binding.
       const cost = performance.now() - t0;
       observedCost[item.variant] = Math.max(cost, observedCost[item.variant] * 0.9);
     }
@@ -1288,7 +1340,7 @@ export class SpineFactory {
     const t0 = performance.now();
     const source = this.bakeOneTimed(book, variant, rowCtx);
     recordBakeSample({
-      what: `spine|${variant}|${book.title.slice(0, 40)}`,
+      what: `spine|${variant}|${book.id.slice(0, 40)}`,
       ms: performance.now() - t0,
       kind: 'spine',
       at: t0,
@@ -1311,7 +1363,7 @@ export class SpineFactory {
     ctx.rect(padded.x, padded.y, padded.w, padded.h);
     ctx.clip();
     ctx.clearRect(padded.x, padded.y, padded.w, padded.h);
-    renderSpine(ctx, params, rect.x, rect.y, h, scale, book.title, {
+    renderSpine(ctx, params, rect.x, rect.y, h, scale, {
       hiRes: variant === 'hi',
       rowPhase: rowCtx?.rowPhase,
       depth: rowCtx?.depth,
@@ -1371,6 +1423,7 @@ export class SpineFactory {
     // has just been destroyed, which is a renderer crash rather than a stale
     // picture.
     const retired = variant === 'hi' ? this.retiredHi : this.retiredLo;
+    const freeing: Texture[] = [];
     for (const key of keys) {
       const sep = key.indexOf('|');
       const bookId = key.slice(sep + 1);
@@ -1378,19 +1431,25 @@ export class SpineFactory {
       const tex = bucket.get(bookId);
       if (tex !== undefined) {
         bucket.delete(bookId);
-        tex.destroy(false);
+        freeing.push(tex);
         dropped = true;
       }
       const held = retired.get(bookId);
       if (held !== undefined) {
         retired.delete(bookId);
-        held.destroy(false);
+        if (held !== tex) freeing.push(held);
         dropped = true;
       }
       if (dropped) bookIds.push(bookId);
     }
-    source?.destroy();
+    // Announce while every outgoing Texture is still valid. FloorView
+    // re-picks synchronously (another bucket or Texture.WHITE), so destruction
+    // below cannot leave a mounted sprite pointing at a nulled Pixi matrix.
     if (!this.destroyed && bookIds.length > 0) this.emit(bookIds);
+    for (const texture of freeing) {
+      if (!texture.destroyed) texture.destroy(false);
+    }
+    source?.destroy();
   }
 
   private emit(bookIds: readonly string[]): void {

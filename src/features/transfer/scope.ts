@@ -36,6 +36,14 @@ export interface PageSnapshot {
   script: string;
   /** Serialized TipTap document JSON (lossless round-trip). */
   docJson: string;
+  /**
+   * Validated library-owned asset paths referenced by this page, in stable
+   * first-seen order. Presentation URLs are deliberately absent: they contain
+   * the exporting library root and are not portable identities.
+   */
+  assetRelPaths: readonly string[];
+  /** Bare names of custom sticker assets actually placed on this page. */
+  customStickerNames: readonly string[];
   /** Plain-text length, used for the "how full is this page" hint. */
   chars: number;
 }
@@ -229,6 +237,8 @@ export function buildExportPlan(
   options: ExportOptions,
 ): ExportPlan {
   const books: ExportPlanBook[] = [];
+  const referencedAssetPaths = new Set<string>();
+  const referencedCustomStickerNames = new Set<string>();
   let totalBytes = 0;
   let pageCount = 0;
 
@@ -236,6 +246,12 @@ export function buildExportPlan(
   for (const book of snapshot.books) {
     const chosen = book.pages.filter((page) => selectedPageIds.has(page.id));
     if (chosen.length === 0) continue;
+    for (const page of chosen) {
+      for (const relPath of page.assetRelPaths) referencedAssetPaths.add(relPath);
+      for (const name of page.customStickerNames) {
+        referencedCustomStickerNames.add(name);
+      }
+    }
 
     // Two books called "Notes" must not collide in the archive.
     const baseSlug = slugify(book.title, 'book');
@@ -291,7 +307,32 @@ export function buildExportPlan(
     .filter((bookcase) => travelling.has(bookcase.id))
     .sort((a, b) => a.ord - b.ord);
 
-  const assets = options.includeAssets && books.length > 0 ? snapshot.assets : [];
+  /*
+   * A one-page export must never smuggle photographs from unselected pages or
+   * books. The page snapshot owns the validated reference list (including
+   * compatibility recovery from legacy local URLs); intersect it with the
+   * asset rows and keep the snapshot's stable order. A corrupt database can
+   * contain duplicate rows for one rel_path because the original schema only
+   * keys `id`, so first row wins here as it does in every portable document.
+   */
+  const seenAssetPaths = new Set<string>();
+  const assets =
+    options.includeAssets && books.length > 0
+      ? snapshot.assets.filter((asset) => {
+          const customSticker = asset.meta?.customSticker;
+          const referencedSticker =
+            typeof customSticker === 'string' &&
+            referencedCustomStickerNames.has(customSticker);
+          if (
+            (!referencedAssetPaths.has(asset.relPath) && !referencedSticker) ||
+            seenAssetPaths.has(asset.relPath)
+          ) {
+            return false;
+          }
+          seenAssetPaths.add(asset.relPath);
+          return true;
+        })
+      : [];
   for (const asset of assets) {
     totalBytes += asset.bytes + entryOverhead(`assets/${asset.relPath}`);
   }

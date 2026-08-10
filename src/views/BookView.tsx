@@ -50,6 +50,7 @@ import {
   savePageDoc,
 } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
+import { loadDesignPrefs } from '../data/designPrefs';
 import { save as saveSettings, settings } from '../data/settings';
 import { registerCommands, runCommand } from '../data/keybindings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
@@ -73,6 +74,7 @@ import {
 } from '../editor/history/pageHistory';
 import { getPageEditor } from '../editor/instances';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
+import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
@@ -89,7 +91,11 @@ import { play } from '../sound/engine';
 import { LINGER_MS } from '../styles/motion';
 import { useSearchJump } from '../search/jump';
 import QuickSwitcher from '../features/quickswitch/QuickSwitcher';
-import { resolveBookAppearance } from '../features/bookshelf/bookIdentity';
+import {
+  bookStyleOverridesFor,
+  resolveBookAppearance,
+} from '../features/bookshelf/bookIdentity';
+import { bookSurpriseLocksFor } from '../features/bookshelf/bookStudioPrefs';
 import { prefsForBookcase } from '../features/bookshelf/libraryPrefs';
 import { prefersReducedMotion } from '../features/bookshelf/env';
 import {
@@ -181,6 +187,11 @@ const PaginatedPageEditor = PageEditor as (
 async function loadSession(source: {
   readonly bookId: string | null;
 }): Promise<BookSession | null> {
+  // A binding is stored outside the Book row. Resolve that small settings
+  // book before publishing the reader session, otherwise an unusually fast
+  // first open can paint the seed binding once and never revisit it after the
+  // async design store finishes hydrating.
+  await loadDesignPrefs();
   let book: Book | null = source.bookId ? await getBook(source.bookId) : null;
   if (!book) {
     // WORKAROUND (see src/editor/state.ts): appState has no openBookId yet,
@@ -202,7 +213,14 @@ async function loadSession(source: {
   // session. Both PageEditor and the offscreen flip capture therefore receive
   // the same ids on their very first construction, rather than independently
   // minting ids one frame apart at the raster-to-DOM handoff.
-  const pages = await preparePageRenderDocs(storedPages, persistPageDocIdentity);
+  const identified = await preparePageRenderDocs(
+    storedPages,
+    persistPageDocIdentity,
+  );
+  const pages = await preparePageAssetsForDisplay(
+    identified,
+    persistPageDocIdentity,
+  );
   return { book, pages };
 }
 
@@ -1870,6 +1888,12 @@ export default function BookView(): JSX.Element {
       }
       journalJumpBusy = true;
       void listPages(loaded.book.id)
+        .then((fresh) =>
+          preparePageRenderDocs(fresh, persistPageDocIdentity),
+        )
+        .then((fresh) =>
+          preparePageAssetsForDisplay(fresh, persistPageDocIdentity),
+        )
         .then((fresh) => {
           if (fresh.length > 0) setPages(fresh);
           const index = fresh.findIndex((page) => page.id === pageId);
@@ -2358,7 +2382,11 @@ export default function BookView(): JSX.Element {
                 onClose={() => setActivePanel(null)}
               >
                 <CustomizePanel
+                  open={activePanel() === 'customize'}
+                  host="book"
                   bookId={loaded.book.id}
+                  initialBookStyle={bookStyleOverridesFor(loaded.book)}
+                  initialSurpriseLocks={bookSurpriseLocksFor(loaded.book)}
                   spineSeed={loaded.book.spineSeed}
                   title={loaded.book.title}
                   overrides={coverOverrides()}

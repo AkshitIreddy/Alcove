@@ -3423,6 +3423,17 @@ export default function SettingsPanel(props: {
             />
           </Row>
           <Row
+            label="keep Welcome book current"
+            words="update updater welcome guide latest current replace edited tour"
+            hint="on app updates, replace its pages and binding—even if you edited them"
+          >
+            <Toggle
+              label="replace edited Welcome book on updates"
+              checked={settings.refreshWelcomeBookOnUpdate}
+              onChange={(v) => put({ refreshWelcomeBookOnUpdate: v })}
+            />
+          </Row>
+          <Row
             label="backups"
             hint="keep copies of the library"
             words="backup copies safety snapshot"

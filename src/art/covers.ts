@@ -26,20 +26,21 @@
  *
  * ## What survived the restyle
  *
- * The whole parameter surface. `CoverParams` is unchanged — a book's cover
- * still derives from the same 32-bit seed as its shelf spine, users can still
- * override any knob through `cover_meta`, and the Book Studio still drives all
- * of it. Some knobs simply express themselves differently now: `wear` rounds
- * the boards' corners rather than grinding dirt into them.
+ * The whole parameter surface. A book's cover still derives from the same
+ * 32-bit seed as its shelf spine, users can still override any knob through
+ * `cover_meta`, and the Book Studio still drives all of it. New colour roles
+ * extend that contract without replacing the old cloth/pigment fallback. Some
+ * knobs simply express themselves differently now: `wear` rounds the boards'
+ * corners rather than grinding dirt into them.
  *
  * ## The five vocabularies a board wears
  *
- * Every one of them is fifty wide, and not one of them is a table of its own:
+ * Every count derives from its authoritative table:
  *
  *   palette    50 pigments, DERIVED from `spines.PIGMENT_COUNT`
  *   covering   50 bindings, DERIVED from `bookDesign.MATERIAL_LOOKS`
  *   frame      50 tooled borders, COMPOSED from five orthogonal traits
- *   medallion  50 stamps, DERIVED from `spines.ORNAMENT_COUNT`
+ *   medallion  binder stamps, DERIVED from `spines.ORNAMENT_COUNT`
  *   titleFont  50 hands, COMPOSED from the five bundled faces
  *
  * Derived where the spine already has the vocabulary — a board and a spine are
@@ -54,7 +55,7 @@
  * (seed+overrides+size+title) key so overlays and backdrops never re-paint.
  */
 
-import { CHARM_COLORS, charmCloth, type CharmKind } from './charms';
+import { CHARM_COLORS, charmCloth, normalizeCharmKind, type CharmKind } from './charms';
 import {
   MATERIALS,
   MATERIAL_LOOKS,
@@ -80,13 +81,24 @@ import {
 import { clamp, mulberry32 } from './noise';
 import { textWidth } from './textMetrics';
 import {
+  TITLE_TEXT_MIN_CONTRAST,
+  colourContrast,
+  resolveTitleColours,
+  type TitleColourResolution,
+} from './titleContrast';
+import {
+  MAX_RAISED_BANDS,
   ORNAMENT_COUNT,
   PIGMENT_COUNT,
   clothForPalette,
   deriveSpineParams,
-  drawOrnament,
   materialFromTexture,
+  normalizeEdgeTreatment,
+  normalizeHeadTailStyle,
+  normalizeOrnamentIndex,
+  normalizeTitlePlateStyle,
   textureFromMaterial,
+  isTitlePlateStyle,
   type BindingMaterial,
   type EdgeTreatment,
   type TitlePlateStyle,
@@ -137,6 +149,54 @@ export const COVER_PALETTE_COUNT = PIGMENT_COUNT;
 export const COVER_MEDALLION_COUNT = ORNAMENT_COUNT;
 
 /**
+ * The cover's premium binder-tool catalog, index-for-index with the spine.
+ *
+ * This is deliberately broader than a seven-icon starter set, but every live
+ * entry still has to survive both a full board and the narrow turn of the
+ * spine. The vocabulary therefore stays with historically plausible
+ * bookbinder's brass: open botanical tools, formal centrepieces and a small
+ * heraldic set. Animals, hardware, astrology marks, dots and novelty symbols
+ * remain migration-only. `-1` remains the deliberate bare-board choice.
+ */
+export const ACTIVE_COVER_EMBLEM_INDICES = [
+  0, 1, 2, 5, 12, 13, 14, 20, 23, 26, 28, 29, 30, 31, 43, 56,
+] as const;
+
+export type ActiveCoverEmblemIndex = (typeof ACTIVE_COVER_EMBLEM_INDICES)[number];
+
+export const ACTIVE_COVER_EMBLEMS: readonly {
+  index: ActiveCoverEmblemIndex;
+  label: string;
+}[] = [
+  { index: 0, label: 'Foliate lozenge' },
+  { index: 1, label: 'Broad laurel branch' },
+  { index: 2, label: 'Foliate starflower' },
+  { index: 5, label: 'Rising sun' },
+  { index: 12, label: 'Three-leaf fleuron' },
+  { index: 13, label: 'Oak-and-acorn spray' },
+  { index: 14, label: 'Thistle bloom' },
+  { index: 20, label: 'Open royal crown' },
+  { index: 23, label: 'Stemmed rosette' },
+  { index: 26, label: 'Broad fleur-de-lis' },
+  { index: 28, label: 'Oak acanthus volutes' },
+  { index: 29, label: 'Wheat sheaf' },
+  { index: 30, label: 'Split pomegranate' },
+  { index: 31, label: 'Open tulip' },
+  { index: 43, label: 'Five-leaf anthemion' },
+  { index: 56, label: 'Fern palmette' },
+];
+
+const ACTIVE_COVER_EMBLEM_SET: ReadonlySet<number> = new Set(ACTIVE_COVER_EMBLEM_INDICES);
+
+/** Total migration from every legacy stamp index into the shared cover tools. */
+export function normalizeCoverEmblemIndex(kind: number | undefined): number {
+  if (kind === -1) return -1;
+  const normalized = normalizeOrnamentIndex(kind);
+  if (normalized === -1) return -1;
+  return ACTIVE_COVER_EMBLEM_SET.has(normalized) ? normalized : 12;
+}
+
+/**
  * The fifty coverings a board can be bound in.
  *
  * DERIVED from the spine's own table (`bookDesign.MATERIAL_LOOKS`), not a
@@ -181,6 +241,16 @@ export interface CoverParams {
    * changes colour when you pick it up.
    */
   clothHex?: string | null;
+  /** Front/back board ground only; null inherits `clothHex`/palette. */
+  coverBaseHex?: string | null;
+  /** Secondary board/inset covering; null uses the seeded partner cloth. */
+  coverAccentHex?: string | null;
+  /** Rules, frames and title tooling; null follows gilt/blind tooling. */
+  toolingHex?: string | null;
+  /** Centre medallion/stamp; null follows the tooling convention. */
+  emblemHex?: string | null;
+  /** Corner plates and other fittings; null uses authored metal. */
+  hardwareHex?: string | null;
   /**
    * Legacy covering bucket: 0 = cloth, 1 = leather, 2 = paper. Kept because
    * `cover_meta` blobs in the wild carry it and `material` is derived from it.
@@ -199,7 +269,7 @@ export interface CoverParams {
   covering?: number;
   /** Tooled frame — an index into the fifty composed in `FRAMES`. */
   frame: number;
-  /** Centre medallion — an index into the spine's fifty ornament stamps. */
+  /** Centre medallion; -1 deliberately leaves a closed composition un-stamped. */
   medallion: number;
   /**
    * Title hand — an index into `COVER_FONTS`, fifty of them.
@@ -213,6 +283,15 @@ export interface CoverParams {
   /** Gilt (gold) frame accents, medallion and title plate trim. */
   gilt: boolean;
 
+  /** Raised cord stations on the visible cover-side back, shared with the shelf spine. */
+  raisedBands?: number;
+  /** Whether the raised-cord edges are tooled in gold. */
+  bandGilt?: boolean;
+  /** Whether sewn head/tail finishing is visible at the ends of the back. */
+  headTail?: boolean;
+  /** Woven chevron (1) or wrapped cord (2), shared with the shelf spine. */
+  headTailStyle?: number;
+
   /* ---------------------- Book Studio additions (§4) ---------------------- */
   /* Optional, so pre-studio CoverParams literals still typecheck and render.
    * deriveCoverParams always fills them, inheriting from the spine so the
@@ -224,7 +303,7 @@ export interface CoverParams {
    * everything else as dyed cloth.
    */
   material?: BindingMaterial;
-  /** Title plate treatment (mirrors the spine's). */
+  /** Front-cover title treatment, projected from the legacy shared params. */
   titlePlate?: TitlePlateStyle;
   /** Metal corner protectors on the four cover corners. */
   cornerProtectors?: boolean;
@@ -275,25 +354,66 @@ export function normalizeCoverOverrides(raw: unknown): CoverOverrides | null {
     const clothHex = normaliseHex(source.clothHex);
     if (clothHex !== null) out.clothHex = clothHex;
   }
+  for (const key of [
+    'coverBaseHex',
+    'coverAccentHex',
+    'toolingHex',
+    'emblemHex',
+    'hardwareHex',
+  ] as const) {
+    if (source[key] === null) out[key] = null;
+    else {
+      const value = normaliseHex(source[key]);
+      if (value !== null) out[key] = value;
+    }
+  }
   const texture = int(source.texture, 3);
   if (texture !== undefined) out.texture = texture as 0 | 1 | 2;
   const covering = int(source.covering, COVER_TEXTURE_COUNT);
   if (covering !== undefined) out.covering = covering;
-  const frame = int(source.frame, COVER_FRAME_COUNT);
-  if (frame !== undefined) out.frame = frame;
-  const medallion = int(source.medallion, COVER_MEDALLION_COUNT);
-  if (medallion !== undefined) out.medallion = medallion;
+  if (typeof source.frame === 'number' && Number.isInteger(source.frame)) {
+    out.frame = normalizeCoverFrameIndex(source.frame);
+  }
+  if (typeof source.medallion === 'number' && Number.isInteger(source.medallion)) {
+    out.medallion = normalizeCoverEmblemIndex(source.medallion);
+  }
   const titleFont = int(source.titleFont, COVER_FONT_COUNT);
   if (titleFont !== undefined) out.titleFont = titleFont;
   if (typeof source.gilt === 'boolean') out.gilt = source.gilt;
+  const raisedBands = int(source.raisedBands, MAX_RAISED_BANDS + 1);
+  if (raisedBands !== undefined) out.raisedBands = raisedBands;
+  if (typeof source.bandGilt === 'boolean') out.bandGilt = source.bandGilt;
+  if (typeof source.headTail === 'boolean') out.headTail = source.headTail;
+  if (typeof source.headTailStyle === 'number' && Number.isInteger(source.headTailStyle)) {
+    out.headTailStyle = normalizeHeadTailStyle(source.headTailStyle);
+  }
+  /*
+   * A compatibility projection may carry the binding's effective title plate
+   * for older cover-only readers. It is still inherited, not a reader pin:
+   * current readers must resolve it again from the binding so a later binding
+   * change can bring its own furniture. An unmarked value is a genuine legacy
+   * cover choice and therefore remains an explicit override.
+   */
+  if (
+    source.titlePlateSource !== 'inherited' &&
+    isTitlePlateStyle(source.titlePlate)
+  ) {
+    out.titlePlate = normalizeTitlePlateStyle(source.titlePlate);
+  }
+  if (typeof source.edge === 'string') out.edge = normalizeEdgeTreatment(source.edge);
+  if (typeof source.charm === 'string') out.charm = normalizeCharmKind(source.charm);
+  // Hardware stacking is retired. Keep explicit false in migrated projections
+  // so no older cover-only reader can fall through to a seeded true value.
+  if (typeof source.cornerProtectors === 'boolean') out.cornerProtectors = false;
+  if (typeof source.insetPlate === 'boolean') out.insetPlate = false;
 
   return Object.keys(out).length > 0 ? out : null;
 }
 
 /**
- * Derive the cover parameter set for one book. Shares palette / texture /
- * title face / gilt / ornament family with the spine derived from the same
- * seed (visual continuity shelf → pull-out), then rolls the cover-only
+ * Derive the cover parameter set for one book. Shares palette, texture, gilt
+ * and ornament identity with the spine derived from the same seed, and reads
+ * the shared params' cover-only title face before rolling the other cover-only
  * knobs from an offset stream. `overrides` (already normalized) wins last.
  */
 export function deriveCoverParams(
@@ -310,24 +430,36 @@ export function deriveCoverParams(
     seed: seed >>> 0,
     palette: spine.palette,
     clothHex: spine.clothHex ?? null,
+    coverBaseHex: null,
+    coverAccentHex: null,
+    toolingHex: null,
+    emblemHex: null,
+    hardwareHex: null,
     texture: spine.texture,
     covering: coveringIndex(bound),
-    frame: Math.floor(rnd() * COVER_FRAME_COUNT),
+    frame:
+      ACTIVE_COVER_FRAME_INDICES[
+        Math.floor(rnd() * ACTIVE_COVER_FRAME_INDICES.length)
+      ] ?? 0,
     // The medallion IS the spine's stamp, and the two tables are the same table
     // now — the fold is kept because `ornament` is an index off a stream that
     // has no idea how wide the stamp table is.
-    medallion: spine.ornament % COVER_MEDALLION_COUNT,
+    medallion: normalizeCoverEmblemIndex(spine.ornament),
     titleFont: handForFace(spine.font, seed >>> 0),
     gilt: spine.gilt || rnd() < 0.18,
+    raisedBands: clamp(Math.round(spine.raisedBands ?? 0), 0, MAX_RAISED_BANDS),
+    bandGilt: spine.bandGilt ?? false,
+    headTail: spine.headTail,
+    headTailStyle: normalizeHeadTailStyle(spine.headTailStyle),
     // Studio fields: inherited from the spine wherever the book already has
     // an opinion, plus two cover-only rolls.
     material: spine.material ?? materialFromTexture(spine.texture),
-    titlePlate: spine.titlePlate ?? 'none',
-    cornerProtectors: rnd() < 0.24,
-    insetPlate: rnd() < 0.4,
-    edge: spine.edge ?? 'plain',
+    titlePlate: normalizeTitlePlateStyle(spine.titlePlate),
+    cornerProtectors: false,
+    insetPlate: false,
+    edge: normalizeEdgeTreatment(spine.edge),
     wear: spine.wear ?? 0.12,
-    charm: spine.charm ?? 'none',
+    charm: normalizeCharmKind(spine.charm),
     charmColor: spine.charmColor ?? 0,
     // Sub-treatment within the material: a spine bound in crackled leather
     // must pull out into a cover in crackled leather.
@@ -356,6 +488,19 @@ export function deriveCoverParams(
   ) {
     merged.covering = coveringIndex(materialLookFor(overrides.material));
   }
+  // A direct typed caller may bypass `normalizeCoverOverrides`; keep the
+  // renderer contract hard at this seam too.
+  merged.frame = normalizeCoverFrameIndex(merged.frame);
+  merged.medallion = normalizeCoverEmblemIndex(merged.medallion);
+  merged.raisedBands = clamp(Math.round(merged.raisedBands ?? 0), 0, MAX_RAISED_BANDS);
+  merged.bandGilt = merged.bandGilt === true;
+  merged.headTail = merged.headTail === true;
+  merged.headTailStyle = normalizeHeadTailStyle(merged.headTailStyle);
+  merged.titlePlate = normalizeTitlePlateStyle(merged.titlePlate);
+  merged.edge = normalizeEdgeTreatment(merged.edge);
+  merged.charm = normalizeCharmKind(merged.charm);
+  merged.cornerProtectors = false;
+  merged.insetPlate = false;
   return merged;
 }
 
@@ -381,6 +526,152 @@ export function coveringSpecFor(params: CoverParams): MaterialSpec {
   return MATERIALS[materialLookFor(params.material ?? materialFromTexture(params.texture))];
 }
 
+/**
+ * Construction underneath the cover's decoration.
+ *
+ * A frame, title plate and stamp are furniture; they cannot make an object a
+ * book on their own.  The binding does that through its back, joint, board
+ * turn-ins and head/tail finishing.  This recipe is derived from the exact
+ * covering rather than persisted as more Studio knobs, so a quiet linen case
+ * and a flexible paper wrapper remain recognisably different with every piece
+ * of optional furniture switched off.
+ */
+export interface CoverConstruction {
+  /** Back width as a fraction of the whole board. */
+  spineRatio: number;
+  /** Dark outer round as a fraction of that back. */
+  roundRatio: number;
+  /** The flat recessed joint immediately beside the back. */
+  jointRatio: number;
+  /** Raised supports or vellum ties, from head to tail. */
+  supports: readonly number[];
+  /** Support thickness as a fraction of the back width. */
+  supportWeight: number;
+  /** How the covering finishes around the three exposed board edges. */
+  boardEdge: 'turned' | 'folded' | 'soft' | 'raw';
+  /** How the head and tail of the back are closed. */
+  endband: 'none' | 'woven' | 'plain' | 'tied' | 'stitched';
+}
+
+/** Even cord stations with a generous titleless centre bay. */
+function coverCordStations(count: number): readonly number[] {
+  const n = clamp(Math.round(count), 0, MAX_RAISED_BANDS);
+  if (n <= 0) return [];
+  if (n === 1) return [0.5];
+  const start = 0.2;
+  const end = 0.8;
+  return Array.from({ length: n }, (_, index) => start + (index / (n - 1)) * (end - start));
+}
+
+/** Resolve the binding construction which `renderCoverInto` actually draws. */
+export function coverConstructionFor(params: CoverParams): CoverConstruction {
+  const spec = coveringSpecFor(params);
+  // Wrapper stock still has a small physical turn; zero is not the only way a
+  // material declares a flexible folded back in the reset vocabulary.
+  const flexible = spec.turn <= 0.1;
+  const turnNudge = (clamp(spec.turn, 0.14, 0.32) - 0.23) * 0.075;
+  const resolve = (construction: CoverConstruction): CoverConstruction => {
+    const explicitBands = typeof params.raisedBands === 'number';
+    const supports = explicitBands
+      ? coverCordStations(params.raisedBands ?? 0)
+      : construction.supports;
+    return {
+      ...construction,
+      supports,
+      supportWeight:
+        supports.length > 0 && construction.supportWeight <= 0
+          ? 0.115
+          : construction.supportWeight,
+      endband: params.headTail === false ? 'none' : construction.endband,
+    };
+  };
+
+  if (spec.id === 'sailcloth') {
+    return resolve({
+      spineRatio: 0.082,
+      roundRatio: 0.12,
+      jointRatio: 0.007,
+      supports: [],
+      supportWeight: 0,
+      boardEdge: 'folded',
+      endband: 'stitched',
+    });
+  }
+
+  if (spec.group === 'paper' && flexible) {
+    return resolve({
+      spineRatio: 0.072,
+      roundRatio: 0.1,
+      jointRatio: 0.006,
+      supports: [],
+      supportWeight: 0,
+      boardEdge: 'folded',
+      endband: 'plain',
+    });
+  }
+
+  if (spec.group === 'split') {
+    return resolve({
+      spineRatio: clamp(0.151 + turnNudge, 0.142, 0.16),
+      roundRatio: 0.2,
+      jointRatio: 0.015,
+      supports: [0.18, 0.36, 0.64, 0.82],
+      supportWeight: 0.13,
+      boardEdge: spec.id === 'boards-exposed' ? 'raw' : 'turned',
+      endband: spec.id === 'boards-exposed' ? 'plain' : 'woven',
+    });
+  }
+
+  if (spec.group === 'leather' || spec.group === 'exotic') {
+    return resolve({
+      spineRatio: clamp(0.144 + turnNudge, 0.136, 0.154),
+      roundRatio: 0.215,
+      jointRatio: spec.joints > 1 ? 0.017 : 0.013,
+      supports: [0.16, 0.33, 0.5, 0.67, 0.84],
+      supportWeight: 0.125,
+      boardEdge: spec.id === 'suede' ? 'soft' : 'turned',
+      endband: 'woven',
+    });
+  }
+
+  if (spec.group === 'vellum') {
+    return resolve({
+      spineRatio: clamp(0.132 + turnNudge, 0.126, 0.142),
+      roundRatio: 0.17,
+      jointRatio: spec.joints > 1 ? 0.016 : 0.012,
+      supports: [0.205, 0.395, 0.605, 0.795],
+      supportWeight: 0.075,
+      boardEdge: 'turned',
+      endband: 'tied',
+    });
+  }
+
+  if (spec.group === 'paper') {
+    return resolve({
+      spineRatio: clamp(0.105 + turnNudge, 0.1, 0.116),
+      roundRatio: 0.135,
+      jointRatio: 0.009,
+      supports: [],
+      supportWeight: 0,
+      boardEdge: 'folded',
+      endband: 'plain',
+    });
+  }
+
+  // Case-bound cloth and silk have smooth backs: inventing raised cords for
+  // them made every quiet modern cover look like antique calf.  Their craft is
+  // in a crisp joint, turn-ins and sewn endbands instead.
+  return resolve({
+    spineRatio: clamp(0.122 + turnNudge, 0.114, 0.132),
+    roundRatio: 0.155,
+    jointRatio: 0.01,
+    supports: [],
+    supportWeight: 0,
+    boardEdge: spec.id === 'felt' ? 'soft' : 'turned',
+    endband: 'woven',
+  });
+}
+
 /* --------------------------------- colors -------------------------------- */
 
 /**
@@ -392,7 +683,8 @@ export function coveringSpecFor(params: CoverParams): MaterialSpec {
  * were seven near-identical entries; `bookDesign` now carries fifty coverings,
  * each with a `body` tone saying how it RELATES to the book's hue — a buckram
  * is the same book in its own darker value, a wrapper is washed most of the way
- * to paper, vellum throws the pigment away and keeps it only on the label.
+ * to paper, while natural vellum throws inherited pigment away and an explicit
+ * front-board role becomes a restrained wash over the pale skin.
  *
  * So the cover asks the same table the spine reads rather than keeping its own
  * two-item opinion. Six relationships instead of two, and — the point — a board
@@ -407,6 +699,7 @@ export function coveringSpecFor(params: CoverParams): MaterialSpec {
 function boardFor(
   spec: MaterialSpec,
   cloth: readonly [string, string],
+  baseColourPinned = false,
 ): readonly [string, string] {
   const [face, dark] = cloth;
   switch (spec.body) {
@@ -416,6 +709,16 @@ function boardFor(
       return [mixHex(face, FLAT.cream, 0.52), dark];
     case 'cream':
     case 'parchment':
+      if (baseColourPinned) {
+        // A dedicated front-board colour is a real reader instruction. Treat
+        // it as a translucent dye over pale skin rather than replacing the
+        // material with cloth: the board keeps plenty of paper, and the
+        // calf/timber strip remains the structural half binding.
+        return [
+          mixHex(face, FLAT.cream, spec.body === 'cream' ? 0.6 : 0.54),
+          PALE_BOARD[1],
+        ];
+      }
       // The pigment is thrown away and lives on the label. Half-bound with a
       // timber spine, because cream-on-cream lost the hinge line and the label
       // had nothing to sit against — and a vellum board with a calf spine is
@@ -432,8 +735,43 @@ function boardFor(
 }
 
 /**
- * The parchment board, standing in for every pale binding — and half-bound,
- * with a timber spine.
+ * Resolve the actual flat board faces for one exact binding material.
+ * `baseColourPinned` distinguishes a dedicated front-board choice from the
+ * shared cloth which naturally pale skins deliberately ignore.
+ * Used by the whole-book recipe guard so pale paper/vellum cannot receive
+ * pale tooling merely because its pre-transform colour swatch was dark.
+ */
+export function coverBodyColours(
+  material: MaterialLook,
+  baseHex: string,
+  baseColourPinned = false,
+): readonly [string, string] {
+  const base = normaliseHex(baseHex) ?? (CLOTHS[0]?.[0] as string);
+  if (baseColourPinned && base === FLAT.cream && isPaleCovering(MATERIALS[material])) {
+    return PALE_BOARD;
+  }
+  return boardFor(MATERIALS[material], foldCloth(base), baseColourPinned);
+}
+
+/**
+ * Source pigments and representative flat fills for the two cover colour
+ * controls.
+ *
+ * A source is what can safely be persisted and replayed. A visible colour is
+ * what the painter actually puts on the board after the exact named covering
+ * has interpreted that source. They differ for washed papers, deep buckram,
+ * vellum and parchment, which is why Book Studio must never use one as the
+ * other when it closes a Surprise lock.
+ */
+export interface CoverPainterColours {
+  sources: { base: string; accent: string };
+  visible: { base: string; accent: string };
+}
+
+/**
+ * The natural parchment board, standing in for an uncoloured pale binding —
+ * and half-bound, with a timber spine. Explicit role colours keep the same
+ * construction while washing the first face.
  *
  * The first cut paired cream with creamDeep, which is what a pale binding
  * literally is, and every vellum cover came back as a blank card: the spine
@@ -442,6 +780,11 @@ function boardFor(
  * vellum board with a calf spine is exactly how these were made.
  */
 const PALE_BOARD: readonly [string, string] = [FLAT.cream, FLAT.timber];
+
+/** Pale skins keep their half-bound construction even after a colour wash. */
+function isPaleCovering(spec: MaterialSpec): boolean {
+  return spec.body === 'cream' || spec.body === 'parchment';
+}
 
 /**
  * The cloth a palette index lands on.
@@ -494,13 +837,146 @@ function clothFor(palette: number, clothHex?: string | null): readonly [string, 
  * exactly as it is on the spine — a custom colour leaves the second colour
  * where the seed put it rather than dragging the figuring along with it.
  */
-function accentFor(palette: number, seed: number): string {
+function accentFor(palette: number, seed: number, ownAccent?: string | null): string {
+  const own = normaliseHex(ownAccent);
+  if (own !== null) return foldCloth(own)[0];
   const len = CLOTHS.length;
   const wrap = (n: number): number => ((Math.trunc(n) % len) + len) % len;
   const slot = clothForPalette(palette);
   const accent = wrap(slot + 1 + (((seed >>> 5) % (len - 1)) | 0));
   const pair = CLOTHS[accent === slot ? wrap(slot + 1) : accent] ?? CLOTHS[0]!;
   return pair[0] as string;
+}
+
+/** The exact board pair the cover renderer will paint for these params. */
+function resolvedCoverBoard(params: CoverParams): readonly [string, string] {
+  const ownBase = normaliseHex(params.coverBaseHex);
+  const spec = coveringSpecFor(params);
+  if (ownBase === FLAT.cream && isPaleCovering(spec)) return PALE_BOARD;
+  return boardFor(
+    spec,
+    clothFor(params.palette, ownBase ?? params.clothHex),
+    ownBase !== null,
+  );
+}
+
+/** Resolve the colour wells from the same folds consumed by renderCoverInto. */
+export function coverPainterColours(params: CoverParams): CoverPainterColours {
+  const explicitBase = normaliseHex(params.coverBaseHex ?? params.clothHex);
+  const basePair = clothFor(params.palette, params.coverBaseHex ?? params.clothHex);
+  const explicitAccent = normaliseHex(params.coverAccentHex);
+  const visibleAccent = accentFor(params.palette, params.seed >>> 0, params.coverAccentHex);
+  return {
+    sources: {
+      // Preserve the reader's exact normalized input when one exists. Feeding
+      // a lifted/folded face back through foldCloth a second time would move the
+      // pixels even while a lock claimed to keep them.
+      base: explicitBase ?? basePair[0],
+      accent: explicitAccent ?? visibleAccent,
+    },
+    visible: {
+      base: resolvedCoverBoard(params)[0],
+      accent: visibleAccent,
+    },
+  };
+}
+
+/**
+ * Resolve cover-title ink against the actual plate/board fill.
+ * This is exported so recipe sweeps exercise the same decision as paintLabel.
+ */
+export function resolveCoverTitleColours(
+  params: CoverParams,
+  title = 'Title',
+): TitleColourResolution {
+  const board = resolvedCoverBoard(params);
+  const [face, dark] = board;
+  const pale = isPaleCovering(coveringSpecFor(params));
+  const style: TitlePlateStyle = title.trim() ? (params.titlePlate ?? 'label') : 'label';
+  const paper = style === 'label';
+  const direct =
+    style === 'none' ||
+    style === 'gilt-direct' ||
+    style === 'double-fillet' ||
+    style === 'twin-rules';
+  const giltBand = style === 'gilt-band';
+  const inkBlock = style === 'ink-panel';
+  const ground =
+    direct
+      ? face
+      : paper
+        ? pale
+          ? FLAT.creamDeep
+          : FLAT.cream
+        : giltBand
+          ? normaliseHex(params.toolingHex) ?? FLAT.gilt
+          : inkBlock
+            ? FLAT.ink
+            : dark;
+  const authored =
+    direct
+      ? pale
+        ? FLAT.inkSoft
+        : params.gilt || style === 'gilt-direct'
+          ? FLAT.giltPale
+          : FLAT.cream
+      : paper
+        ? FLAT.ink
+        : giltBand
+          ? FLAT.ink
+          : inkBlock
+            ? FLAT.cream
+            : params.gilt || style === 'gilt'
+              ? FLAT.giltPale
+              : FLAT.cream;
+  const preferred = params.toolingHex ?? authored;
+  const resolved = resolveTitleColours(preferred, ground, !direct);
+  if (!direct || colourContrast(resolved.ink, resolved.ground) >= TITLE_TEXT_MIN_CONTRAST) {
+    return resolved;
+  }
+
+  /*
+   * A mid-tone board can make both house text inks miss the guaranteed floor.
+   * Direct lettering cannot solve that by pretending a different colour sits
+   * behind it. Promote only that failing case to a small flat sunk field; the
+   * painter detects the changed ground below and draws it. This keeps the
+   * authored treatment visually direct in every ordinary case while making
+   * the reported ground truthful in the one case that needs a plate.
+   */
+  return resolveTitleColours(preferred, dark, true);
+}
+
+/** Decorative tooling is smaller than title text, but it must not disappear. */
+export const COVER_EMBLEM_MIN_CONTRAST = 1.9;
+
+/**
+ * Keep one emblem ink while adapting an unsafe reader colour toward the
+ * nearest impressed-gold or blind-tooling value.
+ *
+ * This is not an outline or a lighting pass: the centrepiece still paints in
+ * exactly one flat colour. It is the ornamental equivalent of the title
+ * resolver above. A pale gold Star on ochre cloth previously fell below one
+ * discernible tone at Studio size; darkening that same gold toward the house
+ * ink makes it a legible blind-gilt strike without inventing a badge behind it.
+ */
+export function resolveCoverEmblemInk(preferred: string, ground: string): string {
+  const ink = normaliseHex(preferred) ?? FLAT.gilt;
+  const face = normaliseHex(ground) ?? FLAT.cream;
+  if (colourContrast(ink, face) >= COVER_EMBLEM_MIN_CONTRAST) return ink;
+
+  const candidates = [
+    mixHex(ink, FLAT.ink, 0.45),
+    mixHex(ink, FLAT.ink, 0.62),
+    mixHex(ink, FLAT.cream, 0.5),
+    mixHex(ink, FLAT.cream, 0.68),
+    FLAT.inkSoft,
+    FLAT.cream,
+  ];
+  return candidates.find((candidate) =>
+    colourContrast(candidate, face) >= COVER_EMBLEM_MIN_CONTRAST
+  ) ?? candidates.reduce((best, candidate) =>
+    colourContrast(candidate, face) > colourContrast(best, face) ? candidate : best
+  , ink);
 }
 
 /**
@@ -552,30 +1028,29 @@ export function coverPaletteCss(palette: number): { top: string; bottom: string 
  * names in a binder's specimen book describe anyway. "Widely spaced", "small
  * caps" and "shouting" are treatments, not typefaces.
  *
- * ## The two typographic floors are ENFORCED here, not trusted
+ * ## The typographic floors are solved here, not trusted to the picker
  *
  * A hand carries a `scale`, and the label already shrinks type to fit its
  * plate, so the two multiply — which is exactly how `gen-lettering.mjs`
  * described putting "footnote hand" at "caption" size under 13px without
  * anybody writing a number below 13 anywhere. `paintLabel` therefore:
  *
- *   - floors the FINAL size (after scale, after the fit loop) rather than the
- *     starting one, so no combination can go under the handwriting floor; and
+ *   - balances a complete title across up to three lines before shrinking it;
  *   - drops a Caveat hand to the body face when the fitted size lands under
  *     `--font-heading`'s documented 20px, which is the same fallback the
- *     generator emits as a block of two-attribute rules.
+ *     generator emits as a block of two-attribute rules; and
+ *   - changes to the printed face before an unusually long title goes below
+ *     the handwriting floor. Identity text may tighten; it is never truncated.
  *
  * ## Kin
  *
- * The spine letters its title in one of THREE faces (`spines.FONTS`), and the
- * board must be lettered with the same tool — that is what makes the two faces
- * one book rather than two objects. So every hand declares which spine face it
- * is a setting OF (`COVER_FONT_KIN`), `deriveCoverParams` rolls only among the
- * kin of the spine's own face, and the two faces the spine has no index for are
+ * The seed-era shared params carry one of three cover-title faces. Every hand
+ * declares which seeded face it extends (`COVER_FONT_KIN`), and
+ * `deriveCoverParams` rolls only among that face's kin. The two extra faces are
  * kin `-1`: offered to a reader who picks one, never handed out by the seed.
  */
 
-/** The five bundled faces. 0–2 are the three the spine can also letter in. */
+/** The five bundled cover-title faces. 0–2 are seeded; 3–4 are reader-only. */
 const FACE_STACKS: readonly string[] = [
   '"Caveat Variable", "Caveat", "Segoe Script", cursive',
   '"Kalam", "Segoe Print", cursive',
@@ -588,6 +1063,8 @@ const FACE_STACKS: readonly string[] = [
 const HEADING_FACE = 0;
 /** Where a Caveat hand lands when the plate is too small for Caveat. */
 const BODY_FACE = 2;
+/** The printed micro-copy face used if a complete title needs a smaller set. */
+const PRINTED_FACE = 4;
 /** No handwriting below this, in the same unit the label's own floor uses. */
 const HAND_FLOOR_PX = 14;
 /** `--font-heading` is documented ">= 20px only". */
@@ -699,6 +1176,53 @@ const HANDS: readonly HandSpec[] = [
   hand('archive', 'Archive', 4, { weight: 600, caps: 'upper', track: 0.14, scale: 0.84 }),
 ];
 
+/**
+ * The ten manual lettering hands exposed by Book Studio.
+ *
+ * The fifty-entry table above remains the persistence and seeded-composition
+ * vocabulary. A manual picker needs a smaller specimen case in which every
+ * adjacent choice visibly changes face, weight, posture or case at true cover
+ * size; fifty microscopic tracking variants would merely be fifty names for
+ * the same chip. These ten span all five bundled faces and the historically
+ * useful stationer's settings without letting a handwriting face fall below
+ * its documented size floor.
+ */
+export const ACTIVE_COVER_HAND_INDICES = [
+  0, 1, 2, 9, 18, 31, 36, 38, 43, 44,
+] as const;
+
+export type ActiveCoverHandIndex = (typeof ACTIVE_COVER_HAND_INDICES)[number];
+
+export const ACTIVE_COVER_HANDS: readonly {
+  readonly index: ActiveCoverHandIndex;
+  readonly id: string;
+  readonly label: string;
+}[] = ACTIVE_COVER_HAND_INDICES.map((index) => ({
+  index,
+  id: HANDS[index]!.id,
+  label: HANDS[index]!.name,
+}));
+
+const ACTIVE_COVER_HAND_SET: ReadonlySet<number> = new Set(ACTIVE_COVER_HAND_INDICES);
+
+/** Fold any historical hand into the closest live specimen by actual setting. */
+export function normalizeCoverHandIndex(value: unknown): ActiveCoverHandIndex {
+  const index = typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(value)
+    : 0;
+  if (ACTIVE_COVER_HAND_SET.has(index)) return index as ActiveCoverHandIndex;
+  const spec = HANDS[index];
+  if (!spec) return 0;
+  if (spec.face === 0) {
+    if (spec.caps !== 'none') return 9;
+    return 0;
+  }
+  if (spec.face === 1) return spec.caps !== 'none' ? 18 : 1;
+  if (spec.face === 2) return spec.caps !== 'none' ? 31 : 2;
+  if (spec.face === 3) return spec.caps !== 'none' ? 38 : 36;
+  return spec.caps !== 'none' ? 44 : 43;
+}
+
 /** Display names for the studio's title-hand picker. */
 export const COVER_FONTS: readonly string[] = HANDS.map((f) => f.name);
 
@@ -710,12 +1234,11 @@ export const COVER_FONTS: readonly string[] = HANDS.map((f) => f.name);
 export const COVER_FONT_COUNT = COVER_FONTS.length;
 
 /**
- * Which of the spine's three faces each hand is a setting of, or `-1` for the
- * two faces the spine has no index for.
+ * Which of the seed-era three cover faces each hand extends, or `-1` for the
+ * two reader-only faces that have no seed index.
  *
- * Index-aligned with `COVER_FONTS`. It exists so a book's board and its spine
- * are lettered with the same tool: `deriveCoverParams` rolls only inside the
- * kin of `SpineParams.font`.
+ * Index-aligned with `COVER_FONTS`. `deriveCoverParams` rolls only inside the
+ * kin selected by the legacy shared `SpineParams.font` field.
  */
 export const COVER_FONT_KIN: readonly number[] = HANDS.map((f) =>
   f.face <= BODY_FACE ? f.face : -1,
@@ -727,11 +1250,11 @@ const KIN_HANDS: readonly (readonly number[])[] = [0, 1, 2].map((face) =>
 );
 
 /**
- * One hand for a spine face, rolled from the book's own seed.
+ * One cover hand for a seed-era compatibility face, rolled from the book's seed.
  *
- * The spine's `font` is 0–2 and always will be; this is the widening. The roll
- * is on its own stream so that adding a hand re-letters some boards and moves
- * nothing else about a book, and an unknown face falls back to the plain
+ * The shared `font` field is 0–2 and always will be; this is the widening. The
+ * roll is on its own stream so that adding a hand re-letters some boards and
+ * moves nothing else about a book, and an unknown face falls back to the plain
  * setting of face 0 rather than throwing — `deriveCoverParams` is total.
  */
 export function handForFace(face: number, seed: number): number {
@@ -1059,17 +1582,50 @@ function paintGrain(
   switch (spec.grain) {
     /* ---- woven cloth: rules across, sometimes rules down ---- */
     case 'ribs':
-      for (let i = 1; i < n * 2; i++) hLine(i / (n * 2), 0, 1, fine, i);
+      // Rep is a field of weft ribs, not ruled paper. Break each course into
+      // staggered floats so the eye reads woven continuity without seeing a
+      // ruler dragged from one board edge to the other.
+      for (let i = 1; i < n * 2; i++) {
+        const t = i / (n * 2);
+        for (let c = 0; c < 3; c++) {
+          const stagger = i % 2 === 0 ? 0 : 0.035;
+          const a = Math.max(0, c / 3 + 0.025 + stagger);
+          const b = Math.min(1, (c + 1) / 3 - 0.045 + stagger);
+          if (b > a) hLine(t, a, b, fine * 0.72, i * 4 + c);
+        }
+      }
       break;
     case 'weave':
-      for (let i = 1; i < n * 2; i++) hLine(i / (n * 2), 0, 1, fine * 0.8, i);
-      for (let i = 1; i < n; i++) vLine(i / n, 0, 1, fine * 0.8, i);
+      // Linen is an over-under field of short floats. Full horizontal and
+      // vertical rules made the cover look like graph paper.
+      field(Math.max(7, n + 2), 6, (cx, cy, i) => {
+        const dx = unit * 0.024;
+        const dy = unit * 0.014;
+        if (i % 2 === 0) {
+          stroke(ctx, cx - dx, cy, cx + dx, cy, colour, fine * 0.72, seed + 240 + i);
+        } else {
+          stroke(ctx, cx, cy - dy, cx, cy + dy, colour, fine * 0.72, seed + 240 + i);
+        }
+      });
       break;
     case 'twill':
-      for (let i = 0; i < n * 2; i++) {
-        const t = -0.3 + (i * 1.6) / (n * 2);
-        stroke(ctx, x, y + h * t, x + w, y + h * (t + 0.34), colour, fine, seed + 300 + i);
-      }
+      // A cover is wide enough that full-width diagonals read as notebook
+      // ruling, not canvas. Twill is made of many short staggered floats: each
+      // mark leans the same way, but none crosses the whole board. This keeps
+      // the surface visibly woven without turning it into a striped object.
+      field(Math.max(7, n), 7, (cx, cy, i) => {
+        const len = unit * (0.032 + (i % 3) * 0.004);
+        stroke(
+          ctx,
+          cx - len * 0.55,
+          cy + len * 0.34,
+          cx + len * 0.55,
+          cy - len * 0.34,
+          colour,
+          fine * 0.82,
+          seed + 300 + i,
+        );
+      });
       break;
     case 'coarse':
       for (let i = 0; i < n * 2; i++) {
@@ -1077,11 +1633,14 @@ function paintGrain(
       }
       break;
     case 'stitchRun':
-      // Running stitch: a dashed rule, which is a row of marks and not a line.
-      for (let i = 0; i < n; i++) {
-        const t = 0.04 + (i * 0.92) / n;
-        for (let d = 0; d < 9; d++) {
-          hLine(t, d / 9 + 0.01, d / 9 + 0.07, fine, i * 10 + d);
+      // Sailcloth is seamed in long panels. Twelve horizontal dashed rows
+      // looked like a ruled exercise book; three vertical seams, each made of
+      // discrete running stitches, read as construction at cover scale.
+      for (let seam = 0; seam < 3; seam++) {
+        const a = 0.2 + seam * 0.3;
+        for (let d = 0; d < Math.max(9, Math.round(n * 0.9)); d++) {
+          const t0 = 0.035 + (d * 0.91) / Math.max(9, Math.round(n * 0.9));
+          vLine(a, t0, t0 + 0.045, fine, seam * 20 + d);
         }
       }
       break;
@@ -1090,23 +1649,68 @@ function paintGrain(
         hLine((cy - y) / h, (cx - x) / w, (cx - x) / w + 0.07, fine, i);
       });
       break;
-    // The three naps. `bookDesign` split the old single `nap` because at spine
-    // width the felt, the velvet and the suede were one drawing in three
-    // colours; a cover is drawn ten times that size and has never told them
-    // apart either, so all three keep the board treatment they already had.
-    case 'napEdge':
-    case 'pile':
-    case 'brushed':
-      // Pile: a broad darker band along the fore edge. Depth as a second flat
-      // face, never as a sheen.
+    // Three soft coverings, three different pieces of evidence. Keeping them
+    // as one fore-edge band made Felt, Velvet and Suede three labels for the
+    // same picture — exactly the vocabulary collapse the binding rewrite was
+    // meant to remove.
+    case 'napEdge': {
+      // Felt shows a cut, slightly tufted fore edge. The small bites are flat
+      // geometry, not fuzz or a blurred texture. Keep it a narrow cut edge;
+      // the old fourteen-percent slab looked like a second covering.
       ctx.fillStyle = colour;
-      ctx.fillRect(x + w * 0.78, y, w * 0.22, h);
-      for (let i = 1; i <= n * 3; i++) vLine((i / (n * 3 + 1)) * 0.76, 0.03, 0.97, fine * 0.7, i);
+      ctx.fillRect(x + w * 0.92, y, w * 0.08, h);
+      for (let i = 0; i < Math.max(9, n * 4); i++) {
+        const cy = y + h * ((i + 0.5) / Math.max(9, n * 4));
+        const tooth = unit * (i % 2 === 0 ? 0.018 : 0.012);
+        stroke(ctx, x + w * 0.905, cy, x + w * 0.92 + tooth, cy, colour, bold * 0.8, seed + 410 + i);
+      }
+      break;
+    }
+    case 'pile':
+      // Velvet remains one continuous deep face. A few paired, slightly bowed
+      // pile turns distinguish it from plain cloth without simulating sheen or
+      // adding the giant contrast strip that read as a second cover.
+      for (let i = 0; i < Math.max(5, n * 2); i++) {
+        const cy = y + h * (0.1 + ((i + 0.35 + rnd() * 0.3) * 0.8) / Math.max(5, n * 2));
+        const cx = x + w * (0.12 + rnd() * 0.64);
+        const len = w * (0.08 + rnd() * 0.08);
+        stroke(ctx, cx, cy, cx + len, cy + h * 0.004, colour, fine * 0.75, seed + 430 + i * 2);
+        stroke(ctx, cx + len * 0.12, cy + unit * 0.012, cx + len * 0.72, cy + unit * 0.014, mixHex(colour, FLAT.ink, 0.18), fine * 0.62, seed + 431 + i * 2);
+      }
+      break;
+    case 'brushed':
+      // Suede is the flesh side brushed in several directions. Short sparse
+      // strokes survive at preview size without forming a stripe or a grid.
+      field(Math.max(5, n + 2), 5, (cx, cy, i) => {
+        const len = unit * (0.018 + rnd() * 0.018);
+        const a = -0.9 + rnd() * 1.8;
+        stroke(
+          ctx,
+          cx - Math.cos(a) * len,
+          cy - Math.sin(a) * len,
+          cx + Math.cos(a) * len,
+          cy + Math.sin(a) * len,
+          colour,
+          fine * 0.78,
+          seed + 450 + i,
+        );
+      });
       break;
 
     /* ---- silk: waves and figures ---- */
     case 'watered':
-      for (let i = 0; i < n * 2; i++) wave(x + (w * (i + 0.5)) / (n * 2), w * 0.02, 7, i);
+      // Legacy only: shallow contour pairs, not a wall of liquid-looking
+      // vertical waves. The material remains renderable for saved books.
+      for (let i = 0; i < Math.max(3, n); i++) {
+        const t = 0.16 + (i * 0.68) / Math.max(1, Math.max(3, n) - 1);
+        const x0 = x + w * (0.1 + rnd() * 0.08);
+        const x1 = x + w * (0.82 + rnd() * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(x0, y + h * t);
+        ctx.quadraticCurveTo(x + w * (0.42 + rnd() * 0.16), y + h * (t - 0.02), x1, y + h * (t + 0.006));
+        pen(ctx, colour, fine * 0.72);
+        ctx.stroke();
+      }
       break;
     case 'figured':
       field(n, 4, (cx, cy) => {
@@ -1126,10 +1730,22 @@ function paintGrain(
       });
       break;
 
-    /* ---- leather and skin: dot fields, veins, plates ---- */
-    case 'pebble':
-      field(Math.ceil(n / 2) + 3, 7, (cx, cy) => mark(cx, cy, unit * 0.011));
+    /* ---- leather and skin: worked contours, veins, plates ---- */
+    case 'pebble': {
+      /**
+       * Morocco stays a CLEAN dyed face at cover scale.
+       *
+       * The first painter enlarged the spine's pebble into a field of filled
+       * discs; that looked like a rash. Replacing each disc with a broken oval
+       * merely changed the rash into rows of horseshoes. Both versions made a
+       * material treatment read as wallpaper, and both contradicted the flat
+       * vocabulary: this app identifies leather through the rounded back,
+       * recessed joint, turned board edges and its tooling, not by simulating
+       * the skin. A quiet face also gives a binder's authored composition room
+       * to be the ornament instead of competing with all-over noise.
+       */
       break;
+    }
     case 'pinDot':
       field(Math.ceil(n / 2) + 2, 6, (cx, cy) => mark(cx, cy, unit * 0.006));
       break;
@@ -1186,9 +1802,20 @@ function paintGrain(
       field(n, 5, (cx, cy) => mark(cx, cy, unit * 0.007));
       break;
     case 'creases':
-      for (let i = 0; i < n * 2; i++) {
-        const t = 0.1 + (i * 0.8) / (n * 2);
-        stroke(ctx, x + w * 0.05, y + h * t, x + w * (0.5 + rnd() * 0.45), y + h * (t + 0.03), colour, bold, seed + 320 + i);
+      // Cockling begins at handled edges. Long rules across the face made
+      // parchment look cut into strips, so these are short, shallow bows that
+      // alternate between the joint and fore edge and die out in the board.
+      for (let i = 0; i < Math.max(5, n * 2); i++) {
+        const fromJoint = i % 2 === 0;
+        const cy = y + h * (0.1 + (i * 0.8) / Math.max(1, Math.max(5, n * 2) - 1));
+        const len = w * (0.12 + rnd() * 0.13);
+        const x0 = fromJoint ? x + w * 0.025 : x + w * 0.975;
+        const x1 = fromJoint ? x0 + len : x0 - len;
+        ctx.beginPath();
+        ctx.moveTo(x0, cy);
+        ctx.quadraticCurveTo((x0 + x1) / 2, cy + (i % 3 - 1) * h * 0.012, x1, cy + h * 0.007);
+        pen(ctx, colour, fine * 0.82);
+        ctx.stroke();
       }
       break;
     case 'scuffs':
@@ -1202,7 +1829,47 @@ function paintGrain(
 
     /* ---- marbled and decorated papers ---- */
     case 'combedVeins':
-      for (let i = 0; i < n * 2; i++) wave(x + (w * (i + 0.5)) / (n * 2), w * 0.055, 5, i);
+      // Broad, nearly parallel ribbons of pigment with a pale comb echo. The
+      // old sparse diagonal veins read as scratches; these cross most of the
+      // sheet and bend together, which is the visual fact of combed marbling.
+      for (let i = 0; i < Math.max(6, n + 3); i++) {
+        const rows = Math.max(6, n + 3);
+        const t0 = 0.065 + (i * 0.84) / Math.max(1, rows - 1);
+        const direction = i % 2 === 0 ? 1 : -1;
+        const a0 = 0.025;
+        const a1 = 0.975;
+        const midY = t0 + direction * (0.025 + rnd() * 0.018);
+        const endY = t0 - direction * (0.012 + rnd() * 0.018);
+        ctx.beginPath();
+        ctx.moveTo(x + w * a0, y + h * t0);
+        ctx.quadraticCurveTo(x + w * 0.24, y + h * (midY - direction * 0.01), x + w * 0.5, y + h * midY);
+        ctx.quadraticCurveTo(x + w * 0.76, y + h * (midY + direction * 0.012), x + w * a1, y + h * endY);
+        pen(ctx, colour, bold * 0.82);
+        ctx.stroke();
+
+        const echo = mixHex(colour, FLAT.cream, 0.3);
+        ctx.beginPath();
+        ctx.moveTo(x + w * a0, y + h * (t0 + 0.012));
+        ctx.quadraticCurveTo(x + w * 0.28, y + h * (midY + 0.008), x + w * 0.52, y + h * (midY + 0.012));
+        ctx.quadraticCurveTo(x + w * 0.78, y + h * (midY + direction * 0.018), x + w * a1, y + h * (endY + 0.012));
+        pen(ctx, echo, fine * 0.7);
+        ctx.stroke();
+
+        // Every other ribbon carries one short fork where the comb split it.
+        if (i % 2 === 0) {
+          const forkX = 0.32 + rnd() * 0.34;
+          stroke(
+            ctx,
+            x + w * forkX,
+            y + h * midY,
+            x + w * (forkX + 0.09),
+            y + h * (midY - direction * 0.035),
+            colour,
+            fine * 0.68,
+            seed + 680 + i,
+          );
+        }
+      }
       break;
     case 'spanishWave':
       for (let i = 0; i < n * 2; i++) {
@@ -1244,22 +1911,55 @@ function paintGrain(
         mark(cx, cy, unit * 0.008);
       });
       break;
-    case 'pasteComb':
-      for (let i = 0; i < n * 2; i++) {
-        const t = (i + 0.5) / (n * 2);
-        ctx.beginPath();
-        ctx.moveTo(x, y + h * t);
-        for (let k = 0; k < 6; k++) {
-          const x0 = x + (w * k) / 6;
-          const x1 = x + (w * (k + 1)) / 6;
-          ctx.quadraticCurveTo((x0 + x1) / 2, y + h * (t + 0.05), x1, y + h * t);
+    case 'pasteComb': {
+      // Paste paper is worked in LOCAL comb pulls. A half-drop field of small
+      // three-tooth fans reads handmade and intricate; four board-wide waves
+      // looked like placeholder underlines.
+      const rows = Math.max(5, n + 1);
+      const cols = 3;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const halfDrop = row % 2 === 0 ? 0 : 0.5;
+          const cx = x + w * (((col + halfDrop + 0.5) % cols) / cols);
+          const cy = y + h * ((row + 0.5) / rows);
+          const span = w * (0.18 + ((row + col) % 2) * 0.025);
+          const bow = (row + col) % 2 === 0 ? 1 : -1;
+          for (let tooth = 0; tooth < 3; tooth++) {
+            const oy = (tooth - 1) * unit * 0.014;
+            const left = cx - span / 2;
+            const right = cx + span / 2;
+            const lift = bow * unit * (0.024 + tooth * 0.004);
+            ctx.beginPath();
+            ctx.moveTo(left, cy + oy);
+            ctx.quadraticCurveTo(cx, cy + oy + lift, right, cy + oy);
+            pen(ctx, colour, tooth === 1 ? fine * 0.68 : fine * 0.88);
+            ctx.stroke();
+          }
+          // A tiny heel at the pull's starting edge shows the comb was lifted,
+          // rather than turning the motif into a printed scallop.
+          stroke(ctx, cx - span / 2, cy - unit * 0.012, cx - span / 2, cy + unit * 0.012, colour, fine * 0.62, seed + 740 + row * cols + col);
         }
-        pen(ctx, colour, bold);
-        ctx.stroke();
       }
       break;
+    }
     case 'lozenges':
       field(n, 4, (cx, cy) => lozenge(cx, cy, unit * 0.026));
+      break;
+    case 'sprigs':
+      // A small two-leaf printer's block. The half-drop field keeps the paper
+      // lively while the generous air between motifs preserves a quiet board.
+      field(Math.max(4, n), 4, (cx, cy, i) => {
+        const s = unit * 0.022;
+        stroke(ctx, cx, cy + s * 0.9, cx, cy - s * 0.8, colour, fine * 0.78, seed + 520 + i);
+        for (const side of [-1, 1] as const) {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - s * 0.04);
+          ctx.quadraticCurveTo(cx + side * s * 0.95, cy - s * 0.68, cx + side * s * 0.74, cy + s * 0.14);
+          ctx.quadraticCurveTo(cx + side * s * 0.34, cy + s * 0.3, cx, cy - s * 0.04);
+          ctx.fillStyle = colour;
+          ctx.fill();
+        }
+      });
       break;
     case 'floret':
       field(n, 4, (cx, cy) => {
@@ -1288,10 +1988,13 @@ function paintGrain(
       field(n, 5, (cx, cy) => mark(cx, cy, unit * 0.012));
       break;
     case 'stripes':
-      for (let i = 0; i < n * 3; i++) {
-        const t = (i + 0.5) / (n * 3);
+      // `grainCount` already says three broad stripes. Multiplying it by three
+      // produced nine bars covering more than a third of the board — a circus
+      // awning rather than a patterned paper. Honour the authored count.
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
         ctx.fillStyle = colour;
-        ctx.fillRect(x + w * (t - 0.02), y, w * 0.04, h);
+        ctx.fillRect(x + w * (t - 0.027), y, w * 0.054, h);
       }
       break;
     case 'chequer': {
@@ -1416,8 +2119,19 @@ function paintTextBlock(
   edge: EdgeTreatment,
   seed: number,
 ): void {
-  const gilded = edge === 'gilt';
-  panel(ctx, x, y, w, h, gilded ? FLAT.gilt : FLAT.cream, {
+  const finish = normalizeEdgeTreatment(edge);
+  const ground = finish === 'gilt'
+    ? FLAT.gilt
+    : finish === 'stained-red'
+      ? FLAT.terracotta
+      : finish === 'sepia-edge'
+        ? FLAT.timber
+        : finish === 'red-under-gold'
+          ? FLAT.terracottaDark
+          : finish === 'deckle'
+            ? FLAT.creamDeep
+            : FLAT.cream;
+  panel(ctx, x, y, w, h, ground, {
     radius: w * 0.4,
     seed,
     width: Math.max(1, inkWidth(w) * 0.9),
@@ -1426,45 +2140,682 @@ function paintTextBlock(
   // The icon draws the leaves as three pale curves down the block; only the
   // outer half of this strip is ever visible, so the lines live out there.
   const rule = Math.max(0.8, w * 0.1);
-  const ruleInk = gilded ? FLAT.ochreDark : FLAT.creamDeep;
+  const ruleInk = finish === 'gilt'
+    ? FLAT.ochreDark
+    : finish === 'stained-red'
+      ? FLAT.terracottaDark
+      : finish === 'sepia-edge'
+        ? FLAT.timberDark
+        : finish === 'red-under-gold'
+          ? FLAT.giltPale
+          : FLAT.creamDeep;
   for (const t of [0.58, 0.8]) {
     stroke(ctx, x + w * t, y + h * 0.05, x + w * t, y + h * 0.95, ruleInk, rule, seed + t * 10);
   }
 
-  if (edge === 'speckled' || edge === 'marbled') {
-    // Both treatments live in the OUTER half of the strip: the boards overlap
-    // the inner half, and the first cut put the marks where nobody could see
-    // them. Clipped to the block so a round cap cannot poke out past its own
-    // outline and read as a printing fault.
+  if (finish === 'red-under-gold') {
+    // Burnished gold laid over a crimson bole. The narrow exposed strip keeps
+    // both materials legible: a broad gold face and one deliberate red reveal.
     ctx.save();
     wobbleRect(ctx, x, y, w, h, w * 0.4, seed);
     ctx.clip();
-    if (edge === 'speckled') {
-      const flecks = Math.max(7, Math.round(h / (w * 1.4)));
-      for (let i = 0; i < flecks; i++) {
-        const t = (i + 0.5) / flecks;
-        dot(ctx, x + w * (i % 2 === 0 ? 0.62 : 0.82), y + h * t, Math.max(0.7, w * 0.13), FLAT.inkSoft);
-      }
-    } else {
-      // Combed marbling: warm and cool bands the whole way down. Four of them
-      // read as three coloured tabs stuck to the edge; it takes a band every
-      // tenth of the height before the sliver reads as a pattern.
-      for (let i = 0; i < 9; i++) {
-        const t = 0.06 + i * 0.105;
-        stroke(
-          ctx,
-          x + w * 0.45,
-          y + h * t,
-          x + w * 1.05,
-          y + h * (t + 0.025),
-          i % 2 === 0 ? FLAT.terracotta : FLAT.slate,
-          Math.max(0.9, w * 0.2),
-          seed + i,
-        );
-      }
+    ctx.fillStyle = FLAT.gilt;
+    ctx.fillRect(x + w * 0.8, y, w * 0.26, h);
+    stroke(ctx, x + w * 0.77, y + h * 0.04, x + w * 0.77, y + h * 0.96, FLAT.giltPale, Math.max(0.8, w * 0.11), seed + 21);
+    ctx.restore();
+  }
+
+  if (finish === 'deckle') {
+    // Six broad irregular cuts on the visible edge. These are separated
+    // fibres in the physical silhouette, not speckles scattered over paper.
+    ctx.save();
+    wobbleRect(ctx, x, y, w, h, w * 0.4, seed);
+    ctx.clip();
+    for (let i = 0; i < 6; i += 1) {
+      const cy = y + h * ((i + 0.5) / 6);
+      const bite = w * (i % 2 === 0 ? 0.34 : 0.22);
+      stroke(
+        ctx,
+        x + w,
+        cy - h * 0.012,
+        x + w - bite,
+        cy + h * 0.014,
+        FLAT.inkSoft,
+        Math.max(0.8, w * 0.13),
+        seed + 31 + i,
+      );
     }
     ctx.restore();
   }
+}
+
+/**
+ * The board before it is decorated: recessed joint, turned/folded covering and
+ * the mitres where the head and tail turn-ins meet the fore-edge turn-in.
+ *
+ * These marks sit right against the physical edges, well outside the frame.
+ * That separation matters: a second inset rectangle would be more furniture;
+ * this open three-sided rule is the board being wrapped.
+ */
+function paintBoardConstruction(
+  ctx: FlatCtx,
+  spec: MaterialSpec,
+  construction: CoverConstruction,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  spineW: number,
+  radius: number,
+  face: string,
+  dark: string,
+  ink: number,
+  seed: number,
+): void {
+  const faceX = bx + spineW;
+  const faceW = bw - spineW;
+  const jointW = Math.max(1.1, faceW * construction.jointRatio);
+  const edgeGap = Math.max(1.7, Math.min(faceW, bh) * 0.018);
+  const line = Math.max(0.75, ink * 0.36);
+
+  ctx.save();
+  wobbleRect(ctx, bx, by, bw, bh, radius, seed);
+  ctx.clip();
+
+  // A recessed joint is a third FLAT face, not a shadow.  Flexible wrappers
+  // get the narrowest fold; rounded calf and split bindings get a deeper
+  // gutter because the board really does stand away from the back there.
+  ctx.fillStyle = mixHex(face, dark, construction.boardEdge === 'folded' ? 0.22 : 0.38);
+  ctx.fillRect(faceX, by - radius, jointW, bh + radius * 2);
+  stroke(
+    ctx,
+    faceX + jointW,
+    by + bh * 0.018,
+    faceX + jointW,
+    by + bh * 0.982,
+    FLAT.ink,
+    line,
+    seed + 4,
+  );
+
+  const x0 = faceX + Math.max(jointW + edgeGap * 0.5, faceW * 0.025);
+  const x1 = bx + bw - edgeGap;
+  const y0 = by + edgeGap;
+  const y1 = by + bh - edgeGap;
+
+  if (construction.boardEdge === 'soft') {
+    // A cut soft covering has no crisp turn-in.  Short, separated bites along
+    // the three exposed edges say "cut cloth" without fuzz, blur or texture.
+    const steps = 12;
+    for (let i = 0; i < steps; i++) {
+      const t = (i + 0.25) / steps;
+      const len = i % 2 === 0 ? edgeGap * 0.72 : edgeGap * 0.48;
+      stroke(ctx, x1 - len, by + bh * t, x1, by + bh * t, FLAT.ink, line, seed + 20 + i);
+    }
+    for (const y of [y0, y1]) {
+      for (let i = 0; i < 7; i++) {
+        const t = (i + 0.35) / 7;
+        const cx = x0 + (x1 - x0) * t;
+        stroke(ctx, cx, y, cx + edgeGap * 0.36, y, FLAT.ink, line, seed + 40 + i + y);
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  // One open U: head turn-in → fore-edge turn-in → tail turn-in.  Keeping the
+  // hinge side open prevents it from becoming a second ornamental frame.
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1 - radius * 0.3, y0);
+  ctx.quadraticCurveTo(x1, y0, x1, y0 + radius * 0.3);
+  ctx.lineTo(x1, y1 - radius * 0.3);
+  ctx.quadraticCurveTo(x1, y1, x1 - radius * 0.3, y1);
+  ctx.lineTo(x0, y1);
+  pen(ctx, FLAT.ink, line);
+  ctx.stroke();
+
+  if (construction.boardEdge === 'turned') {
+    // Tiny mitres are the join between three pieces of the same turned-in
+    // covering. They are construction detail, not corner ornaments.
+    const m = edgeGap * 1.18;
+    stroke(ctx, x1 - m, y0, x1, y0 + m, FLAT.ink, line, seed + 62);
+    stroke(ctx, x1 - m, y1, x1, y1 - m, FLAT.ink, line, seed + 63);
+  } else if (construction.boardEdge === 'folded') {
+    // Paper and sailcloth turn as one sheet. A pair of registration nicks at
+    // the fore edge is enough to distinguish a fold from a leather mitre.
+    for (const t of [0.31, 0.69] as const) {
+      stroke(
+        ctx,
+        x1 - edgeGap * 0.72,
+        by + bh * t,
+        x1,
+        by + bh * t,
+        FLAT.ink,
+        line,
+        seed + t * 100,
+      );
+    }
+  } else if (construction.boardEdge === 'raw') {
+    // Millboard has a cut edge: three uneven fibres break the otherwise clean
+    // fore-edge rule. Still crisp flat marks, never a distressed overlay.
+    for (let i = 0; i < 3; i++) {
+      const cy = by + bh * (0.26 + i * 0.24);
+      stroke(ctx, x1 - edgeGap * 0.45, cy, x1 + edgeGap * 0.15, cy + (i - 1) * edgeGap * 0.22, FLAT.ink, line, seed + 70 + i);
+    }
+  }
+
+  // Double-jointed skins turn over the far board joint as well. Its second
+  // rule is kept short of the head and tail so it cannot read as another frame.
+  if (spec.joints > 1) {
+    stroke(
+      ctx,
+      x1 - edgeGap * 1.45,
+      by + bh * 0.055,
+      x1 - edgeGap * 1.45,
+      by + bh * 0.945,
+      FLAT.ink,
+      Math.max(0.7, line * 0.82),
+      seed + 79,
+    );
+  }
+
+  ctx.restore();
+}
+
+/** Sew or finish one head/tail of the back in the binding's own vocabulary. */
+function paintEndband(
+  ctx: FlatCtx,
+  construction: CoverConstruction,
+  bx: number,
+  by: number,
+  bh: number,
+  spineW: number,
+  face: string,
+  dark: string,
+  accent: string,
+  ink: number,
+  headTailStyle: number | undefined,
+  seed: number,
+): void {
+  if (construction.endband === 'none') return;
+  const x0 = bx + spineW * (construction.roundRatio + 0.08);
+  const x1 = bx + spineW * 0.88;
+  const rule = Math.max(0.72, ink * 0.34);
+
+  for (const [edge, t] of [[0, 0.035], [1, 0.965]] as const) {
+    const y = by + bh * t;
+    if (construction.endband === 'plain') {
+      stroke(ctx, x0, y, x1, y, FLAT.ink, Math.max(0.8, ink * 0.5), seed + edge);
+      continue;
+    }
+
+    if (construction.endband === 'stitched') {
+      stroke(ctx, x0, y, x1, y, dark, Math.max(0.8, ink * 0.55), seed + 8 + edge);
+      for (let i = 0; i < 4; i++) {
+        const cx = x0 + ((i + 0.5) / 4) * (x1 - x0);
+        const dy = edge === 0 ? spineW * 0.045 : -spineW * 0.045;
+        stroke(ctx, cx - spineW * 0.035, y - dy, cx + spineW * 0.035, y + dy, FLAT.ink, rule, seed + 14 + edge * 10 + i);
+      }
+      continue;
+    }
+
+    // Woven endbands and vellum ties are real two-colour sewing. Their short
+    // alternating pieces provide fine craft without inventing highlights.
+    stroke(ctx, x0, y, x1, y, FLAT.ink, Math.max(1, ink * 0.64), seed + 30 + edge);
+    const endbandStyle = normalizeHeadTailStyle(headTailStyle);
+    if (endbandStyle === 3) {
+      // Solid silk roll: one broad sewn core with restrained edge seams. Its
+      // geometry is continuous and materially heavier than either a chevron
+      // or individually wrapped cord, even at the held spine's true width.
+      const silk = mixHex(accent, FLAT.cream, 0.55);
+      stroke(ctx, x0, y, x1, y, silk, Math.max(1.8, ink * 0.88), seed + 32 + edge);
+      const seam = Math.max(0.65, ink * 0.26);
+      const offset = spineW * 0.045 * (edge === 0 ? 1 : -1);
+      stroke(ctx, x0, y + offset, x1, y + offset, dark, seam, seed + 33 + edge);
+      stroke(ctx, x0, y - offset * 0.45, x1, y - offset * 0.45, FLAT.cream, seam * 0.72, seed + 35 + edge);
+      continue;
+    }
+    if (endbandStyle === 2) {
+      // Wrapped cord: one continuous coloured core with measured dark wraps.
+      const cord = mixHex(accent, FLAT.cream, 0.32);
+      stroke(ctx, x0, y, x1, y, cord, Math.max(1.35, ink * 0.68), seed + 34 + edge);
+      for (let i = 0; i < 3; i += 1) {
+        const cx = x0 + ((i + 0.5) / 3) * (x1 - x0);
+        const dy = spineW * 0.06 * (edge === 0 ? 1 : -1);
+        stroke(ctx, cx - spineW * 0.045, y - dy, cx + spineW * 0.045, y + dy, dark, Math.max(rule, 0.8), seed + 36 + edge * 10 + i);
+      }
+      continue;
+    }
+    // Woven chevron: two continuous interlaced paths, never a row of pale
+    // stitch-dots. Four broad turns are the most this true-width back can hold.
+    const steps = 4;
+    const amplitude = spineW * 0.055 * (edge === 0 ? 1 : -1);
+    for (const [phase, thread] of [
+      [0, construction.endband === 'tied' ? face : mixHex(accent, FLAT.cream, 0.28)],
+      [1, FLAT.cream],
+    ] as const) {
+      ctx.beginPath();
+      for (let i = 0; i <= steps; i += 1) {
+        const px = x0 + (i / steps) * (x1 - x0);
+        const py = y + ((i + phase) % 2 === 0 ? -amplitude : amplitude);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      pen(ctx, thread, Math.max(0.75, ink * 0.42));
+      ctx.stroke();
+    }
+  }
+}
+
+/**
+ * Carry a dedicated binder's companion tool onto the visible turn of the
+ * back. This is deliberately titleless and unframed: the physical raised
+ * cords already define its compartment, so another outlined box would read
+ * as a sticker. These are purpose-cut shelf-scale strikes, never thumbnails
+ * of the richer front-cover blocks.
+ */
+function paintCoverSpineTool(
+  ctx: FlatCtx,
+  programme: CoverEmblemProgramme,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+): void {
+  const leaf = (
+    x: number,
+    y: number,
+    angle: number,
+    length = r * 0.72,
+    width = r * 0.25,
+  ): void => petal(ctx, x, y, angle, length, width, colour);
+  const ivy = (x: number, y: number, angle: number, size: number): void => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.38);
+    ctx.quadraticCurveTo(-size * 0.46, size * 0.16, -size * 0.58, -size * 0.18);
+    ctx.quadraticCurveTo(-size * 0.24, -size * 0.18, 0, -size * 0.7);
+    ctx.quadraticCurveTo(size * 0.24, -size * 0.18, size * 0.58, -size * 0.18);
+    ctx.quadraticCurveTo(size * 0.46, size * 0.16, 0, size * 0.38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  ctx.save();
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = colour;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  pen(ctx, colour, line);
+
+  switch (programme) {
+    case 'lozenge-fleuron':
+      lozengeOutline(ctx, cx, cy, r * 0.72, colour, line * 0.78);
+      leaf(cx, cy + r * 0.18, -Math.PI / 2, r * 0.82, r * 0.25);
+      break;
+
+    case 'laurel-branch': {
+      // One broad bowed branch with alternating, full-size leaves. The former
+      // three-leaf diagonal compressed into a tiny heraldic crest here.
+      pen(ctx, colour, line * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.9, cy + r * 0.62);
+      ctx.quadraticCurveTo(cx - r * 0.02, cy + r * 0.28, cx + r * 0.9, cy - r * 0.62);
+      ctx.stroke();
+      for (const [x, y, angle] of [
+        [-0.56, 0.38, -2.02],
+        [-0.28, 0.22, 0.46],
+        [0.06, -0.04, -2.02],
+        [0.38, -0.3, 0.46],
+      ] as const) {
+        leaf(cx + r * x, cy + r * y, angle, r * 0.66, r * 0.25);
+      }
+      break;
+    }
+
+    case 'stellar-palmette':
+      for (const angle of [-Math.PI * 0.72, -Math.PI / 2, -Math.PI * 0.28]) {
+        leaf(cx, cy + r * 0.45, angle, r * 0.92, r * 0.25);
+      }
+      stroke(ctx, cx - r * 0.62, cy + r * 0.5, cx + r * 0.62, cy + r * 0.5, colour, line, 511);
+      break;
+
+    case 'acanthus-arabesque':
+      // Low opposed S-scrolls keep an open horizontal silhouette; nothing
+      // rises from a shared bowl, so this cannot become a U or horseshoe.
+      pen(ctx, colour, line * 0.9);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.04, cy + r * 0.26);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.34,
+          cy - r * 0.34,
+          cx + side * r * 1.02,
+          cy + r * 0.18,
+          cx + side * r * 0.78,
+          cy - r * 0.5,
+        );
+        ctx.stroke();
+        leaf(
+          cx + side * r * 0.72,
+          cy - r * 0.34,
+          side < 0 ? -2.7 : -0.44,
+          r * 0.72,
+          r * 0.26,
+        );
+      }
+      leaf(cx, cy + r * 0.28, -Math.PI / 2, r * 0.5, r * 0.2);
+      break;
+
+    case 'solar-palms':
+      for (const side of [-1, 1] as const) {
+        leaf(cx + side * r * 0.08, cy + r * 0.38, side < 0 ? -Math.PI * 0.72 : -Math.PI * 0.28, r * 0.88, r * 0.26);
+      }
+      stroke(ctx, cx, cy - r * 0.82, cx, cy + r * 0.5, colour, line, 521);
+      stroke(ctx, cx - r * 0.42, cy - r * 0.38, cx + r * 0.42, cy - r * 0.38, colour, line, 523);
+      break;
+
+    case 'upright-fleuron':
+      stroke(ctx, cx, cy + r * 0.82, cx, cy - r * 0.08, colour, line, 531);
+      leaf(cx, cy + r * 0.05, -Math.PI / 2, r * 0.86, r * 0.27);
+      leaf(cx, cy + r * 0.3, -Math.PI * 0.78, r * 0.72, r * 0.24);
+      leaf(cx, cy + r * 0.3, -Math.PI * 0.22, r * 0.72, r * 0.24);
+      break;
+
+    case 'oak-sprig':
+      // A balanced three-leaf oak spray, reduced for the turn but never to a
+      // diagonal chain. The two hanging fruits anchor the botanical reading.
+      stroke(ctx, cx, cy + r * 0.82, cx, cy - r * 0.58, colour, line * 0.9, 541);
+      stroke(ctx, cx, cy + r * 0.28, cx - r * 0.7, cy - r * 0.26, colour, line * 0.78, 543);
+      stroke(ctx, cx, cy + r * 0.28, cx + r * 0.7, cy - r * 0.26, colour, line * 0.78, 545);
+      leaf(cx, cy - r * 0.42, -Math.PI / 2, r * 0.76, r * 0.29);
+      leaf(cx - r * 0.48, cy - r * 0.12, -2.55, r * 0.66, r * 0.28);
+      leaf(cx + r * 0.48, cy - r * 0.12, -0.59, r * 0.66, r * 0.28);
+      leaf(cx - r * 0.22, cy + r * 0.42, Math.PI / 2, r * 0.34, r * 0.16);
+      leaf(cx + r * 0.22, cy + r * 0.42, Math.PI / 2, r * 0.34, r * 0.16);
+      break;
+
+    case 'thistle-bloom':
+      stroke(ctx, cx, cy + r * 0.78, cx, cy - r * 0.12, colour, line, 545);
+      leaf(cx, cy + r * 0.5, -Math.PI * 0.78, r * 0.62, r * 0.22);
+      leaf(cx, cy + r * 0.5, -Math.PI * 0.22, r * 0.62, r * 0.22);
+      for (const x of [-0.28, 0, 0.28]) {
+        leaf(cx + r * x, cy - r * 0.18, -Math.PI / 2, r * 0.62, r * 0.16);
+      }
+      break;
+
+    case 'open-state-crown': {
+      const bandTop = cy + r * 0.12;
+      const bandBottom = cy + r * 0.5;
+
+      // At this width an arch becomes a dome and a dome becomes a tent. The
+      // side companion therefore carries the crown's irreducible silhouette:
+      // three broad points growing directly out of one bowed circlet. It is a
+      // simplified strike of the front-cover block, not the old pictogram.
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.82, bandTop);
+      ctx.quadraticCurveTo(cx - r * 0.76, cy - r * 0.28, cx - r * 0.62, cy - r * 0.5);
+      ctx.quadraticCurveTo(cx - r * 0.46, cy - r * 0.28, cx - r * 0.34, bandTop);
+      ctx.quadraticCurveTo(cx - r * 0.2, cy - r * 0.34, cx, cy - r * 0.8);
+      ctx.quadraticCurveTo(cx + r * 0.2, cy - r * 0.34, cx + r * 0.34, bandTop);
+      ctx.quadraticCurveTo(cx + r * 0.46, cy - r * 0.28, cx + r * 0.62, cy - r * 0.5);
+      ctx.quadraticCurveTo(cx + r * 0.76, cy - r * 0.28, cx + r * 0.82, bandTop);
+      ctx.lineTo(cx + r * 0.72, bandBottom);
+      ctx.quadraticCurveTo(cx, bandBottom + r * 0.1, cx - r * 0.72, bandBottom);
+      ctx.closePath();
+      ctx.fill();
+
+      // A second bowed rule makes the solid base read as a circlet rather
+      // than a castle wall. No dome, cross or laurel is introduced here.
+      pen(ctx, colour, line * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.74, bandTop + r * 0.18);
+      ctx.quadraticCurveTo(cx, bandTop + r * 0.28, cx + r * 0.74, bandTop + r * 0.18);
+      ctx.stroke();
+
+      break;
+    }
+
+    case 'rosette-arabesque':
+      for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+        leaf(cx, cy, angle, r * 0.78, r * 0.28);
+      }
+      break;
+
+    case 'broad-fleur-de-lis':
+      leaf(cx, cy + r * 0.3, -Math.PI / 2, r * 1.02, r * 0.24);
+      leaf(cx - r * 0.04, cy + r * 0.18, -Math.PI * 0.78, r * 0.9, r * 0.3);
+      leaf(cx + r * 0.04, cy + r * 0.18, -Math.PI * 0.22, r * 0.9, r * 0.3);
+      stroke(ctx, cx - r * 0.54, cy + r * 0.44, cx + r * 0.54, cy + r * 0.44, colour, line, 551);
+      stroke(ctx, cx - r * 0.4, cy + r * 0.64, cx + r * 0.4, cy + r * 0.64, colour, line * 0.62, 553);
+      break;
+
+    case 'ivy-knot':
+      // Persisted programme name retained for compatibility; the live tool is
+      // the honest paired-ivy construction shared with the shelf companion.
+      pen(ctx, colour, line * 0.84);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.72);
+      ctx.quadraticCurveTo(cx - r * 0.18, cy + r * 0.02, cx - r * 0.58, cy - r * 0.46);
+      ctx.moveTo(cx, cy + r * 0.72);
+      ctx.quadraticCurveTo(cx + r * 0.18, cy + r * 0.02, cx + r * 0.58, cy - r * 0.46);
+      ctx.stroke();
+      ivy(cx - r * 0.58, cy - r * 0.46, -2.32, r * 0.7);
+      ivy(cx + r * 0.58, cy - r * 0.46, -0.82, r * 0.7);
+      break;
+
+    case 'oak-acanthus-volutes':
+      // Horizontal C-volutes with upright terminals; the old V construction
+      // made two outward leaves read as a dove in flight.
+      pen(ctx, colour, line * 0.86);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.04, cy + r * 0.34);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.38,
+          cy - r * 0.22,
+          cx + side * r * 1.02,
+          cy + r * 0.22,
+          cx + side * r * 0.78,
+          cy - r * 0.46,
+        );
+        ctx.stroke();
+        leaf(cx + side * r * 0.76, cy - r * 0.38, -Math.PI / 2, r * 0.7, r * 0.27);
+      }
+      leaf(cx, cy + r * 0.34, -Math.PI / 2, r * 0.48, r * 0.19);
+      break;
+
+    case 'wheat-saltire':
+      // Bowed stalks meet only at the low binding tie; their large grains,
+      // rather than the crossing, own the silhouette.
+      pen(ctx, colour, line * 0.72);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx - side * r * 0.2, cy + r * 0.8);
+        ctx.quadraticCurveTo(cx + side * r * 0.02, cy + r * 0.08, cx + side * r * 0.52, cy - r * 0.82);
+        ctx.stroke();
+        for (const [x, y, angle] of [
+          [0.24, -0.18, -0.46],
+          [0.36, -0.46, -2.04],
+          [0.48, -0.7, -0.46],
+        ] as const) {
+          leaf(cx + side * r * x, cy + r * y, side < 0 ? Math.PI - angle : angle, r * 0.44, r * 0.18);
+        }
+      }
+      stroke(ctx, cx - r * 0.34, cy + r * 0.52, cx + r * 0.34, cy + r * 0.52, colour, line, 563);
+      break;
+
+    case 'split-pomegranate':
+      // Two open fruit halves leave a visible central seam and open base, so
+      // the tiny strike never becomes a coin, eye or cabinet pull.
+      pen(ctx, colour, line * 0.86);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.12, cy - r * 0.42);
+        ctx.quadraticCurveTo(cx + side * r * 0.82, cy - r * 0.5, cx + side * r * 0.7, cy + r * 0.28);
+        ctx.quadraticCurveTo(cx + side * r * 0.58, cy + r * 0.66, cx + side * r * 0.18, cy + r * 0.5);
+        ctx.stroke();
+        leaf(cx + side * r * 0.44, cy + r * 0.06, -Math.PI / 2, r * 0.36, r * 0.17);
+      }
+      leaf(cx - r * 0.24, cy - r * 0.42, -2.08, r * 0.44, r * 0.17);
+      leaf(cx, cy - r * 0.46, -Math.PI / 2, r * 0.5, r * 0.18);
+      leaf(cx + r * 0.24, cy - r * 0.42, -1.06, r * 0.44, r * 0.17);
+      break;
+
+    case 'open-tulip':
+      pen(ctx, colour, line * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.62, cy - r * 0.42);
+      ctx.quadraticCurveTo(cx - r * 0.5, cy + r * 0.14, cx, cy + r * 0.22);
+      ctx.quadraticCurveTo(cx + r * 0.5, cy + r * 0.14, cx + r * 0.62, cy - r * 0.42);
+      ctx.quadraticCurveTo(cx + r * 0.24, cy - r * 0.2, cx, cy - r * 0.72);
+      ctx.quadraticCurveTo(cx - r * 0.24, cy - r * 0.2, cx - r * 0.62, cy - r * 0.42);
+      ctx.stroke();
+      stroke(ctx, cx, cy + r * 0.2, cx, cy + r * 0.74, colour, line, 571);
+      leaf(cx, cy + r * 0.56, -Math.PI * 0.76, r * 0.54, r * 0.18);
+      leaf(cx, cy + r * 0.5, -Math.PI * 0.24, r * 0.54, r * 0.18);
+      break;
+
+    case 'pinecone-needles':
+      // A tall cone crosses one asymmetric needle branch. Bilateral antennae
+      // were what made the previous reduction read as an insect or UFO.
+      pen(ctx, colour, line * 0.82);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.86, cy + r * 0.42);
+      ctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.08, cx + r * 0.88, cy - r * 0.48);
+      ctx.stroke();
+      for (const [x, y, tx, ty] of [
+        [-0.5, 0.24, -0.92, -0.04],
+        [-0.34, 0.14, -0.72, 0.54],
+        [0.5, -0.24, 0.94, -0.72],
+      ] as const) {
+        stroke(ctx, cx + r * x, cy + r * y, cx + r * tx, cy + r * ty, colour, line * 0.58, 581 + x);
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.78);
+      ctx.quadraticCurveTo(cx - r * 0.42, cy - r * 0.36, cx - r * 0.34, cy + r * 0.46);
+      ctx.quadraticCurveTo(cx, cy + r * 0.82, cx + r * 0.34, cy + r * 0.46);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy - r * 0.36, cx, cy - r * 0.78);
+      ctx.stroke();
+      leaf(cx, cy - r * 0.28, Math.PI / 2, r * 0.34, r * 0.18);
+      leaf(cx - r * 0.1, cy + r * 0.12, Math.PI / 2, r * 0.34, r * 0.17);
+      leaf(cx + r * 0.1, cy + r * 0.12, Math.PI / 2, r * 0.34, r * 0.17);
+      break;
+
+    case 'anthemion-fan':
+      // Five open leaves flow from a curled base; there is no horizontal
+      // circlet for the fan to masquerade as a crown.
+      for (const [angle, length, width] of [
+        [-2.82, 0.78, 0.22],
+        [-2.18, 0.9, 0.22],
+        [-Math.PI / 2, 1.02, 0.24],
+        [-0.96, 0.9, 0.22],
+        [-0.32, 0.78, 0.22],
+      ] as const) {
+        leaf(cx, cy + r * 0.5, angle, r * length, r * width);
+      }
+      pen(ctx, colour, line * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.58);
+      ctx.quadraticCurveTo(cx - r * 0.42, cy + r * 0.78, cx - r * 0.68, cy + r * 0.54);
+      ctx.moveTo(cx, cy + r * 0.58);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy + r * 0.78, cx + r * 0.68, cy + r * 0.54);
+      ctx.stroke();
+      break;
+
+    case 'fern-palmette':
+      // Two bowed rachises with three broad pinnae apiece form a split fan,
+      // not a diagonal fern sprig or paired lung outline.
+      for (const side of [-1, 1] as const) {
+        pen(ctx, colour, line * 0.82);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r * 0.72);
+        ctx.quadraticCurveTo(cx + side * r * 0.62, cy + r * 0.02, cx + side * r * 0.32, cy - r * 0.78);
+        ctx.stroke();
+        for (const [x, y] of [[0.18, 0.38], [0.34, 0], [0.34, -0.36]] as const) {
+          leaf(
+            cx + side * r * x,
+            cy + r * y,
+            side < 0 ? -2.58 : -0.56,
+            r * 0.5,
+            r * 0.2,
+          );
+        }
+      }
+      break;
+
+    case 'ginkgo-fans':
+      // Two upward, notched fans on separate bowed stems. Keeping them open
+      // eliminates the filled bow-tie / lamp silhouette of the old strike.
+      for (const side of [-1, 1] as const) {
+        const stemX = cx + side * r * 0.46;
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.08, cy + r * 0.7);
+        ctx.quadraticCurveTo(cx + side * r * 0.18, cy + r * 0.08, stemX, cy - r * 0.22);
+        ctx.moveTo(stemX, cy - r * 0.22);
+        ctx.quadraticCurveTo(cx + side * r * 0.9, cy - r * 0.34, cx + side * r * 0.76, cy - r * 0.82);
+        ctx.quadraticCurveTo(cx + side * r * 0.54, cy - r * 0.64, cx + side * r * 0.46, cy - r * 0.88);
+        ctx.quadraticCurveTo(cx + side * r * 0.32, cy - r * 0.62, cx + side * r * 0.14, cy - r * 0.78);
+        ctx.quadraticCurveTo(cx + side * r * 0.08, cy - r * 0.32, stemX, cy - r * 0.22);
+        pen(ctx, colour, line * 0.82);
+        ctx.stroke();
+        stroke(ctx, stemX, cy - r * 0.22, cx + side * r * 0.64, cy - r * 0.66, colour, line * 0.54, 611 + side);
+      }
+      leaf(cx, cy + r * 0.58, -Math.PI / 2, r * 0.38, r * 0.17);
+      break;
+
+  }
+  ctx.restore();
+}
+
+function paintCoverSpineEmblem(
+  ctx: FlatCtx,
+  construction: CoverConstruction,
+  bx: number,
+  by: number,
+  bh: number,
+  spineW: number,
+  ornament: number,
+  colour: string,
+): void {
+  const kind = normalizeCoverEmblemIndex(ornament);
+  if (kind < 0) return;
+
+  const stations = [...construction.supports].sort((a, b) => a - b);
+  const bounds = [0.1, ...stations, 0.9];
+  let gapStart = bounds[0]!;
+  let gapEnd = bounds[1] ?? 0.9;
+  for (let i = 0; i < bounds.length - 1; i += 1) {
+    const start = bounds[i]!;
+    const end = bounds[i + 1]!;
+    if (end - start > gapEnd - gapStart) {
+      gapStart = start;
+      gapEnd = end;
+    }
+  }
+
+  const x0 = bx + spineW * Math.max(0.08, construction.roundRatio * 0.62);
+  const x1 = bx + spineW * 0.9;
+  const cx = (x0 + x1) / 2;
+  const cy = by + bh * ((gapStart + gapEnd) / 2);
+  const gapHeight = bh * (gapEnd - gapStart);
+  const r = Math.min(spineW * 0.43, (x1 - x0) * 0.5, gapHeight * 0.2, bh * 0.05);
+  if (r < 1.2) return;
+
+  paintCoverSpineTool(
+    ctx,
+    coverEmblemProgramme(kind),
+    cx,
+    cy,
+    r,
+    colour,
+    Math.max(0.75, r * 0.14),
+  );
 }
 
 /**
@@ -1477,6 +2828,8 @@ function paintTextBlock(
  */
 function paintSpineStrip(
   ctx: FlatCtx,
+  spec: MaterialSpec,
+  construction: CoverConstruction,
   bx: number,
   by: number,
   bw: number,
@@ -1485,8 +2838,10 @@ function paintSpineStrip(
   radius: number,
   face: string,
   dark: string,
+  accent: string,
   ink: number,
   gilded: boolean,
+  params: CoverParams,
   seed: number,
 ): void {
   ctx.save();
@@ -1501,10 +2856,15 @@ function paintSpineStrip(
   // the cover was drawing the spine as one flat slab, which is why it read as
   // a stripe painted on rather than as an edge.
   ctx.fillStyle = mixHex(dark, FLAT.ink, 0.3);
-  ctx.fillRect(bx - radius, by - radius, spineW * 0.2 + radius, bh + radius * 2);
+  ctx.fillRect(
+    bx - radius,
+    by - radius,
+    spineW * construction.roundRatio + radius,
+    bh + radius * 2,
+  );
   stroke(
     ctx,
-    bx + spineW * 0.2,
+    bx + spineW * construction.roundRatio,
     by + bh * 0.012,
     bx + spineW * 0.2,
     by + bh * 0.988,
@@ -1523,10 +2883,10 @@ function paintSpineStrip(
   // The hinge: one ink line where the strip meets the face.
   stroke(ctx, bx + spineW, by + bh * 0.012, bx + spineW, by + bh * 0.988, FLAT.ink, ink * 0.8, seed + 2);
 
-  // Gilt bands, at the icon's proportions — a close pair near the head and one
-  // alone near the tail, which is also where a real binder puts them. They
-  // stop short of both edges: a round cap that lands on the outline reads as
-  // a band leaking out of the book.
+  // Raised supports belong to leather, vellum and split bindings. Case-bound
+  // cloth and flexible paper deliberately have none: giving every material
+  // the icon's same three gilt stripes made all fifty covers one generic prop.
+  // They stop short of both edges so the rounded back remains one silhouette.
   //
   // Without foil the band becomes the board's own lighter face, so a raised
   // cord still shows as the strip stepping back up towards us. That is the
@@ -1535,39 +2895,84 @@ function paintSpineStrip(
   // Each band is a CORD now, not a stripe: one ink hairline along each edge of
   // it, which is what a raised band under the leather actually shows and what
   // separates three painted lines from three ridges.
-  const band = spineW * 0.26;
-  const x0 = bx + spineW * 0.16;
-  const x1 = bx + spineW * 0.84;
-  const gold = gilded ? FLAT.gilt : face;
+  const band = spineW * construction.supportWeight;
+  const x0 = bx + spineW * (construction.roundRatio + 0.07);
+  const x1 = bx + spineW * 0.87;
+  const gold = (params.bandGilt ?? gilded) ? (params.toolingHex ?? FLAT.gilt) : face;
   const cord = Math.max(0.7, ink * 0.35);
-  for (const [t, weight] of [
-    [0.218, 1],
-    [0.296, 0.58],
-    [0.785, 1],
-  ] as const) {
+  for (const [index, t] of construction.supports.entries()) {
+    const weight = construction.endband === 'tied' ? (index % 2 === 0 ? 0.74 : 0.58) : 1;
     const cy = by + bh * t;
     stroke(ctx, x0, cy, x1, cy, gold, band * weight, seed + t * 100);
     for (const s of [-1, 1] as const) {
       const ey = cy + (s * band * weight) / 2;
       stroke(ctx, x0, ey, x1, ey, FLAT.ink, cord, seed + t * 100 + s * 3);
     }
+    if (construction.endband === 'tied') {
+      dot(ctx, x1 - spineW * 0.035, cy, Math.max(0.65, band * 0.28), accent);
+    }
   }
 
-  // Head and tail caps: the two short rules across the strip that every bound
-  // book has and this one did not. They also stop the strip reading as a
-  // rectangle that runs off the top and bottom of the board.
-  for (const t of [0.035, 0.965] as const) {
+  if (construction.endband === 'stitched') {
+    // The seam holding a flexible sailcloth wrapper together.  Discrete
+    // stitches make it construction, while one continuous rule looked like a
+    // decorative stripe painted down the back.
+    for (let i = 0; i < 8; i++) {
+      const t0 = 0.09 + i * 0.105;
+      stroke(
+        ctx,
+        bx + spineW * 0.58,
+        by + bh * t0,
+        bx + spineW * 0.58,
+        by + bh * (t0 + 0.052),
+        FLAT.ink,
+        Math.max(0.72, ink * 0.35),
+        seed + 150 + i,
+      );
+    }
+  } else if (spec.group === 'paper' && construction.supports.length === 0) {
+    // One long fold down a flexible/paper back; again, not a support band.
     stroke(
       ctx,
-      bx + spineW * 0.24,
-      by + bh * t,
-      bx + spineW * 0.94,
-      by + bh * t,
+      bx + spineW * 0.6,
+      by + bh * 0.06,
+      bx + spineW * 0.6,
+      by + bh * 0.94,
       FLAT.ink,
-      Math.max(0.8, ink * 0.5),
-      seed + t * 70,
+      Math.max(0.7, ink * 0.32),
+      seed + 151,
     );
   }
+
+  const emblemInk = resolveCoverEmblemInk(
+    params.emblemHex ?? params.toolingHex ?? (gilded ? FLAT.giltPale : face),
+    dark,
+  );
+  paintCoverSpineEmblem(
+    ctx,
+    construction,
+    bx,
+    by,
+    bh,
+    spineW,
+    params.medallion,
+    emblemInk,
+  );
+
+  paintEndband(
+    ctx,
+    construction,
+    bx,
+    by,
+    bh,
+    spineW,
+    face,
+    dark,
+    accent,
+    ink,
+    params.headTailStyle,
+    seed + 170,
+  );
 }
 
 /**
@@ -1605,13 +3010,22 @@ function paintSpineStrip(
  */
 
 /** What sits at the four corners of a frame. */
-type FrameCorner = 'none' | 'dot' | 'ring' | 'lozenge' | 'bracket' | 'fleuron' | 'stud';
+type FrameCorner =
+  | 'none'
+  | 'dot'
+  | 'ring'
+  | 'lozenge'
+  | 'bracket'
+  | 'fleuron'
+  | 'acanthus'
+  | 'renaissance'
+  | 'stud';
 
 /** What sits at the middle of each side. */
 type FrameSide = 'none' | 'lozenge' | 'tick' | 'dot' | 'arc' | 'pair';
 
 /** How the rule turns at a corner. */
-type FrameTurn = 'square' | 'soft' | 'round' | 'ogee';
+type FrameTurn = 'square' | 'soft' | 'round' | 'ogee' | 'shouldered';
 
 interface FrameSpec {
   id: string;
@@ -1624,6 +3038,9 @@ interface FrameSpec {
   /** Fill the gap between rule 0 and rule 1 with a flat band. */
   band?: boolean;
 }
+
+/** The binder's structural weight, used to author matching corner tools. */
+export type FrameToolTier = 'single' | 'double' | 'fillet' | 'triple' | 'banded';
 
 /**
  * How far a rule's corner is rounded off, so a corner TOOL can be put where
@@ -1638,7 +3055,8 @@ function frameTurnRadius(turn: FrameTurn, m: number): number {
   if (turn === 'square') return m * 0.008;
   if (turn === 'round') return m * 0.16;
   if (turn === 'soft') return m * 0.05;
-  return m * 0.13; // ogee
+  if (turn === 'shouldered') return m * 0.055;
+  return m * 0.065; // restrained ogee, never a rounded UI-card turn
 }
 
 function frame(
@@ -1654,6 +3072,20 @@ function frame(
 }
 
 /**
+ * A corner tool belongs to its surrounding fillets. A single-rule bracket is
+ * a spare return, while a triple or banded programme needs a deeper, broader
+ * cut. Keeping the tier derived from the frame spec prevents the old result
+ * where several names painted the same tiny corner stamp.
+ */
+function frameToolTier(spec: FrameSpec): FrameToolTier {
+  if (spec.band === true) return 'banded';
+  if (spec.rules.length >= 3) return 'triple';
+  if (spec.rules.length === 2 && Math.min(...spec.rules) <= 0.45) return 'fillet';
+  if (spec.rules.length === 2) return 'double';
+  return 'single';
+}
+
+/**
  * Fifty frames. The first four are the originals, hex-for-hex in behaviour —
  * `frame` is index-addressed by saved book data, so reordering the head of this
  * table silently redresses every book anyone has already customised.
@@ -1666,10 +3098,10 @@ const FRAMES: readonly FrameSpec[] = [
 
   /* --- single rules, varying the corner --- */
   frame('ringed', 'Ringed Corners', [1], 'ring', 'none', 'soft'),
-  frame('bracketed', 'Bracketed', [1], 'bracket', 'none', 'square'),
-  frame('fleuron-corners', 'Fleuron Corners', [1], 'fleuron', 'none', 'soft'),
+  frame('bracketed', 'Bracketed Fillet', [1], 'bracket', 'none', 'square'),
+  frame('acanthus-return', 'Open Acanthus Return', [1, 0.4], 'acanthus', 'none', 'square'),
   frame('studded', 'Studded', [1], 'stud', 'none', 'square'),
-  frame('lozenge-corners', 'Lozenge Corners', [1], 'lozenge', 'none', 'soft'),
+  frame('lozenge-corners', 'Corner Lozenges', [1], 'lozenge', 'none', 'soft'),
   frame('round-rule', 'Round Rule', [1], 'none', 'none', 'round'),
 
   /* --- single rules, varying the side mark --- */
@@ -1677,53 +3109,193 @@ const FRAMES: readonly FrameSpec[] = [
   frame('side-dots', 'Side Dots', [1], 'none', 'dot', 'soft'),
   frame('side-arcs', 'Side Arcs', [1], 'none', 'arc', 'round'),
   frame('side-pairs', 'Paired Sides', [1], 'none', 'pair', 'soft'),
-  frame('centred-lozenge', 'Centred Lozenge', [1], 'none', 'lozenge', 'square'),
+  frame('centred-lozenge', 'Compass Lozenges', [1], 'none', 'lozenge', 'square'),
 
   /* --- double rules --- */
   frame('double-dots', 'Double with Dots', [1, 0.7], 'dot', 'none', 'soft'),
   frame('double-rings', 'Double with Rings', [1, 0.7], 'ring', 'none', 'soft'),
-  frame('double-brackets', 'Double Bracketed', [1, 0.7], 'bracket', 'none', 'square'),
+  frame('double-brackets', 'Double Bracket', [1, 0.7], 'bracket', 'none', 'square'),
   frame('double-ticks', 'Double with Ticks', [1, 0.7], 'none', 'tick', 'soft'),
-  frame('double-lozenge', 'Double Lozenge', [1, 0.7], 'lozenge', 'lozenge', 'soft'),
-  frame('double-ogee', 'Double Ogee', [1, 0.7], 'none', 'none', 'ogee'),
-  frame('double-fleuron', 'Double Fleuron', [1, 0.7], 'fleuron', 'none', 'soft'),
+  frame('double-lozenge', 'Double Lozenges', [1, 0.7], 'lozenge', 'lozenge', 'soft'),
+  frame('restrained-ogee', 'Shouldered Ogee Panel', [1, 0.42], 'none', 'none', 'shouldered'),
+  frame('double-fleuron', 'Double Fleurons', [1, 0.7], 'fleuron', 'none', 'soft'),
   frame('double-round', 'Double Round', [1, 0.7], 'none', 'arc', 'round'),
   frame('double-stud', 'Double Studded', [1, 0.7], 'stud', 'dot', 'square'),
 
   /* --- fillet: a heavy rule with a fine one inside --- */
-  frame('fillet', 'Fillet', [1, 0.4], 'none', 'none', 'soft'),
+  frame('fillet', 'Broad Fillet', [1.35, 0.28], 'none', 'none', 'square'),
   frame('fillet-dots', 'Fillet & Dots', [1, 0.4], 'dot', 'none', 'soft'),
-  frame('fillet-fleuron', 'Fillet & Fleurons', [1, 0.4], 'fleuron', 'none', 'soft'),
-  frame('fillet-ogee', 'Fillet Ogee', [1, 0.4], 'none', 'lozenge', 'ogee'),
+  frame('fillet-fleuron', 'Fleuron Fillet', [1, 0.4], 'fleuron', 'none', 'soft'),
+  frame('fillet-ogee', 'Ogee & Lozenges', [1, 0.4], 'none', 'lozenge', 'ogee'),
   frame('fine-fillet', 'Fine Fillet', [0.5, 1], 'none', 'none', 'soft'),
   frame('fine-fillet-ring', 'Fine Fillet & Ring', [0.5, 1], 'ring', 'none', 'soft'),
 
   /* --- triple rules --- */
-  frame('triple-rule', 'Triple Rule', [1, 0.7, 0.45], 'none', 'none', 'soft'),
+  frame('triple-rule', 'Triple Fillet', [1, 0.7, 0.45], 'none', 'none', 'soft'),
   frame('triple-dots', 'Triple with Dots', [1, 0.7, 0.45], 'dot', 'none', 'soft'),
-  frame('triple-lozenge', 'Triple Lozenge', [1, 0.7, 0.45], 'lozenge', 'lozenge', 'soft'),
+  frame('triple-lozenge', 'Triple Lozenges', [1, 0.7, 0.45], 'lozenge', 'lozenge', 'soft'),
   frame('triple-square', 'Triple Square', [1, 0.7, 0.45], 'stud', 'none', 'square'),
-  frame('triple-ogee', 'Triple Ogee', [1, 0.6, 0.35], 'none', 'arc', 'ogee'),
-  frame('triple-bracket', 'Triple Bracketed', [1, 0.7, 0.45], 'bracket', 'tick', 'square'),
+  frame('triple-ogee', 'Triple Ogee', [1, 0.6, 0.35], 'none', 'none', 'ogee'),
+  frame('triple-bracket', 'Triple Bracket', [1, 0.7, 0.45], 'bracket', 'none', 'square'),
 
   /* --- banded: a flat border between two rules --- */
-  frame('banded', 'Banded', [1, 0.7], 'none', 'none', 'soft', true),
+  frame('banded', 'Banded Fillet', [1, 0.7], 'none', 'none', 'square', true),
   frame('banded-dots', 'Banded & Dots', [1, 0.7], 'dot', 'none', 'soft', true),
   frame('banded-ring', 'Banded & Rings', [1, 0.7], 'ring', 'none', 'soft', true),
   frame('banded-lozenge', 'Banded Lozenge', [1, 0.7], 'lozenge', 'lozenge', 'soft', true),
   frame('banded-square', 'Banded Square', [1, 0.7], 'stud', 'none', 'square', true),
-  frame('banded-ogee', 'Banded Ogee', [1, 0.7], 'none', 'arc', 'ogee', true),
+  frame('banded-ogee', 'Banded Ogee', [1, 0.7], 'none', 'none', 'ogee', true),
   frame('banded-triple', 'Banded Triple', [1, 0.7, 0.4], 'dot', 'tick', 'soft', true),
-  frame('banded-fleuron', 'Banded Fleuron', [1, 0.7], 'fleuron', 'none', 'round', true),
+  frame('banded-fleuron', 'Banded Fleurons', [1, 0.7], 'fleuron', 'none', 'soft', true),
 
   /* --- the elaborate end --- */
   frame('panelled', 'Panelled', [1, 0.75, 0.5, 0.3], 'dot', 'lozenge', 'soft'),
-  frame('cathedral', 'Cathedral', [1, 0.6, 0.35], 'fleuron', 'arc', 'ogee'),
+  frame('cathedral', 'Cathedral Fleurons', [1, 0.6, 0.35], 'fleuron', 'none', 'ogee'),
   frame('coffered', 'Coffered', [1, 0.8, 0.55, 0.35], 'stud', 'dot', 'square', true),
   frame('rosace', 'Rosace', [1, 0.5], 'fleuron', 'pair', 'round'),
-  frame('court', 'Court Binding', [1, 0.7, 0.45], 'ring', 'lozenge', 'soft', true),
-  frame('gothic-panel', 'Gothic Panel', [1, 0.65, 0.4], 'bracket', 'arc', 'ogee', true),
+  frame('renaissance-panel', 'Renaissance Panel', [1, 0.55], 'renaissance', 'none', 'square', true),
+  frame('gothic-panel', 'Gothic Panel', [1, 0.65, 0.4], 'bracket', 'none', 'ogee', true),
 ];
+
+/**
+ * The only cover frames readers and automatic recipes can reach.
+ *
+ * Historical indices stay addressable for migration, while every live entry
+ * is built solely from continuous rules, fillets, brackets, fleurons,
+ * lozenges and ogee arcs. Dots, studs, rings and ticks are absent by data, not
+ * by a picker hiding them after the painter already chose one.
+ */
+export const ACTIVE_COVER_FRAME_INDICES = [
+  0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
+] as const;
+
+export interface ActiveCoverFrameOption {
+  readonly index: number;
+  readonly id: string;
+  readonly label: string;
+  /** Structural audit fields exposed with the catalogue so tests and tools
+   * can reject a dotted/studded legacy recipe without copying FRAMES. */
+  readonly rules: readonly number[];
+  readonly corner: FrameCorner;
+  readonly side: FrameSide;
+  readonly turn: FrameTurn;
+  readonly band: boolean;
+  readonly tier: FrameToolTier;
+}
+
+/** One authoritative reader-facing cover-frame catalogue. */
+export const ACTIVE_COVER_FRAMES: readonly ActiveCoverFrameOption[] =
+  ACTIVE_COVER_FRAME_INDICES.map((index) => ({
+    index,
+    id: FRAMES[index]?.id ?? `frame-${index}`,
+    label: FRAMES[index]?.name ?? `Frame ${index + 1}`,
+    rules: FRAMES[index]?.rules ?? [1],
+    corner: FRAMES[index]?.corner ?? 'none',
+    side: FRAMES[index]?.side ?? 'none',
+    turn: FRAMES[index]?.turn ?? 'soft',
+    band: FRAMES[index]?.band ?? false,
+    tier: frameToolTier(FRAMES[index] ?? FRAMES[0]!),
+  }));
+
+const ACTIVE_COVER_FRAME_SET: ReadonlySet<number> = new Set(ACTIVE_COVER_FRAME_INDICES);
+
+/** Semantic translations for retired frame programmes. */
+const RETIRED_COVER_FRAME_REPLACEMENTS: Readonly<Record<number, number>> = {
+  1: 0,
+  3: 8,
+  4: 5,
+  7: 26,
+  9: 0,
+  10: 8,
+  11: 0,
+  12: 2,
+  13: 8,
+  14: 8,
+  15: 2,
+  16: 5,
+  18: 2,
+  19: 8,
+  21: 26,
+  22: 2,
+  23: 26,
+  25: 24,
+  27: 2,
+  28: 24,
+  29: 24,
+  30: 2,
+  31: 2,
+  32: 8,
+  33: 2,
+  34: 2,
+  35: 5,
+  37: 36,
+  38: 36,
+  39: 8,
+  40: 36,
+  41: 36,
+  42: 36,
+  44: 43,
+  45: 43,
+  46: 5,
+  47: 43,
+  49: 5,
+};
+
+export function isActiveCoverFrameIndex(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && ACTIVE_COVER_FRAME_SET.has(value);
+}
+
+/** Hard-normalise old frame furniture into the active continuous case. */
+export function normalizeCoverFrameIndex(value: unknown, fallback = 0): number {
+  if (isActiveCoverFrameIndex(value)) return value;
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    const replacement = RETIRED_COVER_FRAME_REPLACEMENTS[value];
+    if (replacement !== undefined && ACTIVE_COVER_FRAME_SET.has(replacement)) return replacement;
+  }
+  return ACTIVE_COVER_FRAME_SET.has(fallback) ? fallback : ACTIVE_COVER_FRAME_INDICES[0];
+}
+
+/**
+ * Frames quiet enough to share a board with one hanging accent.
+ *
+ * A charm already supplies the cover's secondary furnishing.  A frame with
+ * corner tools, side tools, a filled border, three or more rules, or an ogee
+ * programme supplies another one even when its numeric index happens to be
+ * small.  Keeping this decision beside the authored frame table prevents the
+ * generator from inferring visual density from index ranges again.
+ *
+ * The rule follows the physical hierarchy visible in historic bindings: the
+ * board keeps a plain fillet while the applied furniture is allowed to be the
+ * accent.  See the Library of Congress binding terminology diagram and the
+ * Met's Vitruvius binding survey, which distinguish structural bands/panels
+ * from applied decorative programmes:
+ * https://tile.loc.gov/storage-services/master/gdc/gdcebookspublic/20/19/45/27/33/2019452733/2019452733.pdf
+ * https://www.metmuseum.org/perspectives/vitruvius
+ */
+export const HANGING_ACCENT_FRAME_IDS: readonly number[] = ACTIVE_COVER_FRAME_INDICES.flatMap(
+  (index) => {
+    const spec = FRAMES[index]!;
+    return (
+    spec.rules.length <= 2 &&
+    spec.corner === 'none' &&
+    spec.side === 'none' &&
+    spec.turn !== 'ogee' &&
+    spec.turn !== 'shouldered' &&
+    spec.band !== true
+      ? [index]
+      : []
+    );
+  },
+);
+
+const HANGING_ACCENT_FRAME_SET: ReadonlySet<number> = new Set(
+  HANGING_ACCENT_FRAME_IDS,
+);
+
+/** Whether a frame leaves one calm board for a ribbon, flower, seal or clasp. */
+export function coverFrameSupportsHangingAccent(frameIndex: number): boolean {
+  return Number.isInteger(frameIndex) && HANGING_ACCENT_FRAME_SET.has(frameIndex);
+}
 
 /** How many tooled frames a cover can wear. Derived, never restated. */
 export const COVER_FRAME_COUNT = FRAMES.length;
@@ -1742,6 +3314,28 @@ function traceFrameRect(
   seed: number,
 ): void {
   const m = Math.min(w, h);
+  if (turn === 'shouldered') {
+    // A clipped square shoulder with a short reverse step. This keeps the
+    // historic ogee idea—one change of direction at the corner—without
+    // turning the entire board into a rounded app-card capsule.
+    const r = frameTurnRadius(turn, m);
+    const k = r * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.lineTo(x + w - k, y + k);
+    ctx.lineTo(x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.lineTo(x + w - k, y + h - k);
+    ctx.lineTo(x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.lineTo(x + k, y + h - k);
+    ctx.lineTo(x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x + k, y + k);
+    ctx.closePath();
+    return;
+  }
   if (turn !== 'ogee') {
     wobbleRect(ctx, x, y, w, h, frameTurnRadius(turn, m), seed);
     return;
@@ -1867,6 +3461,7 @@ function paintFrameCorner(
   line: number,
   sx: number,
   sy: number,
+  tier: FrameToolTier,
 ): void {
   switch (kind) {
     case 'none':
@@ -1904,51 +3499,145 @@ function paintFrameCorner(
       lozengeMark(ctx, cx, cy, s * 0.62, colour);
       return;
     case 'bracket': {
-      // The mark a binder's corner tool leaves: an L along both rules, a
-      // shorter L returning inside it, and a pip in the elbow.
+      // The mark a binder's corner tool leaves: an L along both rules and a
+      // tier-specific set of continuous returns. The triple-bracket is now a
+      // genuinely deeper tool rather than the single bracket under more rules.
       pen(ctx, colour, line);
       ctx.beginPath();
       ctx.moveTo(cx + sx * s * 2.4, cy);
       ctx.lineTo(cx, cy);
       ctx.lineTo(cx, cy + sy * s * 2.4);
       ctx.stroke();
-      const g = s * 0.72;
-      pen(ctx, colour, line * 0.68);
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * s * 1.9, cy + sy * g);
-      ctx.lineTo(cx + sx * g, cy + sy * g);
-      ctx.lineTo(cx + sx * g, cy + sy * s * 1.9);
-      ctx.stroke();
-      dot(ctx, cx + sx * s * 1.5, cy + sy * s * 1.5, line * 0.95, colour);
+      const returns = tier === 'triple' ? 3 : tier === 'double' || tier === 'banded' ? 2 : 1;
+      for (let i = 0; i < returns; i += 1) {
+        const g = s * (0.62 + i * 0.48);
+        const arm = s * Math.max(1.18, 1.92 - i * 0.2);
+        pen(ctx, colour, line * Math.max(0.42, 0.68 - i * 0.1));
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * arm, cy + sy * g);
+        ctx.lineTo(cx + sx * g, cy + sy * g);
+        ctx.lineTo(cx + sx * g, cy + sy * arm);
+        ctx.stroke();
+      }
       return;
     }
     case 'fleuron': {
-      // A palmette: five curved petals thrown inward off a heart, opening into
-      // a fan, with a pip beyond the middle tip.
-      //
-      // Three petals at ±0.62rad with the middle one longest is an ARROWHEAD,
-      // and that is exactly what the first specimen sheet showed — four little
-      // arrows pointing at the label. A fleuron is wide and it curls; the fan
-      // has to be wider than it is long before the eye reads a flower.
-      const base = Math.atan2(sy, sx);
-      for (const a of [-2, -1, 0, 1, 2]) {
-        const m = Math.abs(a);
-        petal(
-          ctx,
-          cx,
-          cy,
-          base + a * 0.56,
-          s * (m === 0 ? 1.9 : m === 1 ? 1.62 : 1.1),
-          // Leaves, not rays. At 0.36 the fan came back as a firework; a petal
-          // has to be about a third as wide as it is long before it reads as
-          // foliage at pull-out size.
-          s * (m === 2 ? 0.4 : 0.52),
-          colour,
-          a * 0.36,
-        );
+      // A corner vine, not a radial flower. The former five-petal burst
+      // collapsed into a scratch/star at real cover pixels; two broad leaves
+      // attached to one continuous return stay botanical and structural.
+      const reach = s * (tier === 'banded' ? 3.15 : 2.65);
+      pen(ctx, colour, line * 0.74);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * reach, cy);
+      ctx.quadraticCurveTo(cx + sx * s * 0.72, cy, cx, cy);
+      ctx.quadraticCurveTo(cx, cy + sy * s * 0.72, cx, cy + sy * reach);
+      ctx.stroke();
+
+      petal(
+        ctx,
+        cx + sx * s * 0.45,
+        cy + sy * s * 0.08,
+        sx > 0 ? 0 : Math.PI,
+        s * 1.55,
+        s * 0.42,
+        colour,
+        sy * 0.16,
+      );
+      petal(
+        ctx,
+        cx + sx * s * 0.08,
+        cy + sy * s * 0.45,
+        sy > 0 ? Math.PI / 2 : -Math.PI / 2,
+        s * 1.55,
+        s * 0.42,
+        colour,
+        -sx * 0.16,
+      );
+
+      if (tier === 'banded') {
+        const g = s * 0.58;
+        pen(ctx, colour, line * 0.48);
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * reach, cy + sy * g);
+        ctx.lineTo(cx + sx * g, cy + sy * g);
+        ctx.lineTo(cx + sx * g, cy + sy * reach);
+        ctx.stroke();
       }
-      dot(ctx, cx, cy, s * 0.4, colour);
-      dot(ctx, cx + Math.cos(base) * s * 2.35, cy + Math.sin(base) * s * 2.35, line * 1.05, colour);
+      return;
+    }
+    case 'acanthus': {
+      // Two continuous S-returns grow out of the corner and end in broad cut
+      // leaves. It is an open corner programme, never a radial fleuron stamp.
+      const reach = s * 3.15;
+      pen(ctx, colour, line * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * reach, cy);
+      ctx.bezierCurveTo(
+        cx + sx * s * 2.2,
+        cy + sy * s * 0.08,
+        cx + sx * s * 0.78,
+        cy + sy * s * 0.18,
+        cx + sx * s * 0.38,
+        cy + sy * s * 0.7,
+      );
+      ctx.bezierCurveTo(
+        cx + sx * s * 0.08,
+        cy + sy * s * 1.16,
+        cx + sx * s * 0.08,
+        cy + sy * s * 2.24,
+        cx,
+        cy + sy * reach,
+      );
+      ctx.stroke();
+      petal(
+        ctx,
+        cx + sx * s * 1.05,
+        cy + sy * s * 0.18,
+        sx > 0 ? 0 : Math.PI,
+        s * 1.5,
+        s * 0.44,
+        colour,
+        sy * 0.18,
+      );
+      petal(
+        ctx,
+        cx + sx * s * 0.18,
+        cy + sy * s * 1.05,
+        sy > 0 ? Math.PI / 2 : -Math.PI / 2,
+        s * 1.5,
+        s * 0.44,
+        colour,
+        -sx * 0.18,
+      );
+      return;
+    }
+    case 'renaissance': {
+      // An open spandrel cut from two long reversing curves. The filled border
+      // supplies the architecture; the corner therefore needs neither a
+      // cluster of leaves nor a stack of tiny Ls. At true size it reads as one
+      // Renaissance return rather than the scratchy fleuron used elsewhere.
+      pen(ctx, colour, line * 0.78);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * s * 3.25, cy + sy * s * 0.52);
+      ctx.bezierCurveTo(
+        cx + sx * s * 1.72,
+        cy + sy * s * 0.5,
+        cx + sx * s * 0.5,
+        cy + sy * s * 1.72,
+        cx + sx * s * 0.52,
+        cy + sy * s * 3.25,
+      );
+      ctx.stroke();
+      pen(ctx, colour, line * 0.48);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * s * 2.6, cy + sy * s * 1.02);
+      ctx.quadraticCurveTo(
+        cx + sx * s * 1.02,
+        cy + sy * s * 1.02,
+        cx + sx * s * 1.02,
+        cy + sy * s * 2.6,
+      );
+      ctx.stroke();
       return;
     }
   }
@@ -1992,10 +3681,6 @@ function paintFrameSide(
     }
     case 'lozenge': {
       lozengeMark(ctx, mx, my, s * 1.05, colour);
-      for (const d of [-s * 1.75, s * 1.75]) {
-        const [px, py] = along(d);
-        dot(ctx, px, py, line * 0.95, colour);
-      }
       return;
     }
     case 'tick': {
@@ -2037,8 +3722,8 @@ function paintFrameSide(
       return;
     }
     case 'arc': {
-      // A fan: two arcs one inside the other, with the tool's pip at the apex
-      // and a foot at each end. It opens toward the middle of the board — the
+      // A fan: two continuous arcs, one inside the other. It opens toward the
+      // middle of the board — the
       // first cut used one angle for all four sides, so the fan at the head
       // pointed off the board while the one at the tail pointed into it.
       const inward = horizontal
@@ -2056,12 +3741,6 @@ function paintFrameSide(
       ctx.beginPath();
       ctx.arc(mx, my, s * 0.78, inward, inward + Math.PI);
       ctx.stroke();
-      const [ax, ay] = horizontal ? [mx, my + dir * s * 1.35] : [mx + dir * s * 1.35, my];
-      dot(ctx, ax, ay, line * 0.95, colour);
-      for (const d of [-s * 1.35, s * 1.35]) {
-        const [px, py] = along(d);
-        dot(ctx, px, py, line * 0.8, colour);
-      }
       return;
     }
   }
@@ -2080,7 +3759,7 @@ function paintFrame(
   detail: boolean,
   seed: number,
 ): void {
-  const spec = FRAMES[((Math.trunc(style) % FRAMES.length) + FRAMES.length) % FRAMES.length]!;
+  const spec = FRAMES[normalizeCoverFrameIndex(style)]!;
   const m = Math.min(w, h);
   const base = Math.max(1, m * 0.012);
   const gap = m * 0.042;
@@ -2138,7 +3817,18 @@ function paintFrame(
     [x + w - off, y + h - off, -1, -1],
     [x + off, y + h - off, 1, -1],
   ] as const) {
-    paintFrameCorner(ctx, spec.corner, cx, cy, s, colour, base, sx, sy);
+    paintFrameCorner(
+      ctx,
+      spec.corner,
+      cx,
+      cy,
+      s,
+      colour,
+      base,
+      sx,
+      sy,
+      frameToolTier(spec),
+    );
   }
 
   for (const [mx, my, horiz, dir] of [
@@ -2152,20 +3842,1054 @@ function paintFrame(
 }
 
 /**
- * The medallion below the label — the SAME device the spine wears, drawn large.
+ * The title compartment used when the board's centre tool is the Crown.
  *
- * It used to be eight stamps of its own, hand-written here and folded from the
- * spine's ornament with `% 8`. That was duplicate art with a lossy join: a
- * spine tooled with a beehive got whichever of the eight the modulo landed on,
- * so the two faces of one book carried different devices. A real binding
- * strikes the same tool on the spine and the board — that is what makes them
- * one book rather than two objects — so this now delegates to the spine's own
- * fifty stamps and `COVER_MEDALLION_COUNT` is `ORNAMENT_COUNT` by derivation.
+ * This is one authored programme, not another material pattern. Historic
+ * state bindings organise the eye around a central blazon: a ruled perimeter,
+ * a deliberate title field, then the crowned seal and its laurel. The Met's
+ * 1624 Royal Stuart binding is the useful compositional reference here — its
+ * richness comes from hierarchy around one device, not from filling every
+ * inch of the ground:
+ * https://www.metmuseum.org/art/collection/search/228992
  *
- * `drawOrnament` works in unit space scaled by `s`, so cover size is only a
- * bigger `s`. It takes a `rnd` for the per-book wobble the rest of the flat
- * vocabulary uses; seeding it from the stamp and the radius keeps one book's
- * medallion identical between redraws without making every book's identical.
+ * Two interrupted fillets and inward-facing fleurons make direct gilt title
+ * lettering feel bound into that hierarchy. They deliberately leave the
+ * leather between title and seal empty; quiet dyed ground is part of the
+ * composition, not unfinished space.
+ */
+function paintCrownTitleCompartment(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  seed: number,
+): void {
+  const unit = Math.min(w, h * 4);
+  const line = Math.max(0.8, unit * 0.008);
+  const cx = x + w / 2;
+  const left = x + w * 0.035;
+  const right = x + w * 0.965;
+  const gap = Math.max(unit * 0.065, w * 0.075);
+  const flourish = unit * 0.046;
+
+  const divider = (cy: number, inward: 1 | -1, k: number): void => {
+    // The heavy rule and its fine companion are a proper binder's fillet. Both
+    // stop at the central tool instead of running behind it.
+    for (const [offset, weight] of [
+      [0, 1],
+      [inward * line * 2.25, 0.52],
+    ] as const) {
+      stroke(ctx, left, cy + offset, cx - gap, cy + offset, colour, line * weight, seed + k + offset * 10);
+      stroke(ctx, cx + gap, cy + offset, right, cy + offset, colour, line * weight, seed + k + 1 + offset * 10);
+    }
+
+    // A compact three-leaf palmette. Filled leaves survive at held-book size;
+    // pips or dots would put the rejected spotty language straight back in.
+    const base = inward > 0 ? Math.PI / 2 : -Math.PI / 2;
+    for (const a of [-1, 0, 1] as const) {
+      petal(
+        ctx,
+        cx,
+        cy,
+        base + a * 0.58,
+        flourish * (a === 0 ? 1.18 : 0.96),
+        flourish * 0.34,
+        colour,
+        a * 0.16,
+      );
+    }
+    lozengeMark(ctx, cx, cy, flourish * 0.24, colour);
+
+    // One curled terminal at either end turns a line into intentional tooling
+    // without repeating a motif across the field.
+    pen(ctx, colour, line * 0.72);
+    ctx.beginPath();
+    ctx.moveTo(left, cy);
+    ctx.quadraticCurveTo(left - flourish * 0.8, cy, left - flourish * 0.72, cy + inward * flourish * 0.72);
+    ctx.moveTo(right, cy);
+    ctx.quadraticCurveTo(right + flourish * 0.8, cy, right + flourish * 0.72, cy + inward * flourish * 0.72);
+    ctx.stroke();
+  };
+
+  divider(y - h * 0.24, 1, 0);
+  divider(y + h * 1.24, -1, 11);
+}
+
+/**
+ * The authored finishing programme surrounding one unified binder's stamp.
+ *
+ * This is deliberately semantic rather than `kind % n`. A Crown needs the
+ * open architecture of a state binding, while an Acorn belongs to an oak
+ * sprig. Folding distinct identities through anonymous circles was how a
+ * curated vocabulary became clip art wearing the same badge.
+ */
+export type CoverEmblemProgramme =
+  | 'lozenge-fleuron'
+  | 'laurel-branch'
+  | 'stellar-palmette'
+  | 'acanthus-arabesque'
+  | 'solar-palms'
+  | 'upright-fleuron'
+  | 'oak-sprig'
+  | 'thistle-bloom'
+  | 'open-state-crown'
+  | 'rosette-arabesque'
+  | 'broad-fleur-de-lis'
+  | 'ivy-knot'
+  | 'oak-acanthus-volutes'
+  | 'wheat-saltire'
+  | 'split-pomegranate'
+  | 'open-tulip'
+  | 'pinecone-needles'
+  | 'anthemion-fan'
+  | 'fern-palmette'
+  | 'ginkgo-fans';
+
+const COVER_EMBLEM_PROGRAMMES: Readonly<Record<number, CoverEmblemProgramme>> = {
+  0: 'lozenge-fleuron',
+  1: 'laurel-branch',
+  2: 'stellar-palmette',
+  3: 'acanthus-arabesque',
+  5: 'solar-palms',
+  12: 'upright-fleuron',
+  13: 'oak-sprig',
+  14: 'thistle-bloom',
+  20: 'open-state-crown',
+  23: 'rosette-arabesque',
+  26: 'broad-fleur-de-lis',
+  27: 'ivy-knot',
+  28: 'oak-acanthus-volutes',
+  29: 'wheat-saltire',
+  30: 'split-pomegranate',
+  31: 'open-tulip',
+  38: 'pinecone-needles',
+  43: 'anthemion-fan',
+  56: 'fern-palmette',
+  57: 'ginkgo-fans',
+};
+
+/** Per-programme optical scale: open linework needs more board than a badge. */
+const COVER_EMBLEM_DEVICE_SCALES: Readonly<Record<CoverEmblemProgramme, number>> = {
+  'lozenge-fleuron': 1.34,
+  'laurel-branch': 1.28,
+  'stellar-palmette': 1.36,
+  'acanthus-arabesque': 1.24,
+  'solar-palms': 1.3,
+  'upright-fleuron': 1.16,
+  'oak-sprig': 1.22,
+  'thistle-bloom': 1.18,
+  'open-state-crown': 1.2,
+  'rosette-arabesque': 1.2,
+  'broad-fleur-de-lis': 1.18,
+  'ivy-knot': 1.22,
+  'oak-acanthus-volutes': 1.24,
+  'wheat-saltire': 1.22,
+  'split-pomegranate': 1.22,
+  'open-tulip': 1.18,
+  'pinecone-needles': 1.22,
+  'anthemion-fan': 1.2,
+  'fern-palmette': 1.24,
+  'ginkgo-fans': 1.24,
+};
+
+/** The actual cover-finishing programme reached by a persisted ornament id. */
+export function coverEmblemProgramme(kind: number): CoverEmblemProgramme {
+  return COVER_EMBLEM_PROGRAMMES[normalizeCoverEmblemIndex(kind)] ?? 'lozenge-fleuron';
+}
+
+/** A paired S-scroll used as a base, never as an enclosing badge. */
+function paintOpenScrollBase(
+  ctx: FlatCtx,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+  width = 1,
+): void {
+  pen(ctx, colour, line * 0.72);
+  for (const side of [-1, 1] as const) {
+    ctx.beginPath();
+    ctx.moveTo(cx + side * r * 0.08, cy);
+    ctx.bezierCurveTo(
+      cx + side * r * 0.48,
+      cy + r * 0.22,
+      cx + side * r * 1.08 * width,
+      cy + r * 0.16,
+      cx + side * r * 1.24 * width,
+      cy - r * 0.12,
+    );
+    ctx.bezierCurveTo(
+      cx + side * r * 1.36 * width,
+      cy - r * 0.34,
+      cx + side * r * 1.12 * width,
+      cy - r * 0.42,
+      cx + side * r * 0.94 * width,
+      cy - r * 0.28,
+    );
+    ctx.stroke();
+  }
+  lozengeMark(ctx, cx, cy + r * 0.02, r * 0.16, colour);
+}
+
+/** A short interrupted double fillet: structure without another container. */
+function paintCentrepieceFillet(
+  ctx: FlatCtx,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+  half = 1.32,
+): void {
+  for (const [dy, weight] of [[0, 0.8], [r * 0.16, 0.44]] as const) {
+    stroke(ctx, cx - r * half, cy + dy, cx - r * 0.28, cy + dy, colour, line * weight, 311 + dy);
+    stroke(ctx, cx + r * 0.28, cy + dy, cx + r * half, cy + dy, colour, line * weight, 317 + dy);
+  }
+  petal(ctx, cx, cy + r * 0.08, -Math.PI / 2, r * 0.34, r * 0.13, colour);
+}
+
+/**
+ * Two short lateral pallets give a small centre tool command of the lower
+ * board without drawing a box around it. The turned terminals are deliberately
+ * continuous curves—no studs, dots or row of repeated marks.
+ */
+function paintLateralFillets(
+  ctx: FlatCtx,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+  inner = 0.9,
+  outer = 1.7,
+): void {
+  for (const [dy, weight, turn] of [
+    [-r * 0.09, 0.78, -1],
+    [r * 0.09, 0.44, 1],
+  ] as const) {
+    for (const side of [-1, 1] as const) {
+      stroke(
+        ctx,
+        cx + side * r * inner,
+        cy + dy,
+        cx + side * r * outer,
+        cy + dy,
+        colour,
+        line * weight,
+        353 + side * 7 + dy,
+      );
+      pen(ctx, colour, line * weight * 0.8);
+      ctx.beginPath();
+      ctx.moveTo(cx + side * r * outer, cy + dy);
+      ctx.quadraticCurveTo(
+        cx + side * r * (outer + 0.24),
+        cy + dy,
+        cx + side * r * (outer + 0.2),
+        cy + dy + turn * r * 0.28,
+      );
+      ctx.stroke();
+    }
+  }
+}
+
+/**
+ * The Welcome Crown as an open piece of bookbinder's tooling.
+ *
+ * There is intentionally no shield, oval, roundel or filled ground here. The
+ * former Crown was a pictogram placed on a dark escutcheon inside two rings;
+ * at held-book size it read as a badge pasted onto the cover. This design is
+ * built the way a centrepiece block is composed: one bowed circlet and three
+ * broad leaf finials. The title fillets around it belong to the board's
+ * finishing programme, not to a crest or wreath welded onto the crown. One
+ * gold ink describes all of it.
+ *
+ * The construction follows the historical finishing distinction between a
+ * larger blocked centrepiece and the individual heated tools used for fillets
+ * and leaves, rather than borrowing the visual grammar of a modern crest icon:
+ * https://manuscriptsandmore.liverpool.ac.uk/g-is-for-gilt-and-gold/
+ * https://www.vam.ac.uk/blog/museum-life/tradition-and-transformation-in-19th-century-bookbinding
+ */
+function paintOpenStateCrown(
+  ctx: FlatCtx,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+): void {
+  const bandTop = cy + r * 0.1;
+  const bandBottom = cy + r * 0.52;
+  const left = cx - r;
+  const right = cx + r;
+
+  // One continuous block unites the bowed circlet and three leaf points. The
+  // former detached teardrops looked like candles sitting on a shelf; these
+  // wide curved valleys make the crown recognisable from silhouette alone.
+  ctx.beginPath();
+  ctx.moveTo(left, bandTop);
+  ctx.quadraticCurveTo(cx - r * 0.94, cy - r * 0.26, cx - r * 0.76, cy - r * 0.56);
+  ctx.quadraticCurveTo(cx - r * 0.54, cy - r * 0.3, cx - r * 0.34, bandTop);
+  ctx.quadraticCurveTo(cx - r * 0.2, cy - r * 0.34, cx, cy - r * 0.92);
+  ctx.quadraticCurveTo(cx + r * 0.2, cy - r * 0.34, cx + r * 0.34, bandTop);
+  ctx.quadraticCurveTo(cx + r * 0.54, cy - r * 0.3, cx + r * 0.76, cy - r * 0.56);
+  ctx.quadraticCurveTo(cx + r * 0.94, cy - r * 0.26, right, bandTop);
+  ctx.lineTo(right - r * 0.08, bandBottom);
+  ctx.quadraticCurveTo(cx, bandBottom + r * 0.08, left + r * 0.08, bandBottom);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+
+}
+
+/**
+ * One purpose-cut front-cover tool.
+ *
+ * These are not the shelf-spine pictograms enlarged. A large board needs open
+ * linework, recognisable silhouette and a physical finishing logic: engraved
+ * outline blocks, leaf tools and short fillets. Keeping this painter local to
+ * covers also means a future shelf-scale simplification cannot silently turn
+ * the front of every book back into a row of app icons.
+ */
+function paintCoverCentreTool(
+  ctx: FlatCtx,
+  programme: Exclude<CoverEmblemProgramme, 'open-state-crown'>,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+): void {
+  const openLeaf = (
+    baseX: number,
+    baseY: number,
+    tipX: number,
+    tipY: number,
+    width: number,
+    weight = 0.68,
+  ): void => {
+    const dx = tipX - baseX;
+    const dy = tipY - baseY;
+    const length = Math.max(0.01, Math.hypot(dx, dy));
+    const nx = (-dy / length) * width;
+    const ny = (dx / length) * width;
+    const mx = baseX + dx * 0.48;
+    const my = baseY + dy * 0.48;
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.quadraticCurveTo(mx + nx, my + ny, tipX, tipY);
+    ctx.quadraticCurveTo(mx - nx, my - ny, baseX, baseY);
+    ctx.closePath();
+    pen(ctx, colour, line * weight);
+    ctx.stroke();
+  };
+
+  /** A deliberately coarse lobed leaf: six broad cuts survive at true size. */
+  const lobedLeaf = (
+    baseX: number,
+    baseY: number,
+    tipX: number,
+    tipY: number,
+    width: number,
+  ): void => {
+    const dx = tipX - baseX;
+    const dy = tipY - baseY;
+    const length = Math.max(0.01, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const point = (t: number, n: number): readonly [number, number] => [
+      baseX + ux * length * t + nx * width * n,
+      baseY + uy * length * t + ny * width * n,
+    ];
+    const points = [
+      point(0, 0),
+      point(0.2, 0.78),
+      point(0.34, 0.34),
+      point(0.48, 1),
+      point(0.62, 0.34),
+      point(0.76, 0.7),
+      point(1, 0),
+      point(0.76, -0.7),
+      point(0.62, -0.34),
+      point(0.48, -1),
+      point(0.34, -0.34),
+      point(0.2, -0.78),
+    ];
+    ctx.beginPath();
+    points.forEach(([x, y], index) => {
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = colour;
+    ctx.fill();
+    stroke(ctx, baseX, baseY, tipX, tipY, colour, line * 0.38, 449 + tipX);
+  };
+
+  /** One broad three-lobed ivy leaf, cut as a single binder's stamp. */
+  const ivyLeaf = (
+    baseX: number,
+    baseY: number,
+    angle: number,
+    size: number,
+  ): void => {
+    ctx.save();
+    ctx.translate(baseX, baseY);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.42);
+    ctx.quadraticCurveTo(-size * 0.5, size * 0.2, -size * 0.62, -size * 0.18);
+    ctx.quadraticCurveTo(-size * 0.28, -size * 0.18, -size * 0.36, -size * 0.58);
+    ctx.quadraticCurveTo(-size * 0.08, -size * 0.4, 0, -size * 0.76);
+    ctx.quadraticCurveTo(size * 0.08, -size * 0.4, size * 0.36, -size * 0.58);
+    ctx.quadraticCurveTo(size * 0.28, -size * 0.18, size * 0.62, -size * 0.18);
+    ctx.quadraticCurveTo(size * 0.5, size * 0.2, 0, size * 0.42);
+    ctx.closePath();
+    ctx.fillStyle = colour;
+    ctx.fill();
+    ctx.restore();
+  };
+
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  switch (programme) {
+    case 'lozenge-fleuron': {
+      // Two bowed stems interlace into one foliate lozenge; four leaves make
+      // it a binder's tool rather than a nested-diamond app icon.
+      pen(ctx, colour, line * 0.76);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r * 1.02);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.82,
+          cy - r * 0.62,
+          cx + side * r * 0.86,
+          cy + r * 0.5,
+          cx,
+          cy + r * 1.02,
+        );
+        ctx.stroke();
+      }
+      openLeaf(cx - r * 0.56, cy - r * 0.08, cx - r * 1.02, cy - r * 0.16, r * 0.2);
+      openLeaf(cx + r * 0.56, cy + r * 0.08, cx + r * 1.02, cy + r * 0.16, r * 0.2);
+      openLeaf(cx, cy - r * 0.55, cx, cy - r * 1.1, r * 0.18);
+      openLeaf(cx, cy + r * 0.55, cx, cy + r * 1.1, r * 0.18);
+      lozengeOutline(ctx, cx, cy, r * 0.28, colour, line * 0.64);
+      break;
+    }
+
+    case 'laurel-branch': {
+      // One broad, bowed branch rather than a closed wreath. Six large smooth
+      // leaves make the plant legible at true size; the previous hairline
+      // outlines collapsed into one crest-like diagonal scratch.
+      pen(ctx, colour, line * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.18, cy + r * 0.78);
+      ctx.bezierCurveTo(
+        cx - r * 0.42,
+        cy + r * 0.48,
+        cx + r * 0.38,
+        cy - r * 0.3,
+        cx + r * 1.16,
+        cy - r * 0.82,
+      );
+      ctx.stroke();
+      // A shorter parallel cut gives the branch physical breadth instead of
+      // adding fragile veins to every leaf.
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.98, cy + r * 0.7);
+      ctx.bezierCurveTo(
+        cx - r * 0.34,
+        cy + r * 0.42,
+        cx + r * 0.34,
+        cy - r * 0.2,
+        cx + r * 0.94,
+        cy - r * 0.68,
+      );
+      ctx.stroke();
+      for (const [x, y, angle, length, width] of [
+        [-0.72, 0.5, -1.88, 0.62, 0.2],
+        [-0.62, 0.44, 0.54, 0.58, 0.19],
+        [-0.12, 0.06, -1.88, 0.68, 0.22],
+        [0, -0.04, 0.54, 0.64, 0.21],
+        [0.5, -0.42, -1.88, 0.62, 0.2],
+        [0.62, -0.5, 0.54, 0.56, 0.18],
+      ] as const) {
+        petal(
+          ctx,
+          cx + r * x,
+          cy + r * y,
+          angle,
+          r * length,
+          r * width,
+          colour,
+        );
+      }
+      petal(ctx, cx + r * 1.02, cy - r * 0.72, -0.58, r * 0.5, r * 0.17, colour);
+      break;
+    }
+
+    case 'stellar-palmette': {
+      // An engraved eight-point rosette: open outline, alternating point
+      // lengths and a central lozenge. It cannot collapse into the former
+      // filled five-point rating star.
+      ctx.beginPath();
+      for (let i = 0; i < 16; i += 1) {
+        const angle = -Math.PI / 2 + (i * Math.PI) / 8;
+        const radius = r * (i % 2 === 0 ? 1 : 0.46);
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      pen(ctx, colour, line * 0.7);
+      ctx.stroke();
+      lozengeOutline(ctx, cx, cy, r * 0.22, colour, line * 0.56);
+      break;
+    }
+
+    case 'acanthus-arabesque': {
+      // An asymmetric scrolling acanthus branch. Three open blade leaves ride
+      // one doubled S-stem; abandoning bilateral heads removes the moustache,
+      // birds and horseshoe readings at true size.
+      pen(ctx, colour, line * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.18, cy + r * 0.46);
+      ctx.bezierCurveTo(
+        cx - r * 0.62,
+        cy - r * 0.72,
+        cx + r * 0.28,
+        cy + r * 0.72,
+        cx + r * 1.18,
+        cy - r * 0.42,
+      );
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.94, cy + r * 0.42);
+      ctx.bezierCurveTo(
+        cx - r * 0.48,
+        cy - r * 0.48,
+        cx + r * 0.22,
+        cy + r * 0.5,
+        cx + r * 0.9,
+        cy - r * 0.36,
+      );
+      ctx.stroke();
+      openLeaf(cx - r * 0.68, cy + r * 0.02, cx - r * 1.04, cy - r * 0.82, r * 0.3);
+      openLeaf(cx - r * 0.04, cy + r * 0.2, cx + r * 0.28, cy - r * 0.82, r * 0.32);
+      openLeaf(cx + r * 0.62, cy - r * 0.02, cx + r * 1.08, cy + r * 0.52, r * 0.28);
+      ivyLeaf(cx - r * 1.02, cy + r * 0.34, 2.62, r * 0.34);
+      break;
+    }
+
+    case 'solar-palms': {
+      // Twelve separate rays around an open lozenge. There is deliberately no
+      // filled disc or face-like ring, which is what made Sun read as emoji.
+      pen(ctx, colour, line * 0.62);
+      ctx.beginPath();
+      for (let i = 0; i < 12; i += 1) {
+        const angle = -Math.PI / 2 + (i * Math.PI) / 6;
+        const inner = r * 0.52;
+        const outer = r * (i % 2 === 0 ? 1.05 : 0.88);
+        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+      }
+      ctx.stroke();
+      lozengeOutline(ctx, cx, cy, r * 0.34, colour, line * 0.72);
+      break;
+    }
+
+    case 'upright-fleuron': {
+      stroke(ctx, cx, cy + r * 0.92, cx, cy - r * 0.16, colour, line * 0.7, 461);
+      petal(ctx, cx, cy - r * 0.02, -Math.PI / 2, r * 0.96, r * 0.28, colour);
+      petal(ctx, cx, cy + r * 0.22, -Math.PI * 0.78, r * 0.72, r * 0.23, colour, -0.08);
+      petal(ctx, cx, cy + r * 0.22, -Math.PI * 0.22, r * 0.72, r * 0.23, colour, 0.08);
+      stroke(ctx, cx - r * 0.58, cy + r * 0.48, cx + r * 0.58, cy + r * 0.48, colour, line * 0.7, 463);
+      break;
+    }
+
+    case 'oak-sprig': {
+      // One unmistakable acorn hangs between two coarse, deeply lobed oak
+      // leaves. At true size the old three filled leaves became diamonds;
+      // this larger triad keeps fruit, cap and lobes separately legible.
+      pen(ctx, colour, line * 0.68);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.94);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy + r * 0.2, cx, cy - r * 0.42);
+      ctx.moveTo(cx, cy + r * 0.24);
+      ctx.quadraticCurveTo(cx - r * 0.32, cy - r * 0.02, cx - r * 0.9, cy - r * 0.42);
+      ctx.moveTo(cx, cy + r * 0.24);
+      ctx.quadraticCurveTo(cx + r * 0.32, cy - r * 0.02, cx + r * 0.9, cy - r * 0.42);
+      ctx.stroke();
+      lobedLeaf(cx - r * 0.24, cy + r * 0.02, cx - r * 1.16, cy - r * 0.64, r * 0.28);
+      lobedLeaf(cx + r * 0.24, cy + r * 0.02, cx + r * 1.16, cy - r * 0.64, r * 0.28);
+      petal(ctx, cx, cy + r * 0.06, Math.PI / 2, r * 0.66, r * 0.3, colour);
+      stroke(ctx, cx - r * 0.32, cy - r * 0.04, cx + r * 0.32, cy - r * 0.04, colour, line * 0.82, 471);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.3, cy - r * 0.04);
+      ctx.quadraticCurveTo(cx, cy - r * 0.28, cx + r * 0.3, cy - r * 0.04);
+      ctx.stroke();
+      break;
+    }
+
+    case 'thistle-bloom': {
+      // A single architectural thistle: one sturdy stem, a broad engraved
+      // flower and two cut leaves. Sparse large bracts survive true size much
+      // better than the former spray of needle-like spikes.
+      stroke(ctx, cx, cy + r * 1.04, cx, cy + r * 0.1, colour, line * 0.72, 481);
+      openLeaf(cx, cy + r * 0.72, cx - r * 0.82, cy + r * 0.32, r * 0.28);
+      openLeaf(cx, cy + r * 0.58, cx + r * 0.88, cy + r * 0.12, r * 0.3);
+      pen(ctx, colour, line * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.2);
+      ctx.quadraticCurveTo(cx - r * 0.54, cy - r * 0.7, cx - r * 0.28, cy - r * 0.92);
+      ctx.quadraticCurveTo(cx - r * 0.12, cy - r * 0.7, cx, cy - r * 1.1);
+      ctx.quadraticCurveTo(cx + r * 0.12, cy - r * 0.7, cx + r * 0.28, cy - r * 0.92);
+      ctx.quadraticCurveTo(cx + r * 0.54, cy - r * 0.7, cx + r * 0.58, cy - r * 0.2);
+      ctx.quadraticCurveTo(cx, cy + r * 0.18, cx - r * 0.58, cy - r * 0.2);
+      ctx.stroke();
+      for (const x of [-0.34, 0, 0.34]) {
+        petal(ctx, cx + r * x, cy - r * 0.1, -Math.PI / 2, r * 0.54, r * 0.17, colour);
+      }
+      break;
+    }
+
+    case 'rosette-arabesque': {
+      // Six broad outlined petals on one open ring. No jagged central star,
+      // duplicate halo or filled coin survives at shelf preview size.
+      pen(ctx, colour, line * 0.68);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.27, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 6; i += 1) {
+        const angle = -Math.PI / 2 + (i * Math.PI) / 3;
+        const baseX = cx + Math.cos(angle) * r * 0.22;
+        const baseY = cy + Math.sin(angle) * r * 0.22;
+        openLeaf(
+          baseX,
+          baseY,
+          cx + Math.cos(angle) * r * 0.98,
+          cy + Math.sin(angle) * r * 0.98,
+          r * 0.27,
+          0.7,
+        );
+      }
+      break;
+    }
+
+    case 'broad-fleur-de-lis': {
+      // The waist is deliberately low and the side lobes materially wider
+      // than the centre lance. That silhouette cannot collapse into a cross,
+      // sword or ankh when the cover is reduced to its Studio card.
+      pen(ctx, colour, line * 0.76);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 1.08);
+      ctx.quadraticCurveTo(cx - r * 0.34, cy - r * 0.54, cx - r * 0.18, cy + r * 0.08);
+      ctx.quadraticCurveTo(cx - r * 0.66, cy - r * 0.5, cx - r * 1.12, cy - r * 0.22);
+      ctx.quadraticCurveTo(cx - r * 0.88, cy + r * 0.3, cx - r * 0.34, cy + r * 0.38);
+      ctx.lineTo(cx - r * 0.3, cy + r * 0.58);
+      ctx.quadraticCurveTo(cx, cy + r * 0.48, cx + r * 0.3, cy + r * 0.58);
+      ctx.lineTo(cx + r * 0.34, cy + r * 0.38);
+      ctx.quadraticCurveTo(cx + r * 0.88, cy + r * 0.3, cx + r * 1.12, cy - r * 0.22);
+      ctx.quadraticCurveTo(cx + r * 0.66, cy - r * 0.5, cx + r * 0.18, cy + r * 0.08);
+      ctx.quadraticCurveTo(cx + r * 0.34, cy - r * 0.54, cx, cy - r * 1.08);
+      ctx.stroke();
+      stroke(ctx, cx - r * 0.42, cy + r * 0.4, cx + r * 0.42, cy + r * 0.4, colour, line * 0.82, 491);
+      stroke(ctx, cx - r * 0.34, cy + r * 0.62, cx + r * 0.34, cy + r * 0.62, colour, line * 0.58, 493);
+      petal(ctx, cx, cy + r * 0.74, Math.PI / 2, r * 0.34, r * 0.14, colour);
+      break;
+    }
+
+    case 'ivy-knot': {
+      // The persisted programme id remains `ivy-knot`, but the live shared
+      // semantic is an honest paired-ivy tool: two broad lobed leaves on
+      // upright bowed stems, with only low tendrils for binder's movement.
+      pen(ctx, colour, line * 0.7);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + r * 0.92);
+      ctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.04, cx - r * 0.58, cy - r * 0.42);
+      ctx.moveTo(cx, cy + r * 0.92);
+      ctx.quadraticCurveTo(cx + r * 0.12, cy + r * 0.04, cx + r * 0.58, cy - r * 0.42);
+      ctx.stroke();
+      ivyLeaf(cx - r * 0.58, cy - r * 0.42, -2.3, r * 0.78);
+      ivyLeaf(cx + r * 0.58, cy - r * 0.42, -0.84, r * 0.78);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.06, cy + r * 0.56);
+      ctx.quadraticCurveTo(cx - r * 0.56, cy + r * 0.82, cx - r * 0.82, cy + r * 0.5);
+      ctx.moveTo(cx + r * 0.06, cy + r * 0.56);
+      ctx.quadraticCurveTo(cx + r * 0.56, cy + r * 0.82, cx + r * 0.82, cy + r * 0.5);
+      ctx.stroke();
+      break;
+    }
+
+    case 'oak-acanthus-volutes': {
+      // A horizontal pair of deeply rolled C-volutes with coarse oak leaves
+      // following their tangents. The open centres are visibly scrollwork;
+      // no paired bead terminals or shared U remains to suggest a face.
+      pen(ctx, colour, line * 0.72);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.06, cy + r * 0.34);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.34,
+          cy - r * 0.46,
+          cx + side * r * 1.2,
+          cy - r * 0.34,
+          cx + side * r * 1.08,
+          cy + r * 0.34,
+        );
+        ctx.bezierCurveTo(
+          cx + side * r * 1.02,
+          cy + r * 0.66,
+          cx + side * r * 0.66,
+          cy + r * 0.58,
+          cx + side * r * 0.72,
+          cy + r * 0.24,
+        );
+        ctx.stroke();
+        lobedLeaf(
+          cx + side * r * 0.7,
+          cy - r * 0.18,
+          cx + side * r * 1.18,
+          cy - r * 0.72,
+          r * 0.22,
+        );
+      }
+      petal(ctx, cx, cy + r * 0.34, Math.PI / 2, r * 0.46, r * 0.18, colour);
+      break;
+    }
+
+    case 'wheat-saltire': {
+      // Persisted programme id aside, the live semantic is a wheat sheaf:
+      // two bowed stalks cross only below a strong binding tie. Each upper
+      // half is a dense six-grain ear, so the botanical heads—not an X—own
+      // the silhouette at true pixels.
+      pen(ctx, colour, line * 0.58);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx - side * r * 0.22, cy + r * 0.92);
+        ctx.quadraticCurveTo(
+          cx + side * r * 0.04,
+          cy + r * 0.22,
+          cx + side * r * 0.48,
+          cy - r * 1.06,
+        );
+        ctx.stroke();
+        for (const [x, y, turn] of [
+          [0.22, -0.18, -1],
+          [0.3, -0.18, 1],
+          [0.3, -0.46, -1],
+          [0.4, -0.46, 1],
+          [0.4, -0.74, -1],
+          [0.5, -0.74, 1],
+        ] as const) {
+          petal(
+            ctx,
+            cx + side * r * x,
+            cy + r * y,
+            side < 0 ? (turn < 0 ? -2.48 : -0.66) : (turn < 0 ? -0.66 : -2.48),
+            r * 0.44,
+            r * 0.19,
+            colour,
+          );
+        }
+        petal(ctx, cx + side * r * 0.48, cy - r * 0.88, -Math.PI / 2, r * 0.48, r * 0.18, colour);
+      }
+      stroke(ctx, cx - r * 0.5, cy + r * 0.56, cx + r * 0.5, cy + r * 0.56, colour, line, 507);
+      stroke(ctx, cx - r * 0.34, cy + r * 0.72, cx + r * 0.34, cy + r * 0.72, colour, line * 0.66, 509);
+      break;
+    }
+
+    case 'split-pomegranate': {
+      // A tall, open split fruit with one vertical seed seam. Removing paired
+      // side seeds eliminates the eye/bug face; the high three-leaf calyx and
+      // open foot keep it botanical rather than coin- or hardware-like.
+      pen(ctx, colour, line * 0.72);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.1, cy - r * 0.48);
+        ctx.quadraticCurveTo(
+          cx + side * r * 0.9,
+          cy - r * 0.42,
+          cx + side * r * 0.76,
+          cy + r * 0.34,
+        );
+        ctx.quadraticCurveTo(
+          cx + side * r * 0.66,
+          cy + r * 0.86,
+          cx + side * r * 0.16,
+          cy + r * 0.72,
+        );
+        ctx.stroke();
+      }
+      for (const [y, size] of [[-0.08, 0.34], [0.24, 0.36], [0.54, 0.32]] as const) {
+        petal(ctx, cx, cy + r * y, Math.PI / 2, r * size, r * 0.15, colour);
+      }
+      petal(ctx, cx - r * 0.18, cy - r * 0.46, -2.1, r * 0.58, r * 0.19, colour);
+      petal(ctx, cx, cy - r * 0.5, -Math.PI / 2, r * 0.7, r * 0.2, colour);
+      petal(ctx, cx + r * 0.18, cy - r * 0.46, -1.04, r * 0.58, r * 0.19, colour);
+      stroke(ctx, cx - r * 0.5, cy + r * 0.84, cx - r * 0.12, cy + r * 0.7, colour, line * 0.56, 513);
+      stroke(ctx, cx + r * 0.5, cy + r * 0.84, cx + r * 0.12, cy + r * 0.7, colour, line * 0.56, 515);
+      break;
+    }
+
+    case 'open-tulip': {
+      // One outlined cup with three distinct upper petals, carried by a short
+      // stem and two broad leaves. The open base avoids a goblet silhouette.
+      pen(ctx, colour, line * 0.74);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.68, cy - r * 0.48);
+      ctx.quadraticCurveTo(cx - r * 0.64, cy + r * 0.12, cx, cy + r * 0.24);
+      ctx.quadraticCurveTo(cx + r * 0.64, cy + r * 0.12, cx + r * 0.68, cy - r * 0.48);
+      ctx.quadraticCurveTo(cx + r * 0.36, cy - r * 0.26, cx + r * 0.22, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx, cy - r * 0.52, cx - r * 0.22, cy - r * 0.9);
+      ctx.quadraticCurveTo(cx - r * 0.36, cy - r * 0.26, cx - r * 0.68, cy - r * 0.48);
+      ctx.stroke();
+      stroke(ctx, cx, cy + r * 0.22, cx, cy + r * 1.02, colour, line * 0.72, 511);
+      openLeaf(cx, cy + r * 0.72, cx - r * 0.78, cy + r * 0.42, r * 0.24);
+      openLeaf(cx, cy + r * 0.62, cx + r * 0.82, cy + r * 0.3, r * 0.24);
+      petal(ctx, cx, cy - r * 0.18, -Math.PI / 2, r * 0.48, r * 0.15, colour);
+      break;
+    }
+
+    case 'pinecone-needles': {
+      // One cone hangs below the right half of a bowed pine bough while a
+      // single needle fan opens to the left. The intentionally asymmetric
+      // silhouette cannot collapse into an insect or centred lozenge.
+      pen(ctx, colour, line * 0.68);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 1.18, cy - r * 0.2);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy - r * 0.58, cx + r * 1.16, cy - r * 0.18);
+      ctx.stroke();
+      for (const [x, y, tx, ty] of [
+        [-0.78, -0.28, -1.3, -0.72],
+        [-0.7, -0.3, -1.34, -0.28],
+        [-0.62, -0.34, -1.2, 0.18],
+        [-0.48, -0.38, -0.9, 0.3],
+      ] as const) {
+        stroke(
+          ctx,
+          cx + r * x,
+          cy + r * y,
+          cx + r * tx,
+          cy + r * ty,
+          colour,
+          line * 0.5,
+          521 + x * 10,
+        );
+      }
+      stroke(ctx, cx + r * 0.44, cy - r * 0.4, cx + r * 0.4, cy - r * 0.04, colour, line * 0.66, 527);
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.4, cy - r * 0.04);
+      ctx.quadraticCurveTo(cx - r * 0.02, cy + r * 0.28, cx + r * 0.06, cy + r * 0.92);
+      ctx.quadraticCurveTo(cx + r * 0.4, cy + r * 1.26, cx + r * 0.74, cy + r * 0.92);
+      ctx.quadraticCurveTo(cx + r * 0.82, cy + r * 0.28, cx + r * 0.4, cy - r * 0.04);
+      ctx.stroke();
+      for (const [x, y] of [
+        [0.4, 0.24],
+        [0.24, 0.54],
+        [0.56, 0.54],
+        [0.4, 0.82],
+      ] as const) {
+        petal(ctx, cx + r * x, cy + r * y, Math.PI / 2, r * 0.38, r * 0.18, colour);
+      }
+      break;
+    }
+
+    case 'anthemion-fan': {
+      // Five open anthemion leaves rise independently above two low volutes.
+      // There is no filled centre point or horizontal circlet, so the fan
+      // cannot become a second crown when reduced.
+      for (const [angle, length, width] of [
+        [-2.88, 0.98, 0.24],
+        [-2.18, 1.1, 0.23],
+        [-Math.PI / 2, 1.24, 0.22],
+        [-0.96, 1.1, 0.23],
+        [-0.26, 0.98, 0.24],
+      ] as const) {
+        openLeaf(
+          cx,
+          cy + r * 0.62,
+          cx + Math.cos(angle) * r * length,
+          cy + r * 0.62 + Math.sin(angle) * r * length,
+          r * width,
+        );
+      }
+      paintOpenScrollBase(ctx, cx, cy + r * 0.82, r * 0.62, colour, line, 0.9);
+      break;
+    }
+
+    case 'fern-palmette': {
+      // A split symmetrical fern palmette cut from two bowed rachises. Six
+      // broad filled pinnae carry the silhouette; it is neither a lone frond
+      // nor a pair of empty lung outlines.
+      pen(ctx, colour, line * 0.68);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r * 0.88);
+        ctx.quadraticCurveTo(
+          cx + side * r * 0.76,
+          cy + r * 0.08,
+          cx + side * r * 0.32,
+          cy - r * 1.02,
+        );
+        ctx.stroke();
+        for (const [x, y, tx, ty, width] of [
+          [0.18, 0.5, 0.74, 0.3, 0.23],
+          [0.38, 0.12, 0.98, -0.08, 0.24],
+          [0.4, -0.3, 0.88, -0.66, 0.22],
+        ] as const) {
+          petal(
+            ctx,
+            cx + side * r * x,
+            cy + r * y,
+            Math.atan2(ty - y, side * (tx - x)),
+            r * Math.hypot(tx - x, ty - y),
+            r * width,
+            colour,
+          );
+        }
+      }
+      lozengeMark(ctx, cx, cy + r * 0.78, r * 0.16, colour);
+      break;
+    }
+
+    case 'ginkgo-fans': {
+      // Two upward ginkgo fans grow from separate bowed stems. Their broad,
+      // notched tops and engraved veins do the reading; no filled bow-tie,
+      // antenna or lamp silhouette remains.
+      for (const side of [-1, 1] as const) {
+        const baseX = cx + side * r * 0.08;
+        const baseY = cy + r * 0.9;
+        const joinX = cx + side * r * 0.5;
+        const joinY = cy - r * 0.08;
+        ctx.beginPath();
+        ctx.moveTo(baseX, baseY);
+        ctx.quadraticCurveTo(cx + side * r * 0.16, cy + r * 0.24, joinX, joinY);
+        ctx.moveTo(joinX, joinY);
+        ctx.quadraticCurveTo(cx + side * r * 1.12, cy - r * 0.24, cx + side * r * 0.98, cy - r * 0.9);
+        ctx.quadraticCurveTo(cx + side * r * 0.72, cy - r * 0.68, cx + side * r * 0.5, cy - r * 1.02);
+        ctx.quadraticCurveTo(cx + side * r * 0.3, cy - r * 0.68, cx + side * r * 0.02, cy - r * 0.88);
+        ctx.quadraticCurveTo(cx - side * r * 0.02, cy - r * 0.24, joinX, joinY);
+        pen(ctx, colour, line * 0.7);
+        ctx.stroke();
+        for (const fanX of [0.26, 0.5, 0.74] as const) {
+          stroke(
+            ctx,
+            joinX,
+            joinY,
+            cx + side * r * fanX,
+            cy - r * (0.74 + Math.abs(0.5 - fanX) * 0.36),
+            colour,
+            line * 0.45,
+            531 + side * 8 + fanX,
+          );
+        }
+      }
+      lozengeMark(ctx, cx, cy + r * 0.82, r * 0.15, colour);
+      break;
+    }
+
+  }
+
+  ctx.restore();
+}
+
+/** Draw the open authored setting for one non-Crown centre tool. */
+function paintEmblemSetting(
+  ctx: FlatCtx,
+  programme: CoverEmblemProgramme,
+  cx: number,
+  cy: number,
+  r: number,
+  colour: string,
+  line: number,
+): number {
+  switch (programme) {
+    case 'lozenge-fleuron': {
+      paintLateralFillets(ctx, cx, cy, r, colour, line, 1.02, 1.74);
+      paintOpenScrollBase(ctx, cx, cy + r * 1.28, r * 0.68, colour, line, 0.82);
+      return 0.88;
+    }
+    case 'laurel-branch':
+      return 1.08;
+    case 'stellar-palmette': {
+      paintLateralFillets(ctx, cx, cy, r, colour, line, 1.08, 1.76);
+      paintCentrepieceFillet(ctx, cx, cy + r * 1.28, r * 0.68, colour, line, 1.08);
+      return 0.94;
+    }
+    case 'acanthus-arabesque': {
+      paintCentrepieceFillet(ctx, cx, cy + r * 1.18, r * 0.7, colour, line, 1.16);
+      return 0.98;
+    }
+    case 'solar-palms': {
+      paintLateralFillets(ctx, cx, cy, r, colour, line, 1.08, 1.78);
+      paintOpenScrollBase(ctx, cx, cy + r * 1.28, r * 0.64, colour, line, 0.8);
+      return 0.94;
+    }
+    case 'upright-fleuron': {
+      paintLateralFillets(ctx, cx, cy + r * 0.12, r, colour, line, 1.02, 1.68);
+      paintOpenScrollBase(ctx, cx, cy + r * 1.32, r * 0.68, colour, line, 0.82);
+      return 0.98;
+    }
+    case 'oak-sprig': {
+      return 1.08;
+    }
+    case 'thistle-bloom': {
+      paintLateralFillets(ctx, cx, cy + r * 0.12, r, colour, line, 1, 1.66);
+      return 0.98;
+    }
+    case 'rosette-arabesque': {
+      paintLateralFillets(ctx, cx, cy, r, colour, line, 1.04, 1.7);
+      paintOpenScrollBase(ctx, cx, cy + r * 1.28, r * 0.66, colour, line, 0.8);
+      return 0.96;
+    }
+    case 'broad-fleur-de-lis': {
+      paintLateralFillets(ctx, cx, cy + r * 0.08, r, colour, line, 1.08, 1.72);
+      return 0.98;
+    }
+    case 'ivy-knot': {
+      paintCentrepieceFillet(ctx, cx, cy + r * 1.16, r * 0.7, colour, line, 1.12);
+      return 0.98;
+    }
+    case 'oak-acanthus-volutes':
+    case 'wheat-saltire':
+      return 1.06;
+    case 'split-pomegranate':
+      return 1.04;
+    case 'open-tulip': {
+      paintLateralFillets(ctx, cx, cy + r * 0.18, r, colour, line, 0.98, 1.64);
+      return 0.98;
+    }
+    case 'pinecone-needles':
+      return 1.04;
+    case 'anthemion-fan':
+      return 1.02;
+    case 'fern-palmette':
+    case 'ginkgo-fans':
+      return 1.06;
+    case 'open-state-crown':
+      return 1;
+  }
+}
+
+/**
+ * The centrepiece below the cover title field — the same semantic device the
+ * spine wears, enlarged and integrated into an authored binder's programme.
+ *
+ * The previous compositor put every device on a filled oval with two rings.
+ * It was consistent, but consistently badge-like: Star looked like a rating
+ * icon on a coin and Crown like a shield logo. These programmes remain one
+ * ink, flat and deterministic, but the surrounding strokes now belong to the
+ * identity of the tool and stay open to the cloth around them.
  */
 function paintMedallion(
   ctx: FlatCtx,
@@ -2174,103 +4898,45 @@ function paintMedallion(
   r: number,
   kind: number,
   colour: string,
-  /** The sunk field the stamp is struck into: the board's own tone, deeper. */
-  field: string,
   /** False once the book is worn enough to have lost its fine tooling. */
   detail: boolean,
 ): void {
-  const k = ((Math.trunc(kind) % ORNAMENT_COUNT) + ORNAMENT_COUNT) % ORNAMENT_COUNT;
-  const line = Math.max(0.9, r * 0.075);
-
-  /**
-   * The cartouche the stamp sits in — five of them, chosen by the stamp itself.
-   *
-   * Deliberately DERIVED from `kind` rather than added as a knob: the cover's
-   * whole history in this file is counts and tables drifting apart, and a sixth
-   * axis nothing stores is a sixth thing to keep in step. Derived, it is
-   * already in `coverCacheKey` (through `medallion`) and already in the studio
-   * (turning the stamp turns the surround with it), for free.
-   *
-   * It exists because the stamp on its own was a sticker. `drawOrnament` puts
-   * one small gilt pictogram on the lower half of a board that has nothing else
-   * on it, and at pull-out size — 420px, the size a reader actually holds —
-   * that read as clip art dropped on cloth. A binder's centre tool is struck
-   * into a field and ringed; the ring is what makes it tooling.
-   */
-  if (detail) {
-    const lozengeField = k % 5 === 2;
-    ctx.save();
-    if (lozengeField) {
-      tracePoly(ctx, [
-        { x: cx, y: cy - r * 1.5 },
-        { x: cx + r * 1.16, y: cy },
-        { x: cx, y: cy + r * 1.5 },
-        { x: cx - r * 1.16, y: cy },
-      ]);
-    } else {
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.3, 0, Math.PI * 2);
-    }
-    // A second flat face, not a shadow: concentric, so it cannot read as a
-    // light direction. The note this replaces is still true — the first
-    // specimen put a contact ELLIPSE under the stamp, offset, and it read as a
-    // thumbprint. A field the stamp sits IN is the opposite mark.
-    ctx.fillStyle = field;
-    ctx.fill();
-    ctx.strokeStyle = FLAT.ink;
-    ctx.lineWidth = line * 0.8;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    switch (k % 5) {
-      case 0:
-        ringMark(ctx, cx, cy, r * 1.56, colour, line);
-        break;
-      case 1:
-        // Rayed: the ring, with the tool's own points struck outside it.
-        ringMark(ctx, cx, cy, r * 1.54, colour, line);
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-          stroke(
-            ctx,
-            cx + Math.cos(a) * r * 1.7,
-            cy + Math.sin(a) * r * 1.7,
-            cx + Math.cos(a) * r * 2.02,
-            cy + Math.sin(a) * r * 2.02,
-            colour,
-            line * 0.85,
-            k * 7 + i,
-          );
-        }
-        break;
-      case 2:
-        // Clear of the field by a real gap: at 1.78 the outline touched the
-        // lozenge it surrounds and the two read as one thick diamond.
-        lozengeOutline(ctx, cx, cy, r * 1.95, colour, line);
-        break;
-      case 3:
-        ringMark(ctx, cx, cy, r * 1.48, colour, line);
-        ringMark(ctx, cx, cy, r * 1.72, colour, line * 0.6);
-        break;
-      default:
-        // Studded: the ring with four pips on the diagonals, the commonest
-        // centre-piece on a nineteenth-century trade binding.
-        ringMark(ctx, cx, cy, r * 1.5, colour, line);
-        for (const a of [0.25, 0.75, 1.25, 1.75]) {
-          const ang = a * Math.PI;
-          dot(ctx, cx + Math.cos(ang) * r * 1.86, cy + Math.sin(ang) * r * 1.86, line * 1.3, colour);
-        }
-    }
-    ctx.restore();
-  }
+  const k = normalizeCoverEmblemIndex(kind);
 
   ctx.save();
   ctx.fillStyle = colour;
   ctx.strokeStyle = colour;
-  ctx.lineWidth = Math.max(1, r * 0.16);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  drawOrnament(ctx as never, k, cx, cy, r, mulberry32((k * 2654435761) ^ Math.round(r * 16)));
+  const programme = coverEmblemProgramme(k);
+  const deviceR = detail ? r * COVER_EMBLEM_DEVICE_SCALES[programme] : r;
+  const line = Math.max(1, deviceR * 0.09);
+  ctx.lineWidth = Math.max(1, deviceR * 0.16);
+  if (programme === 'open-state-crown') {
+    if (detail) {
+      // The crown is the sole heraldic focal, but it is not a logo floating in
+      // empty cloth. Two interrupted state-binding fillets grow out of its
+      // circlet and terminate as open returns. The Renaissance perimeter and
+      // title dividers can therefore lead into one continuous hierarchy
+      // without adding a shield, wreath, second crown or repeated field.
+      paintLateralFillets(
+        ctx,
+        cx,
+        cy + deviceR * 0.22,
+        deviceR,
+        colour,
+        line,
+        1.08,
+        1.82,
+      );
+    }
+    paintOpenStateCrown(ctx, cx, cy - deviceR * 0.08, deviceR, colour);
+  } else {
+    const scale = detail
+      ? paintEmblemSetting(ctx, programme, cx, cy, deviceR, colour, line)
+      : 1;
+    paintCoverCentreTool(ctx, programme, cx, cy, deviceR * scale, colour, line);
+  }
   ctx.restore();
 }
 
@@ -2279,8 +4945,14 @@ interface LabelSpec {
   style: TitlePlateStyle;
   inset: boolean;
   gilded: boolean;
+  /** Reader-owned tooling role, kept separate from the one dark outline. */
+  tooling: string | null;
+  /** Actual plate/board ground and its legibility-guarded title ink. */
+  titleColours: TitleColourResolution;
   /** The board's darker tone, for plates tooled straight onto the binding. */
   dark: string;
+  /** The actual board face, used to detect a contrast-forced direct title field. */
+  face: string;
   /**
    * The board's own colour taken a step toward the ink — the flat second face
    * used for the sunk panel behind an inset plate and for the offset plate
@@ -2307,18 +4979,484 @@ interface LabelSpec {
  * hand that silently sets nothing is better than a throw that takes the whole
  * cover with it.
  */
-function setHand(ctx: FlatCtx, hand: HandSpec, stack: string, px: number, text: string): string {
+function setHand(
+  ctx: FlatCtx,
+  hand: HandSpec,
+  stack: string,
+  px: number,
+  text: string,
+  track = hand.track,
+): string {
   const slope = hand.slant ? 'italic ' : '';
   // Small caps are uppercase set down a size: none of the five faces carries an
   // sc axis, and faking one by drawing two runs at two sizes would put a seam
   // in the middle of a two-word title.
   const size = hand.caps === 'small' ? px * 0.86 : px;
   ctx.font = `${slope}${hand.weight} ${size.toFixed(1)}px ${stack}`;
-  const tracking = hand.track * size;
+  const tracking = track * size;
   if ('letterSpacing' in ctx) {
     (ctx as unknown as { letterSpacing: string }).letterSpacing = `${tracking.toFixed(2)}px`;
   }
   return hand.caps === 'none' ? text : text.toUpperCase();
+}
+
+interface BrokenCoverTitle {
+  lines: readonly string[];
+  /** Width of the widest shaped line at the size currently set on `ctx`. */
+  maxWidth: number;
+  /** Tie-breaker: among equal widest lines, prefer the more even setting. */
+  squareWidth: number;
+}
+
+interface CoverTitleLayout {
+  lines: readonly string[];
+  fontPx: number;
+  stack: string;
+  track: number;
+}
+
+/**
+ * Break a title on words into exactly `lineCount` non-empty, ordered lines.
+ *
+ * A greedy wrap makes a label depend on which unusually wide word happens to
+ * arrive first. This tiny dynamic programme instead minimises the widest
+ * shaped line, then the sum of squared widths. Cover titles are generally two
+ * to eight words, so the handful of cached `measureText` calls is both cheap
+ * and deterministic.
+ */
+function balancedCoverTitleLines(
+  ctx: FlatCtx,
+  text: string,
+  lineCount: number,
+): BrokenCoverTitle {
+  const words = text.split(/\s+/u).filter(Boolean);
+  const count = Math.max(1, Math.min(Math.trunc(lineCount), words.length));
+  if (count === 1 || words.length === 1) {
+    const width = textWidth(ctx, text);
+    return { lines: [text], maxWidth: width, squareWidth: width * width };
+  }
+
+  const memo = new Map<string, BrokenCoverTitle | null>();
+  const solve = (from: number, linesLeft: number): BrokenCoverTitle | null => {
+    const key = `${from}:${linesLeft}`;
+    if (memo.has(key)) return memo.get(key) ?? null;
+    if (linesLeft === 1) {
+      const line = words.slice(from).join(' ');
+      const width = textWidth(ctx, line);
+      const result = { lines: [line], maxWidth: width, squareWidth: width * width };
+      memo.set(key, result);
+      return result;
+    }
+
+    let best: BrokenCoverTitle | null = null;
+    // Leave at least one word for every remaining line.
+    const lastEnd = words.length - linesLeft + 1;
+    for (let end = from + 1; end <= lastEnd; end += 1) {
+      const tail = solve(end, linesLeft - 1);
+      if (tail === null) continue;
+      const line = words.slice(from, end).join(' ');
+      const width = textWidth(ctx, line);
+      const candidate: BrokenCoverTitle = {
+        lines: [line, ...tail.lines],
+        maxWidth: Math.max(width, tail.maxWidth),
+        squareWidth: width * width + tail.squareWidth,
+      };
+      if (
+        best === null ||
+        candidate.maxWidth < best.maxWidth - 0.01 ||
+        (
+          Math.abs(candidate.maxWidth - best.maxWidth) <= 0.01 &&
+          candidate.squareWidth < best.squareWidth
+        )
+      ) {
+        best = candidate;
+      }
+    }
+    memo.set(key, best);
+    return best;
+  };
+
+  return solve(0, count) ?? balancedCoverTitleLines(ctx, text, 1);
+}
+
+/**
+ * Find the largest complete-title setting that fits the label.
+ *
+ * One line remains the natural answer whenever it is large enough. Longer
+ * titles may use two or three optically balanced lines. The normal
+ * handwriting floor is a preference, not permission to delete the reader's
+ * title: only if no complete multiline setting reaches that floor do we set
+ * the whole title a little smaller. A final Canvas `maxWidth` guard in the
+ * painter protects even a single unbroken pathological word without ever
+ * inventing an ellipsis glyph.
+ */
+function fitCoverTitle(
+  ctx: FlatCtx,
+  text: string,
+  hand: HandSpec,
+  stack: string,
+  startPx: number,
+  floorPx: number,
+  maxWidth: number,
+  labelHeight: number,
+  verticalShare: number,
+): CoverTitleLayout {
+  const capScale = hand.caps === 'small' ? 0.86 : 1;
+  const maxLines = Math.min(3, Math.max(1, text.split(/\s+/u).filter(Boolean).length));
+
+  const solveForTrack = (track: number): CoverTitleLayout => {
+    const cased = setHand(ctx, hand, stack, startPx, text, track);
+    let best: CoverTitleLayout | null = null;
+    let firstComfortable: CoverTitleLayout | null = null;
+    for (let lineCount = 1; lineCount <= maxLines; lineCount += 1) {
+      const broken = balancedCoverTitleLines(ctx, cased, lineCount);
+      const horizontalPx = broken.maxWidth <= maxWidth
+        ? startPx
+        : (startPx * maxWidth * 0.975) / Math.max(0.01, broken.maxWidth);
+      // Text occupies the quiet field above the short finishing rule. The cap
+      // is on the whole block, not each baseline, so a second line never
+      // crowds the rule or escapes the top of a direct-gilt treatment.
+      const verticalPx = (labelHeight * verticalShare) / (lineCount * 1.08 * capScale);
+      const fontPx = Math.min(startPx, horizontalPx, verticalPx);
+      const candidate: CoverTitleLayout = {
+        lines: broken.lines,
+        fontPx,
+        stack,
+        track,
+      };
+      // Once a setting is comfortably above the handwriting floor, keep the
+      // first (and therefore least fragmented) line count that achieves it.
+      // Below that bar, additional lines are worth using to rescue legibility.
+      if (firstComfortable === null && candidate.fontPx >= floorPx * 1.25) {
+        firstComfortable = candidate;
+      }
+      if (
+        best === null ||
+        candidate.fontPx > best.fontPx + 0.01 ||
+        (
+          Math.abs(candidate.fontPx - best.fontPx) <= 0.01 &&
+          candidate.lines.length < best.lines.length
+        )
+      ) {
+        best = candidate;
+      }
+    }
+    return firstComfortable ?? best!;
+  };
+
+  let best = solveForTrack(hand.track);
+  // Loose tracking is decorative. If it alone would force the complete title
+  // under the preferred legibility floor, close the setting before shrinking
+  // the letters. The historical -0.025em fallback remains the lower bound.
+  if (best.fontPx < floorPx && hand.track > -0.025) {
+    const compact = solveForTrack(-0.025);
+    if (compact.fontPx > best.fontPx) best = compact;
+  }
+  return best;
+}
+
+/**
+ * The physical title furniture actually painted on the board.
+ *
+ * This is intentionally one-for-one with the active catalogue. A treatment
+ * must change construction, not merely recolour the same rounded capsule.
+ */
+export type CoverTitleFurniture =
+  | 'direct-lettering'
+  | 'stepped-gilt-panel'
+  | 'paper-ticket'
+  | 'debossed-field'
+  | 'morocco-ticket'
+  | 'open-double-fillet'
+  | 'blind-stepped-panel'
+  | 'open-cartouche'
+  | 'ruled-square'
+  | 'leather-onlay'
+  | 'inlay-strip'
+  | 'gilt-band'
+  | 'open-twin-rules'
+  | 'direct-gilt'
+  | 'ink-block';
+
+export function coverTitleFurniture(style: TitlePlateStyle): CoverTitleFurniture {
+  switch (normalizeTitlePlateStyle(style)) {
+    case 'gilt': return 'stepped-gilt-panel';
+    case 'label': return 'paper-ticket';
+    case 'debossed': return 'debossed-field';
+    case 'morocco-label': return 'morocco-ticket';
+    case 'double-fillet': return 'open-double-fillet';
+    case 'blind-panel': return 'blind-stepped-panel';
+    case 'gilt-cartouche': return 'open-cartouche';
+    case 'ruled-box': return 'ruled-square';
+    case 'leather-onlay': return 'leather-onlay';
+    case 'inlay-strip': return 'inlay-strip';
+    case 'gilt-band': return 'gilt-band';
+    case 'twin-rules': return 'open-twin-rules';
+    case 'gilt-direct': return 'direct-gilt';
+    case 'ink-panel': return 'ink-block';
+    case 'none':
+    default:
+      return 'direct-lettering';
+  }
+}
+
+/** A square ticket with clipped corners; no pill silhouette. */
+function traceClippedTitleTicket(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  cut: number,
+): void {
+  const c = clamp(cut, 0, Math.min(w, h) * 0.34);
+  ctx.beginPath();
+  ctx.moveTo(x + c, y);
+  ctx.lineTo(x + w - c, y);
+  ctx.lineTo(x + w, y + c);
+  ctx.lineTo(x + w, y + h - c);
+  ctx.lineTo(x + w - c, y + h);
+  ctx.lineTo(x + c, y + h);
+  ctx.lineTo(x, y + h - c);
+  ctx.lineTo(x, y + c);
+  ctx.closePath();
+}
+
+/** A blind panel cut with stepped shoulders instead of rounded UI corners. */
+function traceSteppedTitlePanel(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  step: number,
+): void {
+  const s = clamp(step, 0, Math.min(w * 0.16, h * 0.32));
+  ctx.beginPath();
+  ctx.moveTo(x + s, y);
+  ctx.lineTo(x + w - s, y);
+  ctx.lineTo(x + w - s, y + s * 0.42);
+  ctx.lineTo(x + w, y + s * 0.42);
+  ctx.lineTo(x + w, y + h - s * 0.42);
+  ctx.lineTo(x + w - s, y + h - s * 0.42);
+  ctx.lineTo(x + w - s, y + h);
+  ctx.lineTo(x + s, y + h);
+  ctx.lineTo(x + s, y + h - s * 0.42);
+  ctx.lineTo(x, y + h - s * 0.42);
+  ctx.lineTo(x, y + s * 0.42);
+  ctx.lineTo(x + s, y + s * 0.42);
+  ctx.closePath();
+}
+
+function fillAndRuleTitleShape(
+  ctx: FlatCtx,
+  fill: string,
+  rule: string,
+  line: number,
+): void {
+  ctx.fillStyle = fill;
+  ctx.fill();
+  pen(ctx, rule, line);
+  ctx.stroke();
+}
+
+function paintTitleFillets(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  line: number,
+  seed: number,
+  doubled: boolean,
+): void {
+  const inset = w * 0.025;
+  const gap = Math.max(line * 1.8, h * 0.075);
+  const top = y + h * 0.1;
+  const bottom = y + h * 0.9;
+  stroke(ctx, x + inset, top, x + w - inset, top, colour, line, seed);
+  stroke(ctx, x + inset, bottom, x + w - inset, bottom, colour, line, seed + 1);
+  if (!doubled) return;
+  stroke(ctx, x + w * 0.075, top + gap, x + w * 0.925, top + gap, colour, line * 0.58, seed + 2);
+  stroke(ctx, x + w * 0.075, bottom - gap, x + w * 0.925, bottom - gap, colour, line * 0.58, seed + 3);
+}
+
+/**
+ * Paint the material or open tooling behind a title. Every branch uses flat
+ * board faces and one outline ink; hierarchy comes from construction, never a
+ * lighting pass or a repeating pattern.
+ */
+function paintTitleFurniture(
+  ctx: FlatCtx,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  spec: LabelSpec,
+  furniture: CoverTitleFurniture,
+  forcedDirectField: boolean,
+): void {
+  const line = Math.max(1, Math.min(w, h) * 0.03);
+  const fill = spec.titleColours.ground;
+  const blind = spec.dark;
+  const tooling = spec.tooling ?? (spec.gilded ? FLAT.giltPale : blind);
+
+  if (forcedDirectField) {
+    traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.24);
+    fillAndRuleTitleShape(ctx, fill, tooling, line * 0.78);
+    return;
+  }
+
+  switch (furniture) {
+    case 'direct-lettering':
+    case 'direct-gilt':
+      return;
+
+    case 'paper-ticket': {
+      const lift = Math.max(1, h * 0.075);
+      wobbleRect(ctx, x + lift * 0.5, y + lift, w, h, 0, spec.seed + 8);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 9);
+      fillAndRuleTitleShape(ctx, fill, FLAT.ink, line * 0.9);
+      return;
+    }
+
+    case 'stepped-gilt-panel': {
+      traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.26);
+      fillAndRuleTitleShape(ctx, fill, tooling, line);
+      const g = h * 0.13;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 3);
+      pen(ctx, tooling, line * 0.48);
+      ctx.stroke();
+      return;
+    }
+
+    case 'debossed-field': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 5);
+      fillAndRuleTitleShape(ctx, fill, blind, line * 1.02);
+      const g = h * 0.12;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 6);
+      pen(ctx, mixHex(blind, spec.face, 0.3), line * 0.52);
+      ctx.stroke();
+      return;
+    }
+
+    case 'morocco-ticket': {
+      traceClippedTitleTicket(ctx, x, y, w, h, h * 0.24);
+      fillAndRuleTitleShape(ctx, fill, tooling, line);
+      const g = h * 0.13;
+      traceClippedTitleTicket(ctx, x + g, y + g, w - g * 2, h - g * 2, h * 0.1);
+      pen(ctx, tooling, line * 0.5);
+      ctx.stroke();
+      return;
+    }
+
+    case 'open-double-fillet':
+      paintTitleFillets(ctx, x, y, w, h, tooling, line * 0.72, spec.seed + 11, true);
+      return;
+
+    case 'blind-stepped-panel': {
+      traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.3);
+      fillAndRuleTitleShape(ctx, fill, blind, line * 0.9);
+      const c = h * 0.19;
+      const arm = h * 0.28;
+      pen(ctx, tooling, line * 0.5);
+      ctx.beginPath();
+      for (const [cx, cy, sx, sy] of [
+        [x + c, y + c, 1, 1],
+        [x + w - c, y + c, -1, 1],
+        [x + w - c, y + h - c, -1, -1],
+        [x + c, y + h - c, 1, -1],
+      ] as const) {
+        ctx.moveTo(cx + sx * arm, cy);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx, cy + sy * arm);
+      }
+      ctx.stroke();
+      return;
+    }
+
+    case 'open-cartouche': {
+      const shoulder = Math.min(w * 0.18, h * 0.78);
+      ctx.beginPath();
+      ctx.moveTo(x + shoulder, y);
+      ctx.quadraticCurveTo(x + shoulder * 0.62, y + h * 0.1, x + shoulder * 0.3, y + h * 0.24);
+      ctx.quadraticCurveTo(x - shoulder * 0.08, y + h * 0.36, x + shoulder * 0.18, y + h * 0.5);
+      ctx.quadraticCurveTo(x - shoulder * 0.08, y + h * 0.64, x + shoulder * 0.3, y + h * 0.76);
+      ctx.quadraticCurveTo(x + shoulder * 0.62, y + h * 0.9, x + shoulder, y + h);
+      ctx.lineTo(x + w - shoulder, y + h);
+      ctx.quadraticCurveTo(x + w - shoulder * 0.62, y + h * 0.9, x + w - shoulder * 0.3, y + h * 0.76);
+      ctx.quadraticCurveTo(x + w + shoulder * 0.08, y + h * 0.64, x + w - shoulder * 0.18, y + h * 0.5);
+      ctx.quadraticCurveTo(x + w + shoulder * 0.08, y + h * 0.36, x + w - shoulder * 0.3, y + h * 0.24);
+      ctx.quadraticCurveTo(x + w - shoulder * 0.62, y + h * 0.1, x + w - shoulder, y);
+      ctx.closePath();
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.9);
+      // The concave shoulders themselves are the cartouche. External curls
+      // became knob-like hardware at true size, so the open programme stops
+      // at two clean lateral pallets within the title field.
+      stroke(ctx, x + shoulder * 0.18, y + h * 0.5, x + shoulder * 0.72, y + h * 0.5, tooling, line * 0.5, spec.seed + 15);
+      stroke(ctx, x + w - shoulder * 0.72, y + h * 0.5, x + w - shoulder * 0.18, y + h * 0.5, tooling, line * 0.5, spec.seed + 16);
+      return;
+    }
+
+    case 'ruled-square': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 17);
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.85);
+      const g = h * 0.14;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 18);
+      pen(ctx, tooling, line * 0.46);
+      ctx.stroke();
+      return;
+    }
+
+    case 'leather-onlay': {
+      const lift = Math.max(1, h * 0.08);
+      traceSteppedTitlePanel(ctx, x + lift * 0.65, y + lift, w, h, h * 0.28);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+      traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.28);
+      fillAndRuleTitleShape(ctx, fill, blind, line);
+      const g = h * 0.12;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 21);
+      pen(ctx, tooling, line * 0.48);
+      ctx.stroke();
+      return;
+    }
+
+    case 'inlay-strip': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 23);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      paintTitleFillets(ctx, x, y, w, h, tooling, line * 0.68, spec.seed + 24, false);
+      return;
+    }
+
+    case 'gilt-band': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 27);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      paintTitleFillets(ctx, x, y, w, h, spec.titleColours.ink, line * 0.62, spec.seed + 28, false);
+      const terminal = h * 0.2;
+      stroke(ctx, x + w * 0.045, y + terminal, x + w * 0.045, y + h - terminal, spec.titleColours.ink, line * 0.55, spec.seed + 30);
+      stroke(ctx, x + w * 0.955, y + terminal, x + w * 0.955, y + h - terminal, spec.titleColours.ink, line * 0.55, spec.seed + 31);
+      return;
+    }
+
+    case 'open-twin-rules':
+      paintTitleFillets(ctx, x, y, w, h, tooling, line * 0.72, spec.seed + 33, false);
+      return;
+
+    case 'ink-block': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 37);
+      fillAndRuleTitleShape(ctx, fill, tooling, line);
+      const g = h * 0.11;
+      stroke(ctx, x + g, y + g, x + w - g, y + g, spec.titleColours.ink, line * 0.42, spec.seed + 38);
+      stroke(ctx, x + g, y + h - g, x + w - g, y + h - g, spec.titleColours.ink, line * 0.42, spec.seed + 39);
+      return;
+    }
+  }
 }
 
 /**
@@ -2351,14 +5489,11 @@ function paintLabel(
     const py = y - g * 0.86;
     const pw = w + g * 2;
     const ph = h + g * 1.72;
-    panel(ctx, px, py, pw, ph, spec.sunk, {
-      radius: h * 0.24,
-      seed: spec.seed + 4,
-      width: Math.max(1, line * 0.7),
-    });
-    const rule = spec.gilded ? FLAT.giltPale : spec.dark;
+    const rule = spec.tooling ?? (spec.gilded ? FLAT.giltPale : spec.dark);
+    traceSteppedTitlePanel(ctx, px, py, pw, ph, h * 0.24);
+    fillAndRuleTitleShape(ctx, spec.sunk, FLAT.ink, Math.max(1, line * 0.7));
     const inset = g * 0.34;
-    wobbleRect(ctx, px + inset, py + inset, pw - inset * 2, ph - inset * 2, h * 0.2, spec.seed + 6);
+    wobbleRect(ctx, px + inset, py + inset, pw - inset * 2, ph - inset * 2, 0, spec.seed + 6);
     pen(ctx, rule, line * 0.55);
     ctx.stroke();
     // The four cut corners: the mark that says "sunk" without a light source.
@@ -2373,42 +5508,19 @@ function paintLabel(
     }
   }
 
-  // Annotated: `FLAT` is `as const`, so an inferred `ink` would be pinned to
-  // the literal type of whichever colour happened to be assigned first.
-  let ink: string = FLAT.ink;
-  if (spec.style !== 'none') {
-    // 'label' is paper laid on the board; 'gilt' and 'debossed' are tooled
-    // into the binding itself, so they keep the board's darker tone and differ
-    // only in what outlines them.
-    const paper = spec.style === 'label';
-    const fill = paper ? (spec.paleBoard ? FLAT.creamDeep : FLAT.cream) : spec.dark;
-    if (paper) {
-      // An offset plate under the label — the app's whole shadow vocabulary
-      // (`0 3px 0`, gated by tests/styles.test.ts), which is a hard flat face
-      // and not a blur. A paper label is the one thing on this board that
-      // genuinely SITS ON the binding rather than being tooled into it, and
-      // without the offset it read as printed on.
-      const lift = Math.max(1, h * 0.075);
-      wobbleRect(ctx, x + lift * 0.5, y + lift, w, h, h * 0.2, spec.seed + 9);
-      ctx.fillStyle = spec.sunk;
-      ctx.fill();
-    }
-    panel(ctx, x, y, w, h, fill, {
-      radius: h * 0.2,
-      seed: spec.seed,
-      ink: spec.style === 'gilt' ? FLAT.gilt : FLAT.ink,
-      width: Math.max(1.2, inkWidth(Math.min(w, h)) * 0.9),
-    });
-    ink = paper ? FLAT.ink : spec.gilded || spec.style === 'gilt' ? FLAT.giltPale : FLAT.cream;
-  } else if (spec.paleBoard) {
-    // Nothing pale survives on a parchment board — a gilt-lettered title there
-    // came back all but invisible. Ink it.
-    ink = FLAT.inkSoft;
-  } else {
-    // No plate: the title is tooled straight onto the cloth, so it has to
-    // carry itself in gilt or cream.
-    ink = spec.gilded ? FLAT.giltPale : FLAT.cream;
-  }
+  const ink = spec.titleColours.ink;
+  const furniture = coverTitleFurniture(spec.style);
+  const directStyle =
+    furniture === 'direct-lettering' ||
+    furniture === 'direct-gilt' ||
+    furniture === 'open-double-fillet' ||
+    furniture === 'open-twin-rules';
+  const expandedDirectTitle =
+    furniture === 'direct-gilt' ||
+    furniture === 'open-double-fillet' ||
+    furniture === 'open-twin-rules';
+  const forcedDirectField = directStyle && spec.titleColours.ground !== spec.face;
+  paintTitleFurniture(ctx, x, y, w, h, spec, furniture, forcedDirectField);
 
   const text = title.trim();
   if (!text) {
@@ -2421,7 +5533,7 @@ function paintLabel(
         ry,
         x + w * (0.88 - i * 0.16),
         ry,
-        FLAT.inkSoft,
+        ink,
         Math.max(1, h * 0.075),
         spec.seed + i,
       );
@@ -2429,16 +5541,16 @@ function paintLabel(
     return;
   }
 
-  // Fit the title. The floor is the handwriting legibility floor from
-  // CLAUDE.md (13 CSS px), expressed in the canvas's own pixels.
-  //
-  // Both floors are applied to the size the title is ACTUALLY set at, after
-  // the hand's own scale and after the fit loop — which is the whole reason
-  // they are enforced here rather than declared in the table. `gen-lettering`
-  // learned the same thing on the page: a hand's scale and a size's scale
-  // multiply, so "small hand" at "small plate" goes under a floor nobody wrote
-  // a number below.
-  const maxWidth = w * 0.84;
+  // Fit the title. The preferred floor is the handwriting legibility floor
+  // from CLAUDE.md (13 CSS px), expressed in the canvas's own pixels. It is
+  // tested against the FINAL multiline setting: if the complete title cannot
+  // meet it, the renderer changes to the printed micro-copy face rather than
+  // drawing tiny handwriting or deleting the tail.
+  // The outline and the hand wobble need a little air, but 16% was far more
+  // than they need. At specimen-card scale it made even a two-word title
+  // ellipsise inside a visibly broad plate. Nine percent is still a generous
+  // bookbinder's margin and, crucially, agrees with the width the eye reads.
+  const maxWidth = w * 0.91;
   const floorPx = HAND_FLOOR_PX * spec.s;
   const hand = spec.hand;
   // The plate's vertical cap holds whatever the hand asks for: a hand set at
@@ -2449,66 +5561,109 @@ function paintLabel(
   ctx.textBaseline = 'middle';
 
   let stack = FACE_STACKS[hand.face] ?? FACE_STACKS[0]!;
-  let fontPx = startPx;
-  let cased = text;
-  // Two passes at most: fit, and if a Caveat hand fitted under Caveat's own
-  // documented floor, drop to the body face and fit again. That is the same
-  // fallback `gen-lettering.mjs` emits as its block of two-attribute rules —
-  // the block keeps its size and gives up only the face.
-  for (let pass = 0; pass < 2; pass++) {
-    /*
-     * SOLVE for the size instead of walking down to it.
-     *
-     * This used to shrink by 8% and measure again, round and round, which is up
-     * to a dozen `measureText` calls per title — and each one is preceded by a
-     * `setHand()`, so each is a fresh `ctx.font` and a fresh shaping pass with
-     * nothing cached. Profiling the customize panel opening found `measureText`
-     * the largest single cost on the main thread, and memoising it did nothing
-     * at all: every iteration measures the SAME string at a DIFFERENT size, so
-     * every call is a unique key by construction. The loop was the bug, not the
-     * lookup.
-     *
-     * A run's width is linear in its font size for a given family and tracking
-     * — twice the size is twice the width — so one measurement gives the exact
-     * size that fits. Two calls, not twelve, and the second only confirms it.
-     */
-    fontPx = startPx;
-    cased = setHand(ctx, hand, stack, fontPx, text);
-    const atStart = textWidth(ctx, cased);
-    if (atStart > maxWidth) {
-      fontPx = Math.max(floorPx, (startPx * maxWidth) / atStart);
-      cased = setHand(ctx, hand, stack, fontPx, text);
-    }
-    fontPx = Math.max(fontPx, floorPx);
-    cased = setHand(ctx, hand, stack, fontPx, text);
-    if (pass === 1 || hand.face !== HEADING_FACE || fontPx >= HEADING_MIN_PX * spec.s) break;
+  // A directly tooled title has no physical plate edge to protect. Give its
+  // lettering more of the invisible composition field and move the short rule
+  // below it; treating that field like a pasted label made long gilt-direct
+  // titles needlessly microscopic despite a broad, empty board around them.
+  const openRuleField =
+    furniture === 'open-double-fillet' || furniture === 'open-twin-rules';
+  const materialBand =
+    furniture === 'inlay-strip' || furniture === 'gilt-band' || furniture === 'ink-block';
+  const verticalShare =
+    furniture === 'direct-gilt' ? 0.74 : openRuleField || materialBand ? 0.64 : 0.58;
+  let layout = fitCoverTitle(
+    ctx,
+    text,
+    hand,
+    stack,
+    startPx,
+    floorPx,
+    maxWidth,
+    h,
+    verticalShare,
+  );
+  // Caveat's documented floor is about the face, not the words. If the full
+  // title needs a smaller setting, retain every word and move to the body hand.
+  if (hand.face === HEADING_FACE && layout.fontPx < HEADING_MIN_PX * spec.s) {
     stack = FACE_STACKS[BODY_FACE]!;
+    layout = fitCoverTitle(
+      ctx,
+      text,
+      hand,
+      stack,
+      startPx,
+      floorPx,
+      maxWidth,
+      h,
+      verticalShare,
+    );
+  }
+  if (hand.face !== PRINTED_FACE && layout.fontPx < floorPx) {
+    stack = FACE_STACKS[PRINTED_FACE]!;
+    layout = fitCoverTitle(
+      ctx,
+      text,
+      hand,
+      stack,
+      startPx,
+      floorPx,
+      maxWidth,
+      h,
+      verticalShare,
+    );
   }
 
-  let fitted = cased;
-  if (textWidth(ctx, fitted) > maxWidth) {
-    while (fitted.length > 1 && textWidth(ctx, `${fitted}…`) > maxWidth) {
-      fitted = fitted.slice(0, -1);
-    }
-    fitted = `${fitted}…`;
+  let fontPx = Math.max(1, layout.fontPx);
+  const lines = layout.lines;
+  // Confirm the closed-form fit against the browser's final shaping. This is
+  // one shared correction for every line, so their hierarchy cannot drift.
+  setHand(ctx, hand, layout.stack, fontPx, text, layout.track);
+  const widest = Math.max(...lines.map((lineText) => textWidth(ctx, lineText)));
+  if (widest > maxWidth && fontPx > 1) {
+    fontPx = Math.max(1, fontPx * (maxWidth / widest) * 0.975);
+    setHand(ctx, hand, layout.stack, fontPx, text, layout.track);
   }
+
+  const actualFontPx = fontPx * (hand.caps === 'small' ? 0.86 : 1);
+  const lineHeight = actualFontPx * 1.08;
+  const centredField = openRuleField || materialBand;
+  const centreY = y + h * (
+    centredField
+      ? lines.length === 1 ? 0.5 : 0.48
+      : lines.length === 1 ? 0.44 : 0.41
+  );
+  const firstY = centreY - ((lines.length - 1) * lineHeight) / 2;
   ctx.fillStyle = ink;
-  ctx.fillText(fitted, x + w / 2, y + h * 0.44);
+  lines.forEach((lineText, index) => {
+    // `maxWidth` is an emergency guard for an unbroken pathological title or
+    // a font backend whose metrics are not quite linear. It condenses the full
+    // run; it never substitutes, clips or appends UI punctuation.
+    ctx.fillText(lineText, x + w / 2, firstY + index * lineHeight, maxWidth);
+  });
   // Tracking is part of the drawing state, so it would leak into the ruled
   // flourish below and out into whatever the caller draws next.
   ctx.restore();
 
-  // The icon's shortest rule, kept as the flourish under the title.
-  stroke(
-    ctx,
-    x + w * 0.34,
-    y + h * 0.78,
-    x + w * 0.66,
-    y + h * 0.78,
-    spec.style === 'label' ? FLAT.inkSoft : ink,
-    Math.max(0.9, h * 0.05),
-    spec.seed + 7,
-  );
+  // Open fillets and full material bands already supply a lower rule. Other
+  // treatments keep one short binder's finishing stroke beneath the title.
+  if (
+    furniture !== 'open-double-fillet' &&
+    furniture !== 'open-twin-rules' &&
+    furniture !== 'inlay-strip' &&
+    furniture !== 'gilt-band' &&
+    furniture !== 'ink-block'
+  ) {
+    stroke(
+      ctx,
+      x + w * 0.34,
+      y + h * (expandedDirectTitle && lines.length > 1 ? 0.9 : 0.78),
+      x + w * 0.66,
+      y + h * (expandedDirectTitle && lines.length > 1 ? 0.9 : 0.78),
+      spec.style === 'label' ? FLAT.inkSoft : ink,
+      Math.max(0.9, h * 0.05),
+      spec.seed + 7,
+    );
+  }
 }
 
 /**
@@ -2541,10 +5696,12 @@ function paintCornerPlates(
   radius: number,
   gilded: boolean,
   ink: number,
+  hardwareHex?: string | null,
 ): void {
   const size = Math.min(w * 0.17, h * 0.13);
-  const fill = gilded ? FLAT.gilt : FLAT.timber;
-  const deep = gilded ? FLAT.ochreDark : FLAT.timberDark;
+  const own = normaliseHex(hardwareHex);
+  const fill = own ?? (gilded ? FLAT.gilt : FLAT.timber);
+  const deep = own !== null ? mixHex(own, FLAT.ink, 0.28) : gilded ? FLAT.ochreDark : FLAT.timberDark;
   // Never let the corner curve eat the plate: a well-worn book rounds to
   // `radius`, and a plate the size of its own corner is not a plate.
   const r = Math.min(radius, size * 0.55);
@@ -2802,6 +5959,124 @@ export interface RenderCoverOptions {
 }
 
 /**
+ * The broad composition of the front board, derived from the furniture the
+ * reader already chose. It deliberately is not another persisted dial: a
+ * ribbon label belongs high, a heraldic plate needs a deeper field, and a
+ * roundel title must not sit on top of a second roundel. Those are binding
+ * rules, not arbitrary coordinates.
+ *
+ * Exporting the decision lets the Surprise sweep group genuinely different
+ * covers instead of treating six recolours of one vertical stack as variety.
+ */
+export interface CoverCompositionLayout {
+  titleWidth: number;
+  titleHeight: number;
+  titleCenterY: number;
+  medallionCenterY: number;
+  medallionScale: number;
+  family: 'direct' | 'band' | 'ticket' | 'heraldic' | 'round' | 'panel' | 'classic';
+}
+
+const BAND_TITLE_PLATES = new Set<TitlePlateStyle>([
+  'gilt-band', 'ribbon-band', 'inlay-strip', 'twin-rules', 'double-fillet',
+  'triple-fillet', 'dotted-rule', 'starred-ends', 'fleuron-ends', 'lozenge-ends',
+]);
+const TICKET_TITLE_PLATES = new Set<TitlePlateStyle>([
+  'label', 'morocco-label', 'paper-slip', 'vellum-slip', 'linen-tag',
+  'ivory-plate', 'ebony-plate', 'copper-plate', 'enamel-plate', 'leather-onlay',
+]);
+const HERALDIC_TITLE_PLATES = new Set<TitlePlateStyle>([
+  'shield-plate', 'crest-plate', 'scroll-plate', 'arched-plate', 'pedimented',
+  'gilt-cartouche', 'gothic-panel',
+]);
+const ROUND_TITLE_PLATES = new Set<TitlePlateStyle>([
+  'roundel', 'oval-medallion', 'lozenge-plate', 'wreathed-plate',
+  'scallop-edge', 'bead-frame',
+]);
+const PANEL_TITLE_PLATES = new Set<TitlePlateStyle>([
+  'blind-panel', 'ruled-box', 'corner-brackets', 'notched-corners', 'sunk-panel',
+  'stepped-frame', 'chamfered-plate', 'hatched-ground', 'stippled-ground',
+  'rope-frame', 'stone-tablet', 'ink-panel',
+]);
+
+export function coverCompositionLayout(
+  plate: TitlePlateStyle,
+  frame: number,
+  medallion: number,
+  inset = false,
+): CoverCompositionLayout {
+  plate = normalizeTitlePlateStyle(plate);
+  frame = normalizeCoverFrameIndex(frame);
+  medallion = normalizeCoverEmblemIndex(medallion);
+  let layout: CoverCompositionLayout;
+  if (plate === 'gilt-direct') {
+    layout = {
+      // There is no physical ticket here: this is an invisible lettering
+      // field on the board. Its extra height lets a long direct title use two
+      // proper lines while the finishing rule still clears the medallion.
+      family: 'direct', titleWidth: 0.82, titleHeight: 0.25,
+      titleCenterY: 0.29, medallionCenterY: 0.59, medallionScale: 0.094,
+    };
+  } else if (plate === 'none') {
+    layout = {
+      family: 'direct', titleWidth: 0.82, titleHeight: 0.22,
+      titleCenterY: 0.29, medallionCenterY: 0.59, medallionScale: 0.094,
+    };
+  } else if (plate === 'debossed' || plate === 'gilt') {
+    layout = {
+      family: 'panel', titleWidth: 0.76, titleHeight: 0.18,
+      titleCenterY: 0.34, medallionCenterY: 0.7, medallionScale: 0.082,
+    };
+  } else if (BAND_TITLE_PLATES.has(plate)) {
+    layout = {
+      family: 'band', titleWidth: 0.86, titleHeight: 0.16,
+      titleCenterY: 0.29, medallionCenterY: 0.66, medallionScale: 0.086,
+    };
+  } else if (TICKET_TITLE_PLATES.has(plate)) {
+    layout = {
+      family: 'ticket', titleWidth: 0.75, titleHeight: 0.17,
+      titleCenterY: 0.34, medallionCenterY: 0.70, medallionScale: 0.083,
+    };
+  } else if (HERALDIC_TITLE_PLATES.has(plate)) {
+    layout = {
+      family: 'heraldic', titleWidth: 0.77, titleHeight: 0.20,
+      titleCenterY: 0.39, medallionCenterY: 0.76, medallionScale: 0.076,
+    };
+  } else if (ROUND_TITLE_PLATES.has(plate)) {
+    layout = {
+      family: 'round', titleWidth: 0.57, titleHeight: 0.18,
+      titleCenterY: 0.41, medallionCenterY: 0.77, medallionScale: 0.071,
+    };
+  } else if (PANEL_TITLE_PLATES.has(plate)) {
+    layout = {
+      family: 'panel', titleWidth: 0.76, titleHeight: 0.19,
+      titleCenterY: 0.36, medallionCenterY: 0.72, medallionScale: 0.08,
+    };
+  } else {
+    layout = {
+      family: 'classic', titleWidth: 0.64, titleHeight: 0.17,
+      titleCenterY: 0.35, medallionCenterY: 0.70, medallionScale: 0.082,
+    };
+  }
+
+  // Dense perimeter tooling leaves a slightly narrower quiet field; a sunk
+  // title plate gains a touch of width because its outer recess supplies the
+  // breathing room. The device index introduces only a minute vertical
+  // cadence, never a random placement.
+  const elaborateFrame = frame === 36 || frame === 43;
+  return {
+    ...layout,
+    titleWidth: clamp(layout.titleWidth + (inset ? 0.018 : 0) - (elaborateFrame ? 0.015 : 0), 0.54, 0.88),
+    titleCenterY: clamp(layout.titleCenterY + (elaborateFrame ? 0.012 : 0), 0.26, 0.43),
+    medallionCenterY: clamp(
+      layout.medallionCenterY + (elaborateFrame ? 0.012 : 0) + ((Math.abs(medallion) % 3) - 1) * 0.012,
+      0.57,
+      0.79,
+    ),
+  };
+}
+
+/**
  * Render one front cover at w×h onto a fresh canvas and return it.
  * Deterministic per (params, size, title).
  */
@@ -2836,6 +6111,16 @@ export function renderCoverInto(
   title = '',
   opts: RenderCoverOptions = {},
 ): void {
+  params = {
+    ...params,
+    frame: normalizeCoverFrameIndex(params.frame),
+    medallion: normalizeCoverEmblemIndex(params.medallion),
+    titlePlate: normalizeTitlePlateStyle(params.titlePlate),
+    edge: normalizeEdgeTreatment(params.edge),
+    charm: normalizeCharmKind(params.charm),
+    cornerProtectors: false,
+    insetPlate: false,
+  };
   ctx.save();
   ctx.clearRect(0, 0, w, h);
   ctx.lineJoin = 'round';
@@ -2848,10 +6133,11 @@ export function renderCoverInto(
   // table. It decides three things about a board: its tone (`boardFor`), where
   // a second covering sits, and the one grain it carries.
   const covering = coveringSpecFor(params);
-  const board = boardFor(covering, clothFor(params.palette, params.clothHex));
-  const pale = board === PALE_BOARD;
+  const construction = coverConstructionFor(params);
+  const board = resolvedCoverBoard(params);
+  const pale = isPaleCovering(covering);
   const [face, dark] = board;
-  const accent = accentFor(params.palette, seed);
+  const accent = accentFor(params.palette, seed, params.coverAccentHex);
   const gilded = params.gilt;
 
   /* ---- layout ---- */
@@ -2868,7 +6154,7 @@ export function renderCoverInto(
   // old pass ground dirt and bleach into the boards, which is exactly the kind
   // of simulated grubbiness flat art cannot carry.
   const radius = Math.min(bw, bh) * (0.04 + wear * 0.03);
-  const spineW = bw * 0.13;
+  const spineW = bw * construction.spineRatio;
   const faceX = bx + spineW;
   const faceW = bw - spineW;
   const ink = inkWidth(Math.min(bw, bh));
@@ -2906,15 +6192,50 @@ export function renderCoverInto(
     wear,
     seed + 61,
   );
-  paintSpineStrip(ctx, bx, by, bw, bh, spineW, radius, face, dark, ink, gilded, seed);
+  paintBoardConstruction(
+    ctx,
+    covering,
+    construction,
+    bx,
+    by,
+    bw,
+    bh,
+    spineW,
+    radius,
+    face,
+    dark,
+    ink,
+    seed + 83,
+  );
+  paintSpineStrip(
+    ctx,
+    covering,
+    construction,
+    bx,
+    by,
+    bw,
+    bh,
+    spineW,
+    radius,
+    face,
+    dark,
+    accent,
+    ink,
+    gilded,
+    params,
+    seed,
+  );
 
   /* ---- ornament ---- */
   // The icon's frame is pale gilt on a terracotta board. A book with no foil
   // gets the same frame blind-tooled instead — the board's own darker tone,
   // which is what a binder without gold leaf actually does. A cream board
   // swallows both pale tones, so parchment tools in the deeper ochre.
-  const frameInk = pale ? FLAT.ochreDark : gilded ? FLAT.giltPale : dark;
-  const ornInk = pale ? FLAT.ochreDark : gilded ? FLAT.gilt : dark;
+  const frameInk = params.toolingHex ?? (pale ? FLAT.ochreDark : gilded ? FLAT.giltPale : dark);
+  const ornInk = resolveCoverEmblemInk(
+    params.emblemHex ?? params.toolingHex ?? (pale ? FLAT.ochreDark : gilded ? FLAT.gilt : dark),
+    face,
+  );
   /**
    * The board's own colour taken a step toward the ink.
    *
@@ -2926,6 +6247,7 @@ export function renderCoverInto(
    * wherever it is cut into.
    */
   const sunk = mixHex(face, FLAT.ink, 0.17);
+  const frameBand = mixHex(face, FLAT.ink, 0.29);
   // Fine ornament is the first thing to go as a book wears.
   const fineDetail = wear < 0.7;
   const fx = faceX + faceW * 0.085;
@@ -2938,22 +6260,42 @@ export function renderCoverInto(
     bh * 0.89,
     params.frame,
     frameInk,
-    sunk,
+    frameBand,
     fineDetail,
     seed + 31,
   );
 
   /* ---- label ---- */
-  const labelW = faceW * 0.62;
-  const labelH = Math.min(bh * 0.17, labelW * 0.62);
-  const labelX = faceX + (faceW - labelW) / 2;
-  const labelY = by + bh * 0.4 - labelH / 2;
   const plateStyle: TitlePlateStyle = params.titlePlate ?? 'label';
+  const composition = coverCompositionLayout(
+    plateStyle,
+    params.frame,
+    params.medallion,
+    params.insetPlate === true,
+  );
+  const labelW = faceW * composition.titleWidth;
+  const labelH = Math.min(bh * composition.titleHeight, labelW * 0.62);
+  const labelX = faceX + (faceW - labelW) / 2;
+  const labelY = by + bh * composition.titleCenterY - labelH / 2;
   if (opts.plate !== false) {
+    if (params.medallion === 20 && fineDetail) {
+      paintCrownTitleCompartment(
+        ctx,
+        labelX,
+        labelY,
+        labelW,
+        labelH,
+        frameInk,
+        seed + 37,
+      );
+    }
     paintLabel(ctx, labelX, labelY, labelW, labelH, title, {
       style: title ? plateStyle : 'label',
       inset: params.insetPlate === true,
       gilded,
+      tooling: params.toolingHex ?? null,
+      titleColours: resolveCoverTitleColours(params, title),
+      face,
       dark,
       sunk,
       paleBoard: pale,
@@ -2966,25 +6308,18 @@ export function renderCoverInto(
   /* ---- medallion ---- */
   // Sat where the icon sits it: below the label, on the lower third of the
   // board, so the two marks read as a pair rather than a stack.
-  const medR = Math.min(faceW, bh) * 0.085;
+  const medR = Math.min(faceW, bh) * composition.medallionScale;
   const medX = faceX + faceW * 0.5;
-  const medY = by + bh * (opts.plate === false ? 0.62 : 0.72);
-  // No shadow under it. A medallion is tooled *into* the board, not resting on
-  // it, and the first specimen's contact ellipse read as a thumbprint. The
-  // field it is struck into is concentric for exactly that reason.
-  //
-  // Which WAY the field steps is decided by the stamp, not by a light: a gilt
-  // stamp is pale, so it wants the deeper face under it; a blind-tooled one is
-  // the board's own dark, so a deeper field swallowed it — the specimen came
-  // back with the lyre on the green Smooth Cloth board less visible than
-  // before the field existed. Stepping the other way is the same depth model
-  // (a flat face beside another) and keeps the stamp readable either way.
-  const medField = gilded || pale ? sunk : mixHex(face, FLAT.cream, 0.24);
-  paintMedallion(ctx, medX, medY, medR, params.medallion, ornInk, medField, fineDetail);
+  const medY = by + bh * (opts.plate === false ? 0.62 : composition.medallionCenterY);
+  // No shadow, badge field or enclosing ring. A centrepiece is tooled directly
+  // into the board; its open stems let the covering remain part of the design.
+  if (params.medallion >= 0) {
+    paintMedallion(ctx, medX, medY, medR, params.medallion, ornInk, fineDetail);
+  }
 
   /* ---- fittings ---- */
   if (params.cornerProtectors) {
-    paintCornerPlates(ctx, bx, by, bw, bh, radius, gilded, ink);
+    paintCornerPlates(ctx, bx, by, bw, bh, radius, gilded, ink, params.hardwareHex);
   }
   if (params.charm && params.charm !== 'none') {
     paintCharm(ctx, params.charm, bx, by, bw, bh, params.charmColor ?? 0, face, ink, seed + 51);
@@ -3024,7 +6359,7 @@ export function coverCacheKey(
   title = '',
   opts: RenderCoverOptions = {},
 ): string {
-  return `${flatSchemeTag()}|${params.seed}|${params.palette}|${params.clothHex ?? '-'}|${params.texture}|${coveringSpecFor(params).id}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
+  return `${flatSchemeTag()}|${params.seed}|${params.palette}|${params.clothHex ?? '-'}|${params.coverBaseHex ?? '-'}|${params.coverAccentHex ?? '-'}|${params.toolingHex ?? '-'}|${params.emblemHex ?? '-'}|${params.hardwareHex ?? '-'}|${params.texture}|${coveringSpecFor(params).id}|${params.frame}|${params.medallion}|${params.titleFont}|${params.gilt ? 1 : 0}|${params.raisedBands ?? '-'}|${params.bandGilt ? 1 : 0}|${params.headTail ? 1 : 0}|${params.headTailStyle ?? '-'}|${params.material ?? '-'}|${params.titlePlate ?? '-'}|${params.cornerProtectors ? 1 : 0}|${params.insetPlate ? 1 : 0}|${params.edge ?? '-'}|${(params.wear ?? 0).toFixed(3)}|${params.charm ?? '-'}|${params.charmColor ?? 0}|${Math.round(w)}x${Math.round(h)}|${opts.plate === false ? 0 : 1}|${title}`;
 }
 
 /**

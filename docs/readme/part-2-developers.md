@@ -275,8 +275,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->304<!--/f--> of <!--f:srcFiles-->313<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7028<!--/f--> lines of it.
+<!--f:srcDocstrings-->314<!--/f--> of <!--f:srcFiles-->323<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7089<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -446,7 +446,7 @@ straighten its arches, and rebuilding a case must not repaint it.
 | [`themes.ts`](../../src/art/themes.ts) — a room's **colour** | timber, timberDark, recess, wall, and exactly six book cloths | <!--f:roomThemes-->60<!--/f--> |
 | [`shelfDesign.ts`](../../src/art/shelfDesign.ts) — a bookcase's **carpentry** | <!--f:shelfBuilds-->52<!--/f--> builds × <!--f:shelfPatterns-->50<!--/f--> timber patterns | <!--f:shelfPresets-->113<!--/f--> |
 | [`wallpaperDesign.ts`](../../src/art/wallpaperDesign.ts) — the **wall** | <!--f:wallpaperMotifs-->50<!--/f--> motifs × 5 scales × 4 reliefs × 6 ink slots × 50 tones × 4 edges (`WALLPAPER_EDGES`, the nib: etched, crisp, soft, blotted) | <!--f:wallpaperPapers-->126<!--/f--> |
-| [`bookDesign.ts`](../../src/art/bookDesign.ts) — a book's **binding** | <!--f:bookShapes-->50<!--/f--> spine shapes × <!--f:bookMaterials-->50<!--/f--> materials × <!--f:bookDecorations-->50<!--/f--> decorations | <!--f:bookPresets-->189<!--/f--> |
+| [`bookDesign.ts`](../../src/art/bookDesign.ts) — a book's **binding** | <!--f:bookShapes-->3<!--/f--> straight shapes, <!--f:bookMaterials-->18<!--/f--> construction-led materials and <!--f:bookDecorations-->59<!--/f--> authored spine programmes | <!--f:bookPresets-->67<!--/f--> |
 
 A fifth, [`editor/effects/vocabulary.ts`](../../src/editor/effects/vocabulary.ts), does
 the same job for the page rather than the room; it is covered under *The editor*.
@@ -495,14 +495,24 @@ it, so a reader could not tell a fallback from their own choice. Resolution is
 **total** in both directions: junk out of SQLite gives the house case, never a
 throw inside a bake.
 
-### Tiers, roll pools, and the rule that a gate needs a caller
+### Curated books, and the rule that a gate needs a caller
 
-Every entry in the binding vocabulary declares a `group` and a `tier` —
-signature / shelf / niche / oddity — and TypeScript refuses one that does not. The
-exported order is *derived* from those, and `presetForSeed` rolls only
-`ROLLABLE_PRESETS`, so a reader is never handed an oddity by "surprise me" while
-the studio still offers all of them. The wallpapers and the carpentry carry the
-same shape (`WALLPAPER_ROLL` / `isRollableWallpaper`, `ROLLABLE_BUILDS` /
+The binding reset deliberately stopped treating a 50×50×50 cross-product as a
+virtue. Three straight shelf-legible silhouettes, eighteen construction-led
+coverings and fifty-nine authored spine programmes form 67 named bindings.
+Retired ids normalize into that system instead of
+preserving malformed outlines, wallpaper fields or empty title furniture.
+
+`bookSurprise.ts` is a composition search, not an independent-axis dice roll.
+It spends one focal-programme budget, pairs a single shelf-legible spine emblem
+with the cover, caps automatic bands and exposes 24 locks across eight named
+directions. Manual cover vocabulary carries sixteen emblems, twelve continuous
+frames, fifteen complete-title treatments, ten lettering hands, six page-edge
+finishes and three endband constructions—but charms, hardware, corner
+protectors and inset plates are not applied state.
+
+The wallpapers and carpentry still carry their own roll pools
+(`WALLPAPER_ROLL` / `isRollableWallpaper`, `ROLLABLE_BUILDS` /
 `ROLLABLE_PATTERNS`).
 
 **A curation helper with no caller changes nothing.** `isRollableWallpaper`,
@@ -817,7 +827,7 @@ is silently rewritten to the existing one on the way in.
 
 **The spec is generated, and the generation is gated.**
 [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
-is the file a person copies into a chatbot — <!--f:specLines-->822<!--/f--> lines,
+is the file a person copies into a chatbot — <!--f:specLines-->876<!--/f--> lines,
 built by [`scripts/gen-spec.mjs`](../../scripts/gen-spec.mjs) from
 [`src/script/vocab.ts`](../../src/script/vocab.ts) and
 [`scripts/spec-template.md`](../../scripts/spec-template.md), and inlined a second time

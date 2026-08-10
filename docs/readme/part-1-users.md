@@ -50,8 +50,8 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.5.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.5.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -66,7 +66,7 @@ it cannot discover that first upgrade by itself.
 
 And this is the whole of what arrives — one bookcase, ten floors, one book:
 
-![A fresh Alcove library at 80% zoom: a walnut bookcase with an ogee arch cut into every recess, standing against cream wallpaper netted with a fine gold trellis. Floor 1 holds a single claret book with a gilt title plate — the Welcome book — and a dashed outline with a plus in it marks the slot beside it. Every other floor is empty, and the case runs on down out of frame. A cream dock on the left offers new book, template, studio, add floor and trash.](img/box.png)
+![A fresh Alcove library at 80% zoom: a walnut bookcase with an ogee arch cut into every recess, standing against cream wallpaper netted with a fine gold trellis. Floor 1 holds one straight deep-blue Welcome book with two gilt cords and a foliate lozenge on its titleless spine; a dashed outline with a plus marks the slot beside it. Every other floor is empty, and a cream dock on the left offers new book, template, studio, add floor and trash.](img/box.png)
 
 ### Where your writing lives
 
@@ -135,7 +135,7 @@ there is: no tree, no list view, no "all notes". A floor is a shelf you can see
 along, a slot is where a book stands, and the dashed outline at the end of a row
 is the next free one.
 
-![The Alcove shelf at 80% zoom: a walnut bookcase with a plain slab cornice, a chain of gilt rings running the length of every board and upright, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis. Three floors are full and no two spines are alike — cream label plates, gilt bands, raised cords, magenta and moss and ochre cloths, a pair of tall pale ones standing a head above their neighbours — and a dashed outline with a plus in it marks the next free slot at the end of Floor 1. A fourth floor starts below them, empty, and the arcade runs on down out of frame. A cream dock on the left offers new book, template, studio, add floor and trash, its top button washed pale green; a zoom control reading 80% sits at the foot, and a moss-green settings seal in the bottom corner.](img/shelf.png)
+![The Alcove shelf at 80% zoom: a walnut bookcase against patterned cream paper, with three populated floors of straight, titleless cloth and calf spines. Restrained rules, cords and occasional centred emblems distinguish the bindings without labels, wallpaper-like marks or hardware; a dashed plus marks the next free slot. The left dock offers new book, template, studio, add floor and trash, with zoom and settings below.](img/shelf.png)
 
 Nothing here is a rectangle with a gradient on it: every spine is drawn from the
 book's own seed through [`src/art/bookDesign.ts`](../../src/art/bookDesign.ts), baked
@@ -214,7 +214,7 @@ The **book studio** dresses one book, and only that book: a binding follows its
 book into every room, which is what lets you recognise it after you have
 repainted the walls.
 
-![The "Customize this book" panel open down the left edge beside the spread, with three tabs — "this book" (selected), "this library" and "your own". A large preview shows the Welcome book's plum spine, divided into panels by raised cords, with gilt rules, striped headbands at head and tail, and a gold label plate carrying the title. Spine and cover toggles sit beneath it, then "binding — read to death", the current binding drawn standing on a walnut shelf tile, and a grid of seven alternative bindings ending in a dashed "182 more…" tile.](img/book-studio.png)
+![The "Customize this book" panel open beside the Welcome spread. A companion preview shows its straight deep-blue Gilt Quarto spine with two restrained cord stations and one foliate lozenge, with spine and cover views beneath. The panel offers separate spine and cover colours, eight Surprise directions, a large "dress this book" action, format choices and lock buttons beside each setting; the book title appears on the cover, never as tiny spine text.](img/book-studio.png)
 
 Both are covered properly under [Making it yours](#making-it-yours).
 
@@ -346,7 +346,7 @@ six open a panel; after a divider, four that just do something.
 
 | Tool | What it opens |
 | --- | --- |
-| Customize this book | the book studio — binding, cover, ribbon, paper |
+| Customize this book | the book studio — binding, cover title, emblem, frame and page edges |
 | Page style | ruled, grid, dotted or blank, plus the line spacing |
 | Catalogue | everything you can put on a page, browsable and searchable |
 | Table of contents | every heading in the book, click to jump |
@@ -386,7 +386,7 @@ diagrams — and so you never have to teach it how.
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
 **Take the grammar** — *copy the format for your AI* puts
-<!--f:specLines-->822<!--/f--> lines of specification on your clipboard,
+<!--f:specLines-->876<!--/f--> lines of specification on your clipboard,
 generated from the parser's own tables, so it cannot describe a language the app
 would refuse. **Ask for a note** in your own words. **Paste it back**, and the
 dialog previews what it recognised before anything lands on the page.
@@ -481,7 +481,9 @@ single block comes out the same way from the right-click menu.
 
 The **library studio** dresses the room you are standing in: its colours, its
 carpentry, its wallpaper, its floors, and the collection of bookcases. The
-**book studio** dresses one book: its binding, its cover, its ribbon, its paper.
+**book studio** dresses one book: its straight binding, complete cover title,
+lettering hand, unified emblem, frame, page-edge finish and sewn endband. Page style and bookmark ribbons remain
+their own page tools.
 
 The split is deliberate and worth knowing, because it is what makes the
 customisation survivable. A binding belongs to the book, so a book you bound in
@@ -502,15 +504,15 @@ part of it without losing the rest.
 | Colour schemes on their own | **<!--f:roomThemes-->60<!--/f-->** | [`src/art/themes.ts`](../../src/art/themes.ts) |
 | Bookcase carpentry | **<!--f:shelfBuilds-->52<!--/f-->** builds × **<!--f:shelfPatterns-->50<!--/f-->** timber patterns, **<!--f:shelfPresets-->113<!--/f-->** named | [`src/art/shelfDesign.ts`](../../src/art/shelfDesign.ts) |
 | Wallpaper | **<!--f:wallpaperMotifs-->50<!--/f-->** motifs, each with its own scale, relief, ink, tone and edge — **<!--f:wallpaperPapers-->126<!--/f-->** combinations named and hung | [`src/art/wallpaperDesign.ts`](../../src/art/wallpaperDesign.ts) |
-| Book bindings | **<!--f:bookShapes-->50<!--/f-->** spine shapes × **<!--f:bookMaterials-->50<!--/f-->** materials × **<!--f:bookDecorations-->50<!--/f-->** decorations, **<!--f:bookPresets-->189<!--/f-->** named | [`src/art/bookDesign.ts`](../../src/art/bookDesign.ts) |
+| Book bindings | **<!--f:bookShapes-->3<!--/f-->** straight spine shapes, **<!--f:bookMaterials-->18<!--/f-->** construction-led materials and **<!--f:bookDecorations-->59<!--/f-->** authored spine programmes, **<!--f:bookPresets-->67<!--/f-->** named bindings | [`src/art/bookDesign.ts`](../../src/art/bookDesign.ts) |
 | Book cloths | **<!--f:bookCloths-->50<!--/f-->** pigments, each with a name that means something | [`src/art/flat.ts`](../../src/art/flat.ts) |
-| Book covers | **<!--f:coverPigments-->50<!--/f-->** pigments, **<!--f:coverFrames-->50<!--/f-->** frames, **<!--f:coverMedallions-->50<!--/f-->** medallions | [`src/art/covers.ts`](../../src/art/covers.ts) |
+| Book covers | **<!--f:coverPigments-->50<!--/f-->** pigments, **<!--f:coverFrames-->12<!--/f-->** continuous frames, **<!--f:coverMedallions-->16<!--/f-->** shelf-legible emblems, 15 title treatments, 10 lettering hands, 6 page edges and 3 endbands | [`src/art/covers.ts`](../../src/art/covers.ts) |
 | Bookmark ribbons | cloth × weight × tail × material × charm, **<!--f:ribbonPresets-->40<!--/f-->** named | [`src/views/bookmarks.ts`](../../src/views/bookmarks.ts) |
 | Block decoration | **<!--f:effectAxes-->11<!--/f-->** axes, **<!--f:effectValues-->472<!--/f-->** values, applicable to **<!--f:blockEffectTypes-->35<!--/f-->** kinds of block | [`src/editor/effects/vocabulary.ts`](../../src/editor/effects/vocabulary.ts) |
 | Stickers | **<!--f:stickers-->50<!--/f-->**, grouped by family, plus your own | [`src/editor/nodes/stickers.ts`](../../src/editor/nodes/stickers.ts) |
 | Sound sets | **<!--f:soundSets-->28<!--/f-->**, voicing **<!--f:soundCues-->64<!--/f-->** cues | [`src/sound/soundSets.ts`](../../src/sound/soundSets.ts) |
 | Ambience beds | **<!--f:ambienceBeds-->10<!--/f-->**, plus silence | [`src/sound/engine.ts`](../../src/sound/engine.ts) |
-| Settings | **<!--f:settingsOptions-->42<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](../../src/data/defaults.ts) |
+| Settings | **<!--f:settingsOptions-->44<!--/f-->**, across appearance, library & shelf, motion & feel, sound, writing, system, library files and help | [`src/data/defaults.ts`](../../src/data/defaults.ts) |
 
 Some of it is not in a studio at all. *Settings → Appearance* is where the
 choices that belong to the whole app live rather than to one room — the theme,
@@ -597,8 +599,9 @@ before it does. There is a scope toggle when you have more than one case.
 
 ### Favourites
 
-Pin a book from its right-click menu and it gets a star charm on the spine, and
-sorts first when *Settings → Library & shelf* is set to sort by favourites.
+Pin a book from its right-click menu and it sorts first when *Settings →
+Library & shelf* is set to sort by favourites. Pinning changes organisation,
+not the binding you carefully chose.
 
 ## Sound
 <!--nav: Sound sets, ambience beds, the volume model, and the in-app credits-->
@@ -700,9 +703,11 @@ books into a single `.nbk` file. You pick the scope and what rides along.
 ![The "Send part of your library out" panel over an open book. The whole-library scope lists every title and selects only "Welcome to Alcove" at 48 pages. Bring the pictures, keep covers and spines, and perfect fidelity are enabled; the parcel is written as Notebook Script with one file per page. Its summary reads "1 book · 48 pages · about 101 KB", shows the Welcome book and the alcove-library.nbk filename, with Close and Export at the foot.](img/transfer.png)
 
 Inside, a bundle is a plain ZIP: a manifest with a checksum, one Notebook Script
-file per page, the lossless JSON beside it, the assets, and a snapshot of the
-bookcases the books stood in — so importing rebuilds the furniture rather than
-tipping every book onto one shelf.
+file per page, the lossless JSON beside it, the selected pages' pictures and
+videos, and a snapshot of the bookcases the books stood in — so importing
+rebuilds the furniture rather than tipping every book onto one shelf. Local
+media carries a path relative to the parcel, never the old machine's library
+folder, in both lossless and script-only bundles.
 
 **Import is additive** and nothing is overwritten: a book that matches one you
 already have gets a row-by-row conflict decision, and the whole import is

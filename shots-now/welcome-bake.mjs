@@ -15,7 +15,9 @@
  * the first thing a reader ever saw.
  *
  * This is the regression test, and it deliberately checks the ONE-BOOK case:
- * seeding a second book is exactly what used to paper over it.
+ * seeding a second book is exactly what used to paper over it. It also opens
+ * that clean-seeded book without applying a QA style override, so the shelf
+ * and held-cover shots prove the authored Welcome exterior itself.
  *
  * Usage: node shots-now/welcome-bake.mjs
  */
@@ -47,7 +49,10 @@ const sample = () =>
     return {
       n: books.length,
       rows: books.map((bk) => ({
+        id: bk.id,
         title: bk.title.slice(0, 24),
+        binding: globalThis.__shelfBinding?.(bk.id) ?? null,
+        style: globalThis.__shelfBookMeta?.(bk.id)?.style ?? null,
         hi: w.factory.get(bk.id, 'hi') !== undefined,
         lo: w.factory.get(bk.id, 'lo') !== undefined,
       })),
@@ -72,15 +77,46 @@ for (;;) {
 console.log('  ', JSON.stringify(settled));
 // NOTHING is seeded before this check, on purpose: adding a second book is
 // what used to hide the bug.
-const ok = settled.at >= 0 && settled.n > 0;
+const welcome = settled.rows[0] ?? null;
+const style = welcome?.style ?? null;
+const ok =
+  settled.at >= 0 &&
+  settled.n === 1 &&
+  welcome?.title.startsWith('Welcome to Alcove') === true &&
+  welcome.binding === 'gilt-quarto' &&
+  style?.material === undefined &&
+  style?.pigment === 29 &&
+  style?.spineBaseHex === '#394c70' &&
+  style?.coverBaseHex === '#475d82' &&
+  style?.ornament === 0 &&
+  style?.titlePlate === 'gilt-direct' &&
+  style?.titleFont === 44 &&
+  style?.coverFrame === 48 &&
+  style?.coverMedallion === 0 &&
+  style?.cornerProtectors === false &&
+  style?.insetPlate === false &&
+  style?.charm === 'none';
 console.log(
   ok
-    ? `  PASS — the lone welcome book is baked ${settled.at}ms in`
-    : '  FAIL — the welcome book is still an unbaked placeholder',
+    ? `  PASS — the lone Grand-blue quarto is baked ${settled.at}ms in`
+    : '  FAIL — the clean-seeded welcome exterior is missing or unbaked',
 );
 
 await p.waitForTimeout(1500);
 await p.screenshot({ path: 'shots-now/out/welcome-bake.png' });
 console.log('  shot shots-now/out/welcome-bake.png');
+if (welcome !== null) {
+  await p.waitForFunction(() => globalThis.__shelfPullOut !== undefined, null, {
+    timeout: 30000,
+  });
+  await p.evaluate((id) => globalThis.__shelfPullOut(id), welcome.id);
+  // SwiftShader can take longer than the nominal GSAP duration. A fixed sleep
+  // photographs the flight and makes a healthy cover look clipped or tiny;
+  // the class is applied only when the book has actually landed.
+  await p.locator('.pulled-book.is-held').waitFor({ state: 'visible', timeout: 30000 });
+  await p.waitForTimeout(250);
+  await p.screenshot({ path: 'shots-now/out/welcome-crown-held.png' });
+  console.log('  shot shots-now/out/welcome-crown-held.png');
+}
 await b.close();
 process.exit(ok ? 0 : 1);

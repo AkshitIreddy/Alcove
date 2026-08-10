@@ -175,8 +175,8 @@
         opacity: 0.96;
       }
 
-      /* The plank the whole thing stands on, with six spines: the shelf, in
-         miniature, in the six cloths a room is allowed. */
+      /* The plank the whole thing stands on, with six straight, titleless
+         bindings: the rebuilt shelf vocabulary in miniature. */
       .shelf {
         position: absolute;
         left: 0;
@@ -195,18 +195,30 @@
       .spine {
         width: 21px;
         border: 2.5px solid var(--ink);
-        border-radius: 5px 5px 3px 3px;
+        border-radius: 1px;
         position: relative;
       }
-      .spine i {
+      .spine::before,
+      .spine::after {
+        content: '';
         position: absolute;
         left: 3px;
         right: 3px;
-        top: 24%;
-        height: 11px;
-        border: 2px solid var(--ink);
-        border-radius: 3px;
-        background: var(--paper-aged);
+        height: 1.5px;
+        background: var(--ink);
+        opacity: 0.72;
+      }
+      .spine::before { top: 8px; }
+      .spine::after { bottom: 8px; }
+      .spine i {
+        position: absolute;
+        left: 5px;
+        right: 5px;
+        top: 4px;
+        bottom: 4px;
+        border-left: 1.5px solid var(--ink);
+        border-right: 1.5px solid var(--ink);
+        opacity: 0.42;
       }
       .plank {
         position: absolute;

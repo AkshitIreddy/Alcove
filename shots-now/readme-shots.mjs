@@ -108,6 +108,13 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  SHOWCASE_BINDINGS,
+  SHOWCASE_FLOORS,
+  SHOWCASE_STYLES,
+  SHOWCASE_TITLES,
+} from './showcase-library.mjs';
+
+import {
   ROOT,
   SHOTS_DIR,
   SHOTS_MANIFEST,
@@ -230,72 +237,16 @@ const HERO = { width: 1040, height: 420, scale: 2 };
  * course, the tax return — because the quick switcher photographs this list and
  * "Notebook 1 / Notebook 2" would photograph as a demo.
  */
-const FLOOR_0 = [
-  'Field Notes',
-  'Kanji Practice',
-  'Watercolour Basics',
-  'Cell Biology',
-  'Recipes',
-  'Dream Journal',
-  'The Long Walk',
-  'Chess Openings',
-  'Garden Log',
-  'Letters Home',
-  'Bird Counts',
-  'Rock Pools',
-  'Tea',
-  'First Aid',
-  'Allotment',
-  'Sea Glass',
-  'Hedgerows',
-  'Night Sky',
-  'Bread',
-  'Cold Frames',
-];
-const FLOOR_1 = [
-  'Sourdough',
-  'Astronomy',
-  'Icelandic',
-  'Weekly Review',
-  'Short Stories',
-  'Tax 2026',
-  'Piano Scales',
-  'Sketchbook',
-  'Quotes',
-  'Marginalia',
-  'Trail Notes',
-  'Moths',
-  'Orchards',
-  'Stone Walls',
-  'Cyanotype',
-  'Beekeeping',
-  'Lichen',
-  'Seed Saving',
-  'Rivers',
-  'Paper Marbling',
-];
-const FLOOR_2 = [
-  'Wine Notes',
-  'Knots',
-  'Latin',
-  'Reading Log',
-  'House Plants',
-  'Film Diary',
-  'Mushrooms',
-  'Old Letters',
-  'Recipes II',
-  'Ferns',
-  'Tide Tables',
-  'Birds',
-  'Rope Work',
-  'Fermenting',
-  'Woodcuts',
-  'Constellations',
-  'Frost Dates',
-  'Bookbinding',
-  'Hill Walks',
-  'Winter Notes',
-];
+const [FLOOR_0, FLOOR_1, FLOOR_2] = SHOWCASE_FLOORS;
+
+/**
+ * The README shelf is the static portrait readers use to judge the binding
+ * system. Give its sixty supporting books the shared authored showcase recipes
+ * rather than letting a random seed cluster around plain spines. A few quiet
+ * constructions remain as rests; the rest mix cloth, calf, Russia, roan,
+ * oilcloth and split-binding programmes without a pale-material shelf.
+ */
+const README_TITLES = SHOWCASE_TITLES;
 
 /** The script typed into the insert sheet, and then rendered on the page. */
 const SCRIPT = [
@@ -926,6 +877,25 @@ if (appShots.some(wanted)) {
   await wait(page, 1500);
   await page.evaluate((t) => globalThis.__shelfSeedBooks(t, 2), FLOOR_2);
   await wait(page, 4500);
+  await page.evaluate(async ({ titles, bindings, styles }) => {
+    const visible = globalThis.__shelfVisibleBooks?.() ?? [];
+    const byTitle = new Map(visible.map((book) => [book.title, book]));
+    for (let index = 0; index < titles.length; index += 1) {
+      const book = byTitle.get(titles[index]);
+      if (!book) throw new Error(`missing README book: ${titles[index]}`);
+      await globalThis.__shelfSaveBinding(book.id, bindings[index]);
+      const current = globalThis.__shelfBookStyle?.(book.id) ?? {};
+      await globalThis.__shelfSetBookStyle(book.id, {
+        ...current,
+        ...styles[index],
+      });
+    }
+  }, {
+    titles: README_TITLES,
+    bindings: SHOWCASE_BINDINGS,
+    styles: SHOWCASE_STYLES,
+  });
+  await wait(page, 3500);
   if (wanted('shelf')) {
     await step(page, '3. the stocked shelf', async () => {
       await settle(page);

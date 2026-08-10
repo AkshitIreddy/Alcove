@@ -72,6 +72,12 @@
  *   node shots-now/demo-gif.mjs --check     (dry run + contact sheet, no encode)
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
+import {
+  SHOWCASE_BINDINGS,
+  SHOWCASE_FLOORS,
+  SHOWCASE_STYLES,
+  SHOWCASE_TITLES,
+} from './showcase-library.mjs';
 
 /*
  * Release work can exercise a locally-built gifsmith before that build is
@@ -110,6 +116,147 @@ async function advanceScene(page, ctx, durationMs) {
 async function settleScene(ctx, promise, options) {
   if (typeof ctx?.settle === 'function') return ctx.settle(promise, options);
   return promise;
+}
+
+/*
+ * The encoded film is 14fps at 1.1x playback, so one output frame represents
+ * 78.57ms of scene time. CallContext exposes that exact value during the
+ * deterministic render; snapshot/contact-sheet playback uses the real clock
+ * and reports zero, so keep the authored value as its fallback. A literal
+ * `advance(64)` used to claim it had bought two frames while buying less than
+ * one. Geometry/readiness latches below now ask for frames, not hopeful ms.
+ */
+const DEMO_FPS = 14;
+const DEMO_SPEED = 1.1;
+const DEMO_FRAME_MS = (1_000 * DEMO_SPEED) / DEMO_FPS;
+
+async function advanceSceneFrames(page, ctx, count = 1) {
+  void page;
+  const reported = Number(ctx?.frameMs);
+  const frameMs = Number.isFinite(reported) && reported > 0 ? reported : DEMO_FRAME_MS;
+  await advanceScene(page, ctx, (frameMs * Math.max(1, count)) + 0.5);
+}
+
+/**
+ * A panel body existing in the DOM is not an open panel: RailPanel keeps its
+ * children mounted after first use and parks the sheet off screen. Prove the
+ * visible, fully-landed state before a beat is called a hold. Book Studio adds
+ * one more promise: its portalled companion preview and active canvas exist.
+ */
+async function waitForPanelOpen(
+  page,
+  ctx,
+  selector,
+  { label, requireBookPreview = false } = {},
+) {
+  const name = label ?? selector;
+  try {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        ({ bodySelector, needsPreview }) => {
+          const content = document.querySelector(bodySelector);
+          const panel = content?.closest('.nb-rail-panel');
+          if (!(content instanceof HTMLElement) || !(panel instanceof HTMLElement)) return false;
+          const panelRect = panel.getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          const panelVisible =
+            panel.getAttribute('aria-hidden') === 'false' &&
+            !panel.classList.contains('is-sliding') &&
+            getComputedStyle(panel).visibility === 'visible' &&
+            panelRect.width > 40 && panelRect.height > 40 &&
+            panelRect.left >= -0.5 && panelRect.right > 0 &&
+            contentRect.width > 20 && contentRect.height > 20;
+          if (!panelVisible) return false;
+          if (!needsPreview) return true;
+          const preview = document.querySelector('.nb-book-preview-dock');
+          const canvas = preview?.querySelector('canvas[aria-hidden="false"]');
+          if (!(preview instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return false;
+          const previewRect = preview.getBoundingClientRect();
+          const context = canvas.getContext('2d', { willReadFrequently: true });
+          if (context === null) return false;
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          let paintedSamples = 0;
+          // One alpha sample per sixteen pixels is enough to distinguish the
+          // fully transparent mount frame from a rendered binding without
+          // turning a readiness poll into a full-image scan.
+          for (let alpha = 3; alpha < pixels.length; alpha += 64) {
+            if (pixels[alpha] > 8) paintedSamples += 1;
+          }
+          return (
+            getComputedStyle(preview).display !== 'none' &&
+            previewRect.width > 100 && previewRect.height > 100 &&
+            canvas.width > 0 && canvas.height > 0 &&
+            paintedSamples > 40
+          );
+        },
+        { timeout: 15_000 },
+        { bodySelector: selector, needsPreview: requireBookPreview },
+      ),
+      { capMs: 15_000, label: `open ${name}` },
+    );
+  } catch (cause) {
+    const state = await page.evaluate((bodySelector) => {
+      const content = document.querySelector(bodySelector);
+      const panel = content?.closest('.nb-rail-panel');
+      const preview = document.querySelector('.nb-book-preview-dock');
+      return {
+        content: content instanceof HTMLElement
+          ? { width: content.getBoundingClientRect().width, height: content.getBoundingClientRect().height }
+          : null,
+        panel: panel instanceof HTMLElement
+          ? {
+              hidden: panel.getAttribute('aria-hidden'),
+              sliding: panel.classList.contains('is-sliding'),
+              visibility: getComputedStyle(panel).visibility,
+              left: panel.getBoundingClientRect().left,
+            }
+          : null,
+        preview: preview instanceof HTMLElement
+          ? { display: getComputedStyle(preview).display, width: preview.getBoundingClientRect().width }
+          : null,
+      };
+    }, selector);
+    throw new Error(`demo-gif: ${name} did not open cleanly (${JSON.stringify(state)})`, { cause });
+  }
+  await advanceSceneFrames(page, ctx, 2);
+}
+
+async function waitForPanelClosed(page, ctx, selector, label = selector) {
+  await settleScene(
+    ctx,
+    page.waitForFunction(
+      (bodySelector) => {
+        const content = document.querySelector(bodySelector);
+        const panel = content?.closest('.nb-rail-panel');
+        const edge = Number.parseFloat(
+          document.documentElement.style.getPropertyValue('--nb-panel-edge'),
+        ) || 0;
+        const panelSettled = panel instanceof HTMLElement
+          ? panel.getAttribute('aria-hidden') === 'true' &&
+            !panel.classList.contains('is-sliding') &&
+            getComputedStyle(panel).visibility === 'hidden'
+          : [...document.querySelectorAll('.nb-rail-panel')].every(
+            (candidate) =>
+              candidate.getAttribute('aria-hidden') === 'true' &&
+              !candidate.classList.contains('is-sliding'),
+          );
+        return panelSettled && Math.abs(edge) <= 0.5;
+      },
+      { timeout: 15_000 },
+      selector,
+    ),
+    { capMs: 15_000, label: `close ${label}` },
+  );
+  // RailPanel's 300ms exit has landed. BookView then fits the spread from a
+  // MutationObserver; give that observer and its geometry two captured frames.
+  await advanceSceneFrames(page, ctx, 2);
+}
+
+/** Exact source-resolution QA poses; ignored by git, useful before encoding. */
+async function writeQaStill(page, slug) {
+  const png = await page.screenshot({ type: 'png' });
+  writeFileSync(`${QA_DIR}/target-${slug}.png`, png);
 }
 
 /**
@@ -259,19 +406,9 @@ mkdirSync(OUT_DIR, { recursive: true });
 const QA_DIR = 'qa/demo';
 mkdirSync(QA_DIR, { recursive: true });
 
-/** The books on the shelf. Plausible titles, not lorem — this is a portrait. */
-const FLOOR_1 = [
-  'Sea Glass', 'Sourdough', 'Field Notes', 'Old Letters', 'Mushrooms',
-  'House Plants', 'Film Diary', 'Knots', 'Latin', 'Reading Log',
-];
-const FLOOR_2 = [
-  'Wine Notes', 'Trail Notes', 'Recipes II', 'Birds', 'Tide Tables',
-  'Ferns', 'Paper Marbling', 'Cold Frames', 'Bread', 'Rivers',
-];
-const FLOOR_3 = [
-  'Moths', 'Orchards', 'Stone Walls', 'Cyanotype', 'Beekeeping',
-  'Lichen', 'Seed Saving', 'Hedgerows',
-];
+const [FLOOR_1, FLOOR_2, FLOOR_3] = SHOWCASE_FLOORS;
+const SEEDED_TITLES = SHOWCASE_TITLES;
+const EXPECTED_SHELF_BOOKS = SEEDED_TITLES.length + 1; // the authored Welcome book
 
 /**
  * What the studio tour presses, in order.
@@ -313,12 +450,14 @@ const STUDIO_TOUR = [
   {
     strip: 'Shelf colours',
     name: 'Lapis Cabinet',
+    qaStill: 'lapis-shelves',
     selector:
       '[aria-label="shelves colours"] .nb-chip-swatch[aria-label="shelves: Lapis Cabinet"]',
   },
   {
     strip: 'Shelf colours',
     name: 'Garnet',
+    qaStill: 'garnet-shelves',
     selector:
       '[aria-label="shelves colours"] .nb-chip-swatch[aria-label="shelves: Garnet"]',
   },
@@ -332,6 +471,162 @@ const tileSelector = (step) =>
     : step.name !== undefined
       ? `[aria-label="${step.strip}"] .nb-strip-tile[aria-label^="${step.name}"]`
       : `[aria-label="${step.strip}"] .nb-strip-tile:nth-of-type(${step.index})`;
+
+/**
+ * An option is applied only when all three clocks agree: the named control is
+ * pressed, the Studio's ordered save lane is idle, and the shelf has finished
+ * its atomic room reveal. A declarative t.waitFor is warning-only and cannot
+ * make that promise.
+ */
+async function waitForStudioChoice(page, ctx, selector, label, qaStill = null) {
+  try {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        (wanted) => {
+          const option = document.querySelector(wanted);
+          const studio = document.querySelector('.nb-library-studio');
+          return (
+            option instanceof HTMLElement &&
+            option.getAttribute('aria-pressed') === 'true' &&
+            studio instanceof HTMLElement &&
+            studio.dataset.busy === 'false'
+          );
+        },
+        { timeout: 15_000 },
+        selector,
+      ),
+      { capMs: 15_000, label: `apply ${label}` },
+    );
+    await settleSpines(page, ctx, { label: `studio room after ${label}` });
+    // The ordinary film beat only needs the two post-commit paints. A named QA
+    // still also waits out gifsmith's 420ms click ripple, otherwise the exact
+    // colour we are trying to review is photographed under a translucent ring.
+    await advanceSceneFrames(page, ctx, qaStill === null ? 2 : 6);
+    const stillApplied = await page.evaluate((wanted) => {
+      const option = document.querySelector(wanted);
+      const studio = document.querySelector('.nb-library-studio');
+      return option?.getAttribute('aria-pressed') === 'true' && studio?.dataset.busy === 'false';
+    }, selector);
+    if (!stillApplied) throw new Error('the selected control changed while the room settled');
+    if (qaStill !== null) await writeQaStill(page, qaStill);
+  } catch (cause) {
+    const state = await page.evaluate((wanted) => {
+      const option = document.querySelector(wanted);
+      const studio = document.querySelector('.nb-library-studio');
+      return {
+        found: option !== null,
+        pressed: option?.getAttribute('aria-pressed'),
+        busy: studio instanceof HTMLElement ? studio.dataset.busy : null,
+        sheet: studio instanceof HTMLElement ? studio.dataset.sheet : null,
+      };
+    }, selector);
+    throw new Error(`demo-gif: Studio did not apply ${label} (${JSON.stringify(state)})`, {
+      cause,
+    });
+  }
+}
+
+async function waitForWarmNextFlip(page, ctx, heading) {
+  // The rebuilt book art makes the first high-resolution cover/spine queue a
+  // little heavier on SwiftShader. This is a preflight wait outside filmed
+  // time, so give snapshot preparation room without changing the demo pace.
+  const warmTimeoutMs = 45_000;
+  try {
+    await settleScene(
+      ctx,
+      page.waitForFunction(() => {
+        const faces = globalThis.__flipCache?.facesFor?.('next');
+        // The stationary leaf stays live DOM during a forward curl; only the
+        // moving front/back and newly revealed face are sampled by the shader.
+        // `faces.fresh` also includes that live stationary page, so requiring
+        // it can deadlock even when every bitmap the curl consumes is ready.
+        return Boolean(
+          faces && faces.hasFront && faces.hasBack && faces.hasRevealed &&
+          faces.quiet && faces.aheadPending === 0
+        );
+      }, { timeout: warmTimeoutMs }),
+      { capMs: warmTimeoutMs, label: `warm curl before ${heading}` },
+    );
+  } catch (cause) {
+    const state = await page.evaluate(() => globalThis.__flipCache?.facesFor?.('next') ?? null);
+    throw new Error(
+      `demo-gif: next curl was not warm before ${heading} (${JSON.stringify(state)})`,
+      { cause },
+    );
+  }
+}
+
+/** Opening and closing shelf must be the same authored pose, not merely similar. */
+async function assertDemoShelfHome(page, label) {
+  const state = await page.evaluate(async ({ expectedCount, seededTitles }) => {
+    const [{ DEFAULT_ROOM_DESIGN }, { DEFAULT_LIBRARY_PREFS }] = await Promise.all([
+      import('/src/data/designPrefs.ts'),
+      import('/src/features/bookshelf/libraryPrefs.ts'),
+    ]);
+    const books = globalThis.__shelfVisibleBooks?.() ?? [];
+    const ids = books.map((book) => book.id);
+    const titles = books.map((book) => book.title);
+    const prefs = globalThis.__libraryPrefs?.current?.() ?? null;
+    const applied = globalThis.__shelfDesign?.() ?? null;
+    const design = applied?.design ?? null;
+    const panelEdge = Number.parseFloat(
+      document.documentElement.style.getPropertyValue('--nb-panel-edge'),
+    ) || 0;
+    const panelsClosed = [...document.querySelectorAll('.nb-rail-panel')].every(
+      (panel) =>
+        panel.getAttribute('aria-hidden') === 'true' &&
+        !panel.classList.contains('is-sliding'),
+    );
+    const samePrefs = prefs !== null &&
+      prefs.theme === DEFAULT_LIBRARY_PREFS.theme &&
+      prefs.shelf === DEFAULT_LIBRARY_PREFS.shelf &&
+      prefs.wall === DEFAULT_LIBRARY_PREFS.wall &&
+      prefs.timberHex === DEFAULT_LIBRARY_PREFS.timberHex &&
+      prefs.wallHex === DEFAULT_LIBRARY_PREFS.wallHex;
+    const sameDesign = design !== null &&
+      design.build === DEFAULT_ROOM_DESIGN.build &&
+      design.pattern === DEFAULT_ROOM_DESIGN.pattern &&
+      JSON.stringify(design.wallpaper) === JSON.stringify(DEFAULT_ROOM_DESIGN.wallpaper);
+    const exactSeededTitles = seededTitles.every(
+      (title) => titles.filter((candidate) => candidate === title).length === 1,
+    );
+    const welcomeCount = titles.filter((title) => /welcome/i.test(title)).length;
+    const shelfVisible = (() => {
+      const shelf = document.querySelector('.shelf-dock');
+      if (!(shelf instanceof HTMLElement)) return false;
+      const rect = shelf.getBoundingClientRect();
+      return rect.width > 20 && rect.height > 20;
+    })();
+    return {
+      ok:
+        books.length === expectedCount &&
+        new Set(ids).size === expectedCount &&
+        exactSeededTitles &&
+        welcomeCount === 1 &&
+        samePrefs &&
+        sameDesign &&
+        panelsClosed &&
+        Math.abs(panelEdge) <= 0.5 &&
+        document.querySelector('.pulled-book') === null &&
+        shelfVisible,
+      count: books.length,
+      uniqueIds: new Set(ids).size,
+      missingSeeded: seededTitles.filter((title) => !titles.includes(title)),
+      welcomeCount,
+      prefs,
+      design,
+      expectedDesign: DEFAULT_ROOM_DESIGN,
+      panelsClosed,
+      panelEdge,
+      pulled: document.querySelector('.pulled-book') !== null,
+      shelfVisible,
+    };
+  }, { expectedCount: EXPECTED_SHELF_BOOKS, seededTitles: SEEDED_TITLES });
+  if (!state.ok) {
+    throw new Error(`demo-gif: ${label} is not the authored shelf home (${JSON.stringify(state)})`);
+  }
+}
 
 const tl = timeline((t) => {
   /* ----------------------------- 1. the shelf ---------------------------- */
@@ -415,6 +710,29 @@ const tl = timeline((t) => {
       );
       await advanceScene(page, ctx, 1400);
     }
+    await settleScene(
+      ctx,
+      page.evaluate(async ({ titles, bindings, styles }) => {
+        const visible = globalThis.__shelfVisibleBooks?.() ?? [];
+        const byTitle = new Map(visible.map((book) => [book.title, book]));
+        for (let index = 0; index < titles.length; index += 1) {
+          const book = byTitle.get(titles[index]);
+          if (!book) throw new Error(`missing demo book: ${titles[index]}`);
+          await globalThis.__shelfSaveBinding(book.id, bindings[index]);
+          const current = globalThis.__shelfBookStyle?.(book.id) ?? {};
+          await globalThis.__shelfSetBookStyle(book.id, {
+            ...current,
+            ...styles[index],
+          });
+        }
+      }, {
+        titles: SEEDED_TITLES,
+        bindings: SHOWCASE_BINDINGS,
+        styles: SHOWCASE_STYLES,
+      }),
+      { capMs: 90_000, label: 'pin authored demo bindings and colours' },
+    );
+    await advanceScene(page, ctx, 2_400);
     // Opening the Welcome book later makes it the world's recent book and
     // adds the pale status ribbon to its spine. The loop closes after that
     // state change, so the anchor has to start with the same mark or the last
@@ -423,22 +741,31 @@ const tl = timeline((t) => {
     // resolve an HMR-duplicated store that the visible shelf never observes.
     const recent = await page.evaluate(() => {
       const books = globalThis.__shelfVisibleBooks?.() ?? [];
-      const welcome = books.find((book) => /welcome/i.test(book.title)) ?? books[0];
+      const welcomeBooks = books.filter((book) => /welcome/i.test(book.title));
+      const welcome = welcomeBooks.length === 1 ? welcomeBooks[0] : null;
       if (!welcome || typeof globalThis.__shelfWorld?.noteBookOpened !== 'function') {
-        return { ok: false, seen: books.length };
+        return { ok: false, seen: books.length, welcomeCount: welcomeBooks.length };
       }
       globalThis.__shelfWorld.noteBookOpened(welcome.id);
       return { ok: true, title: welcome.title };
     });
     if (!recent.ok) {
-      throw new Error(`demo-gif: cannot mark Welcome recent (${recent.seen} visible)`);
+      throw new Error(
+        `demo-gif: cannot mark the one Welcome book recent ` +
+        `(${recent.seen} visible, ${recent.welcomeCount} Welcome matches)`,
+      );
     }
     await advanceScene(page, ctx, 3000);
     await settleSpines(page, ctx, { label: 'seeded shelf spines' });
   });
   t.call(async function settleShelfForSeam(page, ctx) {
     await settleSpines(page, ctx, { label: 'shelf seam spines' });
-  }, { name: 'settle shelf spines' });
+    // Puppeteer's pointer owns real :hover state; the drawn cursor is separate.
+    // Start both on the same quiet point the closing shelf must reproduce.
+    await page.mouse.move(LOOP_CURSOR_HOME.x, LOOP_CURSOR_HOME.y);
+    await advanceSceneFrames(page, ctx, 1);
+    await assertDemoShelfHome(page, 'opening loop anchor');
+  }, { name: 'settle and verify opening shelf', seconds: 0.08 });
   /*
    * Trimmed before the loop — only needs the shelf to be still, not held long
    * enough to read. The old 2.0s here bought nothing in the shipped WebP.
@@ -462,9 +789,8 @@ const tl = timeline((t) => {
   /* ---------------------------- 2. the studio ---------------------------- */
 
   t.click('[aria-label="Library studio"]', { via: 'cursor' });
-  t.waitFor('.nb-library-studio');
   /*
-   * AND WAIT UNTIL A TILE IS ACTUALLY THERE TO PRESS.
+   * WAIT UNTIL THE SHEET HAS LANDED AND A TILE IS ACTUALLY THERE TO PRESS.
    *
    * `.nb-library-studio` is the sheet root and it exists the instant the sheet
    * mounts — before it has slid in, and before its strips have been laid out.
@@ -475,12 +801,18 @@ const tl = timeline((t) => {
    * blank. So the gate is the thing the tour actually needs — a tile with a box,
    * on screen — rather than the thing that is easiest to name.
    */
-  t.waitUntil(() => {
-    const el = document.querySelector('[aria-label="Room presets"] .nb-strip-tile');
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    return r.width > 8 && r.height > 8 && r.left >= 0 && r.top < window.innerHeight;
-  });
+  t.call(async function landLibraryStudio(page, ctx) {
+    await waitForPanelOpen(page, ctx, '.nb-library-studio', { label: 'Library studio' });
+    const firstTileReady = await page.evaluate(() => {
+      const tile = document.querySelector('[aria-label="Room presets"] .nb-strip-tile');
+      if (!(tile instanceof HTMLElement)) return false;
+      const rect = tile.getBoundingClientRect();
+      return rect.width > 8 && rect.height > 8 && rect.left >= 0 && rect.top < innerHeight;
+    });
+    if (!firstTileReady) {
+      throw new Error('demo-gif: Library studio landed without a visible room-preset tile');
+    }
+  }, { name: 'land Library studio', seconds: 0.6 });
   /*
    * One beat to read that the studio opened — not 1.8s. The sheet slide and
    * the cursor glide to the first tile are the motion; this is just a settle.
@@ -493,9 +825,84 @@ const tl = timeline((t) => {
       /* Card Room is intentionally outside the five-card preset strip. Keep
        * the scene in its original Gilt → Card → Carnival place and show the
        * real way a reader reaches it: more, search, apply, back. */
-      t.waitFor('[aria-label="Room presets"] .nb-strip-more');
       t.click('[aria-label="Room presets"] .nb-strip-more', { via: 'cursor' });
-      t.waitFor('.nb-pick-search input');
+      t.call(async function landRoomPresetPicker(page, ctx) {
+        try {
+          await settleScene(
+            ctx,
+            page.waitForFunction(() => {
+              const studio = document.querySelector('.nb-library-studio');
+              const picker = document.querySelector('.nb-pick');
+              const input = document.querySelector('.nb-pick-search input');
+              const cardRoom = document.querySelector('.nb-pick-card[aria-label^="Card Room"]');
+              if (
+                !(studio instanceof HTMLElement) ||
+                !(picker instanceof HTMLElement) ||
+                !(input instanceof HTMLInputElement) ||
+                !(cardRoom instanceof HTMLElement)
+              ) return false;
+              const pickerRect = picker.getBoundingClientRect();
+              const inputRect = input.getBoundingClientRect();
+              const visibleCards = [...document.querySelectorAll('.nb-pick-card')].filter((candidate) => {
+                if (!(candidate instanceof HTMLElement)) return false;
+                const rect = candidate.getBoundingClientRect();
+                return rect.width > 20 && rect.height > 20 &&
+                  rect.left < innerWidth && rect.right > 0 &&
+                  rect.top < innerHeight && rect.bottom > 0;
+              });
+              return (
+                studio.dataset.sheet === 'preset' &&
+                pickerRect.width > 40 && pickerRect.height > 40 &&
+                pickerRect.left < innerWidth && pickerRect.right > 0 &&
+                pickerRect.top < innerHeight && pickerRect.bottom > 0 &&
+                inputRect.width > 20 && inputRect.height > 10 &&
+                inputRect.left < innerWidth && inputRect.right > 0 &&
+                inputRect.top < innerHeight && inputRect.bottom > 0 &&
+                visibleCards.length > 0
+              );
+            }, { timeout: 15_000 }),
+            { capMs: 15_000, label: 'open the room-preset picker' },
+          );
+        } catch (cause) {
+          const state = await page.evaluate(() => {
+            const rectOf = (selector) => {
+              const element = document.querySelector(selector);
+              if (!(element instanceof HTMLElement)) return null;
+              const rect = element.getBoundingClientRect();
+              return {
+                left: Math.round(rect.left),
+                top: Math.round(rect.top),
+                right: Math.round(rect.right),
+                bottom: Math.round(rect.bottom),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+              };
+            };
+            const cards = [...document.querySelectorAll('.nb-pick-card')];
+            const visibleCards = cards.filter((candidate) => {
+              if (!(candidate instanceof HTMLElement)) return false;
+              const rect = candidate.getBoundingClientRect();
+              return rect.width > 20 && rect.height > 20 &&
+                rect.left < innerWidth && rect.right > 0 &&
+                rect.top < innerHeight && rect.bottom > 0;
+            });
+            return {
+              sheet: document.querySelector('.nb-library-studio')?.getAttribute('data-sheet'),
+              pickerRect: rectOf('.nb-pick'),
+              searchRect: rectOf('.nb-pick-search input'),
+              cardRoomRect: rectOf('.nb-pick-card[aria-label^="Card Room"]'),
+              cardCount: cards.length,
+              visibleCardCount: visibleCards.length,
+              bodyScrollTop: document.querySelector('.nb-rail-panel-body')?.scrollTop ?? null,
+            };
+          });
+          throw new Error(
+            `demo-gif: room-preset picker did not open (${JSON.stringify(state)})`,
+            { cause },
+          );
+        }
+        await advanceSceneFrames(page, ctx, 1);
+      }, { name: 'land room-preset picker', seconds: 0.2 });
       t.click('.nb-pick-search input', { via: 'cursor' });
       t.call(async function searchForCardRoom(page, ctx) {
         await page.evaluate(() => {
@@ -510,17 +917,49 @@ const tl = timeline((t) => {
           await page.keyboard.type(character);
           await advanceScene(page, ctx, 45);
         }
-      }, { name: 'search for Card Room', seconds: 0.405 });
-      t.waitFor('.nb-pick-card[aria-label^="Card Room"]');
+        await settleScene(
+          ctx,
+          page.waitForFunction(() => {
+            const input = document.querySelector('.nb-pick-search input');
+            const card = document.querySelector('.nb-pick-card[aria-label^="Card Room"]');
+            if (!(input instanceof HTMLInputElement) || !(card instanceof HTMLElement)) return false;
+            const rect = card.getBoundingClientRect();
+            return input.value === 'Card Room' &&
+              rect.width > 20 && rect.height > 20 &&
+              rect.left < innerWidth && rect.right > 0 &&
+              rect.top < innerHeight && rect.bottom > 0;
+          }, { timeout: 5_000 }),
+          { capMs: 5_000, label: 'filter the room-preset picker to Card Room' },
+        );
+        await advanceSceneFrames(page, ctx, 1);
+      }, { name: 'search for Card Room', seconds: 0.5 });
       t.click('.nb-pick-card[aria-label^="Card Room"]', { via: 'cursor' });
-      t.waitFor('.nb-pick-card[aria-label^="Card Room"][aria-pressed="true"]');
-      t.call(async function settleCardRoom(page, ctx) {
-        await settleSpines(page, ctx, { label: 'studio spines after Card Room' });
-        await advanceScene(page, ctx, 190);
-      }, { name: 'settle spines after Card Room' });
+      t.call(async function applyCardRoom(page, ctx) {
+        await waitForStudioChoice(
+          page,
+          ctx,
+          '.nb-pick-card[aria-label^="Card Room"]',
+          'Card Room',
+        );
+      }, { name: 'apply Card Room', seconds: 0.65 });
       t.hold(0.65);
       t.click('.nb-pick-back', { via: 'cursor' });
-      t.waitFor('[aria-label="Room presets"] .nb-strip-tile[aria-label^="Carnival"]');
+      t.call(async function returnFromRoomPresetPicker(page, ctx) {
+        await settleScene(
+          ctx,
+          page.waitForFunction(() => {
+            const studio = document.querySelector('.nb-library-studio');
+            const carnival = document.querySelector(
+              '[aria-label="Room presets"] .nb-strip-tile[aria-label^="Carnival"]',
+            );
+            if (!(studio instanceof HTMLElement) || !(carnival instanceof HTMLElement)) return false;
+            const rect = carnival.getBoundingClientRect();
+            return studio.dataset.sheet === 'none' && rect.width > 20 && rect.height > 20;
+          }, { timeout: 15_000 }),
+          { capMs: 15_000, label: 'return from the room-preset picker' },
+        );
+        await advanceSceneFrames(page, ctx, 2);
+      }, { name: 'return from room-preset picker', seconds: 0.2 });
       t.hold(0.25);
       continue;
     }
@@ -529,7 +968,23 @@ const tl = timeline((t) => {
     // applied room. Wait for the named successor to exist after that rebuild;
     // otherwise a fast capture can scroll/click the one-frame gap and silently
     // omit a choice from the film.
-    t.waitFor(selector);
+    t.call(async function waitForStudioTile(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          (wanted) => {
+            const option = document.querySelector(wanted);
+            const studio = document.querySelector('.nb-library-studio');
+            if (!(option instanceof HTMLElement) || !(studio instanceof HTMLElement)) return false;
+            const rect = option.getBoundingClientRect();
+            return studio.dataset.sheet === 'none' && rect.width > 8 && rect.height > 8;
+          },
+          { timeout: 15_000 },
+          selector,
+        ),
+        { capMs: 15_000, label: `find ${step.name ?? step.strip} in Library studio` },
+      );
+    }, { name: `find ${step.name ?? `${step.strip} #${step.index}`}`, seconds: 0.08 });
     // Bring it into the sheet's own scroll before pointing at it — the later
     // axes are below the fold, and a cursor glide to an off-screen tile lands
     // on nothing.
@@ -554,21 +1009,24 @@ const tl = timeline((t) => {
       // click, while native smooth scrolling collapses to a cut under CDP's
       // virtual clock.
       await sceneScroll(page, ctx, selector, 'nearest', 500);
-    }, { name: `scroll to ${step.name ?? `${step.strip} #${step.index}`}` });
+    }, { name: `scroll to ${step.name ?? `${step.strip} #${step.index}`}`, seconds: 0.5 });
     t.click(selector, { via: 'cursor' });
-    t.waitFor(`${selector}[aria-pressed="true"]`);
-    // Long enough to watch the case and the wall actually repaint, which is
-    // the whole point of this section.
-    t.call(async function settleStudioRepaint(page, ctx) {
-      await settleSpines(page, ctx, { label: `studio spines after ${step.name ?? step.strip}` });
-      // The dashed add-slot is a DOM overlay the world can publish a beat after
-      // the Pixi room settles; spend its 180ms fade before the declared hold.
-      await advanceScene(page, ctx, 190);
-    }, { name: `settle spines after ${step.name ?? step.strip}` });
+    // Long enough to watch the case and wall actually repaint, and strict
+    // enough that a missed click cannot turn the rest of the film into a lie.
+    t.call(async function applyStudioOption(page, ctx) {
+      await waitForStudioChoice(
+        page,
+        ctx,
+        selector,
+        step.name ?? step.strip,
+        step.qaStill ?? null,
+      );
+    }, { name: `apply ${step.name ?? step.strip}`, seconds: 0.65 });
+    if (step.qaStill !== undefined) t.cue(`qa-${step.qaStill}`);
     // The applied-state gate above owns correctness; this is only the beat in
     // which the viewer sees the finished choice. The former 1.5s pause after
     // every tile made the studio feel slower than the app.
-    t.hold(0.65);
+    t.hold(step.qaStill === undefined ? 0.65 : 0.9);
   }
 
   /* The studio has a second, materially different surface for the reader's
@@ -583,7 +1041,10 @@ const tl = timeline((t) => {
   t.hold(0.45);
 
   t.click('[aria-label="Close Library studio"]', { via: 'cursor' });
-  t.hold(0.65);
+  t.call(async function closeLibraryStudio(page, ctx) {
+    await waitForPanelClosed(page, ctx, '.nb-library-studio', 'Library studio');
+  }, { name: 'settle Library studio close', seconds: 0.5 });
+  t.hold(0.25);
 
   /* -------------------------- 3. open a book ----------------------------- */
 
@@ -812,13 +1273,9 @@ const tl = timeline((t) => {
     // Keep the filmed curl on the warmed path. A real reader can use the live
     // fold fallback immediately; the demo can wait briefly and show the
     // richer curl rather than filming a cache race.
-    t.waitUntil(() => {
-      const faces = globalThis.__flipCache?.facesFor?.('next');
-      return Boolean(
-        faces && faces.hasFront && faces.hasRevealed && faces.fresh &&
-        faces.quiet && faces.aheadPending === 0
-      );
-    });
+    t.call(async function waitForWarmCurl(page, ctx) {
+      await waitForWarmNextFlip(page, ctx, expectedHeading);
+    }, { name: `warm curl before ${expectedHeading}`, seconds: 0.08 });
     t.call(async function clickTheVisiblePageCorner(page, ctx) {
       const before = await page.$eval('[data-spread-index]', (node) =>
         Number(node.getAttribute('data-spread-index')),
@@ -842,17 +1299,30 @@ const tl = timeline((t) => {
         label: 'click the bottom-right page corner',
       });
     }, { name: 'click the visible page corner', seconds: 0.48 });
-    // Wait on the overlay itself. A fixed 1.9s wait filmed more still paper
-    // than animation and could still be wrong on a stalled frame.
-    t.waitUntil(() =>
-      document.querySelector('.nb-flip-canvas.is-flipping') === null &&
-      !document.querySelector('.nb-flip-surface.is-flip-landing') &&
-      Number(document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index')) ===
-        globalThis.__demoExpectedSpread &&
-      [...document.querySelectorAll('.nb-leaf-paper h1')].some(
-        (heading) => heading.textContent?.trim() === globalThis.__demoExpectedHeading,
-      )
-    );
+    // Wait on the overlay itself. Gifsmith's declarative wait is intentionally
+    // warning-only on timeout; a rejected, lost corner click then surfaced one
+    // step later as misleading storyboard drift. Make landing a throwing gate
+    // and let the capture clock film however many real curl frames it needs.
+    t.call(async function waitForTurnToLand(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          ({ expectedSpread, expectedHeading }) =>
+            document.querySelector('.nb-flip-canvas.is-flipping') === null &&
+            !document.querySelector('.nb-flip-surface.is-flip-landing') &&
+            Number(
+              document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index'),
+            ) === expectedSpread &&
+            [...document.querySelectorAll('.nb-leaf-paper h1')].some(
+              (heading) => heading.textContent?.trim() === expectedHeading,
+            ),
+          { timeout: 15_000 },
+          { expectedSpread, expectedHeading },
+        ),
+        { capMs: 15_000, label: `land on ${expectedHeading}` },
+      );
+      await advanceSceneFrames(page, ctx, 1);
+    }, { name: `land on ${expectedHeading}`, seconds: 0.6 });
     t.hold(0.6);
   };
 
@@ -864,10 +1334,17 @@ const tl = timeline((t) => {
   const showPanel = (
     name,
     selector,
-    { hold = 1.25, showFoot = false, closeName = name } = {},
+    { hold = 1.25, showFoot = false, closeName = name, qaStill = null } = {},
   ) => {
     t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
-    t.waitFor(selector);
+    t.call(async function waitForBookPanelOpen(page, ctx) {
+      await waitForPanelOpen(page, ctx, selector, {
+        label: name,
+        requireBookPreview: selector === '.nb-book-studio',
+      });
+      if (qaStill !== null) await writeQaStill(page, qaStill);
+    }, { name: `land ${name}`, seconds: 0.6 });
+    if (qaStill !== null) t.cue(`qa-${qaStill}`);
     if (showFoot) {
       /*
        * This is the one panel whose last explanatory sentence sits just below
@@ -888,7 +1365,9 @@ const tl = timeline((t) => {
     // ElementHandle.click closed the sheet while the filmed cursor remained on
     // the rail icon, which read as a second telepathic action.
     t.click(`[aria-label^="Close ${closeName}"]`, { via: 'cursor' });
-    t.hold(0.4);
+    t.call(async function waitForPanelClose(page, ctx) {
+      await waitForPanelClosed(page, ctx, selector, closeName);
+    }, { name: `settle ${closeName} close`, seconds: 0.5 });
   };
 
   /*
@@ -1097,7 +1576,10 @@ const tl = timeline((t) => {
      panel between them so the tour never becomes a run of repeated turns. */
   turn('The shelf is a room', 1);
   // spread 1: The shelf is a room · More than one bookcase
-  showPanel('Customize this book', '.nb-book-studio', { hold: 1.2 });
+  showPanel('Customize this book', '.nb-book-studio', {
+    hold: 1.8,
+    qaStill: 'book-studio',
+  });
   turn('Dress the room', 2);
   // spread 2: Dress the room · Dress this book
   showPanel('Page style', '.nb-pagestyle', { hold: 1.25 });
@@ -1123,14 +1605,45 @@ const tl = timeline((t) => {
   // spread 11: washes and fasteners · lettering cabinet
   turn('Pictures, starring kittens', 12);
   // spread 12: Pictures, starring kittens · One picture, properly
-  t.waitFor('.nb-image-row .nb-image-img');
-  t.waitUntil(() => {
-    const pictures = [...document.querySelectorAll('.nb-image-row .nb-image-img')];
-    return pictures.length >= 3 && pictures.every(
-      (picture) => picture instanceof HTMLImageElement &&
-        picture.complete && picture.naturalWidth > 0,
-    );
-  });
+  t.call(async function waitForKittenPictures(page, ctx) {
+    // Declarative gifsmith waits warn-and-continue on timeout. This is a
+    // featured visual beat, so a missing/broken image must fail the demo gate
+    // instead of silently producing a page of empty polaroids.
+    try {
+      await settleScene(
+        ctx,
+        page.waitForFunction(() => {
+          const pictures = [...document.querySelectorAll('.nb-image-row .nb-image-img')];
+          return pictures.length >= 3 && pictures.every(
+            (picture) => picture instanceof HTMLImageElement &&
+              picture.complete && picture.naturalWidth > 0,
+          );
+        }, { timeout: 20_000 }),
+        { capMs: 22_000, label: 'three kitten pictures' },
+      );
+    } catch (cause) {
+      const state = await page.evaluate(() => ({
+        spread: Number(
+          document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index'),
+        ),
+        headings: [...document.querySelectorAll('.nb-leaf-paper h1')]
+          .map((heading) => heading.textContent?.trim()),
+        rows: document.querySelectorAll('.nb-image-row').length,
+        images: [...document.querySelectorAll('.nb-image-img')].map((picture) => ({
+          src: picture.getAttribute('src'),
+          currentSrc: picture instanceof HTMLImageElement ? picture.currentSrc : null,
+          complete: picture instanceof HTMLImageElement ? picture.complete : null,
+          naturalWidth: picture instanceof HTMLImageElement ? picture.naturalWidth : null,
+          inRow: picture.closest('.nb-image-row') !== null,
+        })),
+      }));
+      throw new Error(
+        `demo-gif: kitten photographs did not become ready (${JSON.stringify(state)})`,
+        { cause },
+      );
+    }
+    await advanceSceneFrames(page, ctx, 1);
+  }, { name: 'wait for the kitten photographs', seconds: 0.08 });
   t.hold(1.35);
   showRibbons();
 
@@ -1239,11 +1752,28 @@ const tl = timeline((t) => {
       { capMs: 2_000, label: 'return shelf add-slot' },
     );
     await advanceScene(page, ctx, 220);
+    await assertDemoShelfHome(page, 'closing loop shelf');
   }, { name: 'settle return shelf and add-slot', seconds: 0.22 });
   // Match the anchor's pointer pose as well as its shelf pose. In practice the
   // back button already leaves it close to here, so this is a small retreat,
   // not a conspicuous cursor-only epilogue.
-  t.cursorTo(LOOP_CURSOR_HOME, 0.28, 'easeOut');
+  t.call(async function returnBothPointersHome(page, ctx) {
+    await settleScene(
+      ctx,
+      page.evaluate(
+        ({ x, y }) => {
+          if (typeof globalThis.__gifsmith?.cursorTo !== 'function') {
+            throw new Error('demo-gif: gifsmith cursor bridge is unavailable at the loop return');
+          }
+          return globalThis.__gifsmith.cursorTo(x, y, 280, 'easeOut');
+        },
+        LOOP_CURSOR_HOME,
+      ),
+      { capMs: 1_280, label: 'return the drawn cursor to the loop anchor' },
+    );
+    await page.mouse.move(LOOP_CURSOR_HOME.x, LOOP_CURSOR_HOME.y);
+    await advanceSceneFrames(page, ctx, 1);
+  }, { name: 'return both pointers to loop anchor', seconds: 0.36 });
   /*
    * Land, and settle into the SAME pose the anchor was taken in. This hold is
    * what gives the trimmer a matching frame to cut on; too short and the seam
@@ -1325,7 +1855,7 @@ const scene = {
    * walkthrough — see the gifsmith README's table.
    */
   encode: {
-    width: 900, fps: 14, speed: 1.1, targetMB: 20,
+    width: 900, fps: DEMO_FPS, speed: DEMO_SPEED, targetMB: 20,
     colors: 256, dither: 'none', palette: 'full',
   },
 };
@@ -1341,6 +1871,9 @@ if (CHECK) {
   if (typeof b64 === 'string') {
     writeFileSync(file, Buffer.from(b64, 'base64'));
     console.log(`\ncontact sheet -> ${file}`);
+    console.log(
+      `targeted stills -> ${QA_DIR}/target-{book-studio,lapis-shelves,garnet-shelves}.png`,
+    );
   } else {
     console.log('\ncontact sheet keys:', Object.keys(sheet).join(', '));
   }

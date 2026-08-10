@@ -1,6 +1,35 @@
 # Alcove — running TODO
 
-## 🎯 OPEN — owner testing pass (2026-08-09)
+## ✅ BOOK APOCALYPSE — complete, uncommitted (2026-08-10)
+
+This is the authoritative book-status block. The owner authorized a book-only
+hard reset with forced migration; shelf carpentry, wallpaper and room options
+were explicitly out of scope and remain reachable.
+
+- [x] Replace the spine vocabulary with 3 straight shapes, 18 construction-led
+      materials, 59 authored spine programmes and 67 named bindings; normalize all retired
+      book ids into the new system.
+- [x] Remove all spine text and empty title furniture while retaining complete,
+      balanced cover titles.
+- [x] Curate the cover to 16 unified emblems, 12 continuous frames, 15 title
+      treatments, 10 lettering hands, 6 visibly distinct page edges and 3
+      endband constructions; remove charms, hardware, corner protectors and
+      inset plates from applied state and Studio.
+- [x] Rebuild Surprise around one focal-programme budget, the final safe emblem
+      authority, no wallpaper/hardware/charm stacking, no more than two automatic
+      bands, exact emblem pairing and 24 persistent locks.
+- [x] Migrate persisted book appearances at v14 without touching pages, titles,
+      shelf placement, bookcases, shelf carpentry or wallpaper.
+- [x] Redesign Welcome as a Grand-blue Gilt Quarto with a clean titleless spine,
+      two cords, one foliate lozenge and an intricate Renaissance-panel cover.
+- [x] Add the default-off updater option to replace Welcome pages/binding even
+      after edits, with persistence, boot-order safety and version gating.
+- [x] Remove the orange/duplicate backing from dragged, held and carried books.
+- [x] Pass final running-app QA (`ok: true`, `pageErrors: []`), the 4,096-recipe
+      Surprise sweep, 72 final direction/adversarial specimens, true-size
+      vocabulary/surface boards, TypeScript and focused final gates.
+
+## Historical open list — superseded for book work (2026-08-10)
 
 **Start with `HANDOFF.md`.** The owner-tested batch below shipped in Alcove
 **v0.5.1** on 2026-08-09. GitHub Actions run `31309926868` passed every gate,
@@ -15,6 +44,49 @@ one. Tick the outcome, not the exact recipe in the bullet.
 
 Work **in this order** unless blocked:
 
+- [x] **Post-v0.5.1 — adaptive spine title composition:** one exported resolver
+      now owns both the rendered spine geometry and the preview hit targets.
+      Title size and room reserve a real exclusion zone; raised cords move above
+      or below it and reduce only when no legal station remains, while tooling,
+      endbands and ornaments relocate or yield with structured diagnostics. A
+      readable-size floor and quiet label fallback prevent direct lettering from
+      shrinking into marks. More than 900 short/tall/thin/wide combinations and
+      a 30-cell native-size board were checked; an independent refutation found
+      no remaining cord, ornament, contrast or truncation blocker.
+- [x] **Book Apocalypse — final Surprise composition:** the old axis sampler and
+      its furniture pile-ups were replaced by a deterministic one-focal-programme
+      search over the hard-reset vocabulary. It has 24 persistent locks, seven
+      safe automatic emblems, exact spine/cover emblem pairing, at most two
+      automatic bands and no charms, hardware, corners, inset plates, wallpaper
+      fields or spine text. The final 4,096-recipe quality sweep and 40-cell
+      adversarial board have zero report failures or malformed book forms.
+- [x] **Post-v0.5.1 — AI format save:** the native save picker now has the
+      scoped `write_file` command authority it was missing, while the browser
+      object-URL fallback remains intact. Notebook Script accepts an intentional
+      empty image with a `placeholder` prompt; the Insert Script preview shows
+      a real picture-needed card, and the inserted block can be filled in-place
+      by choosing or dropping one image without losing its alt text, caption,
+      frame, width or effects. Parser/printer, TipTap and generated AI guides
+      round-trip the syntax. Fifteen focused save/placeholder tests pass.
+- [x] **Post-v0.5.1 — Book Studio quality and workflow final integration:** the
+      companion spine/cover preview, direct part targeting and ordered
+      publication remain, but the option surface now exposes only the curated
+      Book Apocalypse system. The running app proved 24 unique Surprise locks,
+      unified Book emblem, Cover frame and Edge treatment controls, no retired
+      furniture or spine-title controls, and `pageErrors: []`.
+- [x] **Portable local video parity:** video nodes now carry the same durable
+      `assetRelPath` as pictures, travel in both lossless and Notebook Script
+      parcels, scrub the source library root and rebase onto the destination.
+      Captionless, bracketed, multiline and backslash captions round-trip; the
+      focused portability/parser gate passes 21 cases.
+- [x] **Final demo after the frozen Surprise fix:** the full existing tour was
+      captured on the frozen 0.6 source with 61 visible books (20/20/20 plus
+      Welcome), sharing the exact same titles, bindings, order and saturated
+      jewel/earth palette as the README shelf. It retains the explicit
+      Lapis→Garnet shelf colour beats, redesigned Book Studio, local video and kittens. The
+      1,758-frame deterministic capture encoded to `docs/readme/img/demo.webp`;
+      the loop anchor measured MSE 0.0069. The owner
+      explicitly waived agent frame review and will judge this file before push.
 - [x] **Post-v0.5.1 — updater release-note formatting:** the installed updater
       no longer prints GitHub's raw `<div>`, image, heading, emphasis and table
       source inside one paragraph. It safely renders the “What changed” summary

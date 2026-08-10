@@ -19,6 +19,46 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.0 — books rebuilt from the boards out
+
+This release replaces Alcove's generated-book vocabulary rather than carrying
+forward shapes and decorations that stopped reading as books at shelf size.
+
+**Every active spine is unmistakably a book.** The new system has three
+straight silhouettes, eighteen construction-led materials, 59 authored spine
+programmes and 67 named bindings. Spine names and empty title furniture are
+gone; complete titles remain on the cover. Old stored book appearances migrate
+onto the rebuilt vocabulary while pages, book identity, shelf placement,
+bookcases, carpentry and wallpaper stay untouched.
+
+**Book Studio composes instead of piling on.** Covers offer sixteen unified
+shelf-legible emblems, twelve continuous frames, fifteen complete title
+treatments, ten lettering hands, six genuinely painted page-edge finishes and
+three endband constructions. Charms, hardware, corner protectors, inset plates
+and repeated wallpaper-like symbol fields are retired. Surprise me searches eight directions
+under one focal-programme budget, with 24 locks for keeping the decisions that
+already work.
+
+**Welcome is a Grand-blue Gilt Quarto.** Its deep blue spine is clean and
+titleless, with two cords and one broad foliate lozenge; its cover
+carries an Engraved direct-gilt title, Renaissance panel and the same formal
+binder's tool. Settings
+adds a default-off “Keep Welcome book current” choice for readers who want a
+future edition even after editing the guide; the consequence is stated beside
+the switch and replacement remains version-gated.
+
+**Local pictures and video travel with selected pages.** Library parcels carry
+only referenced assets, strip machine-specific library roots, and rebuild both
+lossless JSON and script-only media against the destination library. Notebook
+Script preserves exported video as `media=video` plus its durable `asset` path.
+AI-authored empty image placeholders can be filled in place, and the native
+AI-format save path has the scoped write permission it needs.
+
+**The last rough seams were removed.** Dragged books no longer show a duplicate
+orange backing, long cover titles fit without ellipses, and updater release
+notes render as real headings, lists, emphasis and links instead of raw GitHub
+markup.
+
 ## 0.5.1 — page turns with room to move
 
 This patch is the owner-tested repair pass immediately after 0.5.0. It keeps

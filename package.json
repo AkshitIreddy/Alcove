@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers. Offline. Windows, macOS, Linux.",
   "type": "module",
   "scripts": {
@@ -71,7 +71,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/howler": "^2.2.13",
-    "gifsmith": "^0.2.3",
+    "gifsmith": "^0.3.3",
     "playwright": "^1.62.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",

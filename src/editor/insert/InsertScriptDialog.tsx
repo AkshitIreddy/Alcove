@@ -302,6 +302,7 @@ export default function InsertScriptDialog(
         role="dialog"
         aria-modal="true"
         aria-label="Insert script"
+        aria-busy={inserting()}
       >
         {/* A way out you can see — top-left, like every exit in this app. */}
         <button
@@ -422,7 +423,7 @@ export default function InsertScriptDialog(
             disabled={source().trim() === '' || inserting()}
             onClick={() => void insert()}
           >
-            Insert
+            {inserting() ? 'Laying out pages…' : 'Insert'}
           </button>
         </div>
       </div>

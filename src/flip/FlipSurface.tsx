@@ -80,6 +80,10 @@ export interface FlipSurfaceApi {
   flipPrev(): void;
   /** Mark every known page snapshot stale and re-rasterize during idle. */
   invalidateSnapshots(): void;
+  /** Pause idle page rasterization during a hidden multi-spread layout sweep. */
+  suspendSnapshots(): void;
+  /** Resume rasterization; optionally discard requests made only by the sweep. */
+  resumeSnapshots(discardDeferred?: boolean): void;
   /**
    * Peek a page's cached snapshot without disturbing LRU order (thumbnails
    * strip, roadmap #10). Only pages that have been mounted since the book
@@ -354,6 +358,8 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         if (id) cache.notifyEdited(id);
       }
     },
+    suspendSnapshots: () => cache.suspend(),
+    resumeSnapshots: (discardDeferred = false) => cache.resume(discardDeferred),
     getSnapshot: (pageId) => cache.peek(pageId),
     settlePage: (pageId) => cache.notifyEdited(pageId),
   };

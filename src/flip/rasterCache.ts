@@ -742,12 +742,13 @@ export class PageRasterCache {
     this.suspended = true;
   }
 
-  resume(): void {
+  resume(discardDeferred = false): void {
     if (!this.suspended) return;
     this.suspended = false;
     if (this.disposed) return;
     const pending = [...this.deferred];
     this.deferred.clear();
+    if (discardDeferred) return;
     for (const pageId of pending) this.captureWhenIdle(pageId);
   }
 

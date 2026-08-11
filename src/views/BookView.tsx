@@ -343,16 +343,62 @@ export default function BookView(): JSX.Element {
     const home = scriptInsertionViewLock;
     if (home === null) return;
     /*
-     * Import creates protected destinations, then mounted/offscreen pages may
-     * enqueue a cascade of overflow carries. Keep the navigation lock until
-     * that serialized chain has genuinely gone quiet; releasing it as soon as
-     * the insert transaction returned let a late carry jump to page 3.
+     * Import creates protected destinations, and most of them are offscreen.
+     * Waiting only for the opening spread's carry chain is not sufficient: an
+     * offscreen read-only reconstruction is close enough for a flip picture,
+     * but custom node views, editable code and display maths do not always
+     * occupy exactly the same height as the real PageEditor. Opening such a
+     * page later can split it, insert a spill before the next protected section
+     * and shift every later ordinal. The reader then sees a complete section
+     * on the staged page and the same section again after it moves forward.
+     *
+     * While the insertion overlay still owns navigation, silently mount every
+     * populated spread through the REAL editor and let its transaction,
+     * ResizeObserver and overflow callbacks settle. Repeat until a complete
+     * sweep leaves the ordered documents unchanged. This makes dialog close
+     * the atomic boundary: every page the reader can turn to has already been
+     * measured by the layout that will display it.
      */
-    for (let frame = 0; frame < 4; frame += 1) {
-      await carryChain;
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const pageSignature = (): string =>
+      pages()
+        .filter((page) => docHasContent(page.doc))
+        .map(
+          (page) =>
+            `${page.id}:${JSON.stringify(page.doc, (key, value) =>
+              key === 'id' || key === 'blockId' ? undefined : value,
+            )}`,
+        )
+        .join('|');
+    flipApi?.suspendSnapshots();
+    try {
+      for (let sweep = 0; sweep < 4; sweep += 1) {
+        await carryChain;
+        const before = pageSignature();
+        for (let target = 0; ; target += 1) {
+          const lastContentSlot = pages().reduce(
+            (last, page, slot) => (docHasContent(page.doc) ? slot : last),
+            0,
+          );
+          if (target > spreadOfSlot(lastContentSlot)) break;
+          setSpreadIndex(target);
+          // Solid mounts the leaves on the first frame; custom node views and
+          // their observers settle over the following frames.
+          for (let frame = 0; frame < 2; frame += 1) {
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() => resolve()),
+            );
+            await carryChain;
+          }
+        }
+        await carryChain;
+        if (carryPending === 0 && pageSignature() === before) break;
+      }
+    } finally {
+      // Requests made while visiting temporary spreads are useless once the
+      // view returns home. The home-spread effect immediately warms its real
+      // neighbours after the index is restored below.
+      flipApi?.resumeSnapshots(true);
     }
-    await carryChain;
     scriptInsertionViewLock = null;
     setSpreadIndex(home.spread);
     setFocusedSide(home.side);
@@ -1244,7 +1290,7 @@ export default function BookView(): JSX.Element {
         doc: newPageDoc(bookPageStyle(), bookLineHeight()),
       });
       if (spill === null) return;
-      setPages(await listPages(spill.bookId));
+      await refreshPageOrderPreservingLiveDocs(spill.bookId);
       next = spill;
     }
     if (!next) {

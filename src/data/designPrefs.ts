@@ -424,6 +424,17 @@ export async function saveBookBinding(
   await persist();
 }
 
+/** Copy the source book's exact pinned binding onto a newly created row. */
+export async function copyBookBinding(
+  sourceBookId: string,
+  targetBookId: string,
+): Promise<BookPresetId | null> {
+  await loadDesignPrefs();
+  const binding = bookBinding(sourceBookId);
+  await saveBookBinding(targetBookId, binding);
+  return binding;
+}
+
 /* ------------------------------- subscribe ------------------------------- */
 
 /**

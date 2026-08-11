@@ -277,6 +277,9 @@ export type ShelfMenuAction =
   | 'customize'
   | 'pin'
   | 'duplicate'
+  | 'duplicate-back'
+  | 'duplicate-cover'
+  | 'duplicate-full'
   | 'move'
   /** Opens the list of other bookcases; the pick arrives on `onMoveTo`. */
   | 'move-to'
@@ -315,9 +318,9 @@ export interface ShelfMenuProps {
 }
 
 export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
-  const [mode, setMode] = createSignal<'menu' | 'rename' | 'confirm' | 'move-to'>(
-    'menu',
-  );
+  const [mode, setMode] = createSignal<
+    'menu' | 'rename' | 'confirm' | 'move-to' | 'duplicate'
+  >('menu');
   /** The "N more" row was taken: show every case, not just the first CASE_CAP. */
   const [allCases, setAllCases] = createSignal(false);
   let renameInput: HTMLInputElement | undefined;
@@ -348,7 +351,7 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
         title: props.pinned ? 'Unpin favorite' : 'Pin as favorite',
         glyph: props.pinned ? '☆' : '⭐',
       },
-      { action: 'duplicate', title: 'Duplicate', glyph: '⧉' },
+      { action: 'duplicate', title: 'Duplicate…', glyph: '⧉' },
       // Two moves, and the labels have to say which is which: this one is the
       // ghost that follows the pointer to another slot on THIS case.
       { action: 'move', title: 'Move on this shelf…', glyph: '⇄' },
@@ -387,6 +390,20 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
     }
     return rows;
   };
+
+  const duplicateItems = (): MenuItemSpec<ShelfMenuAction>[] => [
+    { action: 'duplicate-back', title: 'Back', glyph: '‹' },
+    {
+      action: 'duplicate-cover',
+      title: 'Cover only — blank pages',
+      glyph: '▯',
+    },
+    {
+      action: 'duplicate-full',
+      title: 'Full book — include pages',
+      glyph: '⧉',
+    },
+  ];
 
   /**
    * How tall the case list's own body may get before it scrolls.
@@ -428,6 +445,14 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
     }
     if (action === 'delete') {
       setMode('confirm');
+      return;
+    }
+    if (action === 'duplicate') {
+      setMode('duplicate');
+      return;
+    }
+    if (action === 'duplicate-back') {
+      setMode('menu');
       return;
     }
     if (action === 'move-to') {
@@ -494,6 +519,18 @@ export default function ShelfMenu(props: ShelfMenuProps): JSX.Element {
         >
           <MenuList items={caseItems()} attr="data-shelf-case" onRun={runCase} />
         </div>
+      </Show>
+
+      <Show when={mode() === 'duplicate'}>
+        <div class="shelf-menu__title">Duplicate book</div>
+        <p class="shelf-menu__hint shelf-menu__hint-tight">
+          Both choices keep this exact binding and cover design.
+        </p>
+        <MenuList
+          items={duplicateItems()}
+          attr="data-shelf-action"
+          onRun={run}
+        />
       </Show>
 
       <Show when={mode() === 'rename'}>

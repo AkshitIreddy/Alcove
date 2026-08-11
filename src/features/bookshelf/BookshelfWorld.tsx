@@ -72,6 +72,7 @@ import {
   registerCommands,
 } from '../../data/keybindings';
 import { settings } from '../../data/settings';
+import { copyBookBinding } from '../../data/designPrefs';
 // The gallery is reached by `import()` at the moment it is opened, NOT by a
 // static import — of the module that defines it OR of `features/templates/
 // groupD`. Both were tried and both cost the same thing: the gallery builds
@@ -807,8 +808,14 @@ export default function BookshelfWorld(): JSX.Element {
     void (async () => {
       if (action === 'pin') {
         await setBookPinned(book.id, readShelfMeta(book)?.pinned !== true);
-      } else if (action === 'duplicate') {
-        await duplicateBook(book.id);
+      } else if (
+        action === 'duplicate-cover' ||
+        action === 'duplicate-full'
+      ) {
+        const copy = await duplicateBook(book.id, {
+          includePages: action === 'duplicate-full',
+        });
+        if (copy !== null) await copyBookBinding(book.id, copy.id);
       } else if (action === 'delete') {
         void play('crumple-delete');
         await trashBook(book.id);

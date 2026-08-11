@@ -771,14 +771,27 @@ export async function nextFreeSlot(
   return slot;
 }
 
+export interface DuplicateBookOptions {
+  /** False copies the complete exterior onto a fresh, empty book. */
+  readonly includePages?: boolean;
+}
+
 /**
- * Duplicate a book (title gets a " copy" suffix) with all of its pages,
- * landing on the next free slot of the same floor *of the same bookcase*.
- * Returns the new book.
+ * Duplicate a book, landing beside it in the same bookcase.
+ *
+ * The procedural seed is part of the exterior. Omitting it was the subtle
+ * defect behind copies that kept an explicitly chosen colour but rerolled
+ * their emblem, material construction and other seed-owned decisions.
+ * Binding presets live in designPrefs and are copied by the shelf action after
+ * this row exists; this layer owns the row metadata and optional page bodies.
  */
-export async function duplicateBook(id: string): Promise<Book | null> {
+export async function duplicateBook(
+  id: string,
+  options: DuplicateBookOptions = {},
+): Promise<Book | null> {
   const source = await getBook(id);
   if (source === null) return null;
+  const includePages = options.includePages !== false;
   const db = await getDb();
   const home = bookcaseOf(source);
   const slot = await nextFreeSlot(source.floor, source.slot + 1, home);
@@ -787,19 +800,40 @@ export async function duplicateBook(id: string): Promise<Book | null> {
     bookcaseId: home,
     floor: source.floor,
     slot,
+    spineSeed: source.spineSeed,
     coverMeta: source.coverMeta,
   });
-  const pages = await db.select<
-    Array<{ ord: number; doc_json: string; script_source: string | null; source_dirty: number }>
-  >('SELECT * FROM pages WHERE book_id = $1 ORDER BY ord ASC', [id]);
-  const now = new Date().toISOString();
-  for (const page of pages) {
-    await db.execute(
-      'INSERT INTO pages (id, book_id, ord, doc_json, script_source, source_dirty, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [nanoid(), copy.id, page.ord, page.doc_json, page.script_source, page.source_dirty, now],
-    );
+  // A duplicate belongs beside its source in ordering, but not literally on
+  // top of the source's reader-authored visual anchor.
+  if (readShelfMeta(source)?.positionX !== undefined) {
+    await patchShelfMeta(copy.id, { positionX: undefined });
   }
-  return copy;
+  if (includePages) {
+    const pages = await db.select<
+      Array<{
+        ord: number;
+        doc_json: string;
+        script_source: string | null;
+        source_dirty: number;
+      }>
+    >('SELECT * FROM pages WHERE book_id = $1 ORDER BY ord ASC', [id]);
+    const now = new Date().toISOString();
+    for (const page of pages) {
+      await db.execute(
+        'INSERT INTO pages (id, book_id, ord, doc_json, script_source, source_dirty, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [
+          nanoid(),
+          copy.id,
+          page.ord,
+          page.doc_json,
+          page.script_source,
+          page.source_dirty,
+          now,
+        ],
+      );
+    }
+  }
+  return (await updateBookPageCount(copy.id)) ?? copy;
 }
 
 /** Soft-delete: move the book to the trash (floor -1). */

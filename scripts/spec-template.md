@@ -624,6 +624,18 @@ Never leave `()` empty without `placeholder=...`; that is an incomplete image
 and Alcove will warn about it. Prefer `fetch:` for a general web-searchable
 subject, and a placeholder for something only the reader can provide.
 
+If the person asks you to **generate** an image (rather than upload one or let
+Alcove search for one), brief your image-generation counterpart for the space
+the finished picture will actually occupy. State the picture's teaching role,
+orientation, exact aspect ratio and a sensible output size, plus where captions
+or overlaid labels need quiet space. Choose those dimensions from the planned
+layout: a full-width explanatory scene is usually a 3:2 or 4:3 landscape
+(for example 1536×1024); an image-row cell is normally 1:1 (1024×1024); a tall
+process or specimen may be 3:4 (1024×1365). Do not request an arbitrary square
+and hope cropping fixes it later. Compose important content inside a modest
+safe margin, then use a Notebook Script width/placement that preserves the same
+ratio.
+
 ## 6. Diagrams (fenced mini-languages)
 
 These are **not Mermaid** (see section 8). They are much simpler.
@@ -973,6 +985,9 @@ creative/subjective liberties taken; do not paste the Markdown into chat.
     something the note cannot show better.
 12. If only the reader can supply an image, use an empty destination together
     with `placeholder=...`; never emit a bare `![alt]()`.
+    If you are generating the image with an image model, give that model the
+    intended page role, orientation, aspect ratio and approximate pixel size
+    before generation, then preserve that ratio in the final image block.
 13. Preserve `media=video` and its exported `asset=...` path when a page
     contains local video; never replace it with a guessed URL.
 14. The private page ledger gives every page at most 20 planned lines and every

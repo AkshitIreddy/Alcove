@@ -32,7 +32,26 @@ try {
     const books = await import('/src/data/books.ts');
     const pages = await import('/src/data/pages.ts');
     const book = await books.createBook({ title: 'AI style QA', floor: 0, slot: 99 });
-    await pages.createPage({ bookId: book.id });
+    await pages.createPage({
+      bookId: book.id,
+      doc: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'A bright idea 💡 belongs on the same line.' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Sparkles ✨, a cat 🐈‍⬛, and a flag 🇮🇳 stay beside the words.' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Keycap 1️⃣ and a warm heart 🧡 keep the handwritten rhythm.' }],
+          },
+        ],
+      },
+    });
     await pages.createPage({ bookId: book.id });
     return book.id;
   });
@@ -48,11 +67,23 @@ try {
     await page.locator('.nbt-layer').waitFor({ state: 'detached' });
   }
 
+  const inlineEmoji = page.locator('.nb-prose .nb-inline-emoji');
+  await inlineEmoji.first().waitFor({ state: 'visible' });
+  report.emojiDecorationCount = await inlineEmoji.count();
+  await page.screenshot({ path: `${out}/00-emoji-baseline.png`, caret: 'hide' });
+  report.screenshots.push(`${out}/00-emoji-baseline.png`);
+
   await page.locator('.nb-rail-button[data-tool="share"]').click();
   const picker = page.locator('.nb-ai-style-picker').first();
   await picker.waitFor({ state: 'visible' });
   await page.screenshot({ path: `${out}/01-share-picker.png`, caret: 'hide' });
   report.screenshots.push(`${out}/01-share-picker.png`);
+  await picker.locator('.nb-ai-style-title-lockup').screenshot({
+    path: `${out}/01b-style-spark-detail.png`,
+    caret: 'hide',
+    scale: 'css',
+  });
+  report.screenshots.push(`${out}/01b-style-spark-detail.png`);
 
   await picker.getByRole('button', { name: 'Create your own' }).click();
   const customDialog = page.getByRole('dialog', { name: 'Create a direction' });
@@ -93,6 +124,7 @@ try {
     report.dialogPickerCount === 0 &&
     report.dialogDownloadGuideVisible === true &&
     report.dialogCopyGuideVisible === true &&
+    report.emojiDecorationCount === 6 &&
     errors.length === 0;
 } catch (error) {
   report.error = error.stack ?? error.message;

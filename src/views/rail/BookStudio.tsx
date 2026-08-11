@@ -122,6 +122,7 @@ import DesignStrip, {
   starWords,
 } from './DesignStrip';
 import { DesignCanvas } from './designArt';
+import { ColourClipboardActions } from './OwnColour';
 import {
   bindingOptions,
   drawBindingCard,
@@ -286,6 +287,12 @@ function ColourRole(props: ColourRoleProps): JSX.Element {
           ? `inherits · ${props.visible.toUpperCase()}`
           : props.visible.toUpperCase()}
       </span>
+      <ColourClipboardActions
+        label={props.label}
+        value={props.visible}
+        onPaste={props.onPick}
+        compact
+      />
       <Show when={props.value !== null}>
         <button
           type="button"

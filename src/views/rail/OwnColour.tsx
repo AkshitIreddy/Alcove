@@ -43,9 +43,81 @@ import {
   rememberCustomColour,
   subscribeCustomColours,
 } from '../../art/customColour';
+import { copyColour, pasteColour } from './colourClipboard';
 
 /** How many remembered colours a studio row shows before it stops. */
 const SHOWN = 12;
+
+export interface ColourClipboardActionsProps {
+  /** Names the colour role in button announcements. */
+  label: string;
+  /** The currently visible/selected colour copied by the first action. */
+  value: string;
+  /** Applies a pasted canonical hex to this picker. */
+  onPaste(hex: string): void;
+  /** Tighter treatment for the small key-colour cards. */
+  compact?: boolean;
+}
+
+/** Shared copy/paste actions for every colour well in the studios. */
+export function ColourClipboardActions(props: ColourClipboardActionsProps): JSX.Element {
+  const [status, setStatus] = createSignal<'copied' | 'pasted' | 'empty' | null>(null);
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+
+  onCleanup(() => {
+    if (statusTimer !== undefined) clearTimeout(statusTimer);
+  });
+
+  const say = (next: 'copied' | 'pasted' | 'empty'): void => {
+    setStatus(next);
+    if (statusTimer !== undefined) clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => setStatus(null), 1800);
+  };
+
+  const copy = async (): Promise<void> => {
+    say((await copyColour(props.value)) === null ? 'empty' : 'copied');
+  };
+
+  const paste = async (): Promise<void> => {
+    const hex = await pasteColour();
+    if (hex === null) {
+      say('empty');
+      return;
+    }
+    rememberCustomColour(hex);
+    props.onPaste(hex);
+    say('pasted');
+  };
+
+  return (
+    <span
+      class="nb-colour-clipboard-actions"
+      classList={{ 'is-compact': props.compact === true }}
+      role="group"
+      aria-label={`${props.label}: colour clipboard`}
+      aria-live="polite"
+    >
+      <button
+        type="button"
+        class="nb-colour-clipboard-button font-ui"
+        aria-label={`${props.label}: copy ${props.value.toUpperCase()}`}
+        data-tooltip={`copy ${props.value.toUpperCase()}`}
+        onClick={() => void copy()}
+      >
+        {status() === 'copied' ? 'copied' : 'copy'}
+      </button>
+      <button
+        type="button"
+        class="nb-colour-clipboard-button font-ui"
+        aria-label={`${props.label}: paste a copied colour`}
+        data-tooltip="paste colour"
+        onClick={() => void paste()}
+      >
+        {status() === 'pasted' ? 'pasted' : status() === 'empty' ? 'no colour' : 'paste'}
+      </button>
+    </span>
+  );
+}
 
 export interface OwnColourProps {
   /** Names the group for assistive tech: "Your own colour for the shelves". */
@@ -183,6 +255,11 @@ export default function OwnColour(props: OwnColourProps): JSX.Element {
         >
           use it
         </button>
+        <ColourClipboardActions
+          label={props.label}
+          value={props.value ?? props.fallback}
+          onPaste={commit}
+        />
         <Show when={props.value !== null}>
           <button type="button" class="nb-chip nb-chip-ghost" onClick={() => props.onClear()}>
             {props.clearLabel}

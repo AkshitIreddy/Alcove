@@ -82,6 +82,7 @@ type MenuAttr =
   | 'data-shelf-action'
   | 'data-shelf-spot'
   | 'data-case-action'
+  | 'data-trash-action'
   /** The "move to…" list — one row per OTHER bookcase, keyed by its id. */
   | 'data-shelf-case';
 
@@ -808,6 +809,79 @@ export function BookcaseMenu(props: BookcaseMenuProps): JSX.Element {
             {books() > 0 ? 'Delete it all' : 'Delete it'}
           </button>
           <button type="button" class="shelf-menu__btn" onClick={props.onClose}>
+            Keep
+          </button>
+        </div>
+      </Show>
+    </MenuCard>
+  );
+}
+
+/* ========================================================================== *
+ *                           trash dock context card                         *
+ * ========================================================================== */
+
+export interface TrashDockMenuProps {
+  readonly x: number;
+  readonly y: number;
+  onOpen(): void;
+  onEmpty(): void | Promise<void>;
+  onClose(): void;
+}
+
+/** Right-click companion for the dock icon; destructive work remains two-step. */
+export function TrashDockMenu(props: TrashDockMenuProps): JSX.Element {
+  const [confirming, setConfirming] = createSignal(false);
+  const items: readonly MenuItemSpec<'open' | 'empty'>[] = [
+    { action: 'open', title: 'Open trash', glyph: '⌂' },
+    { action: 'empty', title: 'Empty trash…', glyph: '×', danger: true },
+  ];
+
+  const run = (action: 'open' | 'empty'): void => {
+    if (action === 'empty') {
+      setConfirming(true);
+      return;
+    }
+    props.onOpen();
+    props.onClose();
+  };
+
+  return (
+    <MenuCard
+      x={props.x}
+      y={props.y}
+      label="Trash actions"
+      reach={190}
+      portal
+      onClose={props.onClose}
+    >
+      <Show
+        when={confirming()}
+        fallback={
+          <>
+            <MenuTitle name="Trash" />
+            <MenuList items={items} attr="data-trash-action" onRun={run} />
+          </>
+        }
+      >
+        <div class="shelf-menu__title">Empty the trash?</div>
+        <p class="shelf-menu__hint">
+          Every crumpled book is permanently removed. This cannot be undone.
+        </p>
+        <div class="shelf-menu__row">
+          <button
+            type="button"
+            class="shelf-menu__btn is-danger"
+            data-trash-action="confirm-empty"
+            onClick={() => void props.onEmpty()}
+          >
+            Empty it
+          </button>
+          <button
+            type="button"
+            class="shelf-menu__btn"
+            onClick={() => setConfirming(false)}
+          >
             Keep
           </button>
         </div>

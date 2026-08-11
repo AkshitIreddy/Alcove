@@ -58,6 +58,7 @@ import {
 import { appState } from '../../state/app';
 import {
   duplicateBook,
+  emptyTrash,
   readShelfMeta,
   renameBook,
   setBookPinned,
@@ -88,6 +89,7 @@ import { namePlateBox, type NamePlateBox } from './namePlate';
 import PulledBookOverlay from './PulledBookOverlay';
 import ShelfMenu, {
   ShelfSpotMenu,
+  TrashDockMenu,
   type ShelfMenuAction,
   type ShelfSpotAction,
 } from './ShelfMenu';
@@ -179,6 +181,10 @@ interface NamingState {
 
 /** The two panels the dock rail opens. Only one may be up at a time. */
 type DockPanel = 'studio' | 'trash';
+interface TrashMenuState {
+  readonly x: number;
+  readonly y: number;
+}
 
 /** Smallest the ghost slot may shrink to on screen (a clickable target). */
 const GHOST_MIN_W = 30;
@@ -378,6 +384,7 @@ export default function BookshelfWorld(): JSX.Element {
    * blank out halfway through sliding away.
    */
   const [dockPanel, setDockPanel] = createSignal<DockPanel | null>(null);
+  const [trashMenu, setTrashMenu] = createSignal<TrashMenuState | null>(null);
   const [bookDragging, setBookDragging] = createSignal(false);
   const [trashDropHover, setTrashDropHover] = createSignal(false);
   let trashButton: HTMLButtonElement | undefined;
@@ -568,6 +575,7 @@ export default function BookshelfWorld(): JSX.Element {
       setDockPanel(null);
       setMenu(null);
       setSpotMenu(null);
+      setTrashMenu(null);
       setPlateEdit(null);
       setNaming(null);
       if (readerReady) setOverlay(null);
@@ -775,6 +783,15 @@ export default function BookshelfWorld(): JSX.Element {
     else {
       setDockPanel('trash');
     }
+  }
+
+  async function emptyTrashFromDockMenu(): Promise<void> {
+    void play('crumple-delete');
+    await emptyTrash();
+    if (disposed) return;
+    setTrashMenu(null);
+    setDockPanel(null);
+    await world?.refreshData();
   }
 
   function handleSpotAction(
@@ -1335,6 +1352,13 @@ export default function BookshelfWorld(): JSX.Element {
               }
               data-tooltip-side="right"
               onClick={(e) => toggleDockPanel('trash', e.currentTarget)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMenu(null);
+                setSpotMenu(null);
+                setTrashMenu({ x: e.clientX, y: e.clientY });
+              }}
             >
               <TrashIcon />
               <span class="shelf-dock__label">trash</span>
@@ -1401,6 +1425,18 @@ export default function BookshelfWorld(): JSX.Element {
           onClose={() => setDockPanel(null)}
           onChanged={() => void world?.refreshData()}
         />
+      </Show>
+
+      <Show when={trashMenu()} keyed>
+        {(state) => (
+          <TrashDockMenu
+            x={state.x}
+            y={state.y}
+            onOpen={() => setDockPanel('trash')}
+            onEmpty={emptyTrashFromDockMenu}
+            onClose={() => setTrashMenu(null)}
+          />
+        )}
       </Show>
 
       <Show when={studioWanted()}>

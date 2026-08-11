@@ -868,5 +868,7 @@ describe('AI-authored image placeholders', () => {
       'placeholder="upload a labelled plant-cell diagram"',
     );
     expect(NOTEBOOK_SCRIPT_SPEC).toContain('click it or drop **one image**');
+    expect(NOTEBOOK_SCRIPT_SPEC).toContain('intended page role, orientation');
+    expect(NOTEBOOK_SCRIPT_SPEC).toContain('aspect ratio and approximate pixel size');
   });
 });

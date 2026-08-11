@@ -477,6 +477,8 @@ function blockFromNode(node: TiptapNode): Block[] {
           'frame',
           'assetRelPath',
           'asset',
+          // Internal one-shot layout state; never part of Notebook Script.
+          'initialFitPending',
         ]);
         if (assetRelPath !== null) scriptAttrs.asset = assetRelPath;
         if (

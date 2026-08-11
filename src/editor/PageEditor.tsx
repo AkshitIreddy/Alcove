@@ -919,6 +919,20 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     onFocus: ({ editor: instance }) => setActiveEditor(instance),
   }));
 
+  // Media node views need the same laid-out capacity as pagination so a newly
+  // uploaded full-resolution image can reduce only its page display width
+  // before the overflow observer decides whether neighbouring blocks move.
+  createEffect(() => {
+    const instance = editor();
+    if (!instance || instance.isDestroyed) return;
+    const capacity = capacityPx();
+    if (capacity === undefined) {
+      delete instance.view.dom.dataset.pageCapacityPx;
+    } else {
+      instance.view.dom.dataset.pageCapacityPx = String(capacity);
+    }
+  });
+
   let gridSnapFrame = 0;
   const applyGridSnap = (): void => {
     const instance = editor();

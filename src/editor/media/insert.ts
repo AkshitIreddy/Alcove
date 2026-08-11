@@ -4,6 +4,10 @@ import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { storeImageFile, storeVideoFile } from './assets';
 import { groupImageSources } from './classify';
+import {
+  imageFileDimensions,
+  safeStandaloneUploadWidth,
+} from './initialImageFit';
 
 export type MediaFileKind = 'image' | 'video';
 
@@ -23,6 +27,8 @@ export function mediaFilesFrom(transfer: DataTransfer | null): File[] {
 interface StoredImageSource {
   src: string;
   assetRelPath: string;
+  intrinsicWidth?: number;
+  intrinsicHeight?: number;
 }
 
 function imageBlocks(
@@ -32,13 +38,41 @@ function imageBlocks(
   const imageType = view.state.schema.nodes.image;
   const rowType = view.state.schema.nodes.imageRow;
   if (imageType === undefined) return [];
+  const safeAttrs = (source: StoredImageSource): Record<string, unknown> => {
+    const widthPct =
+      source.intrinsicWidth !== undefined && source.intrinsicHeight !== undefined
+        ? safeStandaloneUploadWidth({
+            intrinsicWidth: source.intrinsicWidth,
+            intrinsicHeight: source.intrinsicHeight,
+            pageWidthPx: view.dom.clientWidth,
+            pageCapacityPx: Number(view.dom.dataset.pageCapacityPx),
+          })
+        : 100;
+    return {
+      src: source.src,
+      assetRelPath: source.assetRelPath,
+      widthPct: widthPct < 100 ? widthPct : null,
+      initialFitPending: false,
+    };
+  };
   if (sources.length === 1 || rowType === undefined) {
-    return sources.map((source) => imageType.create(source));
+    return sources.map((source) => imageType.create(safeAttrs(source)));
   }
   return groupImageSources(sources).map((group) =>
     group.length === 1
-      ? imageType.create(group[0])
-      : rowType.create(null, group.map((source) => imageType.create(source))),
+      ? imageType.create(safeAttrs(group[0]))
+      : rowType.create(
+          null,
+          // A row already divides the page width between its children; a
+          // standalone safety percentage would incorrectly be applied again.
+          group.map((source) =>
+            imageType.create({
+              src: source.src,
+              assetRelPath: source.assetRelPath,
+              initialFitPending: false,
+            }),
+          ),
+        ),
   );
 }
 
@@ -62,10 +96,17 @@ export async function insertMediaFiles(
       const kind = mediaKindForFile(file);
       if (kind === null) return null;
       try {
-        const asset = kind === 'image'
-          ? await storeImageFile(file)
-          : await storeVideoFile(file);
-        return { kind, src: asset.src, assetRelPath: asset.relPath };
+        const [asset, dimensions] = await Promise.all([
+          kind === 'image' ? storeImageFile(file) : storeVideoFile(file),
+          kind === 'image' ? imageFileDimensions(file) : Promise.resolve(null),
+        ]);
+        return {
+          kind,
+          src: asset.src,
+          assetRelPath: asset.relPath,
+          intrinsicWidth: dimensions?.width,
+          intrinsicHeight: dimensions?.height,
+        };
       } catch {
         return null;
       }
@@ -84,7 +125,12 @@ export async function insertMediaFiles(
   for (const item of stored) {
     if (item === null) continue;
     if (item.kind === 'image') {
-      pendingImages.push({ src: item.src, assetRelPath: item.assetRelPath });
+      pendingImages.push({
+        src: item.src,
+        assetRelPath: item.assetRelPath,
+        intrinsicWidth: item.intrinsicWidth,
+        intrinsicHeight: item.intrinsicHeight,
+      });
       continue;
     }
     flushImages();

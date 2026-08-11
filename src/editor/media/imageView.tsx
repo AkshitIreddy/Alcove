@@ -29,6 +29,10 @@ import {
 } from './portableAssets';
 import { MISSING_ASSET_SRC, resolveAssetSrc } from './resolver';
 import { clampViewerPan, type ViewerPan } from './imageViewerPan';
+import {
+  imageFileDimensions,
+  initialImageWidthForPage,
+} from './initialImageFit';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
 export type ImageAlign = (typeof IMAGE_ALIGNMENTS)[number];
@@ -222,8 +226,30 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setReplacing(true);
     setReplacementError(null);
     try {
-      const patch = await persistPlaceholderImage(file);
-      if (alive) props.updateAttributes(patch);
+      const [patch, dimensions] = await Promise.all([
+        persistPlaceholderImage(file),
+        imageFileDimensions(file),
+      ]);
+      if (alive) {
+        const currentPct = widthPct() ?? 100;
+        const wrapperWidth = wrapperEl?.getBoundingClientRect().width ?? 0;
+        const estimatedImageHeight =
+          dimensions !== null && dimensions.width > 0
+            ? wrapperWidth * (dimensions.height / dimensions.width)
+            : 0;
+        const fittedPct =
+          estimatedImageHeight > 0
+            ? fitUploadMeasurement(
+                estimatedImageHeight,
+                estimatedImageHeight + estimatedImageChromePx(),
+              )
+            : currentPct;
+        props.updateAttributes({
+          ...patch,
+          widthPct: fittedPct < currentPct ? fittedPct : props.node.attrs.widthPct,
+          initialFitPending: dimensions === null,
+        });
+      }
     } catch {
       if (alive) {
         setReplacementError('That picture could not be saved. Try another image.');
@@ -390,6 +416,82 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     });
   };
 
+  const estimatedImageChromePx = (): number => {
+    const captionChrome = caption().trim().length > 0 ? 42 : 0;
+    const frameChrome = frame() === 'polaroid' ? 38 : 8;
+    return captionChrome + frameChrome;
+  };
+
+  const fitUploadMeasurement = (
+    imageHeightPx: number,
+    blockHeightPx: number,
+  ): number => {
+    const wrapper = wrapperEl;
+    const root = wrapper?.closest('.nb-prose');
+    const capacity =
+      root instanceof HTMLElement
+        ? Number(root.dataset.pageCapacityPx)
+        : Number.NaN;
+
+    if (!(root instanceof HTMLElement) || !Number.isFinite(capacity)) {
+      return widthPct() ?? 100;
+    }
+
+    let block: HTMLElement | null = wrapper ?? null;
+    while (block?.parentElement !== root) block = block?.parentElement ?? null;
+    if (block === null) return widthPct() ?? 100;
+
+    const rootRect = root.getBoundingClientRect();
+    const blockRect = block.getBoundingClientRect();
+    const scale =
+      root.clientHeight > 0 && rootRect.height > 0
+        ? rootRect.height / root.clientHeight
+        : 1;
+    const following = Array.from(root.children).slice(
+      Array.prototype.indexOf.call(root.children, block) + 1,
+    );
+    const lastFollowing = following[following.length - 1];
+    const followingHeight =
+      lastFollowing instanceof HTMLElement
+        ? Math.max(
+            0,
+            (lastFollowing.getBoundingClientRect().bottom - blockRect.bottom) /
+              scale,
+          )
+        : 0;
+    const currentPct = widthPct() ?? 100;
+    return initialImageWidthForPage({
+      currentWidthPct: currentPct,
+      imageHeightPx: imageHeightPx / scale,
+      blockHeightPx: blockHeightPx / scale,
+      blockTopPx: (blockRect.top - rootRect.top) / scale,
+      followingContentHeightPx: followingHeight,
+      pageCapacityPx: capacity,
+      pagePaddingBottomPx:
+        Number.parseFloat(getComputedStyle(root).paddingBottom) || 0,
+      minimumWidthPct: MIN_WIDTH_PCT,
+    });
+  };
+
+  const fitNewUploadToPage = (img: HTMLImageElement): void => {
+    if (props.node.attrs.initialFitPending !== true) return;
+    const imageRect = img.getBoundingClientRect();
+    const blockHeight = wrapperEl?.getBoundingClientRect().height ?? imageRect.height;
+    const currentPct = widthPct() ?? 100;
+    const fittedPct = fitUploadMeasurement(imageRect.height, blockHeight);
+    if (fittedPct < currentPct && wrapperEl !== undefined) {
+      // Make the fitted geometry visible to PageEditor synchronously. The
+      // attribute transaction below invokes overflow measurement before the
+      // Solid node view would otherwise have reflected its new percentage.
+      wrapperEl.style.width = `${fittedPct}%`;
+      wrapperEl.style.flexBasis = `${fittedPct}%`;
+    }
+    props.updateAttributes({
+      widthPct: fittedPct < currentPct ? fittedPct : props.node.attrs.widthPct,
+      initialFitPending: false,
+    });
+  };
+
   return (
     <NodeViewWrapper
       ref={(el: HTMLElement) => {
@@ -439,6 +541,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               alt={alt()}
               draggable={false}
               ref={observeWidth}
+              onLoad={(event) => fitNewUploadToPage(event.currentTarget)}
               onDblClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -714,6 +817,12 @@ export const MediaImage = Image.extend({
        */
       placeholder: {
         ...IMAGE_PLACEHOLDER_ATTRIBUTE,
+      },
+
+      /** One-shot display fitting for a newly uploaded full-resolution asset. */
+      initialFitPending: {
+        default: false,
+        rendered: false,
       },
 
       frame: {

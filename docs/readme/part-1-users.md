@@ -50,8 +50,8 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.5_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.5_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.6_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.6_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.

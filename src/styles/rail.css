@@ -2068,23 +2068,22 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   height: 27px;
   flex: 0 0 auto;
   place-items: center;
-  color: var(--ink-sepia);
   background: var(--wash-amber-light);
   border: 1px solid var(--wash-amber-deep);
   border-radius: 52% 44% 49% 43%;
-  font-size: 0;
 }
 
-/* Use geometry instead of a font sparkle: the ✦ glyph's asymmetric side
-   bearings made it look left-heavy even while its text box was centred. */
-.nb-ai-style-spark::before {
+/* Segoe's sparkle is optically low inside its em box. Move the glyph, not its
+   seal, so the 27px paper roundel stays mechanically aligned with the title. */
+.nb-ai-style-spark-glyph {
   display: block;
-  box-sizing: border-box;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid currentColor;
-  content: '';
-  transform: rotate(45deg);
+  color: var(--ink-sepia);
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", var(--font-ui);
+  font-size: 16px;
+  font-variant-emoji: text;
+  font-weight: 600;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 
 .nb-ai-style-title-lockup strong,

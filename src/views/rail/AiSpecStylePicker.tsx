@@ -118,7 +118,9 @@ export default function AiSpecStylePicker(props: AiSpecStylePickerProps): JSX.El
       <section class="nb-ai-style-picker" aria-label="AI guide creative direction">
         <div class="nb-ai-style-heading">
           <div class="nb-ai-style-title-lockup">
-            <span class="nb-ai-style-spark" aria-hidden="true">✦</span>
+            <span class="nb-ai-style-spark" aria-hidden="true">
+              <span class="nb-ai-style-spark-glyph">{'✨\uFE0E'}</span>
+            </span>
             <div>
               <strong>Creative direction</strong>
               <span class="font-ui">a mood and quality brief, never a page recipe</span>

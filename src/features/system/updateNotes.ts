@@ -40,7 +40,9 @@ export type UpdateNoteBlock =
       readonly items: readonly (readonly UpdateNoteInline[])[];
     };
 
-const SUMMARY_HEADING = /^##\s+what changed\s*$/i;
+// Current releases begin directly with "What's new". Keep the former wrapper
+// as an accepted start so update feeds from older versions render identically.
+const SUMMARY_HEADING = /^##\s+(?:what changed|what['’]s new)\s*$/i;
 const DOWNLOAD_HEADING = /^##\s+which file do i want\??\s*$/i;
 const HORIZONTAL_RULE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const HEADING = /^(#{1,6})\s+(.+)$/;

@@ -3,13 +3,11 @@
  *
  * Not a raw commit dump: subjects are cleaned up, grouped into reader-facing
  * sections, and grouped again by scope so "what actually happened" reads as a
- * short summary rather than a changelog wall.
+ * short changelog rather than a commit wall.
  *
  * Usage: node scripts/release-notes.mjs [tag]   (defaults to the current HEAD tag)
  */
 import { execSync } from 'node:child_process';
-import { requiredChangelogForTag } from './release-changelog.mjs';
-
 const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 const trySh = (cmd) => {
   try {
@@ -35,15 +33,6 @@ const label = process.argv[2] ?? trySh('git describe --tags --exact-match HEAD')
 const rev = label && trySh(`git rev-parse --verify ${label}~0`) ? label : 'HEAD';
 const tag = label || 'unreleased';
 
-/**
- * The hand-written release section is the actual product changelog. Commit
- * subjects are useful as an index, but they cannot replace the explanation of
- * what changed and why. A version tag therefore has a hard dependency on its
- * matching `## x.y.z` section: publishing without it is an error, not a link
- * to somewhere the reader may never open.
- */
-const detailedChangelog = requiredChangelogForTag(tag);
-
 /** The tag before this one, if any — otherwise summarise the whole history. */
 const previous = trySh(`git describe --tags --abbrev=0 ${rev}~1`);
 
@@ -51,13 +40,15 @@ const range = previous ? `${previous}..${rev}` : rev;
 const log = trySh(`git log ${range} --no-merges --pretty=format:%s`);
 const subjects = log ? log.split('\n') : [];
 
-// Reader-facing sections. Types not listed here fall into "Under the hood".
+// Reader-facing sections. A release opens with these two answers, in this
+// order, without wrapping them in another "What changed" heading. Performance
+// and documentation improvements are additions; fixes remain fixes. Types not
+// listed here roll into the maintenance count.
 const SECTIONS = [
-  { key: 'feat', title: "What's new" },
-  { key: 'fix', title: 'Fixed' },
-  { key: 'perf', title: 'Faster' },
-  { key: 'docs', title: 'Docs' },
+  { keys: ['feat', 'perf', 'docs'], title: "What's new", empty: 'No new additions in this release.' },
+  { keys: ['fix'], title: "What's fixed", empty: 'No fixes in this release.' },
 ];
+const READER_FACING_TYPES = new Set(SECTIONS.flatMap((section) => section.keys));
 const HIDDEN = new Set(['chore', 'ci', 'build', 'test', 'style', 'refactor', 'wip']);
 
 /*
@@ -79,8 +70,8 @@ const HIDDEN_SCOPES = new Set(['todo']);
 // Page-flip handoff commits record diagnostic checkpoints, including subjects
 // such as "unresolved" that can be superseded later in the same release. Keep
 // the reader-facing flip fixes, but leave those internal docs checkpoints out
-// of the generated GitHub summary; the detailed changelog carries the resolved
-// narrative instead.
+// of the generated GitHub summary; the linked release history carries the
+// resolved narrative instead.
 const HIDDEN_TYPE_SCOPES = new Set(['docs:flip']);
 const HIDDEN_TEXT = [/^checkpoint the owner-tested /i];
 const isHidden = (c) =>
@@ -106,17 +97,10 @@ const tidy = (text) =>
     .replace(/^([a-z])/, (m) => m.toUpperCase());
 
 /*
- * THE DOWNLOAD TABLE GOES FIRST, above everything.
- *
- * The reader: *"in the releases page, the table of what is what should be at
- * top, and then under it what's new — otherwise that table gets buried in the
- * 'read more' of the GitHub UI."* Exactly right, and it is not a matter of
- * taste: GitHub collapses a long release body behind a fold, and the one thing
- * every visitor to a release page came for is which file to click. A changelog
- * is what you read AFTER you have the app.
- *
- * So the notes are composed in three parts and joined at the end, rather than
- * pushed onto one array in the order they happen to be computed.
+ * The notes are composed as a branded head, the two reader-facing changelog
+ * sections, then installation guidance. Keeping those parts separate makes the
+ * publication order explicit instead of relying on whichever array happened
+ * to be filled first.
  */
 const REPO = 'https://github.com/AkshitIreddy/Alcove';
 const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/Alcove/main';
@@ -135,16 +119,11 @@ head.push('');
 head.push('</div>');
 head.push('');
 
-const total = parsed.length;
-const feats = parsed.filter((c) => c.type === 'feat' && !isHidden(c)).length;
-const fixes = parsed.filter((c) => c.type === 'fix' && !isHidden(c)).length;
-
 const lines = [];
 
 for (const section of SECTIONS) {
-  const items = parsed.filter((c) => c.type === section.key && !isHidden(c));
-  if (items.length === 0) continue;
-  lines.push(`### ${section.title}`);
+  const items = parsed.filter((c) => section.keys.includes(c.type) && !isHidden(c));
+  lines.push(`## ${section.title}`);
   // Group by scope so related work reads together.
   const byScope = new Map();
   for (const item of items) {
@@ -160,21 +139,15 @@ for (const section of SECTIONS) {
       lines.push(`- **${scope}** — ${unique.join('; ')}`);
     }
   }
+  if (items.length === 0) lines.push(`_${section.empty}_`);
   lines.push('');
 }
 
 const hidden = parsed.filter(
-  (c) => isHidden(c) || (c.type === 'other' && !SECTIONS.some((s) => s.key === c.type)),
+  (c) => isHidden(c) || !READER_FACING_TYPES.has(c.type),
 );
 if (hidden.length > 0) {
   lines.push(`_Plus ${hidden.length} maintenance change${hidden.length === 1 ? '' : 's'}._`);
-  lines.push('');
-}
-
-if (detailedChangelog !== '') {
-  lines.push('## Detailed changelog');
-  lines.push('');
-  lines.push(detailedChangelog);
   lines.push('');
 }
 
@@ -213,11 +186,9 @@ lines.push('');
  * smartscreen admin stuff"*. It described a warning dialog before the reader
  * had downloaded anything, which is a worse first impression than the dialog.
  *
- * THE TABLE COMES AFTER "What changed", which reverses where it started. It was
- * moved to the top so GitHub's fold could not bury it — then seen in place:
- * *"in releases can you actually put what changed at top"*. A release page that
- * opens with a download table reads like a download page; what a release is
- * FOR is what it changed, and the table is two lines below either way.
+ * THE TABLE COMES AFTER the reader-facing changelog. A release page that opens
+ * with a download table reads like a download page; what a release is FOR is
+ * what is new and what was fixed, and the table remains immediately below.
  */
 const install = [];
 install.push('## Which file do I want?');
@@ -249,19 +220,7 @@ install.push('');
 
 /* ------------------------------------------------------------------------- */
 
-const body = [];
-if (total > 0) {
-  const bits = [];
-  if (feats) bits.push(`${feats} improvement${feats === 1 ? '' : 's'}`);
-  if (fixes) bits.push(`${fixes} fix${fixes === 1 ? '' : 'es'}`);
-  body.push(
-    bits.length
-      ? `## What changed\n\n${bits.join(' and ')}${previous ? ` since ${previous}` : ''}.`
-      : `## What changed${previous ? `\n\nSince ${previous}.` : ''}`,
-  );
-  body.push('');
-}
-body.push(...lines);
+const body = [...lines];
 
 /*
  * Collapse any run of blank lines the three parts leave where they meet, so

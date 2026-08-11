@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import {
   changelogForTag,
   requiredChangelogForTag,
@@ -34,5 +35,33 @@ describe('release-note changelog embedding', () => {
     expect(() => requiredChangelogForTag('v9.9.9', notes)).toThrow(
       'no detailed changelog section for v9.9.9',
     );
+  });
+});
+
+describe('generated release-note order', () => {
+  it("opens with What's new and What's fixed without redundant changelog wrappers", () => {
+    const output = execFileSync(
+      process.execPath,
+      ['scripts/release-notes.mjs', 'v0.6.1'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    );
+
+    const title = output.indexOf('# Alcove v0.6.1');
+    const whatsNew = output.indexOf("## What's new");
+    const whatsFixed = output.indexOf("## What's fixed");
+    const install = output.indexOf('## Which file do I want?');
+
+    expect(title).toBeGreaterThanOrEqual(0);
+    expect(whatsNew).toBeGreaterThan(title);
+    expect(whatsFixed).toBeGreaterThan(whatsNew);
+    expect(install).toBeGreaterThan(whatsFixed);
+    expect(output).not.toContain('## What changed');
+    expect(output).not.toContain('## Detailed changelog');
+
+    // The release signature and install guidance stay part of the generated
+    // body even though the changelog is now the first reader-facing content.
+    expect(output).toContain('Every Alcove release');
+    expect(output).toContain('`SHA256SUMS.txt`');
+    expect(output).toContain('%APPDATA%\\com.alcove.app');
   });
 });

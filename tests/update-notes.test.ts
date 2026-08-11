@@ -16,14 +16,10 @@ const RELEASE = `<div align="center">
 
 </div>
 
-## What changed
-
-1 improvement and 4 fixes since v0.5.0.
-
-### What's new
+## What's new
 - **sound** — Pause ambience while hidden in tray
 
-### Fixed
+## What's fixed
 - **flip** — Let corner curls leave the book
 - **navigation** — Keep same-book page links in reader
 
@@ -57,15 +53,15 @@ describe('update release notes', () => {
 
     expect(blocks.map((block) => block.kind)).toEqual([
       'heading',
-      'paragraph',
-      'heading',
       'list',
       'heading',
       'list',
       'paragraph',
       'paragraph',
     ]);
-    expect(text).toContain('What changed');
+    expect(text).toContain("What's new");
+    expect(text).toContain("What's fixed");
+    expect(text).not.toContain('What changed');
     expect(text).toContain('Pause ambience while hidden in tray');
     expect(text).toContain('Keep same-book page links in reader');
     expect(text).not.toContain('<div');

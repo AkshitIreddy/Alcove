@@ -19,6 +19,40 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.6 — safer pictures and whole-import undo
+
+**One undo can put back an entire book before a script import.** Alcove now
+captures the exact page rows, authored page boundaries, source provenance and
+starting spread before inserting a Notebook Script. After a successful import,
+one `Ctrl+Z` restores that book-level checkpoint and removes only the leaves
+created by the insertion. Once the reader makes a new page edit, undo returns
+to the active editor as usual instead of retaining a stale whole-book action.
+
+**Pictures stop growing before they would displace the page.** Dragging an
+image resize handle now has a live ceiling derived from the room remaining on
+that leaf and the writing below it. The handle visibly stops at the largest
+safe display size rather than committing an oversized block and asking
+pagination to move surrounding content afterwards. Only the displayed width
+is limited; Alcove keeps the original image bytes and intrinsic resolution.
+
+**The large-image viewer shows the whole original before zooming.** Tall and
+wide pictures are fitted against the viewer's real content box at 100%, then
+remain zoomable and draggable. The image tools use centred, single-ink Alcove
+line drawings instead of platform glyphs whose baselines varied between
+systems. Right-click works directly on a picture and across the unused part of
+a narrow picture's writing row, so the normal block menu is always reachable.
+
+**Moving a block backwards is now one durable move.** When the source is the
+left leaf of the following spread, Alcove records its deletion before
+navigating to the destination. Returning to the old leaf can no longer rebuild
+the stale document and leave a second copy behind.
+
+**Trash has a deliberate dock menu.** Right-clicking the trash button offers
+**Open trash** and **Empty trash…** without changing the ordinary left-click or
+drag-to-trash behavior. Permanent emptying uses a second confirmation inside
+the same Alcove-styled context card and refreshes the shelf only after the
+operation succeeds.
+
 ## 0.6.5 — safer imported pages and books that stay put
 
 **Long script imports no longer repeat entire sections.** Alcove now preserves

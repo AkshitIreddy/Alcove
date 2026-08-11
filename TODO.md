@@ -1,5 +1,20 @@
 # Alcove — running TODO
 
+## ✅ 0.6.6 — safer pictures and whole-import undo (2026-08-11)
+
+- [x] Make one `Ctrl+Z` restore the complete pre-import book after a successful
+      multi-page Notebook Script insertion, including source provenance and
+      authored page boundaries.
+- [x] Persist both sides of a move to the previous page before changing spreads
+      so remounting the source leaf cannot reconstruct a duplicate block.
+- [x] Stop manual image enlargement at the current page's capacity while
+      retaining the original asset bytes and full resolution.
+- [x] Fit tall originals completely inside the large-image viewer at 100%, keep
+      zoom and drag-to-pan, and centre the image toolbar's Alcove line icons.
+- [x] Open the normal block context menu from either the picture itself or the
+      unused horizontal lane beside a narrow standalone picture.
+- [x] Add a right-click trash-dock menu with Open and a two-step Empty action.
+
 ## ✅ 0.6.5 — safer page flow and faithful book copies (2026-08-11)
 
 - [x] Keep manually positioned books at the exact chosen shelf location instead

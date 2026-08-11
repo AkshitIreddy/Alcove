@@ -37,8 +37,19 @@ const tag = label || 'unreleased';
 const previous = trySh(`git describe --tags --abbrev=0 ${rev}~1`);
 
 const range = previous ? `${previous}..${rev}` : rev;
-const log = trySh(`git log ${range} --no-merges --pretty=format:%s`);
-const subjects = log ? log.split('\n') : [];
+// Keep the subject for scanning and the first body paragraph for the useful
+// “what and why” detail. Record separators make multiline commit bodies
+// unambiguous. The test override exercises formatting without depending on
+// whatever commits happen to follow the current release tag.
+const log =
+  process.env.ALCOVE_RELEASE_LOG_TEST ??
+  trySh(`git log ${range} --no-merges --pretty=format:%x1e%B`);
+const messages = log
+  ? log
+      .split('\x1e')
+      .map((message) => message.trim())
+      .filter(Boolean)
+  : [];
 
 // Reader-facing sections. A release opens with these two answers, in this
 // order, without wrapping them in another "What changed" heading. Performance
@@ -80,11 +91,27 @@ const isHidden = (c) =>
   HIDDEN_TYPE_SCOPES.has(`${c.type}:${c.scope}`) ||
   HIDDEN_TEXT.some((pattern) => pattern.test(c.text));
 
-const parsed = subjects
-  .map((subject) => {
+const parsed = messages
+  .map((message) => {
+    const [subject = '', ...bodyLines] = message.split(/\r?\n/);
     const match = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/.exec(subject);
-    if (!match) return { type: 'other', scope: '', text: subject };
-    return { type: match[1], scope: match[2] ?? '', text: match[3] };
+    const paragraphs = bodyLines
+      .join('\n')
+      .split(/\n\s*\n/)
+      .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
+      .filter(
+        (paragraph) =>
+          paragraph !== '' &&
+          !/^(?:co-authored-by|signed-off-by|breaking change):/i.test(paragraph),
+      );
+    const detail = paragraphs[0] ?? '';
+    if (!match) return { type: 'other', scope: '', text: subject, detail };
+    return {
+      type: match[1],
+      scope: match[2] ?? '',
+      text: match[3],
+      detail,
+    };
   })
   // Drop the noise commits and any interim "partial"/"wip" markers.
   .filter((c) => !/\b(wip|partial)\b/i.test(c.text));
@@ -129,14 +156,31 @@ for (const section of SECTIONS) {
   for (const item of items) {
     const scope = item.scope || 'general';
     if (!byScope.has(scope)) byScope.set(scope, []);
-    byScope.get(scope).push(tidy(item.text));
+    byScope.get(scope).push({ text: tidy(item.text), detail: item.detail });
   }
-  for (const [scope, texts] of [...byScope.entries()].sort()) {
-    const unique = [...new Set(texts)];
+  for (const [scope, entries] of [...byScope.entries()].sort()) {
+    const unique = [
+      ...new Map(
+        entries.map((entry) => [
+          `${entry.text}\u0000${entry.detail}`,
+          entry,
+        ]),
+      ).values(),
+    ];
     if (scope === 'general') {
-      for (const text of unique) lines.push(`- ${text}`);
+      for (const entry of unique) {
+        lines.push(`- ${entry.text}`);
+        if (entry.detail) lines.push(`  ${entry.detail}`);
+      }
+    } else if (unique.length === 1) {
+      lines.push(`- **${scope}** — ${unique[0].text}`);
+      if (unique[0].detail) lines.push(`  ${unique[0].detail}`);
     } else {
-      lines.push(`- **${scope}** — ${unique.join('; ')}`);
+      lines.push(`- **${scope}**`);
+      for (const entry of unique) {
+        lines.push(`  - ${entry.text}`);
+        if (entry.detail) lines.push(`    ${entry.detail}`);
+      }
     }
   }
   if (items.length === 0) lines.push(`_${section.empty}_`);

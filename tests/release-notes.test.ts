@@ -64,4 +64,36 @@ describe('generated release-note order', () => {
     expect(output).toContain('`SHA256SUMS.txt`');
     expect(output).toContain('%APPDATA%\\com.alcove.app');
   });
+
+  it('adds the first explanatory commit paragraph beneath its summary', () => {
+    const output = execFileSync(
+      process.execPath,
+      ['scripts/release-notes.mjs', 'HEAD'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ALCOVE_RELEASE_LOG_TEST: [
+            '\u001efix(editor): keep a visual unit together',
+            '',
+            'Move the heading and its short setup with the diagram so the page reads as one composed idea.',
+            '',
+            '\u001efeat(studio): add a useful control',
+            '',
+            'The control is discoverable from the existing panel and persists its value.',
+          ].join('\n'),
+        },
+      },
+    );
+
+    expect(output).toContain('- **editor** — Keep a visual unit together');
+    expect(output).toContain(
+      'Move the heading and its short setup with the diagram so the page reads as one composed idea.',
+    );
+    expect(output).toContain('- **studio** — Add a useful control');
+    expect(output).toContain(
+      'The control is discoverable from the existing panel and persists its value.',
+    );
+  });
 });

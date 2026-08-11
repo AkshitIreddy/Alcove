@@ -19,6 +19,46 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.5 — safer imported pages and books that stay put
+
+**Long script imports no longer repeat entire sections.** Alcove now preserves
+the newest in-memory document while protected page boundaries reorder the
+durable rows, closing the debounce race that could resurrect already-moved
+content and emit it again. Before the insert dialog closes, every populated
+spread is mounted through the real editor and allowed to settle; the reader
+returns to the original spread only after pagination is stable.
+
+**Large pictures protect the writing around them.** Image dimensions are read
+before insertion and the page chooses a conservative initial display width from
+its remaining capacity. An oversized upload therefore shrinks on the paper
+instead of immediately pushing a chain of neighbouring blocks onto later
+pages. Alcove keeps the original bytes and intrinsic resolution intact for the
+zoomable full-screen viewer, and the reader can still resize the page copy.
+
+**Pages and blocks can be reorganised where they are read.** The right-click
+menu can add a blank page immediately before or after the current leaf, while
+the first block of a following page can move back into available room on the
+previous one. Native drag-and-drop now crosses the two independent page editors
+for both text and media rather than silently refusing the move.
+
+**Book placement and duplication preserve the reader's choices.** Moving a
+book stores its exact visual shelf anchor and generated neighbours yield around
+it, so a refresh cannot pull it back toward the nearest cluster. Duplicate now
+asks for either the complete book or its cover with blank pages; both choices
+retain the source's procedural seed, emblem, cover metadata and binding instead
+of rerolling everything except colour.
+
+**AI-requested images arrive in the right shape.** The downloadable Notebook
+Script guide tells assistants to give their image-generation counterpart a
+role, orientation, exact aspect ratio and approximate pixel dimensions. It
+offers practical landscape, square and portrait examples without prescribing
+the subject or limiting the assistant's creative direction.
+
+**Inline emoji clear the page rules.** Emoji sequences receive a small
+display-only lift so symbols sit with Alcove's handwriting just above a ruled
+line instead of cutting through it. Stored TipTap JSON, Notebook Script and all
+exports remain unchanged.
+
 ## 0.6.4 — cleaner AI notes and more faithful page typography
 
 **AI-written formulae now accept ordinary TeX spacing.** Alcove already

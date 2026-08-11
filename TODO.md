@@ -1,5 +1,23 @@
 # Alcove — running TODO
 
+## ✅ 0.6.5 — safer page flow and faithful book copies (2026-08-11)
+
+- [x] Keep manually positioned books at the exact chosen shelf location instead
+      of pulling them back toward the nearest generated cluster.
+- [x] Offer cover-only and full-book duplication while preserving the exact
+      procedural exterior, emblem, cover metadata and pinned binding.
+- [x] Add pages before or after an existing leaf from its context menu and move
+      text or media blocks across page boundaries, including back into space on
+      the previous page.
+- [x] Eliminate the stale-save race that could duplicate whole imported
+      sections, and settle every populated spread before completing insertion.
+- [x] Fit oversized uploads to the available page space without resampling the
+      original image used by the full-screen viewer.
+- [x] Tell image-generating assistants the intended role, orientation, aspect
+      ratio and approximate pixel dimensions for every requested picture.
+- [x] Keep inline emoji just above Alcove's writing rules without changing the
+      stored document or its exports.
+
 ## ✅ 0.6.4 — page typography and AI-layout repair (2026-08-11)
 
 - [x] Align complete inline emoji sequences with Alcove's handwritten text

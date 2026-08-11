@@ -20,7 +20,7 @@
  * - Spread `i` shows slot `2i` on the left leaf and `2i + 1` on the right.
  */
 
-import type { PageDoc, PageStyle } from '../data/types';
+import type { Page, PageDoc, PageStyle } from '../data/types';
 import type { FlipDirection } from '../flip/math';
 
 /** Ids for the current spread plus both neighbours; null = no page there. */
@@ -206,6 +206,28 @@ export function newPageDoc(pageStyle: PageStyle, lineHeightPx?: number): PageDoc
   return { type: 'doc', attrs, content: [] };
 }
 
+/**
+ * Apply a freshly loaded durable page order without replacing documents that
+ * are newer in the mounted editor mirror.
+ *
+ * Ordinal-shifting writes (notably a protected-boundary spill) must query the
+ * database for the new order. A live editor's overflow removal reaches memory
+ * synchronously but reaches the database on its save debounce, so the same
+ * database result can still contain the older full document. Preserve only
+ * the live `doc`; every durable row field, including its new ordinal, remains
+ * authoritative.
+ */
+export function mergePageOrderPreservingLiveDocs(
+  ordered: readonly Page[],
+  current: readonly Page[],
+): Page[] {
+  const liveDocs = new Map(current.map((page) => [page.id, page.doc]));
+  return ordered.map((page) => {
+    const live = liveDocs.get(page.id);
+    return live === undefined ? page : { ...page, doc: live };
+  });
+}
+
 /* ----------------------------------------------------------------------------
    Pagination overflow — merging carried blocks into the next page's doc
    -------------------------------------------------------------------------- */
@@ -237,6 +259,43 @@ export function prependBlocksToDoc(
   const existing = Array.isArray(doc.content) ? doc.content : [];
   const keep = docHasContent(doc) ? existing : [];
   return { ...doc, content: [...blocks, ...keep] };
+}
+
+/**
+ * Append top-level blocks to the real tail of a page.
+ *
+ * TipTap keeps an empty trailing paragraph after many special blocks so the
+ * reader can continue typing. That paragraph is editor bookkeeping, not a
+ * document boundary: a block pulled back from the following page belongs
+ * before it.
+ */
+export function appendBlocksToDoc(
+  doc: PageDoc | null | undefined,
+  blocks: readonly unknown[],
+  fallbackAttrs?: Record<string, unknown>,
+): PageDoc {
+  if (!doc) {
+    return {
+      type: 'doc',
+      ...(fallbackAttrs ? { attrs: { ...fallbackAttrs } } : {}),
+      content: [...blocks],
+    };
+  }
+  const existing = Array.isArray(doc.content) ? [...doc.content] : [];
+  while (existing.length > 0) {
+    const tail = existing[existing.length - 1] as
+      | { type?: unknown; content?: unknown }
+      | undefined;
+    if (
+      tail?.type !== 'paragraph' ||
+      (Array.isArray(tail.content) && tail.content.length > 0)
+    ) {
+      break;
+    }
+    existing.pop();
+  }
+  const keep = docHasContent(doc) ? existing : [];
+  return { ...doc, content: [...keep, ...blocks] };
 }
 
 /* ----------------------------------------------------------------------------

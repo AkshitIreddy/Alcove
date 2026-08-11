@@ -512,7 +512,10 @@ const INSERT_ITEMS: readonly ContextMenuItem[] = [
 // ---------------------------------------------------------------------------
 
 export interface PageContextMenuActions {
-  readonly onDeletePage: () => void;
+  readonly onMoveBlockToPrevious?: (context: ContextMenuContext) => void;
+  readonly onInsertPageBefore?: () => void;
+  readonly onInsertPageAfter?: () => void;
+  readonly onDeletePage?: () => void;
 }
 
 export function buildBlockContextMenu(
@@ -599,17 +602,44 @@ export function buildBlockContextMenu(
   ];
 
   if (pageActions !== undefined) {
-    entries.push(
-      { kind: 'divider' },
-      {
+    entries.push({ kind: 'divider' });
+    if (pageActions.onMoveBlockToPrevious !== undefined) {
+      entries.push({
+        kind: 'item',
+        id: 'move-block-to-previous-page',
+        title: 'Move to previous page',
+        glyph: '↥',
+        run: (context) => pageActions.onMoveBlockToPrevious?.(context),
+      });
+    }
+    if (pageActions.onInsertPageBefore !== undefined) {
+      entries.push({
+        kind: 'item',
+        id: 'insert-page-before',
+        title: 'Add page before',
+        glyph: '↤',
+        run: () => pageActions.onInsertPageBefore?.(),
+      });
+    }
+    if (pageActions.onInsertPageAfter !== undefined) {
+      entries.push({
+        kind: 'item',
+        id: 'insert-page-after',
+        title: 'Add page after',
+        glyph: '↦',
+        run: () => pageActions.onInsertPageAfter?.(),
+      });
+    }
+    if (pageActions.onDeletePage !== undefined) {
+      entries.push({
         kind: 'item',
         id: 'delete-page',
         title: 'Delete this page',
         glyph: '⌫',
         danger: true,
-        run: () => pageActions.onDeletePage(),
-      },
-    );
+        run: () => pageActions.onDeletePage?.(),
+      });
+    }
   }
 
   return entries;

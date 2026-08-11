@@ -31,7 +31,7 @@ import {
   untrack,
   type JSX,
 } from 'solid-js';
-import type { JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
 import {
@@ -48,6 +48,7 @@ import {
   deletePage,
   getPage,
   insertPageAfter,
+  insertPageBefore,
   isPageFlowStart,
   listPages,
   persistPageDocIdentity,
@@ -79,6 +80,7 @@ import {
   type PageSnapshot,
 } from '../editor/history/pageHistory';
 import { getPageEditor } from '../editor/instances';
+import { topLevelBlockAt } from '../editor/menu/blockOps';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
@@ -145,10 +147,12 @@ import {
 import { panelEdge } from './rail/panelPush';
 import {
   SPREAD_FIT_REST,
+  appendBlocksToDoc,
   canFlipSpread,
   docHasContent,
   fitSpreadToRoom,
   leftSlot,
+  mergePageOrderPreservingLiveDocs,
   newPageDoc,
   pagesToCreateOnFlip,
   prependBlocksToDoc,
@@ -412,6 +416,27 @@ export default function BookView(): JSX.Element {
     );
   };
 
+  /**
+   * Refresh durable ordinals without resurrecting an editor's older document.
+   *
+   * A live overflow drain publishes its trimmed source to `pages()`
+   * synchronously, then saves SQLite on the editor debounce. If that overflow
+   * meets a protected boundary, inserting the spill shifts ordinals and needs
+   * a fresh ordered row list immediately. Replacing `pages()` wholesale with
+   * that list used to bring the pre-drain SQLite document back during the
+   * debounce window. The remounted source then emitted the same tail again,
+   * duplicating an entire section under a second page id.
+   *
+   * Storage owns row order and metadata; the in-memory editor mirror owns the
+   * newest document for every row already present.
+   */
+  const refreshPageOrderPreservingLiveDocs = async (
+    bookId: string,
+  ): Promise<void> => {
+    const ordered = await listPages(bookId);
+    setPages((current) => mergePageOrderPreservingLiveDocs(ordered, current));
+  };
+
   // External doc rewrites (overflow carries, page-default sweeps) bump a
   // per-page version; leaves key on id@version so the mounted editor remounts
   // with the fresh doc (PageEditor reads props once at mount).
@@ -581,6 +606,106 @@ export default function BookView(): JSX.Element {
       setSpreadIndex(target);
     }
     // target === current spread: the new page simply appears on the right leaf.
+  };
+
+  /**
+   * Create a styled blank leaf beside an existing page and land on it.
+   *
+   * This shares `appendLane` with overflow, script boundaries, forward-turn
+   * reserves and the rail's append action. Without that one lane, a right-click
+   * insertion racing pagination can shift the same ordinals twice and leave
+   * two pages claiming one position.
+   */
+  const insertBlankPageBeside = async (
+    anchorId: string,
+    side: 'before' | 'after',
+  ): Promise<void> => {
+    const bookId = session()?.book.id;
+    if (!bookId) return;
+    const doc = newPageDoc(bookPageStyle(), bookLineHeight());
+    const pending = appendLane.then(async (): Promise<Page | null> => {
+      if (session()?.book.id !== bookId) return null;
+      const created =
+        side === 'before'
+          ? await insertPageBefore(anchorId, { doc })
+          : await insertPageAfter(anchorId, { doc });
+      if (created !== null && session()?.book.id === bookId) {
+        await refreshPageOrderPreservingLiveDocs(bookId);
+      }
+      return created;
+    });
+    appendLane = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    const created = await pending.catch(() => null);
+    if (created === null) {
+      notify('could not add that page', 'error');
+      return;
+    }
+    setSpreadIndex(spreadOfSlot(created.ord));
+    setFocusedSide(created.ord % 2 === 0 ? 'left' : 'right');
+    flipApi?.invalidateSnapshots();
+    notify(side === 'before' ? 'page added before' : 'page added after');
+  };
+
+  /**
+   * Pull the leading block of a page back into the previous leaf.
+   *
+   * Only the leading block may cross this boundary: moving a middle block
+   * would silently reorder it ahead of its own page's earlier content. The
+   * previous page remounts immediately and runs the normal capacity drain; if
+   * it was already full, that same block naturally flows forward again rather
+   * than being clipped or forcing an illegal page scrollbar.
+   */
+  const moveBlockToPreviousPage = (
+    pageId: string,
+    editor: Editor,
+    pos: number,
+  ): void => {
+    const slot = pages().findIndex((page) => page.id === pageId);
+    if (slot <= 0) return;
+    const block = topLevelBlockAt(editor, pos);
+    if (block === null) return;
+    if (block.pos !== 0) {
+      notify('only the first block can move to the previous page', 'error');
+      return;
+    }
+    const previous = pages()[slot - 1];
+    if (previous === undefined) return;
+
+    const moved = block.node.toJSON();
+    const tr = editor.state.tr.delete(
+      block.pos,
+      block.pos + block.node.nodeSize,
+    );
+    editor.view.dispatch(tr.setMeta('addToHistory', false));
+    const sourceDoc = editor.getJSON() as PageDoc;
+
+    const fallbackAttrs: Record<string, unknown> = {
+      pageStyle: bookPageStyle(),
+    };
+    const line = bookLineHeight();
+    if (line !== undefined) fallbackAttrs.lineHeightPx = line;
+    const merged = appendBlocksToDoc(previous.doc, [moved], fallbackAttrs);
+    updatePageDoc(previous.id, merged);
+    bumpDocVersion(previous.id);
+    flipApi?.invalidateSnapshots();
+
+    const pending = appendLane.then(async () => {
+      await savePageDoc(pageId, sourceDoc);
+      await savePageDoc(previous.id, merged);
+    });
+    appendLane = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    setSpreadIndex(spreadOfSlot(slot - 1));
+    setFocusedSide((slot - 1) % 2 === 0 ? 'left' : 'right');
+    withPageEditor(previous.id, (instance) => instance.commands.focus('end'));
+    notify('block moved to the previous page');
   };
 
   /**
@@ -2259,6 +2384,18 @@ export default function BookView(): JSX.Element {
             <PaginatedPageEditor
               pageId={current.id}
               initialDoc={current.doc}
+              onInsertPageBefore={() =>
+                void insertBlankPageBeside(current.id, 'before')
+              }
+              onInsertPageAfter={() =>
+                void insertBlankPageBeside(current.id, 'after')
+              }
+              onMoveBlockToPrevious={
+                pages().findIndex((candidate) => candidate.id === current.id) > 0
+                  ? (editor, pos) =>
+                      moveBlockToPreviousPage(current.id, editor, pos)
+                  : undefined
+              }
               onDeletePage={
                 pages().length > 1
                   ? () => void deletePageAt(current.id)

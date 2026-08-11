@@ -119,6 +119,51 @@ interface DragSession {
   frame: number | undefined;
 }
 
+/**
+ * A spread mounts one independent ProseMirror EditorView per page. ProseMirror
+ * can move a selection inside one view, but its private `view.dragging` slice
+ * is not visible to the editor on the other leaf. Keep the one grabbed
+ * top-level node here for the duration of the native drag so the destination
+ * page can perform an explicit move rather than a lossy copy.
+ */
+interface CrossPageDrag {
+  readonly sourcePageId: string;
+  readonly sourceEditor: Editor;
+  readonly sourcePos: number;
+  readonly sourceNode: ProseMirrorNode;
+  readonly json: Record<string, unknown>;
+}
+
+let crossPageDrag: CrossPageDrag | null = null;
+
+function firstTopLevelAtSelection(editor: Editor): {
+  pos: number;
+  node: ProseMirrorNode;
+} | null {
+  const { doc, selection } = editor.state;
+  const $pos = doc.resolve(selection.from);
+  const pos = $pos.depth >= 1 ? $pos.before(1) : selection.from;
+  const node = doc.nodeAt(pos) ?? $pos.nodeAfter ?? $pos.nodeBefore;
+  return node === null ? null : { pos, node };
+}
+
+/** Resolve the pointer to a top-level insertion boundary on another page. */
+function crossPageInsertPos(editor: Editor, event: DragEvent): number {
+  const view = editor.view;
+  const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (hit === null) return view.state.doc.content.size;
+  const $pos = view.state.doc.resolve(hit.pos);
+  let pos = $pos.depth >= 1 ? $pos.before(1) : hit.pos;
+  const node = view.state.doc.nodeAt(pos);
+  if (node === null) return Math.max(0, Math.min(pos, view.state.doc.content.size));
+  const dom = view.nodeDOM(pos);
+  if (dom instanceof Element) {
+    const rect = dom.getBoundingClientRect();
+    if (event.clientY > rect.top + rect.height / 2) pos += node.nodeSize;
+  }
+  return Math.max(0, Math.min(pos, view.state.doc.content.size));
+}
+
 export interface DragHandleWiring {
   /** Element factory for `DragHandle.configure({ render })`. */
   render: () => HTMLElement;
@@ -209,6 +254,24 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
     document.documentElement.setAttribute(DRAGGING_ATTR, 'true');
     document.addEventListener('dragover', onDragOver, { passive: true });
     if (scroller !== null) session.frame = requestAnimationFrame(autoScrollStep);
+
+    // The extension calls this hook immediately BEFORE it selects the handle's
+    // current node. Capture one task later, after its dragHandler has installed
+    // the NodeRangeSelection, but long before a person can reach the other
+    // page with the pointer.
+    const started = session;
+    window.setTimeout(() => {
+      if (session !== started || editor.isDestroyed) return;
+      const block = firstTopLevelAtSelection(editor);
+      if (block === null) return;
+      crossPageDrag = {
+        sourcePageId: pageId,
+        sourceEditor: editor,
+        sourcePos: block.pos,
+        sourceNode: block.node,
+        json: block.node.toJSON() as Record<string, unknown>,
+      };
+    }, 0);
   };
 
   const endDrag = (): void => {
@@ -218,6 +281,7 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
     if (current.frame !== undefined) cancelAnimationFrame(current.frame);
     document.removeEventListener('dragover', onDragOver);
     document.documentElement.removeAttribute(DRAGGING_ATTR);
+    if (crossPageDrag?.sourceEditor === editorRef) crossPageDrag = null;
 
     // Deferred one task: the library's own dragend bookkeeping and the drop
     // transaction both have to land first, or the reset races them.
@@ -249,6 +313,51 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
     editor.view.dispatch(tr);
   };
 
+  /** Move a grabbed top-level block into this editor when it is another page. */
+  const onCrossPageDrop = (event: DragEvent): void => {
+    const target = editorRef;
+    const moving = crossPageDrag;
+    if (
+      target === null ||
+      target.isDestroyed ||
+      moving === null ||
+      moving.sourcePageId === pageId ||
+      moving.sourceEditor.isDestroyed ||
+      !(event.target instanceof Node) ||
+      !target.view.dom.contains(event.target)
+    ) {
+      return;
+    }
+
+    const sourceNode = moving.sourceEditor.state.doc.nodeAt(moving.sourcePos);
+    if (sourceNode === null || !sourceNode.eq(moving.sourceNode)) return;
+    let inserted: ProseMirrorNode;
+    try {
+      inserted = target.schema.nodeFromJSON(moving.json);
+    } catch {
+      return;
+    }
+    const at = crossPageInsertPos(target, event);
+
+    // Capture phase wins before either DragHandle plugin's document-level drop
+    // listener. Source first is the pagination ordering rule: if the target is
+    // too full and immediately carries this node forward, it must prepend into
+    // a source document from which the old copy has already gone.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    moving.sourceEditor.view.dispatch(
+      moving.sourceEditor.state.tr
+        .delete(moving.sourcePos, moving.sourcePos + sourceNode.nodeSize)
+        .setMeta('addToHistory', false),
+    );
+    target.view.dispatch(
+      target.state.tr.insert(at, inserted).setMeta('addToHistory', false),
+    );
+    target.chain().focus(Math.min(at + 1, target.state.doc.content.size)).run();
+    crossPageDrag = null;
+  };
+
   return {
     render: () => {
       const handle = buildDragHandleElement();
@@ -271,8 +380,10 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
 
     attach: (editor: Editor) => {
       editorRef = editor;
+      document.addEventListener('drop', onCrossPageDrop, true);
       return () => {
         endDrag();
+        document.removeEventListener('drop', onCrossPageDrop, true);
         if (hoistFrame !== undefined) {
           cancelAnimationFrame(hoistFrame);
           hoistFrame = undefined;

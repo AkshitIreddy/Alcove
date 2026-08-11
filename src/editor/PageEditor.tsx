@@ -179,6 +179,12 @@ export interface PageEditorProps {
   readonly initialDoc: PageDoc;
   /** Page-level action surfaced at the bottom of the right-click menu. */
   readonly onDeletePage?: () => void;
+  /** Add a blank leaf immediately before this page. */
+  readonly onInsertPageBefore?: () => void;
+  /** Add a blank leaf immediately after this page. */
+  readonly onInsertPageAfter?: () => void;
+  /** Move this page's first block into available room on the previous leaf. */
+  readonly onMoveBlockToPrevious?: (editor: Editor, pos: number) => void;
   /**
    * Fires on every editor update with the fresh doc JSON (same payload the
    * debounced save persists). The spread host uses it to keep its in-memory
@@ -876,13 +882,27 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         contextmenu: (_view, event: Event): boolean => {
           const instance = editor();
           if (!instance || !(event instanceof MouseEvent)) return false;
+          const hasPageActions =
+            props.onMoveBlockToPrevious !== undefined ||
+            props.onInsertPageBefore !== undefined ||
+            props.onInsertPageAfter !== undefined ||
+            props.onDeletePage !== undefined;
           return handleEditorContextMenu(
             instance,
             event,
             notify,
-            props.onDeletePage === undefined
+            !hasPageActions
               ? undefined
-              : { onDeletePage: props.onDeletePage },
+              : {
+                  onMoveBlockToPrevious:
+                    props.onMoveBlockToPrevious === undefined
+                      ? undefined
+                      : ({ editor: contextEditor, pos }) =>
+                          props.onMoveBlockToPrevious?.(contextEditor, pos),
+                  onInsertPageBefore: props.onInsertPageBefore,
+                  onInsertPageAfter: props.onInsertPageAfter,
+                  onDeletePage: props.onDeletePage,
+                },
           );
         },
       },

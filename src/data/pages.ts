@@ -183,16 +183,15 @@ export async function createPage(input: CreatePageInput): Promise<Page> {
   return page;
 }
 
-/** Insert a page directly after an existing page, preserving book order. */
-export async function insertPageAfter(
-  anchorId: string,
+/** Open one ordinal in a book, then create the new page in that exact gap. */
+async function insertPageAt(
+  bookId: string,
+  ord: number,
   input: Omit<CreatePageInput, 'bookId' | 'ord'>,
-): Promise<Page | null> {
-  const anchor = await getPage(anchorId);
-  if (anchor === null) return null;
+): Promise<Page> {
   const db = await getDb();
-  const following = (await listPages(anchor.bookId))
-    .filter((page) => page.ord > anchor.ord)
+  const following = (await listPages(bookId))
+    .filter((page) => page.ord >= ord)
     .sort((a, b) => b.ord - a.ord);
   for (const page of following) {
     await db.execute('UPDATE pages SET ord = $1 WHERE id = $2', [
@@ -207,7 +206,29 @@ export async function insertPageAfter(
       page.updatedAt,
     );
   }
-  return createPage({ ...input, bookId: anchor.bookId, ord: anchor.ord + 1 });
+  return createPage({ ...input, bookId, ord });
+}
+
+/** Insert a page directly after an existing page, preserving book order. */
+export async function insertPageAfter(
+  anchorId: string,
+  input: Omit<CreatePageInput, 'bookId' | 'ord'>,
+): Promise<Page | null> {
+  const anchor = await getPage(anchorId);
+  return anchor === null
+    ? null
+    : insertPageAt(anchor.bookId, anchor.ord + 1, input);
+}
+
+/** Insert a page directly before an existing page, preserving book order. */
+export async function insertPageBefore(
+  anchorId: string,
+  input: Omit<CreatePageInput, 'bookId' | 'ord'>,
+): Promise<Page | null> {
+  const anchor = await getPage(anchorId);
+  return anchor === null
+    ? null
+    : insertPageAt(anchor.bookId, anchor.ord, input);
 }
 
 /**

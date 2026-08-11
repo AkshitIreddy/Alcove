@@ -20,6 +20,16 @@ const SCROLLBAR_HEIGHT_PX = 12;
 const SCROLLBAR_BORDER_PX = 3;
 const MIN_THUMB_PX = 24;
 
+/**
+ * A faux scrollbar needs a containing block, but the snapshot geometry pass
+ * may already have made the wrapper absolute. Replacing that with `relative`
+ * makes its frozen `left` become a second offset and clips the table in the
+ * raster. Only an actually-static wrapper needs the fallback positioning.
+ */
+export function tableChromeNeedsContainingBlock(position: string): boolean {
+  return position === 'static';
+}
+
 function finitePositive(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
@@ -61,7 +71,9 @@ export function prepareSnapshotTableChrome(root: HTMLElement): () => void {
     // Do this even when the source fits. The foreignObject clone can acquire
     // a one-pixel overflow from rounded computed widths/font metrics and then
     // invent a platform scrollbar that never existed in the live page.
-    wrapper.style.setProperty('position', 'relative', 'important');
+    if (tableChromeNeedsContainingBlock(getComputedStyle(wrapper).position)) {
+      wrapper.style.setProperty('position', 'relative', 'important');
+    }
     wrapper.style.setProperty('overflow-x', 'hidden', 'important');
     wrapper.style.setProperty('scrollbar-width', 'none', 'important');
     wrapper.style.setProperty('box-sizing', 'border-box', 'important');

@@ -25,7 +25,10 @@ import {
   type OffscreenLeafContext,
   type OffscreenPageSize,
 } from '../editor/script/exporters/capture';
-import { trailingOverflowCount } from '../editor/pagination';
+import {
+  trailingCompanionCount,
+  trailingOverflowCount,
+} from '../editor/pagination';
 import { loadBacklinks } from '../search/backlinks';
 import { visualScale } from '../views/spread';
 import { snapshotPixelRatio } from './math';
@@ -400,10 +403,29 @@ function settleStaged(
     .map((child) => (child.getBoundingClientRect().bottom - rootRect.top) / scale);
   const padBottom = Number.parseFloat(getComputedStyle(prose).paddingBottom) || 0;
 
-  const remove = Math.min(
+  const overflowCount = Math.min(
     trailingOverflowCount(bottoms, capacity, padBottom),
     realCount - 1,
   );
+  const textOf = (value: unknown): string => {
+    if (Array.isArray(value)) return value.map(textOf).join(' ');
+    if (value === null || typeof value !== 'object') return '';
+    const record = value as Record<string, unknown>;
+    return `${typeof record.text === 'string' ? record.text : ''} ${textOf(record.content)}`
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  const companionCount = trailingCompanionCount(
+    content.slice(0, realCount).map((block) => {
+      const record = block as Record<string, unknown>;
+      return {
+        type: typeof record.type === 'string' ? record.type : '',
+        text: textOf(block),
+      };
+    }),
+    overflowCount,
+  );
+  const remove = Math.min(overflowCount + companionCount, realCount - 1);
   if (remove < 1) return;
 
   for (let i = realCount - remove; i < realCount; i += 1) {

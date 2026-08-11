@@ -1,6 +1,25 @@
 # Alcove — running TODO
 
-## ✅ BOOK APOCALYPSE — complete, uncommitted (2026-08-10)
+## ✅ 0.6.3 — AI authoring and rich-import release scope (2026-08-11)
+
+- [x] Give the downloadable AI guide selectable Creative Directions, a proper
+      custom-brief editor and the complete live paper/card/callout/lettering/
+      diagram/sticker/trim catalogue; keep Paste Script focused on insertion.
+- [x] Copy parser diagnostics, accept the expanded paper/effect vocabulary,
+      resolve requested open images or upload fallbacks, and preserve document-
+      wide values across protected `::page` boundaries.
+- [x] Keep multi-page imports on the chosen leaf/spread, reuse fresh blank
+      leaves, reflow after large images decode, and carry headings/lead-ins with
+      the blocks they introduce.
+- [x] Add durable browser-development media, a zoomable drag-to-pan image
+      viewer, corrected TeX ceilings/fractions/fitting, and stable table/list
+      snapshot geometry.
+- [x] Add copy/paste actions to colour wells; centre the Creative Direction
+      diamond optically; refresh Welcome onboarding and all public manuals.
+- [x] Put What's new and What's fixed first in generated GitHub release notes
+      and reuse the compiled Windows binary for the offline installer bundle.
+
+## ✅ BOOK APOCALYPSE — shipped in 0.6.0 (2026-08-10)
 
 This is the authoritative book-status block. The owner authorized a book-only
 hard reset with forced migration; shelf carpentry, wallpaper and room options

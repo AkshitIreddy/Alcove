@@ -275,8 +275,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->316<!--/f--> of <!--f:srcFiles-->325<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7099<!--/f--> lines of it.
+<!--f:srcDocstrings-->318<!--/f--> of <!--f:srcFiles-->331<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7121<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -827,12 +827,15 @@ is silently rewritten to the existing one on the way in.
 
 **The spec is generated, and the generation is gated.**
 [`src-tauri/resources/notebook-script-spec.md`](../../src-tauri/resources/notebook-script-spec.md)
-is the file a person copies into a chatbot — <!--f:specLines-->907<!--/f--> lines,
+is the file a person copies into a chatbot — <!--f:specLines-->1167<!--/f--> lines,
 built by [`scripts/gen-spec.mjs`](../../scripts/gen-spec.mjs) from
-[`src/script/vocab.ts`](../../src/script/vocab.ts) and
+[`src/script/vocab.ts`](../../src/script/vocab.ts), the live domains in
+[`src/editor/effects/vocabulary.ts`](../../src/editor/effects/vocabulary.ts) and
 [`scripts/spec-template.md`](../../scripts/spec-template.md), and inlined a second time
 into [`src/editor/script/spec.ts`](../../src/editor/script/spec.ts) so the rail's *copy
-spec* button needs no file read. The vocabulary tables carry doc metadata whose
+spec* button needs no file read. Creative Direction prepends a structured mood,
+latitude and quality brief at copy/download time without modifying the parser
+authority or the plain Insert Script dialog. The vocabulary tables carry doc metadata whose
 *types* make an undocumented name a compile error rather than a silent gap, and
 `npm run spec:check` regenerates in memory and fails if the checked-in copies
 differ. Without that,

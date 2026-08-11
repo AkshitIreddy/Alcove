@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.6.2-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.6.2"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.6.3-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.6.3"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -115,7 +115,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
 **Part 1 — Using Alcove** — for the person writing in it. No code below this line.
 
 - [What's in the box](#whats-in-the-box) — The five things that make this different from a folder of Markdown files
-- [Written with an AI](#written-with-an-ai) — Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt
+- [Written with an AI](#written-with-an-ai) — Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction
 - [Download and install](#download-and-install) — The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes
 - [A tour](#a-tour) — The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher
 - [Writing in a book](#writing-in-a-book) — Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end
@@ -150,7 +150,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
   start with. Books are drawn objects, not rows in a list — you recognise yours
   by its binding.
 - **A language an AI can write for you.** *Copy the format for your AI* puts
-  <!--f:specLines-->907<!--/f--> lines of generated grammar on your clipboard;
+  <!--f:specLines-->1167<!--/f--> lines of generated grammar on your clipboard;
   any chatbot then writes you a note in it, and *paste a script in* turns that
   answer into formatted pages — sticky notes, callouts, highlights, and trees,
   graphs and timelines drawn as real diagrams rather than pasted as pictures.
@@ -178,7 +178,7 @@ in a marker `npx vitest run` recomputes — see
 
 <!-- gen:lift-ai -->
 ## Written with an AI
-<!--nav: Notebook Script is a language a chatbot can write for you, the spec is one button, and the design packs generate their own prompt-->
+<!--nav: Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction-->
 
 Most assistants hand you plain text. Alcove is built so an
 assistant can write the **whole page** — the sticky notes, the callouts, the
@@ -187,7 +187,7 @@ diagrams — and so you never have to teach it how.
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
 
 **Take the grammar** — *download the format for your AI* saves
-<!--f:specLines-->907<!--/f--> lines generated from the parser's own tables, so
+<!--f:specLines-->1167<!--/f--> lines generated from the parser's own tables, so
 it cannot describe a language the app would refuse. **Ask for a note** in your
 own words and have the assistant return an attached `.md` file. **Open it
 directly in Alcove**; downloading preserves TeX backslashes and code fences
@@ -195,6 +195,16 @@ that browser copy/paste can alter. The dialog previews what it recognised
 before anything lands on the page. A `::page` line starts a protected page, so
 overflow from an earlier large image creates spill pages before it instead of
 shifting every later section.
+
+Before downloading, choose a **Creative Direction** in *In and out*: a warm
+all-rounder, visual lesson, storybook, scholarly, editorial or source-faithful
+brief. It steers atmosphere, hierarchy and pacing, never dictates a page
+recipe. **Create your own** opens a full writing desk where you can borrow a
+starting mood and rewrite it. The generated guide still carries the complete
+live catalogue—every paper, card, callout, lettering treatment, diagram,
+sticker and piece of trim—so a mood never narrows what the assistant can make.
+The simpler *Paste a script in* dialog remains just for opening, previewing and
+inserting the resulting `.md`.
 
 Nothing is sent anywhere — no API key, no model in the app, no request to
 anybody's server. You carry the text to whichever assistant you already use and
@@ -217,8 +227,8 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.2_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.2_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.6.3_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.6.3_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
@@ -499,6 +509,11 @@ site does not answer. Those two moments are the only times the app reaches the
 internet at all, they only happen because you asked, and neither of them sends
 anything you wrote.
 
+An image's expand control opens it in a large viewer. Wheel or the `+` and `−`
+buttons zoom, dragging moves around the enlarged image, and reset returns to
+100%. Local pictures resolve from the library again after restarting rather
+than depending on a temporary browser URL.
+
 Pages can also point at each other: type `[[` for the page picker, and the page
 you pointed at lists yours back at the bottom
 ([`src/editor/backlinks/`](src/editor/backlinks/)).
@@ -613,6 +628,10 @@ with a warning rather than dropped. That promise, and the grammar it guards, are
 specified in [`docs/design/script-language.md`](docs/design/script-language.md)
 and implemented in [`src/script/`](src/script/).
 
+When an assistant does make several slips, **Copy errors** turns the complete
+diagnostic list into one clean clipboard block ready to paste back into that
+chat.
+
 The script is kept alongside the page, so a note written this way can be edited
 as script and re-run, or copied back out with *copy this page as script*. A
 single block comes out the same way from the right-click menu.
@@ -677,6 +696,10 @@ Committed colours are remembered and shared across every picker in the app
 ([`src/art/customColour.ts`](src/art/customColour.ts)), so a green you mixed for
 a callout can bind a book. A half-typed hex is never overwritten with a default
 while you are still typing it.
+
+Colour wells also have **copy** and **paste** actions. Copy a cover blue once,
+then paste it into the spine, tooling or emblem picker without retyping its hex;
+the app keeps an internal fallback even when the system clipboard is denied.
 
 ### Stars, and taking things off a list
 
@@ -1159,8 +1182,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->316<!--/f--> of <!--f:srcFiles-->325<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7099<!--/f--> lines of it.
+<!--f:srcDocstrings-->318<!--/f--> of <!--f:srcFiles-->331<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7121<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1346,7 +1369,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->325<!--/f--> TypeScript files, <!--f:srcDocstrings-->316<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7099<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->331<!--/f--> TypeScript files, <!--f:srcDocstrings-->318<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7121<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->9<!--/f--> files, <!--f:rustLines-->2635<!--/f--> lines, <!--f:rustCommands-->15<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Bare-bones checks | One Vitest smoke file plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner; no automated browser, pixel, frame or waveform gate | [The bare-bones gate](docs/readme/part-2-developers.md#the-bare-bones-gate) |

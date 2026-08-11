@@ -19,6 +19,37 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.3 — AI pages with an art director and steadier paper
+
+**The AI guide now knows the whole studio.** Creative Direction adds seven
+carefully written moods plus a full custom-brief editor before downloading or
+copying the guide. The generated specification lists all fifty stickers, every
+page paper and the live cards, callouts, lettering, diagram and trim domains;
+it explicitly treats them as a palette rather than repeating tape or one easy
+sticker. The Paste Script dialog stays focused on opening, previewing and
+inserting the assistant's attached `.md` file, and its diagnostics can be
+copied back to the chat in one press.
+
+**Pictures behave like durable page objects.** Filling a large AI placeholder
+now reflows the surviving text onto following pages after the image decodes.
+Local development pictures survive reloads like the shipped app, and every
+image can open in a large viewer with button or wheel zoom plus drag-to-pan.
+Notebook Script may request a relevant open image search; an unavailable
+network becomes a named upload card rather than broken prose.
+
+**Long imported notes keep their intended structure.** Scripts land on the
+leaf that opened the dialog, reuse a fresh book's blank leaves, preserve
+document-wide variables and styles across `::page` boundaries, and remain on
+the starting spread instead of jumping to page three. Overflow carries short
+headings and colon-ended lead-ins with the lists, tables or diagrams they
+introduce. Display equations fit the paper, compact TeX fractions and ceiling
+symbols render correctly, and page-turn snapshots preserve table geometry.
+
+**Small authoring tools are easier to reuse.** Book Studio colour wells can
+copy and paste exact colours between roles. The release page itself now opens
+with **What's new** and **What's fixed**, and the Windows offline bundle reuses
+the already compiled app instead of rebuilding it a second time.
+
 ## 0.6.2 — page boundaries that stay out of the page
 
 **Page deletion now lives where the page does.** Right-click a leaf and choose

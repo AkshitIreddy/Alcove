@@ -70,8 +70,49 @@ try {
   const inlineEmoji = page.locator('.nb-prose .nb-inline-emoji');
   await inlineEmoji.first().waitFor({ state: 'visible' });
   report.emojiDecorationCount = await inlineEmoji.count();
+  report.visibleEmoji = await inlineEmoji.evaluateAll((nodes) =>
+    nodes
+      .filter((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > 0 &&
+          rect.top < innerHeight &&
+          style.visibility !== 'hidden' &&
+          style.display !== 'none'
+        );
+      })
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return {
+          text: node.textContent,
+          top: Number(rect.top.toFixed(2)),
+          bottom: Number(rect.bottom.toFixed(2)),
+          height: Number(rect.height.toFixed(2)),
+          fontSize: style.fontSize,
+          verticalAlign: style.verticalAlign,
+        };
+      }),
+  );
   await page.screenshot({ path: `${out}/00-emoji-baseline.png`, caret: 'hide' });
   report.screenshots.push(`${out}/00-emoji-baseline.png`);
+  const emojiProse = page.locator('.nb-prose').filter({ hasText: 'A bright idea' }).first();
+  const emojiBox = await emojiProse.boundingBox();
+  if (emojiBox === null) throw new Error('emoji specimen has no visible prose box');
+  await page.screenshot({
+    path: `${out}/00b-emoji-rule-clearance.png`,
+    caret: 'hide',
+    clip: {
+      x: emojiBox.x,
+      y: emojiBox.y,
+      width: emojiBox.width,
+      height: Math.min(128, emojiBox.height),
+    },
+  });
+  report.screenshots.push(`${out}/00b-emoji-rule-clearance.png`);
 
   await page.locator('.nb-rail-button[data-tool="share"]').click();
   const picker = page.locator('.nb-ai-style-picker').first();
@@ -124,7 +165,7 @@ try {
     report.dialogPickerCount === 0 &&
     report.dialogDownloadGuideVisible === true &&
     report.dialogCopyGuideVisible === true &&
-    report.emojiDecorationCount === 6 &&
+    report.visibleEmoji.length === 6 &&
     errors.length === 0;
 } catch (error) {
   report.error = error.stack ?? error.message;

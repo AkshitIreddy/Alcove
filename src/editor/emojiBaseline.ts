@@ -1,11 +1,12 @@
 /**
- * Keep colour emoji on the same handwritten baseline as the words around them.
+ * Keep colour emoji clear of the handwritten rule beneath the words around them.
  *
  * Patrick Hand has no emoji glyphs, so Chromium falls through to the platform
  * colour font. That font's em box sits materially lower than Patrick Hand's:
  * the words ride the ruled line while an emoji appears to hang beneath it.
- * ProseMirror decorations give those Unicode runs one visual hook without
- * adding a mark to the stored document or changing script/export text.
+ * ProseMirror decorations give those Unicode runs one visual hook so CSS can
+ * treat them as tiny floating illustrations, without adding a mark to the
+ * stored document or changing script/export text.
  */
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';

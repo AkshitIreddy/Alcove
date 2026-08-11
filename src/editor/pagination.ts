@@ -52,6 +52,45 @@ export function trailingOverflowCount(
   return count - keep;
 }
 
+export interface PaginationBlockHint {
+  readonly type: string;
+  readonly text: string;
+}
+
+/**
+ * Extend an overflow cut so a short semantic lead-in travels with the block
+ * it introduces. Atomic diagrams, tables and lists often move as one block;
+ * leaving “The goals are:” or a heading at the foot of the previous page is
+ * grammatically valid and visually broken.
+ *
+ * The first block must always remain on its page, matching the core drain's
+ * safety rule. Chained heading → colon lead-in → feature groups travel
+ * together when both companions sit immediately before the original cut.
+ */
+export function trailingCompanionCount(
+  blocks: readonly PaginationBlockHint[],
+  removalCount: number,
+): number {
+  if (!Number.isInteger(removalCount) || removalCount <= 0) return 0;
+  let firstRemoved = blocks.length - removalCount;
+  let companions = 0;
+  while (firstRemoved > 1) {
+    const candidate = blocks[firstRemoved - 1];
+    if (candidate === undefined) break;
+    const text = candidate.text.trim();
+    const isHeading = /^heading$/i.test(candidate.type);
+    const isLeadIn =
+      /^paragraph$/i.test(candidate.type) &&
+      text.length > 0 &&
+      text.length <= 180 &&
+      /[:：]\s*$/.test(text);
+    if (!isHeading && !isLeadIn) break;
+    companions += 1;
+    firstRemoved -= 1;
+  }
+  return companions;
+}
+
 /**
  * Does the page's content still stand taller than the capacity?
  *

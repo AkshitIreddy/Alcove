@@ -11,6 +11,7 @@
  */
 import Image from '@tiptap/extension-image';
 import { Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import {
   NodeViewWrapper,
   SolidNodeViewRenderer,
@@ -27,6 +28,7 @@ import {
   assetRelPathForImageAttrs,
 } from './portableAssets';
 import { MISSING_ASSET_SRC, resolveAssetSrc } from './resolver';
+import { clampViewerPan, type ViewerPan } from './imageViewerPan';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
 export type ImageAlign = (typeof IMAGE_ALIGNMENTS)[number];
@@ -77,6 +79,21 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [replacing, setReplacing] = createSignal(false);
   const [draggingOver, setDraggingOver] = createSignal(false);
   const [replacementError, setReplacementError] = createSignal<string | null>(null);
+  const [viewerOpen, setViewerOpen] = createSignal(false);
+  const [viewerZoom, setViewerZoom] = createSignal(100);
+  const [viewerPan, setViewerPan] = createSignal<ViewerPan>({ x: 0, y: 0 });
+  const [viewerDragging, setViewerDragging] = createSignal(false);
+  let viewerStageEl: HTMLDivElement | undefined;
+  let viewerImageEl: HTMLImageElement | undefined;
+  let viewerDrag:
+    | {
+        pointerId: number;
+        startX: number;
+        startY: number;
+        panX: number;
+        panY: number;
+      }
+    | undefined;
   let alive = true;
   let sourceGeneration = 0;
   onCleanup(() => {
@@ -105,6 +122,100 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     if (assetRelPath() !== null) return portableSrc() ?? MISSING_ASSET_SRC;
     return src().trim() === '' ? MISSING_ASSET_SRC : src();
   };
+
+  const measuredViewerPan = (candidate: ViewerPan): ViewerPan => {
+    const stage = viewerStageEl;
+    const image = viewerImageEl;
+    if (stage === undefined || image === undefined) return candidate;
+    return clampViewerPan(
+      candidate,
+      viewerZoom(),
+      image.offsetWidth,
+      image.offsetHeight,
+      stage.clientWidth,
+      stage.clientHeight,
+    );
+  };
+
+  const settleViewerPan = (): void => {
+    requestAnimationFrame(() => setViewerPan((current) => measuredViewerPan(current)));
+  };
+
+  const resetViewer = (): void => {
+    setViewerZoom(100);
+    setViewerPan({ x: 0, y: 0 });
+  };
+
+  const changeViewerZoom = (delta: number): void => {
+    setViewerZoom((current) => Math.max(50, Math.min(300, current + delta)));
+    settleViewerPan();
+  };
+
+  const openViewer = (): void => {
+    if (placeholder() !== null) return;
+    resetViewer();
+    setViewerOpen(true);
+  };
+
+  const nudgeViewerPan = (x: number, y: number): void => {
+    setViewerPan((current) =>
+      measuredViewerPan({ x: current.x + x, y: current.y + y }),
+    );
+  };
+
+  const beginViewerDrag = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const pan = viewerPan();
+    viewerDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+    event.currentTarget instanceof Element &&
+      event.currentTarget.setPointerCapture(event.pointerId);
+    setViewerDragging(true);
+  };
+
+  const moveViewerDrag = (event: PointerEvent): void => {
+    const drag = viewerDrag;
+    if (drag === undefined || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    setViewerPan(
+      measuredViewerPan({
+        x: drag.panX + event.clientX - drag.startX,
+        y: drag.panY + event.clientY - drag.startY,
+      }),
+    );
+  };
+
+  const endViewerDrag = (event: PointerEvent): void => {
+    if (viewerDrag?.pointerId !== event.pointerId) return;
+    const target = event.currentTarget;
+    if (target instanceof Element && target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+    viewerDrag = undefined;
+    setViewerDragging(false);
+  };
+
+  createEffect(() => {
+    if (!viewerOpen()) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setViewerOpen(false);
+      if (event.key === '+' || event.key === '=') changeViewerZoom(25);
+      if (event.key === '-') changeViewerZoom(-25);
+      if (event.key === '0') resetViewer();
+      if (event.key === 'ArrowLeft') nudgeViewerPan(40, 0);
+      if (event.key === 'ArrowRight') nudgeViewerPan(-40, 0);
+      if (event.key === 'ArrowUp') nudgeViewerPan(0, 40);
+      if (event.key === 'ArrowDown') nudgeViewerPan(0, -40);
+    };
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => window.removeEventListener('keydown', onKey));
+  });
 
   const replaceWith = async (file: File): Promise<void> => {
     if (replacing()) return;
@@ -328,6 +439,11 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               alt={alt()}
               draggable={false}
               ref={observeWidth}
+              onDblClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openViewer();
+              }}
             />
           }
         >
@@ -416,6 +532,21 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
             >
               ▭
             </button>
+            <Show when={placeholder() === null}>
+              <button
+                type="button"
+                class="nb-image-tool"
+                data-tooltip="View larger"
+                aria-label="View image larger"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openViewer();
+                }}
+              >
+                ⛶
+              </button>
+            </Show>
           </div>
           <Show when={placeholder() === null}>
             <span
@@ -458,6 +589,68 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
           </figcaption>
         </Show>
       </figure>
+
+      <Show when={viewerOpen()}>
+        <Portal>
+          <div
+            class="nb-image-viewer-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setViewerOpen(false);
+            }}
+          >
+            <section
+              class="nb-image-viewer"
+              role="dialog"
+              aria-modal="true"
+              aria-label={alt().trim() === '' ? 'Image viewer' : `Image viewer: ${alt()}`}
+            >
+              <header class="nb-image-viewer-header">
+                <div class="nb-image-viewer-title">
+                  <strong>{caption().trim() || alt().trim() || 'Image'}</strong>
+                  <span class="font-ui">{viewerZoom()}%</span>
+                </div>
+                <div class="nb-image-viewer-actions">
+                  <button type="button" aria-label="Zoom out" onClick={() => changeViewerZoom(-25)}>−</button>
+                  <button type="button" aria-label="Reset zoom and position" onClick={resetViewer}>100%</button>
+                  <button type="button" aria-label="Zoom in" onClick={() => changeViewerZoom(25)}>+</button>
+                  <button type="button" class="is-close" aria-label="Close image viewer" onClick={() => setViewerOpen(false)}>×</button>
+                </div>
+              </header>
+              <div
+                ref={viewerStageEl}
+                class="nb-image-viewer-stage"
+                data-dragging={viewerDragging() ? '' : undefined}
+                tabindex={0}
+                aria-label="Zoomed image. Drag to move around."
+                onWheel={(event) => {
+                  event.preventDefault();
+                  changeViewerZoom(event.deltaY < 0 ? 10 : -10);
+                }}
+                onPointerDown={beginViewerDrag}
+                onPointerMove={moveViewerDrag}
+                onPointerUp={endViewerDrag}
+                onPointerCancel={endViewerDrag}
+              >
+                <img
+                  ref={viewerImageEl}
+                  class="nb-image-viewer-image"
+                  src={displaySrc()}
+                  alt={alt()}
+                  draggable={false}
+                  onLoad={settleViewerPan}
+                  style={{
+                    transform: `translate3d(${viewerPan().x}px, ${viewerPan().y}px, 0) scale(${viewerZoom() / 100})`,
+                  }}
+                />
+              </div>
+              <footer class="nb-image-viewer-help font-ui">
+                Drag to move around. Wheel or +/− zooms; 0 resets; Esc closes.
+              </footer>
+            </section>
+          </div>
+        </Portal>
+      </Show>
     </NodeViewWrapper>
   );
 }

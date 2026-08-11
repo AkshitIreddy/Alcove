@@ -1,7 +1,8 @@
 /**
  * Builds the AI-facing Notebook Script spec.
  *
- *   src/script/vocab.ts      names + prose (the single source of truth)
+ *   src/script/vocab.ts      names + prose (the language source of truth)
+ *   src/editor/effects/vocabulary.ts  live editor effect domains
  *   scripts/spec-template.md narrative, with <!-- gen:name --> placeholders
  *        ↓
  *   src-tauri/resources/notebook-script-spec.md   shipped as a Tauri resource
@@ -38,7 +39,8 @@ export const SPEC_TS_PATH = join(ROOT, 'src', 'editor', 'script', 'spec.ts');
  */
 const BANNER =
   '<!-- Generated file — do not edit. ' +
-  'Source: src/script/vocab.ts + scripts/spec-template.md (npm run spec). -->';
+  'Source: src/script/vocab.ts + src/editor/effects/vocabulary.ts + ' +
+  'scripts/spec-template.md (npm run spec). -->';
 
 /** Notes the template carries for its own readers; the output drops them. */
 const TEMPLATE_ONLY_RE = /<!-- template:[\s\S]*?-->\n*/g;
@@ -352,7 +354,8 @@ export function buildSpec(vocab, template) {
 export function renderSpecModule(md) {
   return `/**
  * GENERATED FILE — do not edit by hand.
- * Built from src/script/vocab.ts + scripts/spec-template.md.
+ * Built from src/script/vocab.ts + src/editor/effects/vocabulary.ts +
+ * scripts/spec-template.md.
  * Regenerate with: npm run spec
  */
 
@@ -421,11 +424,29 @@ export function firstDifferences(want, have, limit = 6) {
 // CLI
 // ---------------------------------------------------------------------------
 
-/** Load vocab.ts into a real module. esbuild is only needed on this path. */
+/**
+ * Load the writing vocabulary after the editor has registered its complete
+ * effect catalogue. The AI guide is allowed to name everything the Catalogue
+ * panel can actually render, rather than the five historical values each axis
+ * began with.
+ */
 async function loadVocab() {
-  const { transform } = await import('esbuild');
-  const ts = readFileSync(VOCAB_PATH, 'utf8');
-  const { code: js } = await transform(ts, { loader: 'ts', format: 'esm' });
+  const { build } = await import('esbuild');
+  const result = await build({
+    stdin: {
+      contents:
+        "import './src/editor/effects/vocabulary.ts';\n" +
+        "export * from './src/script/vocab.ts';\n",
+      resolveDir: ROOT,
+      sourcefile: 'notebook-script-spec-entry.ts',
+      loader: 'ts',
+    },
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    write: false,
+  });
+  const js = result.outputFiles[0]?.text ?? '';
   const url = `data:text/javascript;base64,${Buffer.from(js, 'utf8').toString('base64')}`;
   return import(url);
 }

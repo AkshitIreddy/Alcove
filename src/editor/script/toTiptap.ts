@@ -35,13 +35,13 @@ import type {
   ScriptDoc,
   TableRow,
 } from '../../script/types';
-import type { PageDoc } from '../../data/types';
-import { GAP_VALUES, WASH_COLORS } from '../../script/vocab';
+import { PAGE_STYLES, type PageDoc } from '../../data/types';
+import { GAP_VALUES, STICKER_NAMES, WASH_COLORS } from '../../script/vocab';
 import {
   inferAssetRelPathFromSrc,
   normalizeAssetRelPath,
 } from '../media/portableAssets';
-import type { StickerId } from '../nodes/stickers';
+import { isStickerId, type BuiltinStickerId, type StickerId } from '../nodes/stickers';
 import type { CalloutTint } from '../nodes/callout';
 
 // ---------------------------------------------------------------------------
@@ -87,24 +87,10 @@ export interface ToTiptapOptions {
 // Vocabulary bridges (script names → editor enums)
 // ---------------------------------------------------------------------------
 
-/** Script sticker vocabulary (15 names) → the editor's 8 procedural stickers. */
-export const SCRIPT_STICKER_TO_EDITOR = {
-  star: 'star',
-  bee: 'bee',
-  leaf: 'leaf',
-  heart: 'heart',
-  sparkle: 'sparkle',
-  cat: 'cat',
-  sun: 'sun',
-  flower: 'flower',
-  microscope: 'sparkle',
-  book: 'leaf',
-  pin: 'star',
-  moon: 'sun',
-  coffee: 'heart',
-  music: 'sparkle',
-  arrow: 'star',
-} satisfies Record<string, StickerId>;
+/** Every built-in script sticker is the editor sticker with the same id. */
+export const SCRIPT_STICKER_TO_EDITOR = Object.fromEntries(
+  STICKER_NAMES.map((name) => [name, name]),
+) as Record<(typeof STICKER_NAMES)[number], BuiltinStickerId>;
 
 export function mapStickerName(name: string): StickerId | null {
   // Wave 2: `user:<name>` script stickers pass through to the editor's
@@ -112,8 +98,7 @@ export function mapStickerName(name: string): StickerId | null {
   if (name.startsWith('user:') && name.length > 'user:'.length) {
     return name as StickerId;
   }
-  const table: Record<string, StickerId> = SCRIPT_STICKER_TO_EDITOR;
-  return table[name] ?? null;
+  return isStickerId(name) ? name : null;
 }
 
 /** Callout `variant` → editor callout icon + tint. */
@@ -208,9 +193,8 @@ const CONTAINER_FALLBACK_ICON: Record<string, StickerId> = {
 
 /** Frontmatter `paper:` → Document `pageStyle` attr. */
 const PAPER_TO_PAGE_STYLE: Record<string, string> = {
+  ...Object.fromEntries(PAGE_STYLES.map((style) => [style, style])),
   cream: 'blank',
-  grid: 'grid',
-  dotted: 'dotted',
   lined: 'ruled',
 };
 

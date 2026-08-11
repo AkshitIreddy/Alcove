@@ -1393,17 +1393,31 @@
    Tables — pencil-ruled cells, amber header wash
    -------------------------------------------------------------------------- */
 .nb-prose .tableWrapper {
-  overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+  /* A notebook page is not a web spreadsheet. The table must reflow inside
+     the paper instead of growing a native horizontal-scroll gutter. `clip`
+     is stronger than `hidden` here: Chromium never creates a scroll
+     container for it, so selection/HMR cannot briefly resurrect the bar. */
+  overflow: clip !important;
+  scrollbar-width: none;
   margin: var(--space-8) 0;
   /* A table prints its own rules. Give the wrapper an opaque paper face so
      the page's horizontal ruling cannot double through cell gaps. */
   background-color: var(--paper-cream);
 }
 
+.nb-prose .tableWrapper::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .nb-prose table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
+  max-width: 100%;
 }
 
 .nb-prose th,
@@ -1413,6 +1427,24 @@
   padding: var(--space-4) var(--space-12);
   vertical-align: top;
   min-width: 48px;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* A compact comparison table may legitimately sit in a half-page column.
+   Tighten its typesetting before considering a mid-word break: the previous
+   generic `anywhere` fallback produced headers such as “Kitt / en” and
+   “Prob / abili / ty”, which is technically contained and visibly broken. */
+.nb-prose [data-type='col'] .tableWrapper th,
+.nb-prose [data-type='col'] .tableWrapper td {
+  min-width: 0;
+  padding-inline: var(--space-4);
+  font-size: 0.82em;
+}
+
+.nb-prose [data-type='col'] .tableWrapper th {
+  /* Long one-word headings get the final optical squeeze before wrapping. */
+  font-size: 0.72em;
 }
 
 .nb-prose th {
@@ -1780,6 +1812,10 @@ html[data-nb-col-resizing='true'] {
 
 .nb-math-render.is-display {
   font-size: 1.25em;
+  /* Crimson Pro's mathematical baseline sits a touch higher than Patrick
+     Hand's writing baseline. Nudge only the painted formula—not its box—so
+     equations meet the same ruled line without changing pagination. */
+  transform: translateY(2px);
 }
 
 /* The source field, while the formula is being written. */

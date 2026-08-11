@@ -20,7 +20,7 @@ import type {
   TableAlign,
   TableRow,
 } from '../../script/types';
-import type { PageDoc } from '../../data/types';
+import { PAGE_STYLES, type PageDoc } from '../../data/types';
 import { print } from '../../script';
 import { resolveCodeLang } from '../../script/normalize';
 import { CONTAINER_NAMES, DIAGRAM_LANGS } from '../../script/vocab';
@@ -35,9 +35,8 @@ const ZERO = { srcStart: 0, srcEnd: 0 } as const;
 
 /** Document `pageStyle` attr → frontmatter `paper:`. */
 const PAGE_STYLE_TO_PAPER: Record<string, string> = {
+  ...Object.fromEntries(PAGE_STYLES.map((style) => [style, style])),
   blank: 'cream',
-  grid: 'grid',
-  dotted: 'dotted',
   ruled: 'lined',
 };
 

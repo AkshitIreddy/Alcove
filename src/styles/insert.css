@@ -207,14 +207,9 @@
   border-color: var(--wash-amber);
 }
 
-.nb-ins-warnings {
+.nb-ins-warning-panel {
   max-height: 110px;
-  overflow-y: auto;
   margin: 0;
-  padding: var(--space-8) var(--space-12);
-  list-style: none;
-  font-size: var(--text-ui); /* diagnostics have to be readable (was 11px) */
-  line-height: 1.5;
   /* Reading ink, not the soft rung — the soft inks clear 4.5:1 on the paper
      rungs, and this sits on a lemon wash face (3.42:1 at worst). A diagnostic
      that has to be readable has to be readable in every room. */
@@ -222,6 +217,47 @@
   background: var(--wash-lemon-light);
   border: 1px dashed var(--wash-lemon-deep);
   border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.nb-ins-warning-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 5px var(--space-8) 4px var(--space-12);
+  border-bottom: 1px dashed var(--wash-lemon-deep);
+  font-size: var(--text-ui);
+  font-weight: 700;
+}
+
+.nb-ins-copy-warnings {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 8px;
+  color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--paper-cream) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-sepia) 45%, transparent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.nb-ins-copy-warnings:hover,
+.nb-ins-copy-warnings:focus-visible {
+  background: var(--paper-cream);
+  border-color: var(--ink-sepia);
+}
+
+.nb-ins-warnings {
+  max-height: 72px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  list-style: none;
+  font-size: var(--text-ui); /* diagnostics have to be readable (was 11px) */
+  line-height: 1.5;
 }
 
 .nb-ins-warn-line {

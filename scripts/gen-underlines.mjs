@@ -76,7 +76,11 @@ const UNDERLINES = {
   macron: d('overline', 'solid', '2px', '0.1em', INK),
 
   /* --- moving lines ------------------------------------------------------ */
-  squiggle: d('underline', 'wavy', '2px', '0.16em', INK),
+  // Headings use a large handwritten face with deep descenders. The old
+  // 2px/.16em wave sat inside those glyphs and looked like two broken strokes
+  // rather than one underline. Lower and lighten it, while keeping the wave
+  // continuous through the word.
+  squiggle: d('underline', 'wavy', '1.5px', '0.28em', INK, 'none'),
   wavy: d('underline', 'wavy', '3px', '0.2em', INK),
   scribble: d('line-through', 'wavy', '3px', '0.1em', SOFT),
   tapered: d('underline', 'solid', '3px', '0.14em', SOFT, 'none'),

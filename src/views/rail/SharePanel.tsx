@@ -92,11 +92,10 @@ import {
 } from '../../features/templates/icons';
 import { openTransferPanel } from '../../features/transfer';
 import {
-  AiSpecIcon,
-  DownloadSpecIcon,
   ExportScriptIcon,
   InsertScriptIcon,
 } from './icons';
+import AiSpecStylePicker from './AiSpecStylePicker';
 
 export interface SharePanelProps {
   /**
@@ -110,9 +109,9 @@ export interface SharePanelProps {
    */
   onCopyScript(): void;
   /** Put the whole Notebook Script spec on the clipboard, and say so. */
-  onCopySpec(): void;
+  onCopySpec(spec: string): void;
   /** Save the same full spec as a Markdown file, and say what happened. */
-  onDownloadSpec(): void;
+  onDownloadSpec(spec: string): void;
   /** Close the sheet behind a row that opens a modal over it. */
   onClose(): void;
 }
@@ -198,23 +197,6 @@ const OUT: readonly ShareRow[] = [
 ];
 
 const AI: readonly ShareRow[] = [
-  {
-    id: 'spec-download',
-    title: 'Download the format for your AI',
-    hint: 'the whole Notebook Script guide, ready to attach',
-    icon: DownloadSpecIcon,
-    run: (props) => props.onDownloadSpec(),
-  },
-  {
-    id: 'spec',
-    // No key cap, and that is honest: nothing in `data/keybindings` binds this
-    // one. A borrowed combination on the row would be a shortcut that opens
-    // something else.
-    title: 'Copy the format for your AI',
-    hint: 'the same full guide, to the clipboard',
-    icon: AiSpecIcon,
-    run: (props) => props.onCopySpec(),
-  },
   {
     id: 'script',
     title: 'Copy this page as script',
@@ -329,6 +311,12 @@ export default function SharePanel(props: SharePanelProps): JSX.Element {
                   {notice}
                 </p>
               )}
+            </Show>
+            <Show when={group.id === 'ai'}>
+              <AiSpecStylePicker
+                onCopy={props.onCopySpec}
+                onDownload={props.onDownloadSpec}
+              />
             </Show>
             <Rows rows={group.rows} host={props} />
           </section>

@@ -5372,9 +5372,10 @@
 :is(.nb-prose, .nb-fx-specimen) [data-underline='squiggle'] {
   text-decoration-line: underline;
   text-decoration-style: wavy;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.16em;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.28em;
   text-decoration-color: var(--ink-sepia);
+  text-decoration-skip-ink: none;
 }
 
 :is(.nb-prose, .nb-fx-specimen) [data-underline='marker'] {

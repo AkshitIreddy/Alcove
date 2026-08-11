@@ -30,18 +30,19 @@ import {
   type JSX,
 } from 'solid-js';
 import { For } from 'solid-js';
-import { parse, type Diag, type ScriptDoc } from '../../script';
+import type { Diag, ScriptDoc } from '../../script';
 import { getPage, setPageScript } from '../../data/pages';
 import type { PageDoc } from '../../data/types';
 import { usePanelKeys } from '../../state/panelKeys';
 import { scriptDocToTiptap } from '../script/toTiptap';
-import { splitNotebookScriptPages } from '../script/pageBoundaries';
+import { parseNotebookScriptPages } from '../script/pageBoundaries';
+import { resolveScriptFetches } from '../script/resolveFetches';
 import {
   downloadNotebookScriptSpec,
   NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING,
 } from '../script/exporters/saveFile';
 import { NOTEBOOK_SCRIPT_SPEC } from '../script/spec';
-import { activeEditor } from './activeEditor';
+import { getPageEditor } from '../instances';
 import ScriptPreview from './ScriptPreview';
 
 export interface InsertScriptDialogProps {
@@ -49,6 +50,8 @@ export interface InsertScriptDialogProps {
   onClose(): void;
   /** Toast hook — called with a short human message after an action. */
   onNotify?(message: string): void;
+  /** Hold the reader on the spread where a multi-page import began. */
+  onInsertionActivity?(active: boolean): void | Promise<void>;
   onInsertFollowingPages?(
     afterPageId: string,
     pages: readonly {
@@ -89,7 +92,9 @@ export default function InsertScriptDialog(
   const scheduleParse = (value: string): void => {
     if (parseTimer !== undefined) clearTimeout(parseTimer);
     parseTimer = setTimeout(() => {
-      setParsed(value.trim() === '' ? null : parse(value));
+      setParsed(
+        value.trim() === '' ? null : parseNotebookScriptPages(value).preview,
+      );
     }, PARSE_DEBOUNCE_MS);
   };
 
@@ -130,6 +135,11 @@ export default function InsertScriptDialog(
             : `${diag.message} — expected ${diag.expected}`,
       })),
   );
+  const warningClipboardText = createMemo(() =>
+    warnings()
+      .map((warning) => `**${warning.where}** ${warning.message}`)
+      .join('\n'),
+  );
 
   // Escape closes the dialog.
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -157,15 +167,67 @@ export default function InsertScriptDialog(
     }
   };
 
+  const copyWarnings = async (): Promise<void> => {
+    const ok = await copyToClipboard(warningClipboardText());
+    props.onNotify?.(
+      ok ? 'script errors copied' : 'could not reach the clipboard',
+    );
+  };
+
   const insert = async (): Promise<void> => {
     const text = source();
     if (text.trim() === '' || inserting()) return;
     setInserting(true);
+    let viewLockReleased = false;
+    await props.onInsertionActivity?.(true);
     try {
-      const pageSources = splitNotebookScriptPages(text);
-      const firstSource = pageSources[0] ?? '';
-      const doc = parse(firstSource);
-      const editor = activeEditor();
+      const parsedPages = parseNotebookScriptPages(text);
+      // Image search is asynchronous and environment-owned. Resolve it once
+      // before constructing any page JSON; in browser/offline development the
+      // resolver deliberately returns clickable upload cards instead of
+      // printing a literal `fetch:` request into the note.
+      const resolvedDocs = await Promise.all(
+        parsedPages.pages.map((page) => resolveScriptFetches(page.doc)),
+      );
+      const firstPage = parsedPages.pages[0];
+      const firstSource = firstPage?.source ?? '';
+      const doc = resolvedDocs[0] ?? parsedPages.preview;
+      /*
+       * The dialog belongs to one PAGE, not to whichever of the two mounted
+       * editors happened to focus last.
+       *
+       * A spread mounts both PageEditors. Their construction effects used to
+       * make the right editor the global `activeEditor` even after BookView
+       * had correctly chosen the blank left leaf for this dialog. Importing a
+       * script therefore wrote its visible document into the right page while
+       * storing the source provenance against `props.pageId` on the left — two
+       * different pages from one click. Address the editor through the same
+       * page id the dialog and persistence path already use.
+       */
+      const schemaEditor = getPageEditor(props.pageId);
+      const following = parsedPages.pages.slice(1).map((page, index) => {
+        const pageDoc = scriptDocToTiptap(resolvedDocs[index + 1] ?? page.doc, {
+          hasNode: (name) => schemaEditor?.schema.nodes[name] !== undefined,
+        }) as PageDoc;
+        return {
+          source: page.source,
+          doc: pageDoc,
+          protectedStart: true as const,
+        };
+      });
+      /*
+       * Establish protected destinations BEFORE the first live-editor
+       * dispatch. A large first section can synchronously request pagination;
+       * if its following pages do not exist yet, that overflow is appended to
+       * the tail and becomes the mysterious mostly-empty final page. BookView
+       * also reuses the fresh book's blank leaves here.
+       */
+      if (following.length > 0) {
+        await props.onInsertFollowingPages?.(props.pageId, following);
+      }
+      // BookView may have refreshed the page list while creating/reusing those
+      // destinations, so reacquire the page-owned editor after the await.
+      const editor = getPageEditor(props.pageId);
       const json = scriptDocToTiptap(doc, {
         hasNode: (name) => editor?.schema.nodes[name] !== undefined,
       });
@@ -181,8 +243,23 @@ export default function InsertScriptDialog(
           );
         }
         if (content.length > 0) {
-          // Inserts at the cursor, replacing the selection if there is one.
-          editor.chain().focus().insertContent(content).run();
+          /*
+           * Keep the caret at the BEGINNING of the inserted notebook.
+           *
+           * TipTap's default `insertContent` moves the selection to the tail.
+           * Pagination is synchronous, so a long import then sees that caret
+           * inside the blocks it is peeling off the first leaf and quite
+           * correctly follows it onto the next spread. The document landed in
+           * the right place, but the reader appeared to be thrown to page 3.
+           * One transaction with `updateSelection:false` makes the import an
+           * atomic paste whose reading position stays where the paste began.
+           */
+          const insertionStart = editor.state.selection.from;
+          editor
+            .chain()
+            .insertContent(content, { updateSelection: false })
+            .setTextSelection(insertionStart)
+            .run();
         }
         // TipTap dispatch is synchronous, including appended plugin
         // transactions. This is the final snapshot its PageEditor debounce
@@ -199,26 +276,16 @@ export default function InsertScriptDialog(
         }
       }
       await setPageScript(props.pageId, firstSource, insertedDoc);
-      const following = pageSources.slice(1).map((pageSource) => {
-        const pageDoc = scriptDocToTiptap(parse(pageSource), {
-          hasNode: (name) => editor?.schema.nodes[name] !== undefined,
-        }) as PageDoc;
-        return {
-          source: pageSource,
-          doc: pageDoc,
-          protectedStart: true as const,
-        };
-      });
-      if (following.length > 0) {
-        await props.onInsertFollowingPages?.(props.pageId, following);
-      }
       props.onNotify?.(
         following.length > 0
           ? `script inserted across ${following.length + 1} pages`
           : 'script inserted',
       );
+      await props.onInsertionActivity?.(false);
+      viewLockReleased = true;
       props.onClose();
     } finally {
+      if (!viewLockReleased) await props.onInsertionActivity?.(false);
       setInserting(false);
     }
   };
@@ -276,16 +343,31 @@ export default function InsertScriptDialog(
               onInput={(event) => handleInput(event.currentTarget.value)}
             />
             <Show when={warnings().length > 0}>
-              <ul class="nb-ins-warnings font-ui" aria-label="Parse warnings">
-                <For each={warnings()}>
-                  {(warning) => (
-                    <li>
-                      <span class="nb-ins-warn-line">{warning.where}</span>{' '}
-                      {warning.message}
-                    </li>
-                  )}
-                </For>
-              </ul>
+              <div class="nb-ins-warning-panel">
+                <div class="nb-ins-warning-toolbar font-ui">
+                  <span>{warnings().length} script {warnings().length === 1 ? 'warning' : 'warnings'}</span>
+                  <button
+                    type="button"
+                    class="nb-ins-copy-warnings font-ui"
+                    aria-label="Copy script errors"
+                    title="Copy script errors"
+                    onClick={() => void copyWarnings()}
+                  >
+                    <span aria-hidden="true">⧉</span>
+                    Copy errors
+                  </button>
+                </div>
+                <ul class="nb-ins-warnings font-ui" aria-label="Parse warnings">
+                  <For each={warnings()}>
+                    {(warning) => (
+                      <li>
+                        <span class="nb-ins-warn-line">{warning.where}</span>{' '}
+                        {warning.message}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
             </Show>
           </div>
 

@@ -1,13 +1,13 @@
-<!-- Generated file — do not edit. Source: src/script/vocab.ts + scripts/spec-template.md (npm run spec). -->
+<!-- Generated file — do not edit. Source: src/script/vocab.ts + src/editor/effects/vocabulary.ts + scripts/spec-template.md (npm run spec). -->
 
 # Notebook Script — the complete guide
 
 You are (probably) an AI assistant that has been handed this file. A person
 uses **Alcove**, a cozy Windows desktop app built like a storybook library — cozy
 shelves and patterned walls, with notebook pages inside filled with diagrams,
-notes, tape, and stickers — warm parchment paper, handwriting-style type, block
-editor, watercolor washes, sticky notes, polaroids and washi tape. They want you to **write a
-note for them in Notebook Script** — the app's plain-text format.
+notes, crafted paper pieces and small illustrations — warm parchment, expressive
+lettering, diagrams, cards, callouts and a broad sticker drawer. They want you
+to **write a note for them in Notebook Script** — the app's plain-text format.
 
 Your job: create one **Markdown file** containing Notebook Script. Name it
 something useful ending in `.md` (for example `cell-biology-notes.md`), attach
@@ -36,6 +36,87 @@ warning and renders your intent anyway. Still, the closer you stick to this
 spec, the prettier the note: every warning names the line, the column and what
 it expected there, and the person pasting your note will read them.
 
+## Before writing: interpret the request, sources and attachments
+
+Treat the conversation as the brief, not merely as text to transcribe. Inspect
+every source file and chat attachment before drafting and classify it privately:
+
+- **material to include** — facts, examples, diagrams or photographs that
+  belong in the note;
+- **reference material** — use it to understand the topic but do not reproduce
+  its layout or wording slavishly;
+- **instructions/evidence** — screenshots of a bug, a rubric or a UI are for
+  guiding your work, not pictures to paste into the finished note.
+
+If the person attached a topic-relevant photograph, illustration or diagram
+that belongs in the note, assume they want to use it unless they say otherwise.
+Notebook Script cannot name a chat attachment directly, so reserve **one
+intentional upload card** at the best teaching moment, with accurate alt text,
+a useful caption and a `placeholder` that clearly tells them to add the
+attached image. Do not ignore a relevant attachment and silently substitute a
+web search. Do not create duplicate placeholders for one attached image.
+
+Unless the person says “convert exactly”, “preserve verbatim”, or equivalent,
+you may take **creative and subjective liberties**: reorganise the explanation,
+correct awkward prose, add missing context, invent a clearer analogy, create a
+diagram, add a worked example, or add a practice question. Preserve factual
+meaning and distinguish your additions from quoted source material. Alongside
+the final attachment, give one short sentence summarising meaningful creative
+or subjective liberties you took. If exact conversion was requested, preserve
+the source instead and say that you did so.
+
+### The default art direction is pretty, warm and fun
+
+If the person gives no visual direction, do **not** produce a plain white
+worksheet. Make a lively, cohesive notebook by default:
+
+- use `paper: grid` for technical/scientific notes or `paper: dotted` for a
+  general subject; reserve bare `paper: cream` for an explicitly minimal,
+  formal or archival request;
+- use sepia or ink-blue writing, one warm page-edge wash, and a restrained
+  palette of two or three recurring accents rather than every colour at once;
+- give the note one strong opening visual, useful diagrams where relationships
+  matter, occasional coloured callouts or paper pieces, and two to four small
+  relevant stickers chosen from the full subject-appropriate drawer;
+- vary the rhythm: explanation, visual model, example, then a short revealable
+  practice check. Every decoration must help hierarchy, memory or meaning.
+
+Fun does not mean clutter. Do not scatter effects merely to prove the syntax
+exists. In particular, **do not use `tape=` or `washi=` by default**. Adhesive
+belongs only on something that visually needs fastening, such as a photograph,
+specimen, clipping or deliberately pasted scrap, and normally appears at most
+once or twice in a whole note. A sticky note already looks like a sticky note;
+it does not need a diagonal strip across its corner.
+
+The catalogue later in this guide is a palette, not a checklist. Choose a
+small coherent subset for the subject, then vary the *kind* of visual support:
+a diagram where relationships matter, a card where a definition needs a home,
+lettering for hierarchy, a sticker for one memorable cue, or a paper/frame
+treatment for a genuinely distinct object. Do not let one easy device become
+a repeated signature on every page. In particular, the first example shown in
+a table is not the default and is not more strongly recommended than the rest.
+
+### Know the whole visual vocabulary before composing
+
+Notebook Script can control every authored surface below. Read the generated
+catalogues in the named sections before choosing, especially when a creative
+direction asks for variety:
+
+| visual role | available vocabulary | where it is documented |
+| --- | --- | --- |
+| whole-page paper | ruled, grid, dotted, guide, staff, storyboard and specialist papers | section 1 |
+| text structure | headings, prose, quotes, bullets, tasks, tables, maths, footnotes and links | sections 2–3 |
+| cards and callouts | sticky notes, definition cards, quote cards, banners, marginalia, spoilers and many physical-paper containers | section 5 |
+| lettering | hand, ink, size, alignment, highlight and underline families | section 4 |
+| teaching visuals | tree, mind map, graph, flowchart and timeline diagrams | section 6 |
+| images | supplied-image placeholders, image rows, local media and selective searched images | section 5 |
+| small motifs | the complete 50-sticker subject catalogue plus the reader's custom stickers | section 4 |
+| trim and construction | paper stocks, frames, flat lifts, rotation and—only when semantically justified—tape or washi | section 4 |
+
+These roles are alternatives and complements, not quotas. Prefer the visual
+form that explains or organises the content; use decoration only after the
+content's hierarchy and page rhythm are sound.
+
 ---
 
 ## 1. Page style (frontmatter)
@@ -46,7 +127,7 @@ Optional. If present, it must be the very first thing in the note. Flat
 ```
 ---
 title: Cell Biology — Week 3   # the note's own title
-paper: grid                    # paper style: cream | grid | dotted | lined
+paper: grid                    # paper style: cream | lined | ruled | grid | blank | dotted | narrow | wide | college | legal | double | dashed | graph | quadrille | quadrille-wide | iso | engineering | dot-fine | dot-wide | cross | hex | manuscript | calligraphy | cornell | margin | staves | tab | storyboard | log
 ink: sepia                     # handwriting color: sepia | graphite | ink-blue
 wash: amber                    # page-edge watercolor: amber | terracotta | moss | none
 ---
@@ -90,9 +171,16 @@ A paragraph. Blank lines separate paragraphs.
 Notes:
 
 - Headings stop at `###`. `####` and deeper are treated as `###` (warned).
-- `---` on its own line (not at the top of the file) is a divider.
+- `---` on its own line (not at the top of the file) is a divider. Use it only
+  for a rare semantic break *inside* a section (usually zero to two in a whole
+  note). Do not put dividers before or after every heading: headings already
+  create the visual hierarchy, and repeated rules make a page look striped.
 - The `| --- | --- |` row makes the row above it the table header.
   Use `:---`, `:---:`, `---:` for left/center/right alignment.
+- Keep tables full-width when they have three or more columns, long headers,
+  code, or formulae. Inside `::: columns`, use prose, short lists or at most a
+  two-column table with brief one- or two-word cells. Never force a data table
+  into half a page: words must not break letter-by-letter to make it fit.
 
 ### Protected page boundaries: `::page`
 
@@ -115,6 +203,93 @@ If earlier text or an oversized image overflows, Alcove inserts spill pages
 section forward. Use this before chapters, answer keys, appendices, or any
 section whose intended page must not inherit alignment changes upstream. Do
 not put `::page` inside a container or code fence.
+
+For a long note, plan the pages, but let normal content flow do most of the
+work. `::page` is exceptional: use it only before a chapter-scale opening,
+answer key, appendix, full-page visual, or another section whose alignment is
+genuinely important. Do **not** put one before every `##` heading. A typical
+eight-to-twelve-section study note needs roughly three to five protected
+boundaries, not ten or twelve. In particular, a boundary is useful after a
+large image, table, diagram or dense list whose later resizing must not move a
+subsequent chapter. Keep each planned page comfortably below capacity; a page
+boundary is an alignment anchor, not permission to strand half a page. Use
+headings plus whitespace for ordinary transitions and reserve `---` for a
+genuine change of thought within one section.
+
+### Plan with a private ruled-line budget
+
+Alcove pages are fixed-height paper, not scrolling web pages. Before writing
+the final file, make a **private page ledger** and charge every block for the
+ruled lines it is likely to occupy. Do not include this ledger in the note or
+in your answer. Use this deliberately conservative budget:
+
+| block | charge to the private ledger |
+| --- | --- |
+| `#` or `##` heading | 2 ruled lines for every visible wrapped line |
+| `###` heading | 1 ruled line for every visible wrapped line |
+| paragraph, quote, list | 1 line per visible wrapped line; every wrapped list item costs another line |
+| display equation `$$…$$` | 2 lines; 3 for stacked fractions, matrices, or several rows |
+| table | 2 setup lines + about 1.25 lines per header/data row; add lines for wrapped cells |
+| sticky note, callout, card | its visible text lines + 3 construction lines |
+| tree, graph, flowchart, timeline | 8–14 lines depending on node/entry count |
+| standalone image at `width=80`–`100` | 10–14 lines including caption; budget the **finished image**, not the smaller empty placeholder |
+| image row | 7–10 lines including captions |
+| feature-to-prose transition | 1 safety line |
+
+Treat **18 lines as a comfortable planned page** and **20 as the normal
+maximum**. The app can sometimes fit more, but handwriting wraps differently
+from browser text and user-supplied pictures have real aspect ratios. If a
+page exceeds 20, split or shorten it. Every protected page should normally
+carry at least 11–12 useful lines of content (about 60% of the sheet). If it
+does not, remove that `::page`, combine it with an adjacent section, or add a
+meaningful visual/practice block. If a page ends with more than about four
+unused lines, pull a coherent block forward unless the breathing room is a
+deliberate full-page illustration or chapter ending.
+
+If six or more accidental lines remain after sensible rearrangement, enrich
+the page instead of leaving it half-authored. Choose the first option that
+genuinely improves understanding:
+
+1. a compact tree, flowchart, timeline, comparison or labelled relationship;
+2. a plain-language analogy or one small worked example;
+3. one to three practice prompts followed by a click-to-reveal answer and
+   solution, for example:
+
+   ```
+   ### Try it
+
+   Why can no Huffman codeword be the prefix of another?
+
+   ::: spoiler
+   **Answer:** otherwise the decoder could not know whether to stop or keep
+   reading. Follow the tree until a leaf; a leaf ends one symbol.
+   :::
+   ```
+
+4. only as a rare last resort, one genuinely relevant `fetch:` illustration
+   that reinforces the topic. Never add random scenery, pets or decorative
+   stock imagery merely to occupy paper.
+
+An intentionally quiet ending or full-page illustration is allowed. An empty
+half-page created by a premature `::page`, a missing payload, or a failed line
+budget is not.
+
+Never put a width-80–100 placeholder after a large heading, quotation, or
+card and assume the placeholder's temporary height is the final height. Give
+that image its own planned page, place it earlier while ten or more lines are
+still free, or make it narrower. Otherwise the supplied image will correctly
+flow to a spill page and leave a large gap behind.
+
+Every lead-in must keep its payload: a sentence ending in `:` such as “The
+goals are:” must be immediately followed by its list, table, equation or
+diagram on the same planned page. Never leave an introductory colon at the
+bottom of a page, a heading alone at the foot, an empty container, or a page
+whose only content is accidental whitespace.
+
+Keep a displayed equation to roughly 45 visible characters when possible. If
+a derivation is wider, split it at an equals sign into two display equations
+with a short connector such as “therefore”; do not rely on horizontal scrolling
+or let the right side disappear beyond the paper.
 
 ## 3. Inline marks
 
@@ -148,7 +323,9 @@ $$
 `$$ x = 1 $$` on one line works too. Everything between the dollars is handed
 to the maths renderer untouched — no Notebook Script markup applies inside a
 formula. Common TeX forms such as `\bar{L}`, `\overline{x}` and `\boxed{x=1}`
-are supported. A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
+are supported. Floor and ceiling delimiters work both directly
+(`\lfloor x\rfloor`, `\lceil x\rceil`) and with growing pairs
+(`\left\lceil \frac{n}{2} \right\rceil`). A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
 because a formula may not open or close against a space.
 
 ### Footnotes
@@ -199,19 +376,26 @@ are fine, `#some-id` and `.some-class` shorthands work.
 
 | attr | values | what it does |
 | --- | --- | --- |
-| `color` | `amber` `terracotta` `moss` `lemon` `sky` `blush` `graphite` | watercolor tint |
-| `sticker` | `star` `bee` `leaf` `microscope` `heart` `flower` `book` `pin` `sparkle` `moon` `sun` `cat` `coffee` `music` `arrow` | doodle sticker in the margin |
-| `tape` | `top` `corner` `both` `left` `right` | scotch-tape effect |
-| `washi` | `top` `left` `corner` | washi tape strip |
+| `color` | `amber` `terracotta` `moss` `lemon` `sky` `blush` `graphite` `honey` `apricot` `peach` `straw` `mustard` `ochre` `sand` `coral` `cherry` `brick` `rust` `wine` `petal` `mulberry` `plum` `violet` `orchid` `lilac` `lavender` `periwinkle` `cornflower` `denim` `navy` `indigo` `teal` `turquoise` `seafoam` `mint` `jade` `fernwash` `olive` `sage` `lime` `forest` `clay` `copper` `bronze` `cocoa` `walnut` `ash` `stone` `pebble` `slate` | watercolor tint |
+| `sticker` | `star` `bee` `leaf` `heart` `sparkle` `cat` `sun` `flower` `clover` `mushroom` `acorn` `pine` `cactus` `feather` `wave` `rainbow` `moon` `cloud` `raindrop` `snowflake` `bolt` `bird` `fish` `butterfly` `snail` `whale` `fox` `book` `pencil` `microscope` `bulb` `clip` `pin` `ruler` `flask` `atom` `coffee` `teapot` `cake` `apple` `cherry` `music` `arrow` `check` `key` `crown` `gift` `ticket` `compass` `globe` | doodle sticker in the margin |
+| `tape` | `top` `corner` `both` `left` `right` `bottom` `cross` `quad` `band` `sliver` `twin` `triple` `ladder` `seam` `splice` `vee` `masking` `parcel` `duct` `gaffer` `electric` `surgical` `frosted` `glassy` `crepe` `gummed` `strapping` `bookcloth` `kraft` `foilstrip` `staple` `clip` `bulldog` `pushpin` `tack` `eyelet` `studded` `brad` `grommet` `wax` `ribbon` `string` `mounts` `pouch` `dogear` `hinge` `patch` `ripped` `curled` `yellowed` | scotch-tape effect |
+| `washi` | `top` `left` `corner` `bottom` `right` `cross` `edge` `stripe` `pinstripe` `gingham` `check` `tartan` `plaid` `chevron` `herringbone` `zigzag` `wavy` `scalloped` `diamond` `argyle` `lattice` `honeycomb` `brickwork` `mosaic` `ticking` `seersucker` `spots` `polka` `confetti` `beads` `speckle` `ricrac` `floral` `ivy` `vine` `fern` `bamboo` `clouds` `rainbow` `moons` `sunbeam` `stars` `hearts` `arrows` `ticks` `grid` `ombre` `marble` `lace` `gilt` | washi tape strip |
 | `rotate` | number, `-3` to `3` | slight tilt, in degrees |
-| `paper` | `torn` `lined` `graph` `aged` `index` | paper texture for this block |
-| `shadow` | `soft` `lifted` `stacked` | soft drop shadow |
-| `underline` | `squiggle` `marker` `dotted` `double` `circled` | hand-drawn underline |
-| `frame` | `scallop` `stitch` `double` `rope` `ticket` | decorative border |
-| `font` | `hand` `casual` `marker` `script` `chalk` `note` `serif` `book` `mono` | lettering this block is written in |
-| `ink` | `sepia` `graphite` `ink-blue` `crimson` `moss` | ink colour for this block |
-| `size` | `xs` `sm` `md` `lg` `xl` | lettering size |
-| `align` | `left` `center` `right` | which way the lines are ranged |
+| `paper` | `torn` `lined` `graph` `aged` `index` `kraft` `vellum` `parchment` `papyrus` `newsprint` `tracing` `onion` `cartridge` `coldpress` `hotpress` `handmade` `marbled` `mulberry` `linenstock` `laid` `cotton` `foilpaper` `carbon` `thermal` `dotgrid` `stave` `ledger` `blueprint` `cornell` `isometric` `hexes` `millimetre` `logarithmic` `polar` `engineer` `accounts` `legal` `copybook` `tablature` `crossword` `calendar` `notepad` `receipt` `airmail` `telegram` `punchcard` `manuscript` `foxed` `stained` `scorched` | paper texture for this block |
+| `shadow` | `soft` `lifted` `stacked` `plate` `deep` `riser` `sunken` `ledge` `card` `float` `hover` `drop` `longcast` `hard` `halo` `ring` `mat` `mount` `tray` `pouched` `letterbox` `emboss` `deboss` `press` `cutout` `shingle` `fan` `step` `terrace` `cliff` `well` `groove` `relief` `cameo` `inlay` `plinth` `pedestal` `slab` `tile` `coaster` `pad` `board` `cork` `felt` `passepartout` `gallery` `vitrine` `drawer` `shelfline` `buttress` | soft drop shadow |
+| `underline` | `squiggle` `marker` `dotted` `double` `circled` `dashed` `scribble` `ruled` `boxed` `brush` `arrow` `zigzag` `dotdash` `triple` `thick` `hairline` `tapered` `chalked` `pencilled` `crayoned` `gel` `fineliner` `sweep` `halfsweep` `fade` `bracketed` `parens` `pill` `struck` `redline` `caret` `tickmark` `chevrons` `wavy` `loops` `coil` `rungs` `rail` `comb` `sawtooth` `beaded` `starred` `macron` `ogee` `swash` `flourish` `tail` `hook` `curl` `kick` | hand-drawn underline |
+| `frame` | `scallop` `stitch` `double` `rope` `ticket` `pinked` `chain` `wave` `notch` `ruled` `tabs` `deckle` `bead` `braid` `meander` `laurel` `ivyframe` `dogtooth` `dentil` `eggdart` `fret` `guilloche` `filigree` `rosette` `fleur` `scorch` `perfed` `punch` `coupon` `sprocket` `postmark` `diecut` `badge` `shield` `cartouche` `oval` `arch` `gable` `bracket` `cumulus` `pompom` `jagged` `sawedge` `dashes` `pips` `hatched` `rivets` `eyelets` `lacing` `seamed` | decorative border |
+| `font` | `hand` `casual` `marker` `script` `chalk` `note` `serif` `book` `mono` `display` `smallcaps` `wide` `tight` `shout` `quiet` `typed` `ledger` `italic` `heavy` `light` `label` `copperplate` `engrave` `titling` `byline` `stencil` `telegram` `receipt` `blackboard` `lecture` `signature` `flyleaf` `colophon` `footnote` `epigraph` `pullquote` `headline` `poster` `graffiti` `sharpie` `crayon` `pencilled` `biro` `fountain` `copybook` `primer` `scrawl` `neat` `draft` `archive` | lettering this block is written in |
+| `ink` | `sepia` `graphite` `ink-blue` `crimson` `moss` `charcoal` `irongall` `slate` `amber` `gold` `ochre` `mustard` `sand` `bronze` `copper` `terracotta` `coral` `brick` `rust` `wine` `burgundy` `madder` `oxblood` `blossom` `peach` `olive` `forest` `pine` `sage` `lime` `fern` `teal` `turquoise` `jade` `mint` `seafoam` `skyink` `denim` `cobalt` `navy` `indigo` `violet` `plum` `mulberry` `orchid` `lilac` `lavender` `umber` `walnut` `clay` | ink colour for this block |
+| `size` | `xs` `sm` `md` `lg` `xl` `caption` `compact` `roomy` `jumbo` `giant` `colossal` `marquee` | lettering size |
+| `align` | `left` `center` `right` `justify` `indent` `hanging` `outdent` `balance` `tidy` `narrow` | which way the lines are ranged |
+
+This is the complete live Catalogue, not a sampler. The long domains are
+intentional: Alcove has many physically distinct papers, frames, fastening
+marks, lettering hands, inks and underlines. Select by meaning and visual role,
+not by list position. A page usually needs only a few coordinated choices; a
+notebook should use enough of the catalogue to avoid repetition without trying
+to demonstrate every option.
 
 Everything else is scoped to where it makes sense:
 
@@ -239,11 +423,11 @@ Everything else is scoped to where it makes sense:
 Examples:
 
 ```
-## Field Notes {tape=corner, rotate=-2, color=sky}
+## Field Notes {frame=stitch, color=sky}
 
 Remember the powerhouse. {underline=marker}
 
-> Nothing in biology makes sense except in the light of evolution. {washi=top}
+> Nothing in biology makes sense except in the light of evolution. {font=serif, ink=moss}
 
 --- {color=terracotta}
 ```
@@ -260,29 +444,65 @@ automatically:
 | `star` | a five-pointed doodle star — favourites, gold-star results |
 | `bee` | a little bee — nature, pollination, busywork |
 | `leaf` | a single leaf — biology, autumn, growth |
-| `microscope` | a microscope — lab work, close reading, science |
 | `heart` | a hand-drawn heart — things loved or cared about |
-| `flower` | a small bloom — spring, botany, something cheerful |
-| `book` | a closed book — reading lists, references, homework |
-| `pin` | a push-pin — pinned reminders, 'do not lose this' |
 | `sparkle` | a four-point sparkle — ideas, magic, a nice result |
-| `moon` | a crescent moon — night, sleep, phases, endings |
-| `sun` | a rayed sun — mornings, energy, weather |
 | `cat` | a curled cat — pets, comfort, a break |
+| `sun` | a rayed sun — mornings, energy, weather |
+| `flower` | a small bloom — spring, botany, something cheerful |
+| `clover` | a four-leaf clover — luck, wishes, fortunate results |
+| `mushroom` | a little mushroom — fungi, forests, foraging |
+| `acorn` | an acorn — autumn, oak trees, small beginnings |
+| `pine` | a pine tree — forests, winter, camping |
+| `cactus` | a potted cactus — deserts, resilience, houseplants |
+| `feather` | a feather — birds, lightness, writing and quills |
+| `wave` | a curling wave — oceans, tides, motion |
+| `rainbow` | a small rainbow — colour, hope, weather |
+| `moon` | a crescent moon — night, sleep, phases, endings |
+| `cloud` | a soft cloud — weather, daydreaming, uncertainty |
+| `raindrop` | a raindrop — water, weather, tears |
+| `snowflake` | a snowflake — winter, cold, uniqueness |
+| `bolt` | a lightning bolt — energy, speed, urgency |
+| `bird` | a small bird — song, migration, spring |
+| `fish` | a fish — oceans, aquariums, swimming |
+| `butterfly` | a butterfly — change, metamorphosis, delicacy |
+| `snail` | a snail — patience, slow progress, gardens |
+| `whale` | a whale — scale, oceans, gentle depth |
+| `fox` | a fox — cleverness, woodland, autumn |
+| `book` | a closed book — reading lists, references, homework |
+| `pencil` | a pencil — drafting, editing, sketching |
+| `microscope` | a microscope — lab work, close reading, science |
+| `bulb` | a light bulb — insight, invention, an aha moment |
+| `clip` | a paperclip — attachments, related material, grouping |
+| `pin` | a push-pin — pinned reminders, 'do not lose this' |
+| `ruler` | a ruler — measurement, geometry, planning |
+| `flask` | a laboratory flask — chemistry, experiments, testing |
+| `atom` | an atom — physics, elements, tiny structures |
 | `coffee` | a steaming mug — study breaks, mornings, long sessions |
+| `teapot` | a teapot — calm pauses, brewing, afternoons |
+| `cake` | a slice of cake — celebration, birthdays, rewards |
+| `apple` | an apple — school, health, teachers, autumn |
+| `cherry` | a pair of cherries — summer, sweetness, pairs |
 | `music` | an eighth note — songs, practice, rhythm |
 | `arrow` | a curved arrow — 'see this', a pointer to the next thing |
+| `check` | a hand-drawn tick — completion, correctness, well done |
+| `key` | a key — the key idea, access, unlocking |
+| `crown` | a small crown — winners, best examples, priority |
+| `gift` | a wrapped gift — surprises, thanks, celebrations |
+| `ticket` | a ticket stub — events, admission, travel |
+| `compass` | a compass — direction, planning, finding a route |
+| `globe` | a globe — geography, world topics, travel |
 
-Effects stack — a sticky note can be tinted, tilted and taped all at once:
+Effects can combine when each contributes a distinct job:
 
 ```
-::: sticky-note {color=blush, rotate=2, tape=corner, sticker=bee}
+::: sticky-note {color=blush, rotate=2, frame=stitch, sticker=bee}
 Pollination notes — see diagram below!
 :::
 ```
 
 Use effects like seasoning: one or two per block reads as handmade charm,
-five reads as chaos.
+five reads as chaos. Across a notebook, vary the visual roles rather than
+reusing the same tape, frame, sticker or paper treatment mechanically.
 
 ### Variables: `::let name = value`, used as `{{name}}`
 
@@ -318,13 +538,13 @@ Taught by {{teacher}} in {{room}}.
 Name a set of attributes once, then decorate many blocks with it:
 
 ```
-::style hero {color=amber, rotate=-2, tape=corner}
+::style hero {color=amber, rotate=-2, frame=double}
 ::style quiet {color=graphite}
 
 # The Cell {use=hero}
 
 ::: sticky-note {use=hero, color=lemon}
-Explicit attrs win — this note is lemon, still tilted and taped.
+Explicit attrs win — this note is lemon, still tilted and framed.
 :::
 
 Footnote-ish aside. {use=quiet}
@@ -413,16 +633,13 @@ matching is generous too: case, spaces, `-` and `_` are all ignored, so
 | `::: warn`, `::: warning`, `::: caution` | `::: callout {variant=warn}` |
 | `::: star`, `::: important` | `::: callout {variant=star}` |
 
-A tour of the containers:
+A short tour of container structure (the generated table above is the complete
+container catalogue):
 
 ```
 ::: polaroid {rotate=2}
 ![lab microscope](assets/scope.png)
 A polaroid caption goes right under the photo.
-:::
-
-::: washi-box {color=sky}
-Held to the page with two strips of washi tape.
 :::
 
 ::: callout {variant=info}
@@ -466,7 +683,9 @@ Hidden until clicked — perfect for self-quizzing answers.
 ### Image rows and fetched images
 
 Inside an `image-row`, each line is one image. A `fetch:` line asks the app
-to find an image for that query (it downloads and caches one at insert time):
+to find an image for that query (the installed desktop app downloads and
+caches one at insert time; localhost, offline or search failure becomes a real
+upload card rather than literal `fetch:` text):
 
 ```
 ::: image-row {style=polaroid, cols=3}
@@ -788,7 +1007,7 @@ wash: amber
 
 ::let course = Cell Biology
 ::let week = 3
-::style pinned {color=lemon, rotate=-2, tape=corner}
+::style pinned {color=lemon, rotate=-1, frame=stitch}
 
 # The Cell {sticker=microscope}
 
@@ -811,6 +1030,10 @@ Exam on **Friday!** Focus on mitochondria.
 - Example: plants, animals
 :::
 :::
+
+::page
+
+## Visual study page
 
 ::: image-row {style=polaroid, cols=3}
 fetch: fluffy kitten | caption=Study break :3
@@ -837,7 +1060,7 @@ Cell
 1855: Virchow — cells from cells
 ```
 
-> "Omnis cellula e cellula" — Virchow {washi=top}
+> "Omnis cellula e cellula" — Virchow {frame=double, ink=moss}
 ```
 
 ## 10. Quick reference card
@@ -881,7 +1104,23 @@ DEFINITIONS (leaf directives — no closing ':::')
 fetch: a kitten | caption=hi  one per line in an image-row
 ```
 
-## 11. Final checklist (before you answer)
+## 11. Mandatory two-pass production and final checklist
+
+Do not send your first draft. Work privately in two complete passes:
+
+1. **Draft pass:** write the whole note and place deliberate `::page`
+   boundaries.
+2. **Audit-and-regenerate pass:** build the private line ledger for every
+   planned page, reread every block from the first line to the last, then
+   regenerate the entire corrected Markdown. Check page totals, finished-image
+   sizes, wrapped table cells, orphan headings, colon lead-ins, missing list
+   items, empty containers, excessive whitespace, repeated pages/sections,
+   container/fence balance, TeX delimiters and all parser rules below.
+
+After the second pass, provide **one final `.md` attachment**. Do not show the
+draft, the ledger, or two competing files. The attached file must be the
+regenerated second-pass result. Outside the file, one short sentence may list
+creative/subjective liberties taken; do not paste the Markdown into chat.
 
 1. Frontmatter first (optional), flat `key: value`, closed with `---`.
 2. Only `#`/`##`/`###` headings.
@@ -895,13 +1134,34 @@ fetch: a kitten | caption=hi  one per line in an image-row
 8. Every `{{name}}` you write has a matching `::let name = …` somewhere, and
    every `{use=name}` has a matching `::style name {…}`. If you only use a
    value once, skip the variable and write the value.
-9. Sprinkle personality: a sticky-note, a sticker, a slight `rotate`, an
-   `image-row` with a `fetch:` or two. The app is warm and hand-drawn —
-   notes should feel like that too.
-10. If only the reader can supply an image, use an empty destination together
+9. Use `::page` only for chapter-scale alignment, not before every `##`.
+   Ordinary headings flow naturally; a typical long study note uses only
+   three to five protected boundaries. Use `---` only for rare within-section
+   breaks — usually zero to two dividers in the whole note.
+10. Inspect every chat attachment. A topic-relevant supplied picture gets one
+    well-placed upload placeholder; an instructional screenshot does not.
+11. Unless the person asks for minimal/formal styling, default to a warm grid
+    or dotted page, two or three recurring accent colours, one strong opening
+    visual, useful diagrams, and revealable practice answers. Draw deliberately
+    from the full paper/card/callout/lettering/diagram/sticker/trim catalogue;
+    vary visual roles instead of repeating one favourite device. Do not use
+    `tape=`/`washi=` by default. Use `fetch:` only when a relevant image teaches
+    something the note cannot show better.
+12. If only the reader can supply an image, use an empty destination together
     with `placeholder=...`; never emit a bare `![alt]()`.
-11. Preserve `media=video` and its exported `asset=...` path when a page
+13. Preserve `media=video` and its exported `asset=...` path when a page
     contains local video; never replace it with a guessed URL.
-12. Return the note as an attached `.md` file and tell the person to download
+14. The private page ledger gives every page at most 20 planned lines and every
+    protected page normally at least 11–12 useful lines, charges a large
+    user-supplied image 10–14 lines, and has no accidental dead page, orphan
+    heading, colon without its payload, or unexplained gap over four lines.
+15. Tables fit without horizontal scrolling or letter-by-letter header breaks;
+    displayed equations fit the paper or are split into readable steps.
+16. Read every sentence aloud during the second pass. Rewrite interrupted,
+    repetitive or unnatural constructions; no technically correct but strange
+    prose such as “No code is allowed to be the beginning—the prefix—of another.”
+17. You completed the audit-and-regenerate pass over the entire file and
+    removed repeated sections/pages and malformed or visually stranded blocks.
+18. Return the note as an attached `.md` file and tell the person to download
     it. Do not replace the attachment with rendered browser text or a code
     block unless they explicitly ask you to.

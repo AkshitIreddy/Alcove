@@ -27,7 +27,46 @@ describe('Notebook maths structural commands', () => {
 
   it('advertises the supported commands to generated documentation', () => {
     expect(KNOWN_MACROS).toEqual(
-      expect.arrayContaining(['bar', 'overline', 'boxed']),
+      expect.arrayContaining(['bar', 'overline', 'boxed', 'lceil', 'rceil']),
     );
+  });
+
+  it('renders ordinary ceiling delimiters around the exact logarithm form an AI writes', () => {
+    const latex = '\\lceil\\log_2 5\\rceil';
+    const html = mathToHtml(latex);
+
+    expect(parseMath(latex)).toMatchObject([
+      { kind: 'glyph', text: '⌈', role: 'open' },
+      { kind: 'script', base: { kind: 'text', text: 'log' }, sub: [{ kind: 'glyph', text: '2' }] },
+      { kind: 'space' },
+      { kind: 'glyph', text: '5', role: 'num' },
+      { kind: 'glyph', text: '⌉', role: 'close' },
+    ]);
+    expect(html).toContain('>⌈<');
+    expect(html).toContain('>⌉<');
+    expect(html).not.toContain('nb-m-unknown');
+  });
+
+  it('keeps ceiling delimiters compatible with growing left/right fences', () => {
+    const html = mathToHtml('\\left\\lceil \\frac{n}{2} \\right\\rceil');
+
+    expect(html).toContain('nb-m-fence');
+    expect(html).toContain('⌈');
+    expect(html).toContain('⌉');
+    expect(html).toContain('nb-m-frac');
+    expect(html).not.toContain('nb-m-unknown');
+  });
+
+  it('renders AI shorthand fractions as one-token numerator and denominator', () => {
+    const parsed = parseMath('2^{-1}=\\frac12+\\frac14+\\frac18+\\frac1{16}');
+    const fractions = parsed.filter((atom) => atom.kind === 'frac');
+
+    expect(fractions).toEqual([
+      { kind: 'frac', num: [{ kind: 'glyph', text: '1', role: 'num' }], den: [{ kind: 'glyph', text: '2', role: 'num' }], small: false },
+      { kind: 'frac', num: [{ kind: 'glyph', text: '1', role: 'num' }], den: [{ kind: 'glyph', text: '4', role: 'num' }], small: false },
+      { kind: 'frac', num: [{ kind: 'glyph', text: '1', role: 'num' }], den: [{ kind: 'glyph', text: '8', role: 'num' }], small: false },
+      { kind: 'frac', num: [{ kind: 'glyph', text: '1', role: 'num' }], den: [{ kind: 'glyph', text: '16', role: 'num' }], small: false },
+    ]);
+    expect(mathToHtml('\\frac12')).toContain('nb-m-frac-den\"><span class="nb-m-num">2<');
   });
 });

@@ -30,8 +30,46 @@ export const WASH_COLORS = [
 
 export type WashColor = (typeof WASH_COLORS)[number];
 
-/** Page paper styles (frontmatter `paper:`). */
-export const PAPER_STYLES = ["cream", "grid", "dotted", "lined"] as const;
+/**
+ * Page paper styles (frontmatter `paper:`).
+ *
+ * `cream` and `lined` are friendly writing aliases for the editor's `blank`
+ * and `ruled`. The rest are the actual page-style ids. Keeping the full
+ * catalogue here means an AI-authored note can ask for any paper the reader
+ * can choose in the Page style sheet instead of being confined to the four
+ * papers Alcove originally shipped with.
+ */
+export const PAPER_STYLES = [
+  "cream",
+  "lined",
+  "ruled",
+  "grid",
+  "blank",
+  "dotted",
+  "narrow",
+  "wide",
+  "college",
+  "legal",
+  "double",
+  "dashed",
+  "graph",
+  "quadrille",
+  "quadrille-wide",
+  "iso",
+  "engineering",
+  "dot-fine",
+  "dot-wide",
+  "cross",
+  "hex",
+  "manuscript",
+  "calligraphy",
+  "cornell",
+  "margin",
+  "staves",
+  "tab",
+  "storyboard",
+  "log",
+] as const;
 
 /** Page ink colors (frontmatter `ink:`). */
 export const INK_COLORS = ["sepia", "graphite", "ink-blue"] as const;
@@ -47,23 +85,58 @@ export const STICKER_NAMES = [
   "star",
   "bee",
   "leaf",
-  "microscope",
   "heart",
-  "flower",
-  "book",
-  "pin",
   "sparkle",
-  "moon",
-  "sun",
   "cat",
+  "sun",
+  "flower",
+  "clover",
+  "mushroom",
+  "acorn",
+  "pine",
+  "cactus",
+  "feather",
+  "wave",
+  "rainbow",
+  "moon",
+  "cloud",
+  "raindrop",
+  "snowflake",
+  "bolt",
+  "bird",
+  "fish",
+  "butterfly",
+  "snail",
+  "whale",
+  "fox",
+  "book",
+  "pencil",
+  "microscope",
+  "bulb",
+  "clip",
+  "pin",
+  "ruler",
+  "flask",
+  "atom",
   "coffee",
+  "teapot",
+  "cake",
+  "apple",
+  "cherry",
   "music",
   "arrow",
+  "check",
+  "key",
+  "crown",
+  "gift",
+  "ticket",
+  "compass",
+  "globe",
 ] as const;
 
 /**
  * Wave 2 (custom stickers): the *live* sticker value domain. Starts as the
- * 15 built-in names and grows at runtime when the user imports custom
+ * 50 built-in names and grows at runtime when the user imports custom
  * stickers (`user:<name>` — see src/editor/nodes/stickers.ts). Kept as a
  * mutable array so the attr parser's fuzzy matcher accepts registered user
  * stickers without a warning. The built-in table above stays frozen.
@@ -152,24 +225,46 @@ export const MEDIA_VALUES = ["image", "video"] as const;
  * `rotate`, `cols`, `count` etc. are free-form and never fuzzy-matched.
  */
 export const ATTR_ENUM_DOMAINS: Record<string, readonly string[]> = {
-  color: WASH_COLORS,
+  color: [...WASH_COLORS],
   // Live domain: built-ins + runtime-registered `user:` stickers (wave 2).
   sticker: SCRIPT_STICKER_DOMAIN,
-  tape: TAPE_VALUES,
-  washi: WASHI_VALUES,
-  paper: BLOCK_PAPER_VALUES,
-  shadow: SHADOW_VALUES,
-  underline: UNDERLINE_VALUES,
-  frame: FRAME_VALUES,
-  font: FONT_VALUES,
-  ink: BLOCK_INK_VALUES,
-  size: SIZE_VALUES,
-  align: ALIGN_VALUES,
-  variant: CALLOUT_VARIANTS,
-  gap: GAP_VALUES,
-  style: IMAGE_STYLE_VALUES,
-  media: MEDIA_VALUES,
+  tape: [...TAPE_VALUES],
+  washi: [...WASHI_VALUES],
+  paper: [...BLOCK_PAPER_VALUES],
+  shadow: [...SHADOW_VALUES],
+  underline: [...UNDERLINE_VALUES],
+  frame: [...FRAME_VALUES],
+  font: [...FONT_VALUES],
+  ink: [...BLOCK_INK_VALUES],
+  size: [...SIZE_VALUES],
+  align: [...ALIGN_VALUES],
+  variant: [...CALLOUT_VARIANTS],
+  gap: [...GAP_VALUES],
+  style: [...IMAGE_STYLE_VALUES],
+  media: [...MEDIA_VALUES],
 };
+
+/**
+ * Add editor-side values to Notebook Script's live accepted domains.
+ *
+ * The page editor has a much larger stationer's catalogue than the original
+ * writing language. Its vocabulary module calls this once at startup, and the
+ * spec generator loads that same module before it writes the guide. The
+ * parser therefore accepts every value advertised to the AI without a false
+ * "unknown value" warning, while the small constants above remain useful as
+ * compatibility aliases and typed defaults.
+ */
+export function registerScriptAttrValues(
+  key: string,
+  values: readonly string[],
+): void {
+  const domain = ATTR_ENUM_DOMAINS[key];
+  if (domain === undefined) return;
+  const writable = domain as string[];
+  for (const value of values) {
+    if (!writable.includes(value)) writable.push(value);
+  }
+}
 
 /**
  * Frontmatter enum domains (checked with the same fuzzy matcher). Declared
@@ -768,18 +863,53 @@ export const STICKER_DOCS: Record<StickerName, string> = {
   star: "a five-pointed doodle star — favourites, gold-star results",
   bee: "a little bee — nature, pollination, busywork",
   leaf: "a single leaf — biology, autumn, growth",
-  microscope: "a microscope — lab work, close reading, science",
   heart: "a hand-drawn heart — things loved or cared about",
-  flower: "a small bloom — spring, botany, something cheerful",
-  book: "a closed book — reading lists, references, homework",
-  pin: "a push-pin — pinned reminders, 'do not lose this'",
   sparkle: "a four-point sparkle — ideas, magic, a nice result",
-  moon: "a crescent moon — night, sleep, phases, endings",
-  sun: "a rayed sun — mornings, energy, weather",
   cat: "a curled cat — pets, comfort, a break",
+  sun: "a rayed sun — mornings, energy, weather",
+  flower: "a small bloom — spring, botany, something cheerful",
+  clover: "a four-leaf clover — luck, wishes, fortunate results",
+  mushroom: "a little mushroom — fungi, forests, foraging",
+  acorn: "an acorn — autumn, oak trees, small beginnings",
+  pine: "a pine tree — forests, winter, camping",
+  cactus: "a potted cactus — deserts, resilience, houseplants",
+  feather: "a feather — birds, lightness, writing and quills",
+  wave: "a curling wave — oceans, tides, motion",
+  rainbow: "a small rainbow — colour, hope, weather",
+  moon: "a crescent moon — night, sleep, phases, endings",
+  cloud: "a soft cloud — weather, daydreaming, uncertainty",
+  raindrop: "a raindrop — water, weather, tears",
+  snowflake: "a snowflake — winter, cold, uniqueness",
+  bolt: "a lightning bolt — energy, speed, urgency",
+  bird: "a small bird — song, migration, spring",
+  fish: "a fish — oceans, aquariums, swimming",
+  butterfly: "a butterfly — change, metamorphosis, delicacy",
+  snail: "a snail — patience, slow progress, gardens",
+  whale: "a whale — scale, oceans, gentle depth",
+  fox: "a fox — cleverness, woodland, autumn",
+  book: "a closed book — reading lists, references, homework",
+  pencil: "a pencil — drafting, editing, sketching",
+  microscope: "a microscope — lab work, close reading, science",
+  bulb: "a light bulb — insight, invention, an aha moment",
+  clip: "a paperclip — attachments, related material, grouping",
+  pin: "a push-pin — pinned reminders, 'do not lose this'",
+  ruler: "a ruler — measurement, geometry, planning",
+  flask: "a laboratory flask — chemistry, experiments, testing",
+  atom: "an atom — physics, elements, tiny structures",
   coffee: "a steaming mug — study breaks, mornings, long sessions",
+  teapot: "a teapot — calm pauses, brewing, afternoons",
+  cake: "a slice of cake — celebration, birthdays, rewards",
+  apple: "an apple — school, health, teachers, autumn",
+  cherry: "a pair of cherries — summer, sweetness, pairs",
   music: "an eighth note — songs, practice, rhythm",
   arrow: "a curved arrow — 'see this', a pointer to the next thing",
+  check: "a hand-drawn tick — completion, correctness, well done",
+  key: "a key — the key idea, access, unlocking",
+  crown: "a small crown — winners, best examples, priority",
+  gift: "a wrapped gift — surprises, thanks, celebrations",
+  ticket: "a ticket stub — events, admission, travel",
+  compass: "a compass — direction, planning, finding a route",
+  globe: "a globe — geography, world topics, travel",
 };
 
 // --- Attributes -------------------------------------------------------------

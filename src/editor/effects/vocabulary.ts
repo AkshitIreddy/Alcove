@@ -51,7 +51,10 @@
 // The parser's key→domain table, whole. The eleven lists used to be imported
 // one by one and re-assembled into a mapping down at SCRIPT_DOMAINS, which is
 // the same table typed a second time — see the note there.
-import { ATTR_ENUM_DOMAINS } from '../../script/vocab';
+import {
+  ATTR_ENUM_DOMAINS,
+  registerScriptAttrValues,
+} from '../../script/vocab';
 
 export type EffectShelf = 'trim' | 'lettering' | 'colour';
 
@@ -749,6 +752,18 @@ export const EFFECT_AXES: readonly EffectAxis[] = [
   { key: 'align', label: 'ranging', shelf: 'lettering', blurb: 'which way the lines are ranged', values: ALIGN },
   { key: 'color', label: 'tint', shelf: 'colour', blurb: 'the watercolour it is washed in', values: TINT },
 ];
+
+// Notebook Script is an alternate door into this same editor. Teach its live
+// parser the complete stationer's catalogue before any pasted note is parsed,
+// so an AI may use the values the reader sees in the Catalogue without being
+// warned that a real Alcove option is unknown. The spec generator loads this
+// module too, making the printed guide and the runtime domain the same list.
+for (const axis of EFFECT_AXES) {
+  registerScriptAttrValues(
+    axis.key,
+    axis.values.map((entry) => entry.value),
+  );
+}
 
 const AXIS_BY_KEY = new Map(EFFECT_AXES.map((axis) => [axis.key, axis]));
 

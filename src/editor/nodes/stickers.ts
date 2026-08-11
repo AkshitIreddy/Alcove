@@ -187,7 +187,7 @@ export const STICKER_TAGS: Record<BuiltinStickerId, readonly string[]> = {
 
 /**
  * Wave 2 (custom stickers): user-imported stickers live in the `user:`
- * namespace. A StickerId is either one of the 8 built-ins or `user:<name>`;
+ * namespace. A StickerId is either one of the 50 built-ins or `user:<name>`;
  * everything downstream (sticker node, palette, script vocab) accepts both.
  */
 export type UserStickerId = `user:${string}`;

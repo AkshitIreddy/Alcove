@@ -6,11 +6,12 @@
  * recorded here via the sql plugin (Rust stays filesystem-only) → asset
  * protocol src.
  *
- * Browser dev: object URL + in-memory-DB row, so paste/drop works without
- * the Rust side.
+ * Browser dev: IndexedDB Blob + object URL + stub-DB row, so paste/drop works
+ * without Rust and survives the same reload cycle as the surrounding page.
  */
 import { nanoid } from 'nanoid';
 import { getDb, isTauri } from '../../data/db';
+import { saveDevAssetBlob } from './devAssetStore';
 import { registerDevAssetUrl, resolveAssetSrc } from './resolver';
 
 export interface StoredAsset {
@@ -79,11 +80,11 @@ async function storeMediaBytes(
   // Browser dev fallback: object URL, no filesystem.
   const id = `${kind === 'video' ? 'vid' : 'img'}_dev_${nanoid(10)}`;
   const relPath = `dev/${id}`;
-  const url = URL.createObjectURL(
-    new Blob([bytes.slice().buffer], {
-      type: `${kind}/${suggestedExt || (kind === 'video' ? 'mp4' : 'png')}`,
-    }),
-  );
+  const blob = new Blob([bytes.slice().buffer], {
+    type: `${kind}/${suggestedExt || (kind === 'video' ? 'mp4' : 'png')}`,
+  });
+  await saveDevAssetBlob(relPath, blob);
+  const url = URL.createObjectURL(blob);
   registerDevAssetUrl(relPath, url);
   await recordAssetRow(id, relPath, meta, kind);
   return { assetId: id, relPath, src: url };

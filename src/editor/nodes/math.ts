@@ -68,10 +68,38 @@ function mathNodeView(display: boolean) {
     dom.setAttribute('data-type', display ? 'math' : 'mathInline');
 
     let field: HTMLElement | null = null;
+    let fitFrame = 0;
+
+    /**
+     * Keep a long display equation on the paper without giving it a web-style
+     * horizontal scrollbar. Most equations stay at the authored 1.25em; only
+     * a genuinely over-wide row is optically reduced, with a conservative
+     * readability floor. The AI guide still tells writers to split very long
+     * derivations—this is the safety net for a single modest overrun.
+     */
+    const fitDisplayMath = (): void => {
+      if (!display || field !== null || !dom.isConnected) return;
+      const rendered = dom.querySelector<HTMLElement>('.nb-math-render');
+      if (rendered === null) return;
+      rendered.style.fontSize = '';
+      rendered.removeAttribute('data-fit-scale');
+      const available = dom.clientWidth;
+      const needed = rendered.getBoundingClientRect().width;
+      if (available <= 0 || needed <= available) return;
+      const scale = Math.max(0.62, (available - 2) / needed);
+      rendered.style.fontSize = `${(1.25 * scale).toFixed(3)}em`;
+      rendered.setAttribute('data-fit-scale', scale.toFixed(3));
+    };
+
+    const scheduleFit = (): void => {
+      cancelAnimationFrame(fitFrame);
+      fitFrame = requestAnimationFrame(fitDisplayMath);
+    };
 
     const draw = (): void => {
       if (field !== null) return; // being edited — do not pull the rug
       dom.innerHTML = mathToHtml(latexOf(node), { display });
+      scheduleFit();
     };
 
     const commit = (next: string): void => {
@@ -162,6 +190,7 @@ function mathNodeView(display: boolean) {
       stopEvent: () => field !== null,
       ignoreMutation: () => true,
       destroy: () => {
+        cancelAnimationFrame(fitFrame);
         field = null;
       },
     };

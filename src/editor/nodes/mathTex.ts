@@ -72,6 +72,12 @@ const SYMBOLS: Readonly<Record<string, string>> = {
   infty: '∞', partial: '∂', nabla: '∇', emptyset: '∅', varnothing: '∅',
   aleph: 'ℵ', hbar: 'ℏ', ell: 'ℓ', Re: 'ℜ', Im: 'ℑ', wp: '℘',
   angle: '∠', triangle: '△', square: '□', diamond: '⋄',
+  // Delimiters also work without an explicit `\left` / `\right` pair.
+  // `FENCE_GLYPHS` below handles the growing form; these entries are the
+  // ordinary form used by formulas such as `\lceil\log_2 5\rceil`.
+  langle: '⟨', rangle: '⟩', lbrace: '{', rbrace: '}',
+  lfloor: '⌊', rfloor: '⌋', lceil: '⌈', rceil: '⌉',
+  vert: '|', Vert: '‖',
   ldots: '…', cdots: '⋯', vdots: '⋮', ddots: '⋱', dots: '…',
   prime: '′', degree: '°', percent: '%', checkmark: '✓',
   // spacing macros collapse to a thin space
@@ -229,7 +235,9 @@ const FENCE_GLYPHS: Readonly<Record<string, string>> = {
 };
 
 interface Cursor {
-  readonly tokens: readonly Token[];
+  /** Private parser buffer. Commands may split a compact numeric token when
+   * TeX's one-token argument rule requires it (`\frac12` = 1 over 2). */
+  readonly tokens: Token[];
   index: number;
 }
 
@@ -248,6 +256,27 @@ function parseArgument(cursor: Cursor): Atom[] {
   }
   const atom = parseNucleus(cursor);
   return atom === null ? [] : [atom];
+}
+
+/**
+ * One command argument with TeX's actual unbraced-token semantics.
+ *
+ * The ordinary tokenizer deliberately keeps `12.5` together so a number is
+ * one glyph run. A command without braces is different: `\frac12` means the
+ * next token (`1`) is the numerator and the following token (`2`) is the
+ * denominator. Splitting only this private token buffer preserves compact
+ * ordinary numbers while making AI-authored shorthand fractions correct.
+ */
+function parseCommandArgument(cursor: Cursor): Atom[] {
+  while (peek(cursor)?.kind === 'space') cursor.index += 1;
+  const token = peek(cursor);
+  if (token?.kind === 'char' && token.text.length > 1) {
+    const first = token.text[0]!;
+    const rest = token.text.slice(1);
+    cursor.tokens[cursor.index] = { kind: 'char', text: rest };
+    return [{ kind: 'glyph', text: first, role: glyphRole(first) }];
+  }
+  return parseArgument(cursor);
 }
 
 /** `[…]` — only `\sqrt` takes one, and only immediately. */
@@ -321,20 +350,20 @@ function macroAtom(cursor: Cursor, name: string): Atom | null {
   if (name === 'frac' || name === 'dfrac' || name === 'tfrac') {
     return {
       kind: 'frac',
-      num: parseArgument(cursor),
-      den: parseArgument(cursor),
+      num: parseCommandArgument(cursor),
+      den: parseCommandArgument(cursor),
       small: name === 'tfrac',
     };
   }
   if (name === 'sqrt') {
     const index = parseOptionalArgument(cursor);
-    return { kind: 'root', index, body: parseArgument(cursor) };
+    return { kind: 'root', index, body: parseCommandArgument(cursor) };
   }
   if (name === 'bar' || name === 'overline') {
-    return { kind: 'overline', body: parseArgument(cursor), short: name === 'bar' };
+    return { kind: 'overline', body: parseCommandArgument(cursor), short: name === 'bar' };
   }
   if (name === 'boxed') {
-    return { kind: 'boxed', body: parseArgument(cursor) };
+    return { kind: 'boxed', body: parseCommandArgument(cursor) };
   }
   if (name === 'text' || name === 'mathrm' || name === 'textrm') {
     return { kind: 'text', text: parseTextArgument(cursor), upright: true, bold: false };

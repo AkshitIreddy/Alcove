@@ -13,6 +13,7 @@
  * tests/media.test.ts); `resolveAssetSrc` is the environment-aware wrapper.
  */
 import { getLibraryInfo, isTauri } from '../../data/db';
+import { loadDevAssetBlob } from './devAssetStore';
 
 /** Normalize a rel_path: forward slashes, no leading slash, no `..`. */
 export function normalizeRelPath(relPath: string): string {
@@ -84,5 +85,11 @@ export async function resolveAssetSrc(relPath: string): Promise<string> {
       return MISSING_ASSET_SRC;
     }
   }
-  return devObjectUrls.get(clean) ?? MISSING_ASSET_SRC;
+  const live = devObjectUrls.get(clean);
+  if (live !== undefined) return live;
+  const stored = await loadDevAssetBlob(clean);
+  if (stored === null) return MISSING_ASSET_SRC;
+  const restored = URL.createObjectURL(stored);
+  registerDevAssetUrl(clean, restored);
+  return restored;
 }

@@ -75,6 +75,7 @@ import {
   accumulateCarriedCaret,
   contentOverflows,
   pageIsFull,
+  trailingCompanionCount,
   trailingOverflowCount,
 } from './pagination';
 // The spread's own answer to "how much is this being DRAWN at". Imported
@@ -661,8 +662,19 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         const realBottoms = phantom ? bottoms.slice(0, -1) : bottoms;
         const realCount = doc.childCount - (phantom ? 1 : 0);
 
-        const removeCount = Math.min(
+        const overflowCount = Math.min(
           trailingOverflowCount(realBottoms, capacity, padBottom),
+          realCount - 1,
+        );
+        const companionCount = trailingCompanionCount(
+          Array.from({ length: realCount }, (_, index) => {
+            const node = doc.child(index);
+            return { type: node.type.name, text: node.textContent };
+          }),
+          overflowCount,
+        );
+        const removeCount = Math.min(
+          overflowCount + companionCount,
           realCount - 1,
         );
         if (removeCount <= 0) {
@@ -928,7 +940,27 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     const instance = editor();
     if (!instance || instance.isDestroyed) return;
     const root = instance.view.dom;
-    const resize = new ResizeObserver(queueGridSnap);
+    /*
+     * A block can change height without an editor transaction. The important
+     * real case is a reader filling an AI image placeholder: updateAttributes
+     * replaces the placeholder immediately, but the image's intrinsic height
+     * does not exist until its bytes decode. The transaction-time drain thus
+     * measures the old 158px placeholder (or a not-yet-sized image), and the
+     * later image growth used to run only `queueGridSnap`. Everything below
+     * the grown picture was then clipped by the fixed-height page and looked
+     * deleted even though it still existed in the document.
+     *
+     * ResizeObserver runs after layout and before paint, which is precisely
+     * when the no-scrollbars contract needs a second measurement. Observe the
+     * same top-level border boxes the baseline snapper already owns and drain
+     * before queuing their new grid phase. `extractOverflow` is guarded and
+     * idempotent; removals naturally cause one more observer delivery that
+     * confirms the settled page.
+     */
+    const resize = new ResizeObserver(() => {
+      extractOverflow(instance);
+      queueGridSnap();
+    });
     const observeCurrentBlocks = (): void => {
       resize.disconnect();
       resize.observe(root, { box: 'border-box' });

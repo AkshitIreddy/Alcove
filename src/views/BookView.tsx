@@ -31,6 +31,7 @@ import {
   untrack,
   type JSX,
 } from 'solid-js';
+import type { JSONContent } from '@tiptap/core';
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
 import {
@@ -52,6 +53,7 @@ import {
   persistPageDocIdentity,
   savePageDoc,
   setPageFlowStart,
+  setPageScript,
 } from '../data/pages';
 import { seedIfEmpty } from '../data/seed';
 import { loadDesignPrefs } from '../data/designPrefs';
@@ -83,7 +85,6 @@ import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
 import { downloadNotebookScriptSpec } from '../editor/script/exporters/saveFile';
-import { NOTEBOOK_SCRIPT_SPEC } from '../editor/script/spec';
 import { openExportPdfDialog } from '../features/templates/ExportPdfDialog';
 import { openTemplatesGallery } from '../features/templates/TemplatesGallery';
 import { countBook, countDoc } from '../editor/wordcount';
@@ -323,6 +324,35 @@ export default function BookView(): JSX.Element {
   const [pages, setPages] = createSignal<Page[]>([]);
   const [spreadIndex, setSpreadIndex] = createSignal(0);
   const [focusedSide, setFocusedSide] = createSignal<LeafSide>('left');
+  let scriptInsertionViewLock:
+    | { readonly spread: number; readonly side: LeafSide }
+    | null = null;
+
+  const setScriptInsertionActivity = async (active: boolean): Promise<void> => {
+    if (active) {
+      scriptInsertionViewLock ??= {
+        spread: spreadIndex(),
+        side: focusedSide(),
+      };
+      return;
+    }
+    const home = scriptInsertionViewLock;
+    if (home === null) return;
+    /*
+     * Import creates protected destinations, then mounted/offscreen pages may
+     * enqueue a cascade of overflow carries. Keep the navigation lock until
+     * that serialized chain has genuinely gone quiet; releasing it as soon as
+     * the insert transaction returned let a late carry jump to page 3.
+     */
+    for (let frame = 0; frame < 4; frame += 1) {
+      await carryChain;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    await carryChain;
+    scriptInsertionViewLock = null;
+    setSpreadIndex(home.spread);
+    setFocusedSide(home.side);
+  };
 
   // ---------------------------------------------------------------------------
   // Per-book customization state (cover_meta), hydrated with the session.
@@ -479,17 +509,55 @@ export default function BookView(): JSX.Element {
   ): Promise<void> => {
     const pending = appendLane.then(async () => {
       let after = anchorId;
+      const reusedMountedPages: { id: string; doc: PageDoc }[] = [];
       for (const addition of additions) {
-        const created = await insertPageAfter(after, {
-          doc: addition.doc,
-          scriptSource: addition.source,
-        });
-        if (created === null) break;
-        await setPageFlowStart(created.id, addition.protectedStart);
-        after = created.id;
+        const bookId = session()?.book.id;
+        const ordered = bookId ? await listPages(bookId) : [];
+        const anchorIndex = ordered.findIndex((page) => page.id === after);
+        const reusable = anchorIndex >= 0 ? ordered[anchorIndex + 1] : undefined;
+        let destination: Page | null = null;
+        if (
+          reusable !== undefined &&
+          !docHasContent(reusable.doc) &&
+          reusable.scriptSource === null
+        ) {
+          // A fresh book already has blank leaves. Reusing them avoids moving
+          // those empty starter pages to the tail of a multi-page import.
+          destination = await setPageScript(
+            reusable.id,
+            addition.source,
+            addition.doc,
+          );
+          reusedMountedPages.push({ id: reusable.id, doc: addition.doc });
+        } else {
+          destination = await insertPageAfter(after, {
+            doc: addition.doc,
+            scriptSource: addition.source,
+          });
+        }
+        if (destination === null) break;
+        await setPageFlowStart(destination.id, addition.protectedStart);
+        after = destination.id;
       }
       const bookId = session()?.book.id;
       if (bookId) setPages(await listPages(bookId));
+      /*
+       * Reusing a blank starter leaf updates SQLite and the reactive page
+       * row, but the already-mounted TipTap instance owns its own document.
+       * Without this explicit handoff the stored right page contains the
+       * section while the open book continues to show bare paper until that
+       * leaf is unmounted and revisited. Hydrate only after every protected
+       * destination exists, so a large reused section cannot overflow before
+       * the following anchors have been installed.
+       */
+      for (const reused of reusedMountedPages) {
+        getPageEditor(reused.id)?.commands.setContent(
+          reused.doc as unknown as JSONContent,
+          {
+            emitUpdate: false,
+          },
+        );
+      }
     });
     appendLane = pending.then(
       () => undefined,
@@ -1087,7 +1155,7 @@ export default function BookView(): JSX.Element {
       resetLeafScroll('right');
     });
 
-    if (cursorCarried) {
+    if (cursorCarried && scriptInsertionViewLock === null) {
       const targetSpread = spreadOfSlot(slot + 1);
       if (targetSpread !== spreadIndex()) {
         // Jump the spread SYNCHRONOUSLY instead of the animated flip: the
@@ -1745,8 +1813,8 @@ export default function BookView(): JSX.Element {
     }
   };
 
-  const downloadSpec = async (): Promise<void> => {
-    const outcome = await downloadNotebookScriptSpec(NOTEBOOK_SCRIPT_SPEC);
+  const downloadSpec = async (spec: string): Promise<void> => {
+    const outcome = await downloadNotebookScriptSpec(spec);
     if (outcome === 'saved') {
       notify('format guide saved — attach it to your AI');
     } else if (outcome === 'failed') {
@@ -2505,13 +2573,13 @@ export default function BookView(): JSX.Element {
                     const page = activePage();
                     if (page) void exportScript(page.id);
                   }}
-                  onCopySpec={() =>
+                  onCopySpec={(spec) =>
                     void copyText(
-                      NOTEBOOK_SCRIPT_SPEC,
+                      spec,
                       'spec copied — paste it to your AI',
                     )
                   }
-                  onDownloadSpec={() => void downloadSpec()}
+                  onDownloadSpec={(spec) => void downloadSpec(spec)}
                   onClose={() => setActivePanel(null)}
                 />
               </RailPanel>
@@ -2555,6 +2623,7 @@ export default function BookView(): JSX.Element {
                       pageId={pageId}
                       onClose={() => setInsertOpen(false)}
                       onNotify={notify}
+                      onInsertionActivity={setScriptInsertionActivity}
                       onInsertFollowingPages={insertPagesAfter}
                     />
                   )}

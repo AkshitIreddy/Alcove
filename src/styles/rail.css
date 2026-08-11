@@ -1517,7 +1517,7 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
 .nb-book-colour-role-reset {
   position: absolute;
   right: 4px;
-  bottom: 3px;
+  bottom: 5px;
   padding: 1px 3px;
   font-size: 10px;
   line-height: 1.1;
@@ -1526,6 +1526,11 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   border: 1px dashed var(--ink-line);
   border-radius: 5px 7px 6px 6px / 7px 5px 7px 6px;
   cursor: pointer;
+}
+
+.nb-book-colour-role:has(.nb-book-colour-role-reset)
+  .nb-colour-clipboard-actions.is-compact {
+  padding-right: 35px;
 }
 
 /* ------------------------- Surprise setting locks -------------------------
@@ -2004,4 +2009,374 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   background: var(--paper-aged);
   border: 1px solid var(--ink-line-soft);
   border-radius: 7px 5px 8px 6px / 6px 8px 5px 7px;
+}
+
+/* Creative direction is a note tucked into the parcel-desk sheet. It uses the
+   same parchment, sepia and amber vocabulary as the rest of the rail; the
+   previous cool-blue gradient looked like a third-party AI widget. */
+.nb-ai-style-picker {
+  position: relative;
+  margin: 0 0 var(--space-8);
+  padding: 13px 13px 12px;
+  overflow: hidden;
+  color: var(--ink-sepia);
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--wash-amber-light) 30%, transparent), transparent),
+    var(--paper-cream);
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: 14px 10px 16px 12px / 11px 15px 10px 16px;
+  box-shadow: 3px 4px 0 color-mix(in srgb, var(--ink-sepia) 9%, transparent);
+}
+
+.nb-ai-style-picker::after {
+  position: absolute;
+  right: -17px;
+  bottom: -22px;
+  width: 72px;
+  height: 72px;
+  border: 1px solid color-mix(in srgb, var(--wash-amber-deep) 28%, transparent);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+}
+
+.nb-ai-style-heading,
+.nb-ai-style-title-lockup,
+.nb-ai-style-actions,
+.nb-ai-style-modal-header,
+.nb-ai-style-modal-actions,
+.nb-ai-style-prompt-help {
+  display: flex;
+  align-items: center;
+}
+
+.nb-ai-style-heading,
+.nb-ai-style-modal-header {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.nb-ai-style-title-lockup {
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.nb-ai-style-spark {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border: 1px solid var(--wash-amber-deep);
+  border-radius: 52% 44% 49% 43%;
+  font-size: 0;
+}
+
+/* Use geometry instead of a font sparkle: the ✦ glyph's asymmetric side
+   bearings made it look left-heavy even while its text box was centred. */
+.nb-ai-style-spark::before {
+  display: block;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.nb-ai-style-title-lockup strong,
+.nb-ai-style-title-lockup span:not(.nb-ai-style-spark) {
+  display: block;
+}
+
+.nb-ai-style-title-lockup strong {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+
+.nb-ai-style-title-lockup .font-ui {
+  max-width: 235px;
+  margin-top: 1px;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui);
+  line-height: 1.25;
+}
+
+.nb-ai-style-edit,
+.nb-ai-style-actions button,
+.nb-ai-style-modal-actions button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 8px 11px 7px 10px;
+  cursor: pointer;
+}
+
+.nb-ai-style-edit {
+  color: var(--accent-deep);
+  background: color-mix(in srgb, var(--paper-cream) 82%, transparent);
+  border-style: dashed;
+}
+
+.nb-ai-style-choice {
+  margin-top: 11px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper-aged) 72%, var(--paper-cream));
+  border: 1px solid color-mix(in srgb, var(--ink-line-soft) 80%, transparent);
+  border-radius: 9px 12px 8px 11px;
+}
+
+.nb-ai-style-select-label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-ui);
+  font-weight: 700;
+}
+
+.nb-ai-style-select-label select,
+.nb-ai-style-field select,
+.nb-ai-style-field input,
+.nb-ai-style-field textarea {
+  min-width: 0;
+  width: 100%;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-line-soft);
+  border-radius: 8px 10px 7px 11px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+}
+
+.nb-ai-style-select-label select,
+.nb-ai-style-field select,
+.nb-ai-style-field input {
+  height: 34px;
+  padding: 4px 9px;
+}
+
+.nb-ai-style-description {
+  min-height: 2.4em;
+  margin: 7px 0 0;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui);
+  line-height: 1.25;
+}
+
+.nb-ai-style-catalogue-note {
+  position: relative;
+  z-index: 1;
+  margin: 9px 2px 0;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui);
+  line-height: 1.32;
+}
+
+.nb-ai-style-actions {
+  position: relative;
+  z-index: 1;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.nb-ai-style-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.nb-ai-style-actions button.is-primary,
+.nb-ai-style-modal-actions button.is-primary {
+  font-weight: 700;
+  background: var(--wash-amber);
+  border-color: var(--wash-amber-deep);
+}
+
+.nb-ai-style-picker button:hover,
+.nb-ai-style-picker button:focus-visible,
+.nb-ai-style-picker select:focus-visible,
+.nb-ai-style-modal button:focus-visible,
+.nb-ai-style-modal select:focus-visible,
+.nb-ai-style-modal input:focus-visible,
+.nb-ai-style-modal textarea:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+/* The custom direction deserves a real writing surface. It is portalled out
+   of the narrow rail so the reader gets a centred, generous desk. */
+.nb-ai-style-modal-backdrop {
+  position: fixed;
+  z-index: 2400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink-graphite) 43%, transparent);
+}
+
+.nb-ai-style-modal {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+  color: var(--ink-sepia);
+  background:
+    linear-gradient(150deg, color-mix(in srgb, var(--wash-amber-light) 28%, transparent), transparent 46%),
+    var(--paper-cream);
+  border: 2px solid var(--ink-line);
+  border-radius: 18px 13px 20px 14px / 14px 19px 13px 18px;
+  box-shadow: 8px 11px 0 color-mix(in srgb, var(--ink-graphite) 19%, transparent);
+}
+
+.nb-ai-style-modal-header {
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--ink-line-soft);
+}
+
+.nb-ai-style-modal-kicker {
+  color: var(--accent-deep);
+  font-size: var(--text-ui);
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.nb-ai-style-modal h2 {
+  margin: 2px 0 4px;
+  font-family: var(--font-heading);
+  font-size: 30px;
+  line-height: 1.08;
+}
+
+.nb-ai-style-modal-header p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.nb-ai-style-modal-close {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 50% 45% 52% 43%;
+  font-family: var(--font-ui);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.nb-ai-style-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);
+  gap: 14px 16px;
+  padding: 18px 22px 20px;
+}
+
+.nb-ai-style-field {
+  display: block;
+  color: var(--ink-sepia);
+  font-size: var(--text-ui);
+  font-weight: 750;
+}
+
+.nb-ai-style-field > span,
+.nb-ai-style-field > small {
+  display: block;
+}
+
+.nb-ai-style-field > span {
+  margin: 0 0 5px 2px;
+}
+
+.nb-ai-style-field > small {
+  margin: 5px 2px 0;
+  color: var(--ink-graphite-soft);
+  font-weight: 500;
+  line-height: 1.28;
+}
+
+.nb-ai-style-prompt-field {
+  grid-column: 1 / -1;
+}
+
+.nb-ai-style-field textarea {
+  display: block;
+  min-height: 230px;
+  padding: 12px 13px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.nb-ai-style-prompt-help {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 6px 2px 0;
+  color: var(--ink-graphite-soft);
+  font-weight: 500;
+  line-height: 1.32;
+}
+
+.nb-ai-style-prompt-help small {
+  max-width: 520px;
+}
+
+.nb-ai-style-prompt-help span {
+  white-space: nowrap;
+}
+
+.nb-ai-style-modal-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 13px 22px 17px;
+  background: color-mix(in srgb, var(--paper-aged) 72%, transparent);
+  border-top: 1px solid var(--ink-line-soft);
+}
+
+.nb-ai-style-modal-spacer {
+  flex: 1 1 auto;
+}
+
+.nb-ai-style-modal-actions button.is-danger {
+  color: var(--danger-deep, #8f3f32);
+  border-color: color-mix(in srgb, var(--danger-deep, #8f3f32) 55%, transparent);
+}
+
+@media (max-width: 620px) {
+  .nb-ai-style-modal-backdrop {
+    padding: 10px;
+  }
+
+  .nb-ai-style-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .nb-ai-style-modal-header,
+  .nb-ai-style-modal-body,
+  .nb-ai-style-modal-actions {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .nb-ai-style-modal-body {
+    grid-template-columns: 1fr;
+  }
+
+  .nb-ai-style-prompt-field {
+    grid-column: 1;
+  }
 }

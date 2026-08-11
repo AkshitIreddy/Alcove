@@ -369,6 +369,140 @@
   background: var(--paper-aged);
 }
 
+/* Large, inspectable image viewer. The page keeps the compact composition;
+   this flat paper panel gives diagrams and photographs room to be studied. */
+.nb-image-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-menus) + 10);
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: color-mix(in srgb, var(--ink-graphite) 68%, transparent);
+}
+
+.nb-image-viewer {
+  width: min(1180px, 94vw);
+  height: min(820px, 92vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 2px solid var(--ink-sepia);
+  border-radius: 12px 18px 14px 20px / 16px 12px 20px 14px;
+  box-shadow: 9px 11px 0 color-mix(in srgb, var(--ink-sepia) 28%, transparent);
+}
+
+.nb-image-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 14px 10px 18px;
+  background: var(--paper-aged);
+  border-bottom: 1.5px solid var(--paper-edge);
+}
+
+.nb-image-viewer-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-accent);
+  font-size: 18px;
+}
+
+.nb-image-viewer-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-image-viewer-title span {
+  color: var(--ink-graphite-soft);
+  font-size: 11px;
+}
+
+.nb-image-viewer-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+.nb-image-viewer-actions button {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 9px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1.5px solid var(--ink-sepia-soft);
+  border-radius: 7px 10px 8px 11px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.nb-image-viewer-actions button:hover,
+.nb-image-viewer-actions button:focus-visible {
+  background: var(--wash-amber-light);
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
+.nb-image-viewer-actions .is-close {
+  font-size: 20px;
+}
+
+.nb-image-viewer-stage {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background:
+    linear-gradient(90deg, transparent 31px, var(--paper-edge) 32px, transparent 33px),
+    linear-gradient(transparent 31px, var(--paper-edge) 32px, transparent 33px),
+    var(--paper-cream);
+  background-size: 32px 32px;
+}
+
+.nb-image-viewer-stage[data-dragging] {
+  cursor: grabbing;
+}
+
+.nb-image-viewer-stage:focus-visible {
+  outline: 3px solid var(--accent-deep);
+  outline-offset: -4px;
+}
+
+.nb-image-viewer-image {
+  display: block;
+  max-width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  width: auto;
+  height: auto;
+  border: 2px solid var(--ink-sepia-soft);
+  background: var(--paper-aged);
+  transform-origin: center;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.nb-image-viewer-help {
+  padding: 7px 16px 9px;
+  color: var(--ink-graphite-soft);
+  background: var(--paper-aged);
+  border-top: 1.5px solid var(--paper-edge);
+  font-size: 11px;
+  letter-spacing: 0.035em;
+  text-align: center;
+}
+
 /* caption — Kalam italic below the image */
 .nb-image-captionbox {
   margin-top: 4px;

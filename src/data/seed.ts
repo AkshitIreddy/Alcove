@@ -58,6 +58,8 @@
  *             Renaissance panel, engraved title hand and formal Gilt Quarto
  *             construction. A foliate lozenge replaces the rejected velvet
  *             crown programme; no page content changes.
+ *   v16 → v17 refreshes two untouched tour leaves for Creative Direction,
+ *             the complete AI visual catalogue and the zoomable image viewer.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -113,7 +115,7 @@ import type { PageDoc } from './types';
  * useful sample data first, then guided action, then progressive discovery.
  * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 16;
+export const SEED_VERSION = 17;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -2326,7 +2328,7 @@ Your library is kept by default when the app itself is replaced.
  * v16 teaches the rebuilt binding studio and portable video path. Keep v15
  * byte-identical above so an untouched guide from 0.5.x is still recognisable.
  */
-export const WELCOME_PAGE_SOURCES: readonly string[] = WELCOME_PAGE_SOURCES_V15.map(
+const WELCOME_PAGE_SOURCES_V16: readonly string[] = WELCOME_PAGE_SOURCES_V15.map(
   (source) => {
     if (source.includes('# Dress this book {')) {
       return `# Dress this book {sticker=sparkle}
@@ -2377,6 +2379,40 @@ This Welcome book is a Grand blue Gilt Quarto with an engraved gilt title, a Ren
 );
 
 /**
+ * v17 teaches the AI art-direction desk and the full-size image viewer. Keep
+ * v16 byte-identical above so an untouched 0.6.2 guide stays recognisable.
+ */
+export const WELCOME_PAGE_SOURCES: readonly string[] = WELCOME_PAGE_SOURCES_V16.map(
+  (source) => {
+    if (source.includes('# Notebook Script {')) {
+      return `# Notebook Script {sticker=sparkle}
+
+Notebook Script is familiar Markdown plus Alcove's complete page catalogue: papers, cards, callouts, lettering, diagrams, pictures, fifty stickers and the trim that makes each piece feel physical.
+
+::: card {title="Choose the feeling first"}
+Open **In and out**, choose a Creative Direction, then download the format guide. Pretty & thoughtful, visual learning and the other directions shape mood, hierarchy and pacing without prescribing the exact blocks; **Create your own** opens a full writing desk for your brief.
+:::
+
+::: callout {variant=tip}
+Ask your assistant to return one attached \`.md\` file. Alcove previews recognised blocks and lets you copy every warning; a top-level \`::page\` protects an intentional section start while earlier overflow makes room before it.
+:::
+
+::: marginalia
+The guide treats the catalogue as a palette, not a checklist—one favourite sticker, card or piece of tape should never become a formula.
+:::
+`;
+    }
+    if (source.includes('# One picture, properly {')) {
+      return source.replace(
+        'Drag a picture corner to resize it without cropping the subject.',
+        'Drag a picture corner to resize it without cropping the subject. Use the expand control to open it on a large stage; wheel or the buttons zoom, and dragging moves around the enlarged image.',
+      );
+    }
+    return source;
+  },
+);
+
+/**
  * Every page this book USED to be, kept verbatim — the v7 thirty-two, then
  * the older generations already retained below.
  *
@@ -2393,6 +2429,9 @@ This Welcome book is a Grand blue Gilt Quarto with an engraved gilt title, a Ren
  * mojibaked pencil.
  */
 export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
+  // v16 — the outgoing 0.6.2 field guide, retained for the v17 refresh.
+  ...WELCOME_PAGE_SOURCES_V16,
+
   // v15 — the outgoing 0.5.x field guide, retained for the v16 refresh.
   ...WELCOME_PAGE_SOURCES_V15,
 
@@ -4262,6 +4301,7 @@ async function refreshWelcomeBook(db: Db, force = false): Promise<boolean> {
  *                preserving edited pages unless the reader opted in
  *   v16          upgrades the untouched Grand-blue exterior to its authored
  *                Renaissance panel and engraved direct-gilt title
+ *   v17          refreshes the AI-guide and image-viewer onboarding leaves
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops
@@ -4291,11 +4331,11 @@ export async function seedIfEmpty(): Promise<boolean> {
   // bindings for the rest of this launch even after SQLite had been repaired.
   await migrateBookAppearanceSystem(db);
   await migrateWelcomeBookDesign(db, refreshEditedWelcome);
-  // v16 updates the binding-studio leaves in the forty-eight-leaf field guide.
+  // v17 updates two leaves in the forty-eight-leaf field guide.
   // The refresh
   // helper preserves a reader-edited guide unless they explicitly opted in,
   // while an untouched older guide receives the current onboarding content.
-  if (refreshEditedWelcome || previousVersion < 16) {
+  if (refreshEditedWelcome || previousVersion < 17) {
     await refreshWelcomeBook(db, refreshEditedWelcome);
   }
   const exists = await welcomeBookExists(db);

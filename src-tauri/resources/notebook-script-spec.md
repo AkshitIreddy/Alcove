@@ -286,6 +286,15 @@ diagram on the same planned page. Never leave an introductory colon at the
 bottom of a page, a heading alone at the foot, an empty container, or a page
 whose only content is accidental whitespace.
 
+Treat a visual section as one indivisible ledger unit: its heading, any short
+setup or convention sentence, and the diagram, table, equation or image it
+introduces must all fit on the same planned page. For example, never leave
+“## The Final Tree” and its branch-label convention on one page while moving
+the tree itself to the next. If the complete unit does not fit, put `::page`
+**before the heading** (when the section deserves a protected boundary) or
+shorten/rearrange the preceding page; do not rely on Alcove to infer that an
+ordinary declarative sentence belongs to a later visual.
+
 Keep a displayed equation to roughly 45 visible characters when possible. If
 a derivation is wider, split it at an equals sign into two display equations
 with a short connector such as “therefore”; do not rely on horizontal scrolling
@@ -327,6 +336,10 @@ are supported. Floor and ceiling delimiters work both directly
 (`\lfloor x\rfloor`, `\lceil x\rceil`) and with growing pairs
 (`\left\lceil \frac{n}{2} \right\rceil`). A lone `$` is just a dollar sign: money like "$5 and $10" is safe,
 because a formula may not open or close against a space.
+
+Standard TeX spacing is accepted inside maths: `\ ` and `\,` make a thin
+space, while `\quad` and `\qquad` make wider deliberate gaps. For example,
+`\bar{L} = 2.15\ \text{bits per sound}` renders as one complete formula.
 
 ### Footnotes
 
@@ -1154,7 +1167,8 @@ creative/subjective liberties taken; do not paste the Markdown into chat.
 14. The private page ledger gives every page at most 20 planned lines and every
     protected page normally at least 11–12 useful lines, charges a large
     user-supplied image 10–14 lines, and has no accidental dead page, orphan
-    heading, colon without its payload, or unexplained gap over four lines.
+    heading, colon without its payload, visual separated from its heading and
+    setup sentence, or unexplained gap over four lines.
 15. Tables fit without horizontal scrolling or letter-by-letter header breaks;
     displayed equations fit the paper or are split into readable steps.
 16. Read every sentence aloud during the second pass. Rewrite interrupted,

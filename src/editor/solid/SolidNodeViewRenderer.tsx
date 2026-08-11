@@ -218,6 +218,19 @@ class SolidNodeView extends NodeView<Component<SolidNodeViewProps>> {
     this.setState('selected', false);
   }
 
+  override stopEvent(event: Event): boolean {
+    /*
+     * TipTap's base NodeView protects interactive custom blocks by consuming
+     * their DOM events. A context menu is owned by PageEditor, though: it
+     * carries page actions as well as block actions and must answer both the
+     * visible media and the blank part of a narrow media row. Let only this
+     * event reach ProseMirror's shared handleDOMEvents hook; buttons, drags,
+     * captions and every other node-view interaction retain the base policy.
+     */
+    if (event.type === 'contextmenu') return false;
+    return super.stopEvent(event);
+  }
+
   destroy(): void {
     this.disposeRoot();
   }

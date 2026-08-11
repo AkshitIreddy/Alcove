@@ -32,6 +32,7 @@ import { clampViewerPan, type ViewerPan } from './imageViewerPan';
 import {
   imageFileDimensions,
   initialImageWidthForPage,
+  safeManualImageResizeWidth,
 } from './initialImageFit';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
@@ -45,6 +46,49 @@ export const MAX_WIDTH_PCT = 100;
 
 export function clampWidthPct(value: number): number {
   return Math.min(MAX_WIDTH_PCT, Math.max(MIN_WIDTH_PCT, value));
+}
+
+type ImageToolGlyphKind =
+  | 'align-left'
+  | 'align-center'
+  | 'align-right'
+  | 'frame'
+  | 'expand';
+
+/** App-drawn image chrome; avoids baseline-dependent platform text glyphs. */
+function ImageToolGlyph(props: { readonly kind: ImageToolGlyphKind }): JSX.Element {
+  if (props.kind === 'frame') {
+    return (
+      <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 5.5 Q4.5 4.5 5.8 4.5 H18.2 Q19.5 4.5 19.5 5.8 V18.2 Q19.5 19.5 18.2 19.5 H5.8 Q4.5 19.5 4.5 18.2 Z" />
+        <path d="M7.5 16 L10.4 12.8 L12.7 15 L15.4 10.8 L17.3 16" />
+      </svg>
+    );
+  }
+  if (props.kind === 'expand') {
+    return (
+      <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 4.5 H4.5 V9 M15 4.5 H19.5 V9 M19.5 15 V19.5 H15 M9 19.5 H4.5 V15" />
+      </svg>
+    );
+  }
+  const left = props.kind === 'align-left';
+  const right = props.kind === 'align-right';
+  const segment = (length: number): { x1: number; x2: number } => {
+    if (left) return { x1: 4.5, x2: 4.5 + length };
+    if (right) return { x1: 19.5 - length, x2: 19.5 };
+    return { x1: 12 - length / 2, x2: 12 + length / 2 };
+  };
+  const long = segment(15);
+  const medium = segment(11);
+  const short = segment(8);
+  return (
+    <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d={`M${long.x1} 6 H${long.x2} M${medium.x1} 10 H${medium.x2} M${long.x1} 14 H${long.x2} M${short.x1} 18 H${short.x2}`}
+      />
+    </svg>
+  );
 }
 
 function isAlign(value: unknown): value is ImageAlign {
@@ -87,6 +131,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [viewerZoom, setViewerZoom] = createSignal(100);
   const [viewerPan, setViewerPan] = createSignal<ViewerPan>({ x: 0, y: 0 });
   const [viewerDragging, setViewerDragging] = createSignal(false);
+  const [viewerBaseSize, setViewerBaseSize] = createSignal<{
+    width: number;
+    height: number;
+  } | null>(null);
   let viewerStageEl: HTMLDivElement | undefined;
   let viewerImageEl: HTMLImageElement | undefined;
   let viewerDrag:
@@ -143,6 +191,51 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
 
   const settleViewerPan = (): void => {
     requestAnimationFrame(() => setViewerPan((current) => measuredViewerPan(current)));
+  };
+
+  /** Fit the complete intrinsic picture inside the stage at the 100% setting. */
+  const fitViewerImage = (): void => {
+    const stage = viewerStageEl;
+    const image = viewerImageEl;
+    if (
+      stage === undefined ||
+      image === undefined ||
+      image.naturalWidth <= 0 ||
+      image.naturalHeight <= 0
+    ) {
+      return;
+    }
+    const style = getComputedStyle(stage);
+    const availableWidth = Math.max(
+      1,
+      stage.clientWidth -
+        (Number.parseFloat(style.paddingLeft) || 0) -
+        (Number.parseFloat(style.paddingRight) || 0),
+    );
+    const availableHeight = Math.max(
+      1,
+      stage.clientHeight -
+        (Number.parseFloat(style.paddingTop) || 0) -
+        (Number.parseFloat(style.paddingBottom) || 0),
+    );
+    const scale = Math.min(
+      1,
+      availableWidth / image.naturalWidth,
+      availableHeight / image.naturalHeight,
+    );
+    setViewerBaseSize({
+      width: Math.max(1, image.naturalWidth * scale),
+      height: Math.max(1, image.naturalHeight * scale),
+    });
+    settleViewerPan();
+  };
+
+  const observeViewerStage = (stage: HTMLDivElement): void => {
+    viewerStageEl = stage;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(fitViewerImage);
+    observer.observe(stage);
+    onCleanup(() => observer.disconnect());
   };
 
   const resetViewer = (): void => {
@@ -328,10 +421,21 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     const measured = host ?? wrapperEl;
     const startPct =
       effectivePct() ?? (measured ? (measured.clientWidth / containerWidth) * 100 : 100);
+    const startImageHeight =
+      wrapperEl?.querySelector<HTMLImageElement>('.nb-image-img')?.getBoundingClientRect()
+        .height ?? 0;
+    const startBlockHeight = wrapperEl?.getBoundingClientRect().height ?? 0;
 
     const onMove = (move: PointerEvent): void => {
       const deltaPct = ((move.clientX - startX) * direction * 100) / containerWidth;
-      setDragPct(clampWidthPct(startPct + deltaPct));
+      const requested = clampWidthPct(startPct + deltaPct);
+      const fitted = fitManualResizeMeasurement(
+        startPct,
+        requested,
+        startImageHeight,
+        startBlockHeight,
+      );
+      setDragPct(clampWidthPct(Math.min(requested, fitted)));
     };
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove);
@@ -422,10 +526,13 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     return captionChrome + frameChrome;
   };
 
-  const fitUploadMeasurement = (
-    imageHeightPx: number,
-    blockHeightPx: number,
-  ): number => {
+  const pageFitContext = (): {
+    scale: number;
+    blockTopPx: number;
+    followingContentHeightPx: number;
+    pageCapacityPx: number;
+    pagePaddingBottomPx: number;
+  } | null => {
     const wrapper = wrapperEl;
     const root = wrapper?.closest('.nb-prose');
     const capacity =
@@ -433,13 +540,11 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
         ? Number(root.dataset.pageCapacityPx)
         : Number.NaN;
 
-    if (!(root instanceof HTMLElement) || !Number.isFinite(capacity)) {
-      return widthPct() ?? 100;
-    }
+    if (!(root instanceof HTMLElement) || !Number.isFinite(capacity)) return null;
 
     let block: HTMLElement | null = wrapper ?? null;
     while (block?.parentElement !== root) block = block?.parentElement ?? null;
-    if (block === null) return widthPct() ?? 100;
+    if (block === null) return null;
 
     const rootRect = root.getBoundingClientRect();
     const blockRect = block.getBoundingClientRect();
@@ -459,16 +564,54 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               scale,
           )
         : 0;
-    const currentPct = widthPct() ?? 100;
-    return initialImageWidthForPage({
-      currentWidthPct: currentPct,
-      imageHeightPx: imageHeightPx / scale,
-      blockHeightPx: blockHeightPx / scale,
+    return {
+      scale,
       blockTopPx: (blockRect.top - rootRect.top) / scale,
       followingContentHeightPx: followingHeight,
       pageCapacityPx: capacity,
       pagePaddingBottomPx:
         Number.parseFloat(getComputedStyle(root).paddingBottom) || 0,
+    };
+  };
+
+  const fitUploadMeasurement = (
+    imageHeightPx: number,
+    blockHeightPx: number,
+  ): number => {
+    const context = pageFitContext();
+    if (context === null) return widthPct() ?? 100;
+    const currentPct = widthPct() ?? 100;
+    return initialImageWidthForPage({
+      currentWidthPct: currentPct,
+      imageHeightPx: imageHeightPx / context.scale,
+      blockHeightPx: blockHeightPx / context.scale,
+      blockTopPx: context.blockTopPx,
+      followingContentHeightPx: context.followingContentHeightPx,
+      pageCapacityPx: context.pageCapacityPx,
+      pagePaddingBottomPx: context.pagePaddingBottomPx,
+      minimumWidthPct: MIN_WIDTH_PCT,
+    });
+  };
+
+  const fitManualResizeMeasurement = (
+    measuredWidthPct: number,
+    requestedWidthPct: number,
+    imageHeightPx: number,
+    blockHeightPx: number,
+  ): number => {
+    const context = pageFitContext();
+    if (context === null || imageHeightPx <= 0 || blockHeightPx <= 0) {
+      return requestedWidthPct;
+    }
+    return safeManualImageResizeWidth({
+      measuredWidthPct,
+      requestedWidthPct,
+      imageHeightPx: imageHeightPx / context.scale,
+      blockHeightPx: blockHeightPx / context.scale,
+      blockTopPx: context.blockTopPx,
+      followingContentHeightPx: context.followingContentHeightPx,
+      pageCapacityPx: context.pageCapacityPx,
+      pagePaddingBottomPx: context.pagePaddingBottomPx,
       minimumWidthPct: MIN_WIDTH_PCT,
     });
   };
@@ -624,7 +767,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               aria-label={`Alignment ${align()}, click to cycle`}
               onClick={cycleAlign}
             >
-              {align() === 'left' ? '⇤' : align() === 'center' ? '↔' : '⇥'}
+              <ImageToolGlyph kind={`align-${align()}`} />
             </button>
             <button
               type="button"
@@ -633,7 +776,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               aria-label="Toggle polaroid frame"
               onClick={toggleFrame}
             >
-              ▭
+              <ImageToolGlyph kind="frame" />
             </button>
             <Show when={placeholder() === null}>
               <button
@@ -647,7 +790,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   openViewer();
                 }}
               >
-                ⛶
+                <ImageToolGlyph kind="expand" />
               </button>
             </Show>
           </div>
@@ -721,7 +864,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                 </div>
               </header>
               <div
-                ref={viewerStageEl}
+                ref={observeViewerStage}
                 class="nb-image-viewer-stage"
                 data-dragging={viewerDragging() ? '' : undefined}
                 tabindex={0}
@@ -741,8 +884,16 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   src={displaySrc()}
                   alt={alt()}
                   draggable={false}
-                  onLoad={settleViewerPan}
+                  onLoad={fitViewerImage}
                   style={{
+                    width:
+                      viewerBaseSize() === null
+                        ? undefined
+                        : `${viewerBaseSize()?.width}px`,
+                    height:
+                      viewerBaseSize() === null
+                        ? undefined
+                        : `${viewerBaseSize()?.height}px`,
                     transform: `translate3d(${viewerPan().x}px, ${viewerPan().y}px, 0) scale(${viewerZoom() / 100})`,
                   }}
                 />

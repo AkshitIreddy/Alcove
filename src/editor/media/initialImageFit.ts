@@ -61,6 +61,49 @@ export function initialImageWidthForPage(
   return Math.min(currentWidthPct, Math.max(floor, Math.floor(fitted)));
 }
 
+export interface ManualImageResizeMeasurement
+  extends Omit<InitialImageFitMeasurement, 'currentWidthPct'> {
+  /** Width represented by the measured image/block heights. */
+  readonly measuredWidthPct: number;
+  /** Width requested by the pointer before the page-fit ceiling is applied. */
+  readonly requestedWidthPct: number;
+}
+
+/**
+ * Clamp a live resize to the largest display width that still fits this page.
+ *
+ * The image's intrinsic bytes never enter this calculation. Its measured page
+ * height scales linearly with display width; frame/caption chrome is retained
+ * as a fixed conservative allowance. Returning the safe percentage to the
+ * pointer loop makes the handle visibly stop at the page boundary instead of
+ * committing an oversize node and asking pagination to repair it afterwards.
+ */
+export function safeManualImageResizeWidth({
+  measuredWidthPct,
+  requestedWidthPct,
+  imageHeightPx,
+  blockHeightPx,
+  ...page
+}: ManualImageResizeMeasurement): number {
+  if (
+    !Number.isFinite(measuredWidthPct) ||
+    !Number.isFinite(requestedWidthPct) ||
+    measuredWidthPct <= 0 ||
+    requestedWidthPct <= 0
+  ) {
+    return requestedWidthPct;
+  }
+  const scale = requestedWidthPct / measuredWidthPct;
+  const chromeHeightPx = Math.max(0, blockHeightPx - imageHeightPx);
+  const projectedImageHeightPx = imageHeightPx * scale;
+  return initialImageWidthForPage({
+    ...page,
+    currentWidthPct: requestedWidthPct,
+    imageHeightPx: projectedImageHeightPx,
+    blockHeightPx: projectedImageHeightPx + chromeHeightPx,
+  });
+}
+
 export interface SafeStandaloneUploadMeasurement {
   readonly intrinsicWidth: number;
   readonly intrinsicHeight: number;

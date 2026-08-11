@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1800" viewBox="0 0 600 1800">
+  <rect width="600" height="1800" fill="#f8edcf"/>
+  <path d="M28 28 H572 V1772 H28 Z" fill="none" stroke="#3f342d" stroke-width="12"/>
+  <g font-family="sans-serif" text-anchor="middle" fill="#3f342d">
+    <text x="300" y="105" font-size="52" font-weight="700">TALL PLATE</text>
+    <text x="300" y="166" font-size="28">the complete top and bottom must remain visible</text>
+  </g>
+  <g stroke="#3f342d" stroke-width="8" fill="none">
+    <path d="M110 320 Q300 170 490 320 Q300 470 110 320 Z" fill="#d8e9df"/>
+    <circle cx="300" cy="320" r="72" fill="#f1c36d"/>
+    <path d="M300 560 V1240 M170 720 H430 M150 920 H450 M190 1120 H410"/>
+    <path d="M155 1440 Q300 1280 445 1440 L500 1660 H100 Z" fill="#d9a08d"/>
+  </g>
+  <g font-family="sans-serif" text-anchor="middle" fill="#3f342d" font-size="34" font-weight="700">
+    <text x="300" y="535">ONE</text>
+    <text x="300" y="695">TWO</text>
+    <text x="300" y="895">THREE</text>
+    <text x="300" y="1095">FOUR</text>
+    <text x="300" y="1725">BOTTOM EDGE</text>
+  </g>
+</svg>

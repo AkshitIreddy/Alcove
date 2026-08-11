@@ -259,12 +259,46 @@ export function handleEditorContextMenu(
   pageActions?: PageContextMenuActions,
 ): boolean {
   const view = editor.view;
+  /*
+   * A standalone image's ProseMirror node-view host owns the full writing
+   * row, while its visible `.nb-image` child may be only 10–90% wide and
+   * aligned left/centre/right. `posAtCoords` therefore resolves a click in
+   * the unused part of that row as the paragraph before/after the image.
+   * Treat the host's horizontal lane as part of the image block so readers
+   * can right-click beside a narrow picture, just as they can beside text.
+   * Nested images deliberately do not qualify: their top-level block is the
+   * image-row container and its own context-menu semantics stay unchanged.
+   */
+  const imageLane = Array.from(
+    view.dom.querySelectorAll<HTMLElement>(
+      '.nb-node-view[data-node-view-root="image"]',
+    ),
+  ).find((host) => {
+    const rect = host.getBoundingClientRect();
+    if (event.clientY < rect.top || event.clientY > rect.bottom) return false;
+    try {
+      const block = topLevelBlockAt(editor, view.posAtDOM(host, 0));
+      return block?.node.type.name === 'image';
+    } catch {
+      return false;
+    }
+  });
+
+  let block = null;
+  if (imageLane !== undefined) {
+    try {
+      block = topLevelBlockAt(editor, view.posAtDOM(imageLane, 0));
+    } catch {
+      // A node view can be replaced between the pointer event and resolution.
+      block = null;
+    }
+  }
   const found = view.posAtCoords({
     left: event.clientX,
     top: event.clientY,
   });
   const probe = found ? found.pos : view.state.selection.head;
-  const block = topLevelBlockAt(editor, probe);
+  block ??= topLevelBlockAt(editor, probe);
   if (!block) return false;
   event.preventDefault();
   openBlockContextMenu({

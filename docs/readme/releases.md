@@ -19,6 +19,42 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.6.4 — cleaner AI notes and more faithful page typography
+
+**AI-written formulae now accept ordinary TeX spacing.** Alcove already
+understood `\bar`, `\text` and the surrounding maths, but treated TeX's
+standard backslash-space command as an unknown macro. Expressions such as
+`\bar{L} = 2.15\ \text{bits per sound}` now render as one complete equation
+without a red error fragment. The downloadable guide documents the spacing
+forms assistants are likely to use.
+
+**Emoji sit with the handwriting instead of below it.** Complete Unicode emoji
+sequences—including flags, keycaps, skin-tone modifiers and joined emoji—are
+given a display-only baseline correction. The stored TipTap document and every
+export remain unchanged. Creative Direction's old geometric diamond is also
+replaced with a monochrome Alcove-styled sparkle, optically centred inside its
+amber paper seal rather than inheriting a colourful platform emoji.
+
+**The table of contents describes the book rather than its empty stock.** A
+heading-less spill leaf now says which section it continues, intentional blank
+leaves inside authored material remain reachable, and unused blank leaves after
+the last content page are omitted. This removes redundant rows such as
+“page 5 · p.5” and the run of empty page numbers at the end of a fresh book.
+
+**The AI guide is stricter about visual page units.** Its mandatory second pass
+must budget a heading, short setup sentence and introduced diagram, table,
+equation or image together. If the complete unit cannot fit, the assistant is
+told to move the protected boundary before the heading rather than strand a
+title on one page and its visual on the next. Alcove deliberately does not
+guess this relationship from arbitrary prose and unexpectedly repaginate a
+reader's existing note.
+
+**GitHub release notes now explain their bullets.** What's new and What's fixed
+remain the first reader-facing sections, but each Conventional Commit may add
+its first explanatory paragraph beneath the summary. This keeps releases
+scannable while documenting the behaviour and reason behind a change instead
+of publishing a wall of terse commit subjects.
+
 ## 0.6.3 — AI pages with an art director and steadier paper
 
 **The AI guide now knows the whole studio.** Creative Direction adds seven

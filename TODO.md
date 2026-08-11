@@ -1,5 +1,20 @@
 # Alcove — running TODO
 
+## ✅ 0.6.4 — page typography and AI-layout repair (2026-08-11)
+
+- [x] Align complete inline emoji sequences with Alcove's handwritten text
+      without changing stored documents or exports.
+- [x] Replace the Creative Direction diamond with an optically centred,
+      monochrome Alcove sparkle.
+- [x] Render standard TeX control spaces, including the reported average-code-
+      length formula with `\bar` and `\text`.
+- [x] Label heading-less TOC leaves as section continuations, retain authored
+      interior blanks and omit unused trailing stocked leaves.
+- [x] Require AI-authored headings, setup sentences and introduced visuals to
+      share one planned page instead of adding a risky pagination guess.
+- [x] Add explanatory commit paragraphs to generated What's new / What's fixed
+      release notes.
+
 ## ✅ 0.6.3 — AI authoring and rich-import release scope (2026-08-11)
 
 - [x] Give the downloadable AI guide selectable Creative Directions, a proper

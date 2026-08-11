@@ -347,6 +347,11 @@ function parseTextArgument(cursor: Cursor): string {
 }
 
 function macroAtom(cursor: Cursor, name: string): Atom | null {
+  // TeX's control-space (`\ `) requests an inter-word space after a command.
+  // AI-authored equations use it naturally before `\text{…}`; treating the
+  // blank command name as unknown painted a literal red `\ ` in an otherwise
+  // valid formula such as `\bar{L}=2.15\ \text{bits per sound}`.
+  if (name === ' ') return { kind: 'space', wide: false };
   if (name === 'frac' || name === 'dfrac' || name === 'tfrac') {
     return {
       kind: 'frac',

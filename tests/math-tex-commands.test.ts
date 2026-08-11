@@ -15,6 +15,24 @@ describe('Notebook maths structural commands', () => {
     expect(long).not.toContain('nb-m-unknown');
   });
 
+  it('renders the exact AI-authored average-length formula including TeX control-space', () => {
+    const latex = '\\bar{L} = 2.15\\ \\text{bits per sound}';
+    const html = mathToHtml(latex, { display: true });
+
+    expect(parseMath(latex)).toMatchObject([
+      { kind: 'overline', short: true },
+      { kind: 'space' },
+      { kind: 'glyph', text: '=', role: 'rel' },
+      { kind: 'space' },
+      { kind: 'glyph', text: '2.15', role: 'num' },
+      { kind: 'space' },
+      { kind: 'text', text: 'bits per sound', upright: true },
+    ]);
+    expect(html).toContain('nb-m-overline is-short');
+    expect(html).toContain('>bits per sound<');
+    expect(html).not.toContain('nb-m-unknown');
+  });
+
   it('renders boxed expressions and keeps nested maths structural', () => {
     const html = mathToHtml('\\boxed{\\bar L = \\frac{a}{b}}', { display: true });
 

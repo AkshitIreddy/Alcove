@@ -21,6 +21,7 @@ import UniqueID from '@tiptap/extension-unique-id';
 import { offset } from '@floating-ui/dom';
 import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
+import { EmojiBaseline } from './emojiBaseline';
 import { NotebookCodeBlock } from './nodes/codeBlock';
 import { NotebookHighlight } from './highlightStyles';
 import { NotebookFace } from './marks/face';
@@ -54,6 +55,7 @@ export function createEditorExtensions(
 ): AnyExtension[] {
   const extensions: AnyExtension[] = [
     NotebookDocument,
+    EmojiBaseline,
 
     StarterKit.configure({
       // Our Document carries pageStyle/lineHeightPx.

@@ -329,6 +329,35 @@ export function setPageScript(
 }
 
 /**
+ * Restore one exact page row captured before a book-level operation.
+ *
+ * Unlike `savePageDoc`, this is not a new reader edit: provenance, dirty state
+ * and timestamp all return to their captured values. BookView uses it for the
+ * single atomic undo checkpoint around a multi-page Notebook Script import.
+ */
+export function restorePageSnapshot(page: Page): Promise<Page | null> {
+  return inPageMutationLane(page.id, async () => {
+    const existing = await getPage(page.id);
+    if (existing === null || existing.bookId !== page.bookId) return null;
+    const db = await getDb();
+    const write = await db.execute(
+      'UPDATE pages SET ord = $1, doc_json = $2, script_source = $3, source_dirty = $4, updated_at = $5 WHERE id = $6',
+      [
+        page.ord,
+        JSON.stringify(page.doc),
+        page.scriptSource,
+        page.sourceDirty ? 1 : 0,
+        page.updatedAt,
+        page.id,
+      ],
+    );
+    if (write.rowsAffected === 0) return null;
+    await indexPage(page.id, page.bookId, page.ord, page.doc, page.updatedAt);
+    return page;
+  });
+}
+
+/**
  * Delete one page and close its ordinal gap.
  *
  * The caller keeps the book-level invariant that at least one page remains.

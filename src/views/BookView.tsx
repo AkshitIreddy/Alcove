@@ -52,6 +52,7 @@ import {
   isPageFlowStart,
   listPages,
   persistPageDocIdentity,
+  restorePageSnapshot,
   savePageDoc,
   setPageFlowStart,
   setPageScript,
@@ -331,6 +332,22 @@ export default function BookView(): JSX.Element {
   let scriptInsertionViewLock:
     | { readonly spread: number; readonly side: LeafSide }
     | null = null;
+  interface ScriptInsertionUndoPage {
+    readonly page: Page;
+    readonly flowStart: boolean;
+  }
+  interface ScriptInsertionUndoCheckpoint {
+    readonly bookId: string;
+    readonly pages: readonly ScriptInsertionUndoPage[];
+    readonly spread: number;
+    readonly side: LeafSide;
+  }
+  let scriptInsertionBefore: ScriptInsertionUndoCheckpoint | null = null;
+  let scriptInsertionUndo: ScriptInsertionUndoCheckpoint | null = null;
+  let restoringScriptInsertion = false;
+
+  const clonePage = (page: Page): Page =>
+    JSON.parse(JSON.stringify(page)) as Page;
 
   const setScriptInsertionActivity = async (active: boolean): Promise<void> => {
     if (active) {
@@ -338,6 +355,28 @@ export default function BookView(): JSX.Element {
         spread: spreadIndex(),
         side: focusedSide(),
       };
+      const bookId = session()?.book.id;
+      if (bookId !== undefined) {
+        const snapshot = pages().map((page) => {
+          const live = getPageEditor(page.id);
+          return clonePage({
+            ...page,
+            doc: live === null ? page.doc : (live.getJSON() as PageDoc),
+          });
+        });
+        const flowStarts = await Promise.all(
+          snapshot.map((page) => isPageFlowStart(page.id)),
+        );
+        scriptInsertionBefore = {
+          bookId,
+          pages: snapshot.map((page, index) => ({
+            page,
+            flowStart: flowStarts[index] ?? false,
+          })),
+          spread: spreadIndex(),
+          side: focusedSide(),
+        };
+      }
       return;
     }
     const home = scriptInsertionViewLock;
@@ -404,6 +443,69 @@ export default function BookView(): JSX.Element {
     setFocusedSide(home.side);
   };
 
+  const armScriptInsertionUndo = (): void => {
+    scriptInsertionUndo = scriptInsertionBefore;
+    scriptInsertionBefore = null;
+  };
+
+  const restoreScriptInsertion = async (): Promise<void> => {
+    const checkpoint = scriptInsertionUndo;
+    if (checkpoint === null || restoringScriptInsertion) return;
+    if (session()?.book.id !== checkpoint.bookId) {
+      scriptInsertionUndo = null;
+      return;
+    }
+    scriptInsertionUndo = null;
+    restoringScriptInsertion = true;
+    try {
+      await appendLane;
+      await carryChain;
+      const keep = new Set(checkpoint.pages.map(({ page }) => page.id));
+      const current = await listPages(checkpoint.bookId);
+      for (const page of current) {
+        if (!keep.has(page.id)) await deletePage(page.id);
+      }
+      for (const saved of checkpoint.pages) {
+        await restorePageSnapshot(saved.page);
+        await setPageFlowStart(saved.page.id, saved.flowStart);
+      }
+      const restored = await listPages(checkpoint.bookId);
+      setPages(restored);
+      for (const page of restored) {
+        getPageEditor(page.id)?.commands.setContent(
+          page.doc as unknown as JSONContent,
+          { emitUpdate: false },
+        );
+      }
+      setSpreadIndex(
+        Math.min(checkpoint.spread, Math.max(0, spreadOfSlot(restored.length - 1))),
+      );
+      setFocusedSide(checkpoint.side);
+      flipApi?.invalidateSnapshots();
+      notify('script insertion undone');
+    } finally {
+      restoringScriptInsertion = false;
+    }
+  };
+
+  onMount(() => {
+    const onBookUndo = (event: KeyboardEvent): void => {
+      if (
+        scriptInsertionUndo === null ||
+        event.key.toLowerCase() !== 'z' ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void restoreScriptInsertion();
+    };
+    document.addEventListener('keydown', onBookUndo, true);
+    onCleanup(() => document.removeEventListener('keydown', onBookUndo, true));
+  });
+
   // ---------------------------------------------------------------------------
   // Per-book customization state (cover_meta), hydrated with the session.
   // ---------------------------------------------------------------------------
@@ -460,6 +562,14 @@ export default function BookView(): JSX.Element {
     setPages((prev) =>
       prev.map((page) => (page.id === pageId ? { ...page, doc } : page)),
     );
+  };
+
+  /** A later authored edit supersedes the one-shot whole-import checkpoint. */
+  const handlePageDocChange = (pageId: string, doc: PageDoc): void => {
+    if (!restoringScriptInsertion && scriptInsertionViewLock === null) {
+      scriptInsertionUndo = null;
+    }
+    updatePageDoc(pageId, doc);
   };
 
   /**
@@ -2453,7 +2563,7 @@ export default function BookView(): JSX.Element {
                   ? () => void deletePageAt(current.id)
                   : undefined
               }
-              onDocChange={(doc) => updatePageDoc(current.id, doc)}
+              onDocChange={(doc) => handlePageDocChange(current.id, doc)}
               paginated={!qaNoPagination}
               pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
               onOverflow={
@@ -2813,6 +2923,7 @@ export default function BookView(): JSX.Element {
                       onClose={() => setInsertOpen(false)}
                       onNotify={notify}
                       onInsertionActivity={setScriptInsertionActivity}
+                      onInsertComplete={armScriptInsertionUndo}
                       onInsertFollowingPages={insertPagesAfter}
                     />
                   )}

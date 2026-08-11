@@ -52,6 +52,8 @@ export interface InsertScriptDialogProps {
   onNotify?(message: string): void;
   /** Hold the reader on the spread where a multi-page import began. */
   onInsertionActivity?(active: boolean): void | Promise<void>;
+  /** Arm one book-level Ctrl+Z after the import has fully settled. */
+  onInsertComplete?(): void;
   onInsertFollowingPages?(
     afterPageId: string,
     pages: readonly {
@@ -283,6 +285,7 @@ export default function InsertScriptDialog(
       );
       await props.onInsertionActivity?.(false);
       viewLockReleased = true;
+      props.onInsertComplete?.();
       props.onClose();
     } finally {
       if (!viewLockReleased) await props.onInsertionActivity?.(false);

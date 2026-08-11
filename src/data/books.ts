@@ -321,17 +321,45 @@ export async function updateBook(
   return getBook(id);
 }
 
-/** Reshelve a book to a new floor/slot; bumps `updated_at`. */
+/**
+ * Reshelve a book to a new floor/slot; bumps `updated_at`.
+ *
+ * `positionX` is supplied only by the visual Move interaction. It is written
+ * in the same statement as floor/slot so a failed move cannot leave a book in
+ * its old slot with a new visual anchor.
+ */
 export async function moveBook(
   id: string,
   floor: number,
   slot: number,
+  options: { positionX?: number } = {},
 ): Promise<Book | null> {
+  const positionX =
+    typeof options.positionX === 'number' &&
+    Number.isFinite(options.positionX)
+      ? Math.max(0, options.positionX)
+      : null;
   const db = await getDb();
-  await db.execute(
-    'UPDATE books SET floor = $1, slot = $2, updated_at = $3 WHERE id = $4',
-    [floor, slot, new Date().toISOString(), id],
-  );
+  const now = new Date().toISOString();
+  if (positionX === null) {
+    await db.execute(
+      'UPDATE books SET floor = $1, slot = $2, updated_at = $3 WHERE id = $4',
+      [floor, slot, now, id],
+    );
+  } else {
+    const book = await getBook(id);
+    if (book === null) return null;
+    const shelf = { ...(readShelfMeta(book) ?? {}), positionX };
+    const coverMeta = mergeCoverMetaSection(
+      book.coverMeta,
+      'shelf',
+      shelf as Record<string, unknown>,
+    );
+    await db.execute(
+      'UPDATE books SET floor = $1, slot = $2, cover_meta = $3, updated_at = $4 WHERE id = $5',
+      [floor, slot, serializeCoverMeta(coverMeta), now, id],
+    );
+  }
   return getBook(id);
 }
 
@@ -419,6 +447,14 @@ export interface ShelfMeta {
   /** Shelf position to restore to when un-trashed. */
   prevFloor?: number;
   prevSlot?: number;
+  /**
+   * World-space spine centre chosen with the shelf's Move interaction.
+   *
+   * Automatic books omit this and keep the authored clustered composition;
+   * once a reader points at a particular gap, that visible choice outranks
+   * the automatic composition and must survive refreshes and restarts.
+   */
+  positionX?: number;
 }
 
 /** Validated shelf metadata from `cover_meta.shelf`, or null. */
@@ -442,6 +478,9 @@ export function readShelfMeta(
   }
   if (typeof raw.prevSlot === 'number' && Number.isFinite(raw.prevSlot)) {
     out.prevSlot = Math.max(0, Math.round(raw.prevSlot));
+  }
+  if (typeof raw.positionX === 'number' && Number.isFinite(raw.positionX)) {
+    out.positionX = Math.max(0, raw.positionX);
   }
   return Object.keys(out).length > 0 ? out : null;
 }

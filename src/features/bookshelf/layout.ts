@@ -1,15 +1,19 @@
 /**
  * features/bookshelf/layout.ts — seeded per-floor book layout (pure).
  *
- * Raw slot positions (slotX) cluster every library at the left rail and leave
- * the right half of the case empty. Instead each floor lays its books out as
- * 1–4 small clusters spread across the usable width between the rails:
+ * Raw slot positions (slotX) cluster every automatically filled library at
+ * the left rail and leave the right half of the case empty. Instead each floor
+ * lays its automatic books out as 1–4 small clusters spread across the usable
+ * width between the rails:
  * tight 1–5px gaps inside a cluster, generous seeded gaps between clusters,
  * and the leftover width distributed so the row reads pleasantly filled
  * without stretching sparse floors into a picket fence.
  *
- * The result is deterministic per (floor index, book list): same inputs ⇒
- * identical positions across sessions, virtualizer remounts, and LOD stamps.
+ * A book explicitly placed with Move may also carry `positionX`. That one is
+ * a reader-authored anchor: automatic neighbours yield around it rather than
+ * pulling it back into a generated cluster. The result remains deterministic
+ * per (floor index, book list): same inputs ⇒ identical positions across
+ * sessions, virtualizer remounts, and LOD stamps.
  *
  * One or two books per floor may "lean" a few degrees into an adjacent
  * cluster gap — pure sprite rotation applied by the compositor, no physics.
@@ -49,6 +53,8 @@ export interface LayoutBookIn {
   slot: number;
   /** Spine width in world px. */
   w: number;
+  /** Reader-chosen world-px centre; absent books use automatic composition. */
+  positionX?: number;
 }
 
 export interface LayoutBookOut {
@@ -56,6 +62,72 @@ export interface LayoutBookOut {
   centerX: number;
   /** Extra lean in degrees (0 for most books), + tilts the top rightward. */
   leanDeg: number;
+}
+
+/** Minimum breathing room when an authored anchor displaces a neighbour. */
+const ANCHOR_GAP = 2;
+
+/** Keep a centre within the book-bearing span of the case. */
+function clampCenterX(x: number, width: number, shelfWidth: number): number {
+  const half = width / 2;
+  return Math.min(
+    shelfWidth - LAYOUT_MARGIN_X - half,
+    Math.max(LAYOUT_MARGIN_X + half, x),
+  );
+}
+
+/**
+ * Honour explicit shelf positions without throwing away the automatic row.
+ *
+ * A moved book is fixed first. Only automatic neighbours that would overlap
+ * it are packed outward, so a far-away placement does not reshuffle the row
+ * and a placement beside a cluster still opens a real spine-width gap. Two
+ * explicit anchors are never silently moved; slot spacing is the interaction's
+ * own collision guard, and preserving the reader's two choices is preferable
+ * to inventing a third position for either one.
+ */
+function applyPositionAnchors(
+  items: readonly LayoutBookIn[],
+  out: LayoutBookOut[],
+  shelfWidth: number,
+): void {
+  const anchored = items.map(
+    (item) => typeof item.positionX === 'number' && Number.isFinite(item.positionX),
+  );
+  if (!anchored.some(Boolean)) return;
+
+  for (let i = 0; i < items.length; i++) {
+    if (!anchored[i]) continue;
+    const item = items[i] as LayoutBookIn;
+    const target = out[i] as LayoutBookOut;
+    target.centerX = clampCenterX(item.positionX as number, item.w, shelfWidth);
+    // A generated lean changes the book's occupied horizontal envelope and
+    // makes a precise placement feel visually imprecise even when its anchor
+    // point is correct.
+    target.leanDeg = 0;
+
+    let boundary = target.centerX - item.w / 2 - ANCHOR_GAP;
+    for (let j = i - 1; j >= 0 && !anchored[j]; j--) {
+      const neighbour = items[j] as LayoutBookIn;
+      const placed = out[j] as LayoutBookOut;
+      const maxCenter = boundary - neighbour.w / 2;
+      if (placed.centerX <= maxCenter) break;
+      placed.centerX = maxCenter;
+      placed.leanDeg = 0;
+      boundary = placed.centerX - neighbour.w / 2 - ANCHOR_GAP;
+    }
+
+    boundary = target.centerX + item.w / 2 + ANCHOR_GAP;
+    for (let j = i + 1; j < items.length && !anchored[j]; j++) {
+      const neighbour = items[j] as LayoutBookIn;
+      const placed = out[j] as LayoutBookOut;
+      const minCenter = boundary + neighbour.w / 2;
+      if (placed.centerX >= minCenter) break;
+      placed.centerX = minCenter;
+      placed.leanDeg = 0;
+      boundary = placed.centerX + neighbour.w / 2 + ANCHOR_GAP;
+    }
+  }
 }
 
 /** Deterministic 32-bit seed for a floor's layout stream. */
@@ -208,6 +280,8 @@ export function layoutFloor(
     if (target.leanDeg !== 0) continue;
     target.leanDeg = cand.dir * (LEAN_MIN_DEG + rnd() * (LEAN_MAX_DEG - LEAN_MIN_DEG));
   }
+
+  applyPositionAnchors(items, out, shelfWidth);
 
   return out;
 }

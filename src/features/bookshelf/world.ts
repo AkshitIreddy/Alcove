@@ -3886,12 +3886,21 @@ export class ShelfWorld {
     move.committing = true;
     void play('drop-thump');
     try {
-      const slot = await nextFreeSlot(
-        move.targetFloor,
-        move.targetSlot,
-        this.caseId,
-      );
-      await moveBook(move.visual.book.id, move.targetFloor, slot);
+      const current = move.visual.book;
+      const slot =
+        move.targetFloor === current.floor && move.targetSlot === current.slot
+          ? current.slot
+          : await nextFreeSlot(
+              move.targetFloor,
+              move.targetSlot,
+              this.caseId,
+            );
+      await moveBook(move.visual.book.id, move.targetFloor, slot, {
+        // `nextFreeSlot` may advance past an occupied preview slot. Anchor to
+        // the actual persisted slot so collision repair cannot create two
+        // spines at one visual centre.
+        positionX: slotCenterX(slot),
+      });
     } catch {
       // DB failure: the refresh below re-syncs whatever state persisted.
     }

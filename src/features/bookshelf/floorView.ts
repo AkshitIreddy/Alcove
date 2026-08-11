@@ -284,7 +284,14 @@ export class FloorView {
         spineArtWidth((params as SpineParams).w),
       );
       const placed = layoutFloor(
-        widths.map((w, i) => ({ slot: (books[i] as Book).slot, w })),
+        widths.map((w, i) => {
+          const book = books[i] as Book;
+          return {
+            slot: book.slot,
+            w,
+            positionX: readShelfMeta(book)?.positionX,
+          };
+        }),
         this.index,
       );
       for (let i = 0; i < books.length; i++) {

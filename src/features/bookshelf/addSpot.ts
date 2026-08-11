@@ -63,7 +63,10 @@ export function nextSpotX(
 
   // 1. where the layout engine would actually put the next book
   const placed = layoutFloor(
-    [...books.map((b, i) => ({ slot: i, w: b.w })), { slot: books.length, w: ghostW }],
+    [
+      ...books.map((b, i) => ({ slot: i, w: b.w, positionX: b.centerX })),
+      { slot: books.length, w: ghostW },
+    ],
     floorIndex,
     shelfWidth,
   );

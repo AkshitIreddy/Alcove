@@ -1,12 +1,12 @@
 /**
  * src/views/rail/TocPanel.tsx — the book's table of contents (roadmap #9):
  * every heading of every page as an indented hand-drawn tree; clicking an
- * entry jumps the spread to that page. Pages without headings appear as
- * plain "page N" rows so nothing in the book is unreachable.
+ * entry jumps the spread to that page. Heading-less continuation pages name
+ * the section they continue; stocked trailing blank leaves stay out of sight.
  */
 import { createMemo, For, type JSX } from 'solid-js';
 import type { Page } from '../../data/types';
-import { buildBookToc, type TocEntry } from '../toc';
+import { buildTocRows } from '../toc';
 
 export interface TocPanelProps {
   pages: readonly Page[];
@@ -14,40 +14,8 @@ export interface TocPanelProps {
   onJump(slot: number): void;
 }
 
-interface TocRow {
-  readonly slot: number;
-  readonly level: number;
-  readonly text: string;
-  readonly isPageRow: boolean;
-}
-
 export default function TocPanel(props: TocPanelProps): JSX.Element {
-  const rows = createMemo((): TocRow[] => {
-    const entries = buildBookToc(props.pages as Page[]);
-    const bySlot = new Map<number, TocEntry[]>();
-    for (const entry of entries) {
-      const list = bySlot.get(entry.slot) ?? [];
-      list.push(entry);
-      bySlot.set(entry.slot, list);
-    }
-    const out: TocRow[] = [];
-    props.pages.forEach((_page, slot) => {
-      const headings = bySlot.get(slot);
-      if (!headings || headings.length === 0) {
-        out.push({ slot, level: 0, text: `page ${slot + 1}`, isPageRow: true });
-        return;
-      }
-      for (const heading of headings) {
-        out.push({
-          slot,
-          level: heading.level,
-          text: heading.text,
-          isPageRow: false,
-        });
-      }
-    });
-    return out;
-  });
+  const rows = createMemo(() => buildTocRows(props.pages));
 
   return (
     <div class="nb-toc" data-testid="toc-panel">

@@ -14,6 +14,13 @@ export interface TocEntry {
   readonly text: string;
 }
 
+export interface TocRow {
+  readonly slot: number;
+  readonly level: number;
+  readonly text: string;
+  readonly isPageRow: boolean;
+}
+
 const textOf = (node: { content?: unknown }): string =>
   Array.isArray(node.content)
     ? node.content
@@ -60,4 +67,95 @@ export function buildBookToc(pages: readonly Page[]): TocEntry[] {
     }
   });
   return entries;
+}
+
+const nodeHasVisibleContent = (value: unknown): boolean => {
+  if (value === null || typeof value !== 'object') return false;
+  const node = value as {
+    type?: unknown;
+    text?: unknown;
+    content?: unknown;
+  };
+  if (node.type === 'text') {
+    return typeof node.text === 'string' && node.text.trim() !== '';
+  }
+  if (
+    Array.isArray(node.content) &&
+    node.content.some((child) => nodeHasVisibleContent(child))
+  ) {
+    return true;
+  }
+  // TipTap's truly empty page is an empty paragraph. Atomic top-level blocks
+  // (images, diagrams, dividers, tables, and so on) can be visible without
+  // carrying text and therefore still make the page meaningful.
+  return (
+    typeof node.type === 'string' &&
+    node.type !== 'doc' &&
+    node.type !== 'paragraph' &&
+    node.type !== 'heading' &&
+    node.type !== 'hardBreak'
+  );
+};
+
+export function pageHasVisibleContent(
+  doc: PageDoc | null | undefined,
+): boolean {
+  return Boolean(
+    doc &&
+      Array.isArray(doc.content) &&
+      doc.content.some((block) => nodeHasVisibleContent(block)),
+  );
+}
+
+/**
+ * Presentation rows for the rail. Trailing stocked blank leaves are omitted;
+ * a heading-less continuation names the section it continues instead of
+ * redundantly printing “page 5   p.5”. Intentional blank leaves inside the
+ * authored range remain reachable.
+ */
+export function buildTocRows(pages: readonly Page[]): TocRow[] {
+  let lastAuthoredSlot = -1;
+  pages.forEach((page, slot) => {
+    if (pageHasVisibleContent(page.doc)) lastAuthoredSlot = slot;
+  });
+  if (lastAuthoredSlot < 0) return [];
+
+  const headings = buildBookToc(pages);
+  const bySlot = new Map<number, TocEntry[]>();
+  for (const heading of headings) {
+    const list = bySlot.get(heading.slot) ?? [];
+    list.push(heading);
+    bySlot.set(heading.slot, list);
+  }
+
+  const rows: TocRow[] = [];
+  let previousHeading = '';
+  for (let slot = 0; slot <= lastAuthoredSlot; slot += 1) {
+    const pageHeadings = bySlot.get(slot);
+    if (pageHeadings && pageHeadings.length > 0) {
+      for (const heading of pageHeadings) {
+        rows.push({
+          slot,
+          level: heading.level,
+          text: heading.text,
+          isPageRow: false,
+        });
+        previousHeading = heading.text;
+      }
+      continue;
+    }
+
+    const visible = pageHasVisibleContent(pages[slot]?.doc);
+    rows.push({
+      slot,
+      level: 0,
+      text: visible
+        ? previousHeading === ''
+          ? 'untitled'
+          : `continued — ${previousHeading}`
+        : 'blank page',
+      isPageRow: true,
+    });
+  }
+  return rows;
 }

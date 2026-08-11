@@ -407,6 +407,22 @@ try {
     await tapTurn('next');
   }
 
+  await page.locator('.nb-rail-button[data-tool="toc"]').click();
+  const toc = page.locator('[data-testid="toc-panel"]');
+  await toc.waitFor({ state: 'visible' });
+  report.tocRows = await toc.locator('.nb-toc-row').evaluateAll((rows) =>
+    rows.map((row) => ({
+      text: row.querySelector('.nb-toc-text')?.textContent?.trim() ?? '',
+      page: row.querySelector('.nb-toc-page')?.textContent?.trim() ?? '',
+      pageRow: row.classList.contains('is-page-row'),
+    })),
+  );
+  await page.getByRole('dialog', { name: 'Table of contents' }).screenshot({
+    path: `${out}/05-table-of-contents.png`,
+    caret: 'hide',
+  });
+  report.screenshots.push(`${out}/05-table-of-contents.png`);
+
   const insertedOnLeft = report.insertion.sourceOwnerId === report.leftPageIdBeforeInsert;
   const imageKeptAllBlocks = report.afterImage.duplicateBlocks.length === 0;
   report.ok =

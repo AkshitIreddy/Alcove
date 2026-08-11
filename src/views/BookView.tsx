@@ -735,6 +735,12 @@ export default function BookView(): JSX.Element {
     const line = bookLineHeight();
     if (line !== undefined) fallbackAttrs.lineHeightPx = line;
     const merged = appendBlocksToDoc(previous.doc, [moved], fallbackAttrs);
+    // The source may be the left leaf of the following spread. Navigating to
+    // `previous` below unmounts it before PageEditor's queued mirror callback
+    // gets a chance to publish the deletion. Keep both halves of the move in
+    // the synchronous page mirror; otherwise turning forward reconstructs the
+    // old source JSON and the reader sees a copy on both pages.
+    updatePageDoc(pageId, sourceDoc);
     updatePageDoc(previous.id, merged);
     bumpDocVersion(previous.id);
     flipApi?.invalidateSnapshots();

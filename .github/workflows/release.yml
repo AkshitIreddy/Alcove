@@ -356,9 +356,12 @@ jobs:
       # `--config` patches the checked-in config rather than editing it, so the
       # repository has exactly one webviewInstallMode and this file cannot
       # silently become the source of truth for it.
-      # The second build writes to the SAME filename as the first, so the first
-      # one is moved out of the way and moved back — one extra Rust link rather
-      # than a third full build to recreate what already existed.
+      # The second bundle writes to the SAME filename as the first, so the first
+      # one is moved out of the way and moved back. `tauri bundle` deliberately
+      # reuses the app binary produced above: unlike a second `tauri build`, it
+      # does not compile/link Rust or rerun the frontend just to change an NSIS
+      # payload setting. It still runs Tauri's beforeBundleCommand and the same
+      # NSIS bundler over the complete offline WebView2 payload.
       - name: Build the offline installer (Windows only)
         if: runner.os == 'Windows'
         shell: bash
@@ -369,7 +372,7 @@ jobs:
           mv nsis/*-setup.exe keep/
           mv nsis/*-setup.exe.sig keep/
           cd "$GITHUB_WORKSPACE"
-          npx tauri build --bundles nsis \
+          npx tauri bundle --bundles nsis \
             --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"webviewInstallMode":{"type":"offlineInstaller","silent":true}}}}'
           cd src-tauri/target/release/bundle
           for f in nsis/*-setup.exe; do

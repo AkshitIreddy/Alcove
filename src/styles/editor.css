@@ -310,19 +310,20 @@
  * descender: if it shares Patrick Hand's baseline the printed rule cuts
  * through its bottom pixels. `emojiBaseline.ts` wraps complete sequences, so
  * the smaller, gently lifted treatment never touches punctuation, ordinary symbols
- * or the stored document. It stays inside the existing line box and therefore
- * cannot change pagination.
+ * or the stored document. A little leading space treats it like an inline
+ * illustration rather than letting its coloured edge crowd the preceding word.
  */
 .nb-prose .nb-inline-emoji {
   display: inline-block;
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
-  margin-inline: 0.03em;
+  margin-inline-start: 0.24em;
+  margin-inline-end: 0.04em;
   font-size: 0.9em;
   line-height: 1;
-  /* Windows colour emoji need a small lift to clear the rule, but 0.25em
-     pulled them visibly above the handwritten cap-height. 0.15em keeps their
-     bottom pixels clear while restoring the surrounding word rhythm. */
-  vertical-align: 0.15em;
+  /* Keep the colour glyph just clear of the rule without making it float above
+     the handwriting. The dedicated wrapper lets this sit lower than text while
+     leaving the surrounding Patrick Hand baseline untouched. */
+  vertical-align: -0.16em;
 }
 
 .nb-prose h1,

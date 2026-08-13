@@ -19,13 +19,15 @@ describe('inline emoji baseline ranges', () => {
     expect(emojiTextRanges('No symbols © + = or handwritten words.')).toEqual([]);
   });
 
-  it('gently clears ruled paper without pulling emoji above the handwritten line', () => {
+  it('gives emoji illustration spacing and keeps it close to the ruled line', () => {
     const rule = editorCss.match(/\.nb-prose \.nb-inline-emoji\s*\{([^}]*)\}/s)?.[1] ?? '';
 
     expect(rule).toContain('display: inline-block;');
     expect(rule).toContain('font-size: 0.9em;');
     expect(rule).toContain('line-height: 1;');
-    expect(rule).toContain('vertical-align: 0.15em;');
+    expect(rule).toContain('margin-inline-start: 0.24em;');
+    expect(rule).toContain('margin-inline-end: 0.04em;');
+    expect(rule).toContain('vertical-align: -0.16em;');
     expect(rule).not.toMatch(/(?:padding|transform|position|top|bottom)\s*:/);
   });
 });

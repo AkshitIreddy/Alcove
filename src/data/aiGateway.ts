@@ -1,5 +1,7 @@
 /** Typed WebView boundary for Cohere and managed AI attachments. */
 import { Channel, invoke } from '@tauri-apps/api/core';
+import { isTauri } from './db';
+import { browserDevAiCredential } from './aiCredentials';
 
 export interface AiGatewayError {
   readonly code: string;
@@ -94,16 +96,213 @@ export async function streamAiGatewayChat(
   request: AiGatewayChatRequest,
   onEvent: (event: AiGatewayStreamEvent) => void,
 ): Promise<void> {
+  if (import.meta.env.DEV && !isTauri()) {
+    await streamBrowserDevChat(request, onEvent);
+    return;
+  }
   const channel = new Channel<AiGatewayStreamEvent>();
   channel.onmessage = onEvent;
   await invoke<void>('ai_chat_stream', { request, onEvent: channel });
 }
 
 export async function cancelAiGatewayRun(runId: string): Promise<boolean> {
+  if (import.meta.env.DEV && !isTauri()) {
+    const controller = browserDevRuns.get(runId);
+    if (controller === undefined) return false;
+    controller.abort();
+    return true;
+  }
   const result = await invoke<{ runId: string; cancelled: boolean }>('ai_cancel_run', {
     runId,
   });
   return result.cancelled;
+}
+
+const browserDevRuns = new Map<string, AbortController>();
+
+function browserDevKey(): string {
+  const key = browserDevAiCredential();
+  if (key === null) throw new Error('Connect a Cohere key for this localhost session');
+  return key;
+}
+
+function gatewayError(status: number, message: string): AiGatewayError {
+  return {
+    code: status === 401 || status === 498 ? 'authentication'
+      : status === 403 ? 'permissionDenied'
+        : status === 429 ? 'rateLimited'
+          : status >= 500 ? 'providerUnavailable'
+            : 'invalidRequest',
+    message,
+    retryable: status === 429 || status >= 500,
+    status,
+  };
+}
+
+function compactDefined(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  );
+}
+
+function providerChatBody(request: AiGatewayChatRequest): Record<string, unknown> {
+  return {
+    stream: true,
+    model: request.model,
+    messages: request.messages.map((message) => {
+      if (message.role === 'user') {
+        return {
+          role: 'user',
+          content: typeof message.content === 'string'
+            ? message.content
+            : message.content.map((block) => block.type === 'text'
+              ? block
+              : {
+                  type: 'image_url',
+                  image_url: block.imageUrl,
+                }),
+        };
+      }
+      if (message.role === 'tool') {
+        return {
+          role: 'tool',
+          tool_call_id: message.toolCallId,
+          content: message.content,
+        };
+      }
+      if (message.role !== 'assistant') return message;
+      const { toolPlan, toolCalls, ...rest } = message;
+      return {
+        ...rest,
+        ...(toolPlan === undefined ? {} : { tool_plan: toolPlan }),
+        ...(toolCalls === undefined ? {} : { tool_calls: toolCalls }),
+      };
+    }),
+    ...(request.tools.length === 0 ? {} : {
+      tools: request.tools.map((tool) => ({
+        type: 'function',
+        function: {
+          name: tool.name,
+          ...(tool.description === undefined ? {} : { description: tool.description }),
+          parameters: tool.parameters,
+        },
+      })),
+    }),
+    ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.seed === undefined ? {} : { seed: request.seed }),
+    ...(request.thinking === undefined ? {} : {
+      thinking: {
+        type: request.thinking.type,
+        ...(request.thinking.tokenBudget === undefined
+          ? {}
+          : { token_budget: request.thinking.tokenBudget }),
+      },
+    }),
+    ...(request.strictTools === undefined ? {} : { strict_tools: request.strictTools }),
+    ...(request.safetyMode === undefined ? {} : { safety_mode: request.safetyMode }),
+  };
+}
+
+async function streamBrowserDevChat(
+  request: AiGatewayChatRequest,
+  onEvent: (event: AiGatewayStreamEvent) => void,
+): Promise<void> {
+  if (browserDevRuns.has(request.runId)) throw new Error('AI run is already active');
+  const controller = new AbortController();
+  browserDevRuns.set(request.runId, controller);
+  let sequence = 0;
+  try {
+    const response = await fetch('https://api.cohere.com/v2/chat', {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${browserDevKey()}`,
+        'Content-Type': 'application/json',
+        'X-Client-Name': 'Alcove localhost',
+      },
+      body: JSON.stringify(providerChatBody(request)),
+      signal: controller.signal,
+    });
+    if (!response.ok || response.body === null) {
+      onEvent({
+        type: 'error',
+        runId: request.runId,
+        error: gatewayError(response.status, `Cohere rejected the request (HTTP ${response.status})`),
+      });
+      return;
+    }
+    if (!(response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/event-stream')) {
+      onEvent({
+        type: 'error',
+        runId: request.runId,
+        error: { code: 'providerProtocol', message: 'Cohere did not return an event stream', retryable: false },
+      });
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const emitFrame = (frame: string): void => {
+      let eventName = '';
+      const data: string[] = [];
+      for (const rawLine of frame.split(/\r?\n/)) {
+        if (rawLine.startsWith('event:')) eventName = rawLine.slice(6).trim();
+        else if (rawLine.startsWith('data:')) data.push(rawLine.slice(5).trimStart());
+      }
+      if (data.length === 0 || eventName === '') return;
+      if (eventName === 'error') {
+        onEvent({
+          type: 'error',
+          runId: request.runId,
+          error: { code: 'providerUnavailable', message: 'Cohere ended the stream with an error', retryable: true },
+        });
+        return;
+      }
+      const allowed = new Set<Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType']>([
+        'message-start', 'content-start', 'content-delta', 'content-end',
+        'tool-plan-delta', 'tool-call-start', 'tool-call-delta', 'tool-call-end',
+        'citation-start', 'citation-end', 'message-end', 'debug',
+      ]);
+      if (!allowed.has(eventName as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'])) {
+        throw new Error('Cohere sent an unknown stream event');
+      }
+      const parsed = JSON.parse(data.join('\n')) as Record<string, unknown>;
+      if (parsed.type !== eventName) throw new Error('Cohere stream event type did not match its payload');
+      onEvent({
+        type: 'providerEvent',
+        runId: request.runId,
+        sequence: sequence += 1,
+        eventType: eventName as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'],
+        data: parsed,
+      });
+    };
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary: number;
+      while ((boundary = buffer.search(/\r?\n\r?\n/)) >= 0) {
+        const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] ?? '\n\n';
+        emitFrame(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + separator.length);
+      }
+    }
+    if (buffer.trim() !== '') emitFrame(buffer);
+    onEvent({ type: 'completed', runId: request.runId });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      onEvent({ type: 'cancelled', runId: request.runId });
+      return;
+    }
+    onEvent({
+      type: 'error',
+      runId: request.runId,
+      error: { code: 'network', message: error instanceof Error ? error.message : 'Could not reach Cohere', retryable: true },
+    });
+  } finally {
+    browserDevRuns.delete(request.runId);
+  }
 }
 
 export interface AiAttachmentMetadata {
@@ -224,6 +423,49 @@ async function cancellableProviderInvoke<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   if (signal?.aborted) throw abortError();
+  if (import.meta.env.DEV && !isTauri()) {
+    const controller = new AbortController();
+    browserDevRuns.set(runId, controller);
+    const abort = (): void => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      const endpoint = command === 'ai_embed' ? 'embed' : 'rerank';
+      const { runId: _runId, ...body } = request;
+      const translated = command === 'ai_embed'
+        ? {
+            model: body.model,
+            inputs: body.inputs,
+            input_type: body.inputType,
+            embedding_types: body.embeddingTypes,
+            output_dimension: body.outputDimension,
+            truncate: body.truncate,
+          }
+        : {
+            model: body.model,
+            query: body.query,
+            documents: body.documents,
+            top_n: body.topN,
+          };
+      const response = await fetch(`https://api.cohere.com/v2/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${browserDevKey()}`,
+          'Content-Type': 'application/json',
+          'X-Client-Name': 'Alcove localhost',
+        },
+        body: JSON.stringify(compactDefined(translated)),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw gatewayError(response.status, `Cohere rejected the request (HTTP ${response.status})`);
+      }
+      return await response.json() as T;
+    } finally {
+      browserDevRuns.delete(runId);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
   const abort = (): void => {
     void cancelAiGatewayRun(runId).catch(() => false);
   };

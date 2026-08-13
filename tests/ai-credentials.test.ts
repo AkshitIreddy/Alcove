@@ -6,13 +6,36 @@ describe('AI credential browser boundary', () => {
     vi.unstubAllGlobals();
   });
 
-  it('never misreports an untested localhost key as rejected by Cohere', async () => {
+  it('tests and keeps a valid localhost key only in module memory', async () => {
     vi.stubGlobal('window', {});
-    const { testAiCredential } = await import('../src/data/aiCredentials');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ valid: true }),
+    }));
+    const credentials = await import('../src/data/aiCredentials');
 
-    await expect(testAiCredential('trial_key_that_is_long_enough')).rejects.toThrow(
-      'Cohere keys can only be tested in the Alcove desktop app',
-    );
+    await expect(credentials.testAiCredential('trial_key_that_is_long_enough')).resolves.toEqual({ valid: true });
+    await credentials.saveAiCredential('trial_key_that_is_long_enough', 'secure');
+    expect(credentials.browserDevAiCredential()).toBe('trial_key_that_is_long_enough');
+    expect(await credentials.aiCredentialStatus()).toMatchObject({
+      configured: true,
+      source: 'session',
+      persistent: false,
+    });
+    await credentials.deleteAiCredential();
+    expect(credentials.browserDevAiCredential()).toBeNull();
+  });
+
+  it('forgets the localhost key when the module reloads', async () => {
+    vi.stubGlobal('window', {});
+    const credentials = await import('../src/data/aiCredentials');
+    await credentials.saveAiCredential('trial_key_that_is_long_enough', 'session');
+    expect(credentials.browserDevAiCredential()).not.toBeNull();
+
+    vi.resetModules();
+    const reloaded = await import('../src/data/aiCredentials');
+    expect(reloaded.browserDevAiCredential()).toBeNull();
   });
 
   it('rejects malformed keys before the protected IPC boundary', async () => {

@@ -23,6 +23,8 @@ vi.mock('@tauri-apps/api/core', () => ({
   Channel: class<T> { onmessage?: (value: T) => void; },
 }));
 
+vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+
 import { embedAiTexts } from '../src/data/aiGateway';
 
 describe('AI non-streaming gateway cancellation', () => {

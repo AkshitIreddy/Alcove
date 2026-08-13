@@ -97,6 +97,14 @@ try {
   const menu = page.locator('.nb-ctx-menu');
   await menu.waitFor({ state: 'visible', timeout: 15_000 });
   report.directMenu = true;
+  report.portabilityActions = await menu.getByRole('menuitem').allTextContents();
+  if (
+    !report.portabilityActions.some((text) => text.includes('Copy content')) ||
+    !report.portabilityActions.some((text) => text.includes('Download / save'))
+  ) {
+    throw new Error(`image block is missing portable actions (${report.portabilityActions.join(' | ')})`);
+  }
+  await menu.screenshot({ path: `${OUT}/00-copy-download-menu.png`, caret: 'hide' });
   await page.keyboard.press('Escape');
 
   const lane = page.locator(

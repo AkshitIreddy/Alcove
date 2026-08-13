@@ -64,42 +64,43 @@ export const SHOWCASE_BINDINGS = Object.freeze([
   'oilcloth-rules', 'half-cloth',
 ]);
 
-const JEWEL_AND_EARTH = Object.freeze([
-  ['#24477c', '#19345e'], // midnight blue
-  ['#245caa', '#194580'], // royal blue
-  ['#166a8f', '#0f506f'], // peacock blue
-  ['#0d7770', '#095b57'], // teal
-  ['#177a57', '#0f5c42'], // emerald
-  ['#2f6a39', '#214f2b'], // forest
-  ['#4d721f', '#385619'], // leaf green
-  ['#55358c', '#3f286c'], // violet
-  ['#6c2f85', '#502365'], // imperial purple
-  ['#822b6d', '#622052'], // magenta
-  ['#922d52', '#6f213e'], // berry
-  ['#aa2f46', '#822236'], // crimson
-  ['#a73a2f', '#7f2b24'], // vermilion
-  ['#b34a1e', '#893715'], // rust
-  ['#c36116', '#96480f'], // burnt orange
-  ['#b77d0a', '#8b5e08'], // ochre
-  ['#4b2876', '#371d59'], // indigo
-  ['#294f6a', '#1d3a50'], // blue slate
-  ['#6b2748', '#501c36'], // burgundy
-  ['#466424', '#334a1b'], // olive
+const LIBRARY_CLOTH = Object.freeze([
+  ['#3c5774', '#2b415c'], // ink blue
+  ['#46658b', '#334e70'], // library blue
+  ['#3c6b7c', '#2c5362'], // faded peacock
+  ['#3e726c', '#2d5955'], // oxidised teal
+  ['#47715d', '#345847'], // moss green
+  ['#4f6d4e', '#3a543b'], // forest cloth
+  ['#657446', '#4d5935'], // lichen
+  ['#665379', '#4d3d60'], // dusty violet
+  ['#745170', '#593d57'], // plum cloth
+  ['#805064', '#623d4e'], // mulberry
+  ['#854d59', '#653a45'], // faded berry
+  ['#905047', '#6e3b35'], // brick red
+  ['#8d5845', '#6b4234'], // terracotta
+  ['#956142', '#714932'], // russet
+  ['#a06d43', '#7a5132'], // warm leather
+  ['#9a7847', '#745a35'], // antique ochre
+  ['#594c74', '#423857'], // quiet indigo
+  ['#425d6b', '#314854'], // blue slate
+  ['#76505b', '#593b45'], // burgundy cloth
+  ['#5f7048', '#475536'], // olive
 ]);
 
-const TOOLING = Object.freeze(['#f1d16f', '#f3dc92', '#f0c7a4', '#d5e0a0']);
+const TOOLING = Object.freeze(['#d8bd72', '#dfc98b', '#d8b59b', '#bbc78d']);
 
 /**
  * Exact colour roles, rotated per floor so the same twenty-colour phrase does
- * not repeat vertically. The faces stay saturated while accents remain dark
+ * not repeat vertically. These are recognisably coloured cloths, not a rainbow:
+ * every hue is folded toward library dust and ink while accents remain dark
  * enough to preserve the app's one-outline, flat binding language.
  */
 export const SHOWCASE_STYLES = Object.freeze(
   SHOWCASE_TITLES.map((_, index) => {
     const floor = Math.floor(index / 20);
     const slot = index % 20;
-    const paletteIndex = (slot + [0, 7, 13][floor]) % JEWEL_AND_EARTH.length;
-    const [base, accent] = JEWEL_AND_EARTH[paletteIndex];
+    const paletteIndex = (slot + [0, 7, 13][floor]) % LIBRARY_CLOTH.length;
+    const [base, accent] = LIBRARY_CLOTH[paletteIndex];
     const metal = TOOLING[(slot + floor) % TOOLING.length];
     return Object.freeze({
       pigment: (paletteIndex * 7 + floor * 3) % 50,

@@ -29,22 +29,24 @@ Alcove](part-1-users.md) first — this half assumes it.
 
 <!-- gen:contents-part-2 -->
 - [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
-- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the everyday checks
 - [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
 - [The art pipeline](#the-art-pipeline) — Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule
 - [The design vocabularies](#the-design-vocabularies) — Colour, carpentry, wall and binding as four orthogonal axes — and adding a value end to end
 - [The editor](#the-editor) — The vendored Solid bindings, the pagination contract, block effects, and adding a block type step by step
+- [Protected page and whole-book history](#protected-page-and-whole-book-history) — Why Alcove keeps separate generous leaf versions and structural notebook checkpoints, and how each restores without consuming the current state
 - [The flip](#the-flip) — The cylinder curl, the snapshot cache, and the library bug worked around at length
 - [Notebook Script](#notebook-script) — Why `parse()` is total, the round-trip invariant, and the generated spec
+- [The in-book AI Agent](#the-in-book-ai-agent) — Provider-neutral LangGraph orchestration, source policy, native-render self-review and the approval-only mutation seam
 - [The data layer](#the-data-layer) — The schema, the bookcase model, and why every read is validated
 - [The failure modes this codebase has actually shipped](#the-failure-modes-this-codebase-has-actually-shipped) — The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named
-- [The gate](#the-gate) — The deliberately tiny smoke suite
+- [The gate](#the-gate) — The bounded high-signal suite and proportionate release gates
 - [Things that were harder than they look](#things-that-were-harder-than-they-look) — Five places the obvious implementation is wrong
 - [The design record](#the-design-record) — The ADR set in `docs/design/`, including which documents are superseded and why they are kept
 - [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
 - [The generated artefacts](#the-generated-artefacts) — The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails
 - [How this document stays true](#how-this-document-stays-true) — The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed
-- [Non-goals](#non-goals) — No sync, no cloud, no mobile, no plugin API, no second visual language, no light model
+- [Non-goals](#non-goals) — No sync or cloud storage, no mobile, no plugin API, no second visual language, no light model
 - [Licence and credits](#licence-and-credits) — MIT, the bundled fonts, where the sound came from, and the two brand images that are not interchangeable
 <!-- /gen -->
 
@@ -52,6 +54,9 @@ Three places to start, depending on why you are here. Changing what the app
 *draws*: [The art pipeline](#the-art-pipeline), then
 [The design vocabularies](#the-design-vocabularies). Changing what a page can
 *hold*: [The editor](#the-editor), then [Notebook Script](#notebook-script).
+Changing how the native agent reads, drafts or earns permission to propose:
+[The in-book AI Agent](#the-in-book-ai-agent), then its
+[design authority](../design/ai-agent.md).
 Trying to work out why something that looks finished is not reachable:
 [The failure modes this codebase has actually
 shipped](#the-failure-modes-this-codebase-has-actually-shipped), which is the
@@ -64,10 +69,11 @@ shortest useful thing on this page.
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
 webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
 Vite. Almost everything interesting happens in the frontend. The Rust side is
-<!--f:rustCommands-->15<!--/f--> commands — image assets, link previews, backups,
-tray, PDF export, markdown import, bundle read/write — plus the SQLite
-migrations, in <!--f:rustFiles-->9<!--/f--> files and
-<!--f:rustLines-->2635<!--/f--> lines.
+<!--f:rustCommands-->29<!--/f--> commands — image assets, link previews, backups,
+tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
+AI-attachment gateway — plus the SQLite
+migrations, in <!--f:rustFiles-->10<!--/f--> files and
+<!--f:rustLines-->7520<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -82,16 +88,19 @@ one who does need it is you.
   this app to write.
 - **No account, no sync, no telemetry.** `telemetry` is typed as the literal
   `false` in [`src/data/types.ts`](../../src/data/types.ts), so it is not a
-  setting somebody can flip — it is a type error to try. Adding a network
-  dependency to a feature is therefore an architectural change, not a
-  convenience.
-- **Exactly two outbound calls, both reader-initiated.** Searching for an
-  openly-licensed picture (`::fetch`) and previewing a pasted link. Both go
+  setting somebody can flip — it is a type error to try. An unrelated feature
+  cannot quietly turn that into cloud sync or analytics.
+- **Outbound calls are narrow, visible and reader-initiated.** Searching for an
+  openly licensed picture (`::fetch`) and previewing a pasted link both go
   through an SSRF guard that is written twice on purpose —
   [`src-tauri/src/media.rs`](../../src-tauri/src/media.rs) is the real one and
   [`src/editor/media/urlGuard.ts`](../../src/editor/media/urlGuard.ts) mirrors
   it — https only, private and loopback addresses refused, fast timeouts, capped
-  body size.
+  body size. The optional AI Agent adds an explicit Cohere path: it is inert
+  without the reader's key and crosses a typed Rust gateway that accepts Cohere
+  endpoints and request shapes rather than arbitrary URLs. After a task starts,
+  it may send its instructions, current-book pages it inspects, attached sources
+  and draft-review renders; other books remain local.
 - **The webview is the OS's, not ours.** That is what makes the installer about
   sixteen megabytes rather than ten times that, and it is also why the app
   inherits the platform's autoplay policy, its IME and its font stack rather
@@ -190,6 +199,110 @@ so neither side drags the other's dependencies in, and it carries an
 `ART_PROTOCOL_VERSION` so a stale worker bundle is obvious rather than subtly
 wrong.
 
+### The Agent is a capability graph, not a privileged chat box
+
+The optional in-book Agent adds one more cross-process path, but no general
+network or mutation primitive. [`BookView.tsx`](../../src/views/BookView.tsx) is
+the composition root: it wires a provider-neutral runtime to read-only notebook
+and source adapters, the disposable page renderer, SQLite persistence and the
+Cohere provider. The panel receives a display controller assembled by
+[`aiAgentControllerAdapter.ts`](../../src/views/rail/aiAgentControllerAdapter.ts);
+it never imports Cohere, sees a saved key, owns checkpoint state or receives an
+unrestricted editor callback.
+
+```mermaid
+flowchart LR
+    UI["AI Agent panel<br/>intent · sources · activity · approval"]
+    ADAPTER["display controller<br/><i>aiAgentControllerAdapter.ts</i>"]
+    GRAPH["LangGraph StateGraph<br/>model → tools → human interrupt"]
+    TOOLS["Zod-validated capability tools<br/>read · retrieve · draft · render · propose"]
+    STORE[("SQLite<br/>task · events · checkpoints · pending writes")]
+    SANDBOX["disposable native PageEditor sandbox<br/>parse · paginate · render · inspect"]
+    PROVIDER["provider-neutral stream contract"]
+    RUST["Rust Cohere gateway<br/>request validation · vault · cancellation"]
+    APPLY["BookView approval seam<br/>revision · receipt · journal · Undo"]
+
+    UI <--> ADAPTER
+    ADAPTER <--> GRAPH
+    GRAPH <--> STORE
+    GRAPH --> TOOLS
+    TOOLS --> SANDBOX
+    GRAPH <--> PROVIDER
+    PROVIDER <--> RUST
+    ADAPTER -- "approved immutable proposal only" --> APPLY
+```
+
+The graph in [`graph.ts`](../../src/features/aiAgent/graph.ts) has only three
+nodes: `model`, `tools` and a statically checkpointed `human` breakpoint. That
+small topology is intentional. The autonomy lives in the model choosing among
+typed capabilities, while deterministic code owns every permission and exit
+condition. The model can inspect the current notebook, read or retrieve anchored
+source units, keep a coverage ledger, write Notebook Script, run validation,
+render disposable pages, inspect their images and propose a reviewed patch. It
+cannot execute SQL, open a path or URL, dispatch a TipTap transaction, manufacture
+an idempotency key or skip the reader's approval.
+
+Every tool starts as a strict Zod object in
+[`tools.ts`](../../src/features/aiAgent/tools.ts). The same definition becomes a
+sanitised Cohere strict-tool JSON Schema, and returned arguments are parsed again
+against the full local schema before execution. Optional values travel through
+Cohere as required-but-nullable fields, then null sentinels are removed locally;
+unknown fields remain errors. Tool effects are labelled `read`, `draft`,
+`interrupt` or `propose`, but that label is metadata rather than authority—the
+runtime's phase, call budget, source capability, generation hashes and policy
+gate decide whether a call can run.
+
+The provider seam is deliberately narrower than a LangChain model class.
+[`provider.ts`](../../src/features/aiAgent/provider.ts) accepts normalized
+messages and emits only public-text deltas, tool-plan deltas, complete typed tool
+calls, citations, usage and finish. [`cohereProvider.ts`](../../src/features/aiAgent/cohereProvider.ts)
+maps that contract to Cohere V2 and preserves the exact assistant `tool_plan`,
+tool-call ids and the contiguous result set required by the following turn.
+Rendered/source images are one-turn observations: only the trailing unanswered
+tool-result group is reattached, in batches of at most twenty, so checkpoint
+replay does not resend every old private bitmap. Rust then validates the bounded
+request vocabulary and fixed `https://api.cohere.com` origin, streams typed SSE
+events back through a Tauri channel, and owns the cancellation registry and API
+key. The WebView gets neither a bearer token nor a general `fetch` escape hatch.
+
+Resumability is real rather than a transcript illusion. All domain state in
+[`types.ts`](../../src/features/aiAgent/types.ts) is serialisable plain data;
+credentials, attachment bytes, editor/database handles, `AbortSignal`s, object
+URLs and image data are forbidden from it. The custom
+[`SqliteAgentCheckpointSaver`](../../src/data/aiAgentPersistence.ts) persists
+LangGraph checkpoints and pending writes beside task summaries and the ordered
+activity log. An interrupt is a durable turn boundary: if a model emits an
+approval/question call with parallel siblings, the siblings are discarded and
+the assistant call list is trimmed before pause, because they were authored
+without the reader's answer. Resume therefore returns one result to the exact
+call that caused the checkpoint rather than replaying work or creating an
+invalid partial tool-result history.
+
+Drafting still grants no write capability. The sandbox mounts the production
+TipTap schema and `PageEditor` with persistence and live-editor registration
+disabled, lets the fixed-page overflow contract settle across stable animation
+frames, captures native-size pages, and records structural/layout digests. The
+proposal gate requires current draft, validation, render and visual-review
+hashes to agree; every current page image must actually have been exposed to a
+later model turn, and no blocking finding may remain. With the opt-in text veil,
+the model reviews masked pixels first; Alcove restores values locally and runs a
+second parser/layout render before constructing the final preview.
+
+Only the preview's explicit reader approval reaches
+`applyApprovedAiProposal` in `BookView`. That seam freezes the live editors,
+recomputes the book revision, verifies the reviewed receipt and target page,
+prepares media/schema work, writes a whole-book rollback snapshot, and claims a
+durable idempotency key before the first page changes. After the edit it waits
+for pagination to settle and hashes every resulting reviewed page. A failure
+restores the snapshot; success converts the journal into one whole-operation
+`Ctrl+Z` receipt. Startup recovery also restores any journal left in `applying`
+or `undoing`, so “atomic” describes the reader-visible book even though the page
+operations span multiple asynchronous editor writes.
+
+The complete contracts, source formats, privacy transform and failure rules are
+in [The in-book AI Agent](#the-in-book-ai-agent) below and
+[`docs/design/ai-agent.md`](../design/ai-agent.md).
+
 ### The stack, and why each piece is here
 
 | Piece | Version | Why this one |
@@ -207,7 +320,9 @@ wrong.
 | `lowlight` | ^3.3 | Syntax highlighting inside code blocks, through `@tiptap/extension-code-block-lowlight`. |
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](../../src/art/wobble.ts). |
 | `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](../../src/views/Tooltip.tsx). |
-| Vitest | ^4.1 | Runs the single retained smoke file, [`tests/smoke.test.ts`](../../tests/smoke.test.ts), in Node. |
+| `@langchain/langgraph` + `@langchain/langgraph-checkpoint` | ^1.4 / ^1.1 | A resumable provider-neutral `StateGraph` and saver contract for the Agent's model/tool/interrupt loop. The saver is implemented against Alcove's browser-safe async SQLite surface; no LangGraph service or remote checkpoint store is involved. |
+| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive Cohere's strict-tool JSON Schema and then applied again to returned arguments before a capability executes. |
+| Vitest | ^4.1 | Runs an explicit high-signal Node allow-list through [`vitest.smoke.config.ts`](../../vitest.smoke.config.ts); the broad suite remains opt-in. |
 
 There is deliberately no state-management library, no CSS framework, no icon
 package, no chart library and no markdown library. The parser, the ZIP codec, the
@@ -217,7 +332,7 @@ would not meet (see [`src/features/transfer/zip.ts`](../../src/features/transfer
 for the reasoning in one concrete case).
 
 ## Getting it running
-<!--nav: `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks-->
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the everyday checks-->
 
 ```bash
 npm install
@@ -231,20 +346,23 @@ persisted to `localStorage`, degrading to empty results rather than throwing on
 SQL it does not understand. A book created in the browser survives a reload. It
 is a convenient development path, not a substitute for the Tauri host.
 
-### The bare-bones gate
+### The everyday gate
 
-The owner performs visual and audio acceptance directly. Automated verification
-is deliberately limited to the two commands below.
+The owner performs visual and audio acceptance directly. The two commands below
+are the bounded everyday gate; broader suites are targeted or release-only.
 
 | Command | What it checks |
 |---|---|
 | `npx tsc --noEmit` | Frontend type safety in strict mode. |
-| `npm test` | Three smoke invariants: Notebook Script remains total, pagination keeps one block, and package/Tauri versions agree. |
+| `npm test` | Exactly the explicit file allow-list in `vitest.smoke.config.ts`: the current script/media/release, book-appearance, hydration and sound regressions. |
 
-The smoke suite is [`tests/smoke.test.ts`](../../tests/smoke.test.ts), selected by
-[`vitest.smoke.config.ts`](../../vitest.smoke.config.ts). It does not boot a
-browser, capture pixels, inspect audio, occupy port 1420 or claim anything about
-what the app looks or sounds like.
+The fast suite is the explicit file allow-list in
+[`vitest.smoke.config.ts`](../../vitest.smoke.config.ts), including but no
+longer limited to [`tests/smoke.test.ts`](../../tests/smoke.test.ts). The
+unreleased Agent's focused suites are not silently included by that command;
+they must be run explicitly until the release gate deliberately adds them. The
+fast suite does not boot a browser, capture pixels, occupy port 1420 or claim
+anything about what the app looks or sounds like.
 
 ## The map of the app
 <!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
@@ -262,21 +380,23 @@ defending — why it is that way and what it replaced.
 | [`src/editor/`](../../src/editor/) | TipTap setup ([`extensions.ts`](../../src/editor/extensions.ts)), one editor per page ([`PageEditor.tsx`](../../src/editor/PageEditor.tsx)), custom nodes ([`nodes/`](../../src/editor/nodes/)), slash and right-click menus, [`pagination.ts`](../../src/editor/pagination.ts), [`effects/`](../../src/editor/effects/), media paste, exporters, the vendored [`solid/`](../../src/editor/solid/) bindings. |
 | [`src/flip/`](../../src/flip/) | The page-curl engine: [`curl.ts`](../../src/flip/curl.ts) (shaders), [`math.ts`](../../src/flip/math.ts) (pure, node-testable), [`rasterCache.ts`](../../src/flip/rasterCache.ts), [`gl.ts`](../../src/flip/gl.ts), [`cssFallback.ts`](../../src/flip/cssFallback.ts). |
 | [`src/script/`](../../src/script/) | The Notebook Script parser and printer. Total by construction: `parse()` never throws. |
+| [`src/features/aiAgent/`](../../src/features/aiAgent/) | The provider-neutral LangGraph runtime: serialisable contracts, tool policy, complete-source coverage, retrieval, Cohere adapter, draft sandbox and proposal gate. |
 | [`src/diagrams/`](../../src/diagrams/) | Layout algorithms (tidy tree, layered DAG, timeline) and hand-drawn SVG renderers. |
-| [`src/data/`](../../src/data/) | SQLite access and the persisted stores: [`bookcases.ts`](../../src/data/bookcases.ts), [`designPrefs.ts`](../../src/data/designPrefs.ts), [`settings.ts`](../../src/data/settings.ts), [`search.ts`](../../src/data/search.ts), [`keybindings.ts`](../../src/data/keybindings.ts). |
+| [`src/data/`](../../src/data/) | SQLite access and the persisted stores: books, design, search and settings, plus agent checkpoints, sources, idempotent apply receipts, the Rust-owned credential boundary and normalized provider gateway. |
 | [`src/features/transfer/`](../../src/features/transfer/) | Export/import bundles (`.nbk`), conflict resolution, restore points. |
 | [`src/features/system/`](../../src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](../../src/features/packs/), [`src/features/templates/`](../../src/features/templates/), [`src/features/tutorial/`](../../src/features/tutorial/), [`src/features/quickswitch/`](../../src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
 | [`src/sound/`](../../src/sound/) | The `@pixi/sound` engine, named sound sets, and the in-app credits panel. |
 | [`src/search/`](../../src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
 | [`src/state/`](../../src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
+| [`src/assets/`](../../src/assets/) | Source-owned static media which must ship with a feature, including the frozen, locally stored kitten illustration used by the deterministic Agent demo. |
 | [`src/features/settings/`](../../src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
-| [`src-tauri/src/`](../../src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs`, all registered in `lib.rs`. |
+| [`src-tauri/src/`](../../src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs` and `ai.rs`, all registered in `lib.rs`. `ai.rs` owns credentials, Cohere HTTPS, attachment bytes and local PDF extraction. |
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->319<!--/f--> of <!--f:srcFiles-->333<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7135<!--/f--> lines of it.
+<!--f:srcDocstrings-->343<!--/f--> of <!--f:srcFiles-->376<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7301<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -580,7 +700,7 @@ the *same* routine that paints the real thing (`drawWallpaperCard`, not an
 approximation). If you add an axis rather than a value, its `artKey` needs the new
 axis too.
 
-**7. Run the bare-bones checks, then inspect the changed surface yourself:**
+**7. Run the everyday checks, then inspect the changed surface yourself:**
 
 ```bash
 npx tsc --noEmit
@@ -726,13 +846,13 @@ interactive (the spoiler is the one that is).
 [`CataloguePanel.tsx`](../../src/views/rail/CataloguePanel.tsx). The catalogue is not
 optional: the panel is what a reader browses when they do not know the name yet.
 
-**6. Regenerate the spec and run the bare-bones checks.**
+**6. Regenerate the spec and run the everyday checks.**
 
 ```bash
 npm run spec                              # rebuild the AI-facing spec
 npm run spec:check                        # checked-in copies match the vocabulary
 npx tsc --noEmit                          # strict frontend types
-npm test                                  # the retained smoke suite
+npm test                                  # the bounded high-signal suite
 ```
 
 A rewrite of `effects.css` once dropped the container section for four commits.
@@ -740,6 +860,43 @@ Every sticky note, polaroid, washi box, card, quote card, banner, index card,
 envelope, stamp, tag and margin note rendered as a bare `<div>` while their nodes
 and script forms still existed. The final check is therefore direct: insert the
 block and look at the page.
+
+## Protected page and whole-book history
+<!--nav: Why Alcove keeps separate generous leaf versions and structural notebook checkpoints, and how each restores without consuming the current state-->
+
+The editor has two recovery scales because a page snapshot cannot recover a
+deleted leaf and a whole-book copy is wasteful for every keystroke.
+[`editor/history/pageHistory.ts`](../../src/editor/history/pageHistory.ts)
+records immutable page JSON after settled autosaves. Its default-on policy keeps
+up to 1,536 in-memory entries and persists up to 1,024 per page, with dense recent
+versions followed by hourly, daily, weekly and monthly recovery representatives. Writes
+are serialized per page; hydration merges a previous session before the first
+new tail is written, so a startup edit cannot overwrite unseen history.
+
+[`editor/history/bookHistory.ts`](../../src/editor/history/bookHistory.ts) is the
+structural layer. Once a minute—or forcibly before a restore—it stores the exact
+page rows, stable IDs, ordinals, provenance and protected-boundary flags for the
+whole notebook. It keeps 512 progressively spaced checkpoints. A restore first
+creates a checkpoint of the state being left, deletes pages absent from the
+selected recovery point, recreates deleted pages under their original IDs, then
+restores order/content/flow metadata. The write queue and full immutable payload
+make this slower and much safer than pretending a series of editor undo steps is
+a book transaction.
+
+`Settings.protectedHistoryEnabled` defaults to true. Disabling it stops future
+recording only; existing `page_history:<pageId>` and `book_history:<bookId>`
+rows remain. The Settings sheet requires a warning acknowledgement because this
+is a recovery boundary, not cosmetic preference. Deleting a page removes its
+private page-history row, and permanently deleting a book removes its whole-book
+history. This history is local and immediate; scheduled library backups remain
+the independent disaster-recovery layer.
+
+Pagination treats viewport geometry as presentation. BookView freezes the first
+settled leaf capacity for the open session, and PageEditor ignores prose-root
+ResizeObserver deliveries for overflow mutation while continuing to drain real
+intrinsic child growth. This prevents narrow-window wrapping from being
+persisted as cross-page moves—and prevents the stale-source remount path from
+duplicating those moved blocks when the window grows again.
 
 ## The flip
 <!--nav: The cylinder curl, the snapshot cache, and the library bug worked around at length-->
@@ -850,6 +1007,459 @@ Current surface, counted from the vocabulary:
 `flowchart`, `timeline`; a ` ```mermaid ` fence is accepted as a compatibility
 ramp and warned).
 
+## The in-book AI Agent
+<!--nav: Provider-neutral LangGraph orchestration, source policy, native-render self-review and the approval-only mutation seam-->
+
+> **Unreleased:** this section documents the current source tree. The linked
+> v0.6.6 installers do not contain the native Agent; they contain the external,
+> key-free Notebook Script workflow. No Agent version or release has been
+> published.
+
+The sparkle glyph on the open book's ordinary left rail mounts
+[`AiAgentPanel.tsx`](../../src/views/rail/AiAgentPanel.tsx). The panel is a Solid
+view over a narrow controller: it does not import Cohere, hold a saved key,
+choose a workflow or receive an editor mutation callback. This matters because
+the product is an **agent that works on a notebook**, not merely a chat
+transcript with an Insert button bolted onto every last message. Conversation
+is nevertheless a deliberate first-class outcome when no notebook edit was
+requested.
+
+The implementation authority is
+[`docs/design/ai-agent.md`](../design/ai-agent.md). The working pieces are:
+
+| Layer | Authority |
+|---|---|
+| Serializable task, source, draft, review and proposal contracts | [`src/features/aiAgent/types.ts`](../../src/features/aiAgent/types.ts) |
+| Durable, resumable control flow and interrupts | [`graph.ts`](../../src/features/aiAgent/graph.ts), [`runtime.ts`](../../src/features/aiAgent/runtime.ts) and the SQLite-backed LangGraph saver in [`src/data/aiAgentPersistence.ts`](../../src/data/aiAgentPersistence.ts) |
+| Notebook and source reads | [`productionNotebook.ts`](../../src/features/aiAgent/productionNotebook.ts) and [`productionSources.ts`](../../src/features/aiAgent/productionSources.ts) |
+| Real editor render sandbox | [`draftSandbox.ts`](../../src/features/aiAgent/draftSandbox.ts) and [`draftSandboxMount.tsx`](../../src/features/aiAgent/draftSandboxMount.tsx) |
+| Model boundary | provider-neutral [`provider.ts`](../../src/features/aiAgent/provider.ts), Cohere V2 adapter [`cohereProvider.ts`](../../src/features/aiAgent/cohereProvider.ts), normalized WebView calls in [`src/data/aiGateway.ts`](../../src/data/aiGateway.ts), and Rust [`src-tauri/src/ai.rs`](../../src-tauri/src/ai.rs) |
+| The only live mutation seam | `applyApprovedAiProposal` in [`BookView.tsx`](../../src/views/BookView.tsx), behind a revision check and durable idempotency claim |
+
+### Composition and UI boundaries
+
+There are three controller-shaped objects, and treating them as one is how a UI
+event accidentally becomes infrastructure authority:
+
+1. [`AgentRuntime`](../../src/features/aiAgent/runtime.ts) owns the active
+   execution, graph invocation, abort generation and durable state. It is
+   Solid-free and provider-neutral.
+2. [`createAiAgentController`](../../src/features/aiAgent/controller.ts) exposes
+   the stable application operations—start, restore, follow up, register sources,
+   stop/retry, answer an interrupt and approve/reject/revise a preview. It still
+   has no live notebook writer.
+3. [`createAiAgentPanelController`](../../src/views/rail/aiAgentControllerAdapter.ts)
+   projects runtime snapshots and ordered events into display cards, placement
+   labels, source chips and callbacks. Its `approveInsert` first registers any
+   upload that finished during the last provider turn, asks core to mark the
+   exact preview approved, then hands only that immutable proposal to the
+   composition root's apply callback.
+
+[`AiAgentPanel.tsx`](../../src/views/rail/AiAgentPanel.tsx) is therefore a
+controlled view. It can collect a message, attach files, display activity, Stop,
+select a placement and approve; it cannot decide that a provider response is a
+valid preview. The first-use key sheet is suppressed in `tourPreview`, and that
+mode cannot test/save a key or consume the setup flag. The highlighted-text
+popover similarly captures a stable selection request and delegates it; it
+does not retain a function that can replace the selection after focus moves.
+
+`BookView.tsx` constructs the production dependency set once per open book:
+read-only notebook inspection, source ingestion/repository/retrieval, the native
+render sandbox, `SqliteAgentPersistence`, `CohereTauriAgentProvider`, the core
+controller, the display adapter and the one approved-apply seam. Tests can
+inject memory providers/stores through those interfaces. The filmed
+`?fx=force` demo is deliberately narrower: it projects a frozen
+Cohere-authored fixture into the panel contract and uses the production
+disposable renderer without claiming that the graph or provider ran live.
+
+### One provider turn, precisely
+
+The control loop is a compiled LangGraph `StateGraph` with `model`, `tools` and
+`human` nodes. `START` enters `model`; a turn with tool calls runs every
+non-interrupt sibling in order before returning to the model, while a terminal
+lifecycle goes to `END`. `human` is an `interruptBefore` static breakpoint
+because dynamic LangGraph interrupts depend on Node `AsyncLocalStorage`, which
+the WebView does not provide.
+
+Before `model` sends anything, it consumes any durably queued user follow-ups,
+checks provider/tool/repair budgets and the current run generation, builds the
+system prompt from a compact state projection, and—when Text veil is active—
+masks the complete provider projection. Newly discovered substitutions are
+saved **before** transport, so a crash and Retry cannot assign different tokens
+to the same value. The provider adapter streams a public response and complete
+tool calls; an assistant turn, including its provider-authored `toolPlan` and
+call ids, is checkpointed before any tool executes.
+
+A tool call is looked up by exact name, authorized by deterministic policy,
+converted from Cohere's nullable transport form, and parsed against its strict
+local Zod schema. The result is appended as a `tool` turn using the original
+`toolCallId`. Parallel calls from one assistant turn stay contiguous: Cohere
+must receive one result for every retained call before another assistant/user
+turn. If one call interrupts, its already-authored siblings are discarded and
+the assistant call list is trimmed at that call before the durable pause. A
+reader response then completes exactly that call and returns to `model`; stale
+siblings cannot execute after learning an answer they were authored without.
+
+The graph refuses a provider turn without a work/completion tool, applies
+bounded exponential retry only to retryable transport failures, and stores the
+last safe checkpoint before announcing the pause. Public prose and activity
+events are separate streams: prose becomes the reader-visible conversation;
+goals, plan steps, tool summaries, coverage, diagnostics and observed visual
+findings become the audit timeline. Neither contract has a raw reasoning field.
+
+### Strict tools are derived once and checked twice
+
+The catalog currently exposes notebook and selection inspection; source
+manifest, bounded/full reads, local search and optional rerank; coverage and
+plan operations; insertion targeting and Notebook Script drafting; parser,
+native validation, render-manifest and page-image inspection; visual-review
+recording; high-value requirements/blocker interrupts; answer-only completion;
+and final proposal/preview submission. None is a generic shell, SQL, HTTP,
+filesystem or editor API.
+
+Each definition owns a strict Zod schema and a coarse `read`, `draft`,
+`interrupt` or `propose` effect. `tools.ts` converts that schema into the small
+JSON-Schema subset Cohere strict tools accept. Constraints Cohere does not
+support are removed; optional properties become required and nullable for
+transport; and local normalization removes null sentinels before the original
+schema applies defaults, discriminated-union rules and `.strict()` unknown-key
+rejection. Schema derivation is a wire compatibility step, never a replacement
+for local validation.
+
+The model also does not manufacture capabilities embedded in arguments. Source
+reads receive a task id plus manifest digest from trusted state, notebook reads
+check that a page belongs to the current book, render reads require the current
+generation id and page ids, and proposal creation derives its preview id,
+patch id and idempotency key locally from run/draft/revision/placement hashes.
+This is the difference between letting the agent choose its workflow and letting
+untrusted generated JSON choose its authority.
+
+### The model owns the workflow; Alcove owns the boundaries
+
+The LangGraph task can plan, inspect notebook context, read sources, retrieve,
+draft, parse, lay out, render, inspect the renders and revise. UI code does not
+hard-code one of those sequences. It exposes typed tools and deterministic
+gates; the model decides which useful action comes next. The activity stream
+publishes goals, plan changes, tool calls, citations, coverage, diagnostics and
+concise reasoning summaries. There is intentionally no field for raw hidden
+chain-of-thought.
+
+Source scope and retrieval method are different decisions. The reader's
+context choice is the starting/default scope; the agent may widen within the
+current book when the task requires it and reports the pages it inspects. Other
+books remain local. The agent decides whether the
+task fits direct context, benefits from local lexical
+or embedding retrieval plus Cohere reranking, or needs complete traversal. A
+“do not lose anything” instruction turns on a source-unit coverage ledger. A
+top-k result cannot satisfy that ledger, so retrieval cannot silently replace a
+full read. PDF text is extracted locally with stable page locators. Byte-valid
+embedded JPEG figures can become managed supporting evidence, but they are not
+a raster of the composed page; Alcove does not yet rasterise PDF pages or run
+OCR. Therefore **every page of every PDF** remains unresolved for a
+preserve-all task until verified full-page rastering exists, even when extracted
+text or JPEG figures are available. Non-preservation tasks may use that partial
+evidence with its limitations recorded. Instructions found inside any
+attachment are quarantined as source data rather than promoted to system
+authority.
+
+### Source ingestion is local, anchored and format-aware
+
+The file picker has an explicit extension vocabulary; the Rust boundary then
+ignores the browser's MIME claim and sniffs the bytes. Stored names are generated
+from SHA-256 rather than the user's path, reads accept only that opaque id, and
+attachments are capped before they enter the managed `ai/attachments/`
+directory. Composer files that have not yet entered a task are deleted when
+removed or cleared; once ingestion records a source reference, task history owns
+the bytes until that task is deleted. A paste of at least 500 characters is
+turned into a managed UTF-8 attachment named `Pasted text.txt` instead of
+becoming one giant conversational turn.
+
+The source surface is wider than PDF and images, but the extraction guarantees
+are deliberately different by family:
+
+| Input | Local representation and limitation |
+|---|---|
+| PNG, JPEG, WebP | A managed visual source with byte digest and decoded dimensions. Before provider transport, the browser decodes and re-encodes a bounded WebP derivative, stripping filename, EXIF/comments and profiles; failure to create that derivative fails closed rather than sending the original. |
+| PDF | Stable page units from local text extraction, plus byte-valid embedded JPEG figures as supporting visual refs. There is no OCR or full composed-page raster yet, so every page remains visually unresolved for preserve-all work. |
+| UTF-8 text, Markdown and RTF; HTML/XML/SVG/CSS; CSV/TSV/JSON/JSONL/YAML/TOML; notebooks and TeX; common code/config/log formats | Stored as bytes, validated as bounded UTF-8 text, split locally into anchored source units. The extension records a useful media type, but no code, HTML, SVG, macro or embedded instruction is executed. |
+| DOCX | The bounded Open XML archive is parsed locally for document text, footnotes and endnotes. Macros, unsafe/archive-traversal entries and DTDs are rejected; media, drawing geometry, comments, revisions and page layout are explicitly absent from the text view. |
+| XLSX | Sheet/cell text, formulas and cached values are extracted locally. Formulas are never evaluated; macros and external links are rejected. Charts, drawings, comments, formatting and hidden-state semantics are not represented. |
+| PPTX | Slide and speaker-note text is extracted in authored order. Macros and external relationships are rejected. Images, charts, drawings, animations, layout and theme styling are not represented. |
+
+Every extracted body is split into bounded, digest-addressed units with labels,
+ordinal/character ranges and page/figure anchors where the format supplies them.
+The descriptor records media type, extraction quality, byte/token estimates,
+visual coverage, digest and conservative prompt-injection warnings. All
+non-canonical attachments carry `instructionPolicy: never_execute`; warnings
+make a suspicious passage visible, but even an unflagged file is still evidence,
+never authority. The generated Notebook Script specification is the one
+canonical source and is chunked on headings so citations remain intelligible.
+
+Retrieval remains local-first. The lexical index is always available; semantic
+Embed v4 indexing and Rerank v4 are optional provider hops and are re-authorized
+immediately before each request. A task chooses direct context, retrieval or a
+complete sweep from actual source size and the reader's guarantee. Reads update
+the source-unit ledger with the provider-call count at which evidence was
+exposed; policy requires a later model turn to have observed every supporting
+read before an answer or patch may claim it. In complete mode, required units
+cannot be replaced by top-k hits, and source digest drift invalidates the ledger.
+
+### A conversation can finish without a proposal
+
+`finish_conversation` is a real terminal tool, not a disguised draft. The
+agent may inspect only the evidence needed for an ordinary question, or every
+source unit when the reader asks for complete coverage, then publish friendly
+assistant prose into the timeline. Grounded source locators are derived locally
+from units it actually read. That path creates no Notebook Script, render,
+placement, proposal or mutation permission. The task can still accept a later
+follow-up; only a later explicit request to make or change notebook content
+enters the draft pipeline.
+
+### The agent reviews the native pages first
+
+Draft output is still Notebook Script, but a successful parse is not a preview.
+The disposable sandbox resolves media, converts script through the production
+TipTap schema, mounts real `PageEditor` instances, lets the fixed-page overflow
+contract settle, checks for blank/clipped/unrendered content, and captures each
+page. Command A+ receives those current-generation page images for visual
+inspection. Blocking findings route back to repair and another render.
+
+[`policy.ts`](../../src/features/aiAgent/policy.ts) is the non-model gate: it
+refuses to build a user preview unless the current draft hash matches the
+render, parser and layout checks pass, every page in the render manifest has a
+current visual-review result, and that review passes. Intermediate renders may
+appear as activity, but the reader gets one final immutable preview only after
+the agent has finished its own quality loop.
+
+The model also has no image-generation tool, and picture prompts are **not a
+default decoration strategy**. [`imageIntent.ts`](../../src/features/aiAgent/imageIntent.ts)
+derives permission only from reader-authored conversation: the latest explicit
+request for images/pictures/photos/illustrations or portable slots wins, and an
+explicit “no images” withdraws it. Without that permission, the system prompt
+forbids empty picture cards and both draft submission and
+`prepare_image_generation_prompts` fail deterministically if the model attempts
+them. Native diagrams, charts, stickers and page furniture do not require this
+external-image permission.
+
+When the reader **does** request images, the model may author intentional
+portable upload cards in Notebook Script, then call
+`prepare_image_generation_prompts` with exactly one self-contained prompt per
+discovered slot. Policy reconciles those prompts against the **current** rendered
+generation and rejects missing, extra or stale slot ids. The preview can
+therefore show each slot beside a ready-to-copy subject/composition/style brief,
+page role, aspect ratio, useful pixel dimensions and negative constraints
+without inventing a URL or claiming that a picture was generated. The handoff
+remains visible after insertion so the reader can generate elsewhere and click
+or drop the result into the real portable slot.
+
+The sandbox identity is deliberately larger than the script hash. Its render key
+also includes renderer version, live book revision, insertion target, integrated
+target-document digest and the page environment fingerprint. Reusing a generation
+requires that identity, a valid digest receipt and all content-addressed page
+assets to match; a page-size/theme/font environment change invalidates the cache.
+The renderer caps script size, authored pages, blocks and explicit image fetches,
+maps parser diagnostics back to authored page ranges, rejects empty explicit
+boundaries and duplicate rendered content, and checks media, blank pages,
+residual overflow, clipping, unfinished diagrams and unstable layout. It waits
+for images/fonts and three stable animation frames, with a bounded timeout,
+instead of screenshotting the first DOM paint.
+
+Each published generation stores native page width/height, page and layout
+digests, pagination-spill/overflow flags, a whole-generation layout hash and an
+exact application receipt. That receipt contains the post-pagination `PageDoc`s
+that produced the images, the application plan for structural or integrated
+targets, and any content-addressed fetched-image assets. Its digest is verified
+when rehydrated and again before apply. The visual ledger separately records
+which immutable page-image digests were exposed, at what provider-call count,
+which pages were inspected and the observable findings. A blocking finding is
+never marked repaired in place; changing the script creates a new draft hash and
+therefore a new validation, generation, receipt and ledger.
+
+### Approval is a capability boundary
+
+The model cannot write SQL or dispatch a TipTap transaction. It proposes typed
+Notebook Script plus an insertion target. The reader can inspect the exact
+renders, request another revision, and choose before/after the current page or
+the book's beginning/end. A selection rewrite instead has one locked **Replace
+selected text** target. Approval then crosses the sole mutation seam, which:
+
+1. recomputes the live book revision and refuses a stale target;
+2. prepares parser/media/schema work before mutation and rechecks the revision;
+3. claims a durable idempotency key so a restored task or double click cannot
+   apply the same proposal twice;
+4. applies under the existing whole-book import checkpoint, rolling the entire
+   change back if any page fails;
+5. waits for editor carry/pagination queues to settle, verifies every resulting
+   reviewed page document and the final page order; and
+6. commits the result revision and records one complete Undo, so `Ctrl+Z` never
+   leaves half an AI insertion.
+
+The patch journal writes the complete pre-apply page snapshot before the first
+mutation and moves through `applying`, `applied` and `undoing`. On open,
+`recoverIncompleteAiPatchApplications` restores rows stranded in `applying` or
+`undoing`; an interrupted process therefore cannot leave the visible book half
+inserted or half undone. An idempotency collision is not “probably already
+done”: it is accepted only when patch id, book id and durable status prove the
+same completed application.
+
+Selection rewriting follows the same path. The body-level toolbar captures the
+exact selection and page revision in
+[`aiRewrite.ts`](../../src/editor/toolbar/aiRewrite.ts), opens the rail, and
+hands the request to the runtime. It has no replacement callback and does not
+show a text-only inline diff. The sandbox integrates the proposed replacement
+into the captured target-page document, paginates and renders that real
+surrounding page, and the approved application installs that exact reviewed
+document. The anchored replacement becomes live only after this integrated
+rendered preview and reader approval.
+
+### Provider transport, tool continuity and Stop
+
+[`provider.ts`](../../src/features/aiAgent/provider.ts) is the replaceable model
+contract. A request contains the system prompt, normalized user/assistant/tool
+history and typed tool descriptors; its stream may contain public-text deltas,
+tool-plan deltas, complete tool calls, citation ids, usage and finish. It has no
+credential argument and no hidden-thinking event. The Cohere adapter advertises
+Command A+ 05-2026 for streaming/tool/image turns, while source retrieval uses
+Embed v4 and Rerank v4 through separate cancellable gateway calls.
+
+Cohere's V2 continuity rules are preserved rather than reconstructed from the
+visible transcript. Assistant history retains the provider's `tool_plan`, exact
+tool-call ids/names/JSON and all contiguous results. Source and draft images
+belong to a synthetic user observation **after** the complete assistant → tool
+result group, because V2 does not accept image bytes inside a tool result. Only
+the trailing unanswered group can carry pixels into the next request; older
+history retains image digests/exposure ledgers, not repeated bytes. Each image
+is locally decoded, metadata-stripped, dimension/pixel/byte bounded and
+re-encoded before it becomes a data URI. A turn may expose at most twenty.
+
+The TypeScript adapter treats the SSE stream as a protocol, not arbitrary JSON:
+it rejects nested or duplicate tool starts, deltas without an active call,
+invalid argument JSON, unfinished calls, duplicate `message-end`, data after
+end, a finish reason inconsistent with emitted calls, and native completion
+before a valid message end. Rust independently constrains message/tool/schema/
+image/request sizes and JSON depth/node count, accepts only the fixed Cohere
+origin, verifies the SSE content type, caps individual and total event bytes,
+maps bounded public errors, and retries only retryable statuses/network faults.
+
+Stop crosses both layers. `AgentRuntime.stop()` first installs a new abort
+generation and durably marks cancellation, so an older invocation cannot later
+save state into Retry. The Cohere adapter propagates that signal to
+`ai_cancel_run`; Rust cancels the active HTTP future. A bounded
+cancel-before-registration registry also catches the race where the reader
+presses Stop just before the matching native request has registered. Stop never
+approves or applies a proposal; resuming a stopped conversation enters the real
+Retry path, queues the exact follow-up durably, installs a fresh run generation
+and resumes from the safe checkpoint.
+
+### Durable state is more than chat history
+
+`AgentState` is the complete serialisable domain checkpoint: identities,
+lifecycle/phase, task brief, visible conversation, provider continuity turns,
+pending calls, source manifest/coverage, plan, draft/validation/render/review,
+interrupt/proposal, budgets, retry/cancellation and the optional privacy
+receipt. [`assertAgentStateIsCheckpointSafe`](../../src/features/aiAgent/persistence.ts)
+guards the prohibition on credentials, raw attachment/image data and live
+process objects.
+
+[`SqliteAgentCheckpointSaver`](../../src/data/aiAgentPersistence.ts) implements
+LangGraph's `BaseCheckpointSaver` over the same async SQL plugin the WebView can
+use. It persists typed checkpoint bytes, parent ids and pending writes; Alcove's
+companion task table stores the latest domain state, a small task-meta table
+supports history lists, and the ordered event table rebuilds the activity
+timeline. Deletion writes a thread tombstone under one process mutex before
+removing checkpoints/writes/task/events, closing the race where a late graph
+save could resurrect deleted private history. Pending attachment references are
+also discoverable from pre-ingestion state, so a crash during extraction does
+not orphan or silently drop the visible source chips.
+
+Runtime restore compares the LangGraph checkpoint with the latest domain row.
+Out-of-graph product transitions—Stop and proposal apply/failure/completion—win
+over an older checkpoint, as does a higher checkpoint step. Reviewed-generation
+receipts, source/chunk rows and the patch journal have separate lifetimes because
+they are authorities for render reuse, source ownership and recovery rather than
+graph-control channels.
+
+### Credentials and privacy
+
+The guided tour may mount the real panel in `tourPreview` mode, but that read-only
+pose does not open setup, test a credential, call a provider or consume the
+first-use flag. First-use setup happens on the reader's first ordinary rail
+opening and can be skipped. Both Cohere trial/evaluation and
+production/enterprise keys are accepted. JavaScript passes a candidate once for
+testing and immediately clears the field; Rust owns the session key or the
+operating-system credential vault entry and never returns secret material. Keys
+are excluded from SQLite settings, checkpoints, attachments, logs, URLs,
+exports and backups.
+
+Trial setup requires an explicit notice, linked to Cohere's current [Privacy
+Policy](https://cohere.com/privacy), that Cohere may use trial inputs and outputs
+for research and development, trial environments should not contain personal
+information, and its Products are not intended for personal or household use.
+A production label means an organisation-approved account, contract or
+administrator policy; it is not itself a privacy guarantee.
+
+Connecting and running are separate network events. Key testing sends only the
+credential-validation request; it sends no task, notebook page, attachment or
+draft render. Once the reader starts a task, Cohere may receive its instructions,
+the pages the agent chooses to inspect from the **current book**, the explicitly
+attached sources, and current-generation draft renders needed for visual
+self-review. Pages in other books and ordinary notebook content stay local. The
+agent remains inert until a key is connected and a task is sent. Connection
+type, default notebook scope and key deletion live in *Settings → AI &
+integrations* rather than cluttering every task.
+
+**Text veil** is a separate opt-in task policy, exposed in Settings as **mask
+private text** and off by default. The runtime snapshots it when a task starts,
+then replaces recognisable private strings with stable task-scoped opaque tokens
+before provider messages, source excerpts and review payloads cross the gateway.
+The mapping remains local. Exact values are restored locally before the final
+answer or preview; a restored draft is parsed and laid out again, and a fit
+mismatch fails closed rather than presenting or applying different pages from
+the ones reviewed. It is intentionally described as exposure reduction, not
+anonymisation: recognisers can miss unusual or context-dependent details, and
+text baked into image or scanned-PDF pixels is outside the text transform.
+Opaque substitutions can also reduce accuracy for date, identifier,
+comparison and calculation tasks whose literal values carry meaning.
+Provider embedding and reranking are therefore disabled for retrieval inside a
+veiled task; a local lexical fallback keeps source selection on-device.
+
+The transform is receipt-driven rather than a one-shot regex replace.
+`textPrivacy.ts` recognizes common labelled/contextual names, email and phone,
+postal/street/location values, dates, UUID/IP/MAC values, payment/IBAN/SSN and
+government/account identifiers, usernames, long mixed/numeric ids, JWTs and
+labelled/query-string secrets. Overlapping matches are resolved deterministically
+and each distinct literal receives one opaque, type-labelled, task-namespace
+token. Existing Alcove tokens are protected from remasking; model text that
+changes, invents or drops a receipt-owned token fails before it can become an
+answer, finding, prompt or draft.
+
+Structured tool JSON is transformed recursively as well. Known private scalar
+keys force masking even when the value does not match a free-text pattern, while
+capability fields such as ids, hashes, digests, revisions, anchors, ordinals,
+dimensions and media types stay byte-stable. URLs remain usable except that
+recognized credential query values are replaced. The task brief, provider
+messages, source excerpts, tool arguments/results and integrated target-page
+document all pass through that projection; image refs remain opaque resource ids.
+The substitution receipt itself is checkpointed locally before transport, never
+sent as a value map.
+
+Provider history intentionally keeps placeholders. Reader-visible prose is
+restored only in the local conversation projection, using a chunk-safe stream
+restorer so a token split across deltas cannot flash half a private value. For a
+notebook patch, the provider visually reviews masked native renders. Alcove then
+restores the script and exact integrated page locally, creates a fresh draft hash,
+reruns validation and native layout, and stores a separate local-final exact-render
+receipt. The final preview/apply path names those restored hashes; if replacement
+length changes pagination or a token is not exactly restorable, the task fails
+closed instead of applying pixels the model never reviewed under the required
+deterministic checks.
+
+The manual Notebook Script workflow remains a separate provider-free path: copy
+or download the generated spec, use any external assistant, then preview and
+insert its `.md`. It neither requires nor activates the native agent. It is not
+an unconditional offline promise: an explicit `fetch:` directive in that script
+may invoke Alcove's guarded open-image search during preview or insertion.
+
 ## The data layer
 <!--nav: The schema, the bookcase model, and why every read is validated-->
 
@@ -864,6 +1474,21 @@ in [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs). There are
 | `bookcases` | `id`, `name`, `ord`, `room`, `floors` | `room` is a LibraryPrefs JSON blob or NULL to follow the app default. `floors` starts at <!--f:defaultFloors-->10<!--/f--> and the reader can grow it to <!--f:maxFloors-->60<!--/f-->; the DDL default and `DEFAULT_FLOOR_COUNT` have to agree. |
 | `settings` | `key`, `value` | Every keyed preference, including the design-prefs blob. |
 | `assets` | `id`, `rel_path`, `kind`, `meta` | Images live on disk under the asset-protocol scope; this is the index. |
+
+The agent's durable tables are created lazily by its stores rather than added to
+the core library migration: LangGraph checkpoints and pending writes, task and
+activity rows, source descriptors and anchored chunks, and applied-patch
+receipts. Raw attachment bytes live under the library's managed `ai/attachments`
+directory; API keys live in neither place.
+
+| Agent table | Authority |
+|---|---|
+| `ai_agent_checkpoints`, `ai_agent_checkpoint_writes` | LangGraph checkpoint tuples, parentage and pending channel writes, keyed by thread/namespace/checkpoint. |
+| `ai_agent_tasks`, `ai_agent_task_meta`, `ai_agent_events` | Latest serialisable domain state, cheap book-scoped task-history rows, and the ordered reader-visible activity stream. |
+| `ai_agent_task_tombstones` | Prevents a late checkpoint save from resurrecting a task after deletion. |
+| `ai_agent_threads`, `ai_agent_sources`, `ai_agent_chunks` | Source/task grouping, content-addressed descriptors, anchored text units, local index data and attachment ownership. |
+| `ai_agent_reviewed_drafts` | Digest-verified exact render/application receipts for rehydrating or applying a generation. |
+| `ai_agent_patch_journal` | Pre-apply whole-book snapshot, idempotency claim, result revision and one-operation Undo/startup-recovery authority. |
 
 Indexes: `(book_id, ord)` on pages, `(floor, slot)` and
 `(bookcase_id, floor, slot)` on books.
@@ -990,12 +1615,14 @@ state what is true, name what was believed, gate what is mechanical. See *How
 this document stays true*.
 
 ## The gate
-<!--nav: The deliberately tiny smoke suite-->
+<!--nav: The bounded high-signal suite and proportionate release gates-->
 
-The repository retains one unit-test file:
-[`tests/smoke.test.ts`](../../tests/smoke.test.ts). `npm test` runs it through
-[`vitest.smoke.config.ts`](../../vitest.smoke.config.ts); `npx tsc --noEmit`
-runs beside it. Visual and audio quality are owner-reviewed rather than inferred
+The repository retains a deliberately bounded, explicit high-signal allow-list
+in [`vitest.smoke.config.ts`](../../vitest.smoke.config.ts). `npm test` runs
+exactly that `include` list; it does not discover every test file, and the
+unreleased Agent's focused suites are currently run explicitly. `npx tsc
+--noEmit` runs beside it. Broader unit, visual and E2E suites are targeted or
+release gates. Visual and audio quality are owner-reviewed rather than inferred
 from automated harnesses.
 
 ## Things that were harder than they look
@@ -1043,7 +1670,7 @@ above, along with the five siblings that led to a standing alarm.
 ## The design record
 <!--nav: The ADR set in `docs/design/`, including which documents are superseded and why they are kept-->
 
-[`docs/design/`](../design/) is an ADR set: <!--f:designDocs-->15<!--/f-->
+[`docs/design/`](../design/) is an ADR set: <!--f:designDocs-->16<!--/f-->
 documents, of which <!--f:supersededDesignDocs-->5<!--/f--> carry an explicit
 superseded banner in their first lines. The superseded ones are kept on purpose —
 the diagnosis of *why* a half-simulated surface reads as cheap is what produced the
@@ -1059,6 +1686,7 @@ Read the relevant one **before** working in its area.
 | [`page-flip.md`](../design/page-flip.md) | **Current** | Live DOM at rest, GPU curl during the gesture, CSS 3D rigid fold as the no-WebGL fallback only. |
 | [`block-editor.md`](../design/block-editor.md) | **Current** | TipTap v3 with vendored Solid bindings. Document JSON *is* the storage format. |
 | [`script-language.md`](../design/script-language.md) | **Current** | Notebook Script: Markdown subset + `:::` directives + fenced mini-languages, with a handwritten tolerant parser. |
+| [`ai-agent.md`](../design/ai-agent.md) | **Current** | The in-book agent's autonomy, source coverage, credential boundary, native-render self-review gate, immutable preview and approval-only apply contract. |
 | [`library-themes.md`](../design/library-themes.md) | **Current** (rewritten) | Colour, carpentry, paper and binding are four orthogonal vocabularies; a "theme" is only the colour one. Opens with an account of the two things the doc used to say — eight simulated worlds, then four rooms — and why each was wrong. |
 | [`sound.md`](../design/sound.md) | **Current** | Every cue is a real recording under CC0/PD; the one CC BY source is credited in-app from a generated manifest. |
 | [`packs.md`](../design/packs.md) | **Current** | The reader's own uploads — what a pack may contain, what is refused, and the AI prompt the app hands out for building one. |
@@ -1234,6 +1862,27 @@ trusting the writer, and against the file it replaced it reported 13 problems.
 It stays out of the everyday fast gate because Pillow is a release-tool
 dependency, but every tagged build runs it before the platform matrix.
 
+README stills and the animated tour are driven by
+[`shots-now/readme-shots.mjs`](../../shots-now/readme-shots.mjs) and
+[`shots-now/demo-gif.mjs`](../../shots-now/demo-gif.mjs). Their Agent scene is
+not a hidden live API call: `?fx=force` dynamically mounts a four-command
+`__aiAgentDemo` bridge around a frozen, human-vetted Cohere-authored fixture and
+the production disposable page renderer. The bridge uses memory-only asset,
+generation and review-receipt stores; it cannot create provider calls, task or
+source rows, or production AI application receipts. Its filmed Insert action
+deliberately sends the frozen Script through BookView's real parser/page
+insertion path, then `reset` restores the exact pre-demo notebook snapshot;
+reset/unmount also revokes every preview URL. The fixture and its provenance live together under
+[`shots-now/fixtures/`](../../shots-now/fixtures/), so a screenshot change ages
+when either the content or the disclosure changes.
+
+Gifsmith captures the tour once and publishes two views of those same paced
+frames: the animated WebP embedded by the README and a seekable H.264/yuv420p
+MP4 under `qa/demo/demo.mp4` for pause, scrub and frame-by-frame human review.
+The demo script stages both files and promotes them as one recoverable pair, so
+a reviewer holding the MP4 open on Windows cannot leave a new WebP beside an
+old review movie.
+
 ## How this document stays true
 <!--nav: The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed-->
 
@@ -1315,14 +1964,17 @@ by hand is the entire value.
 
 <!--lift: nongoals-->
 ## Non-goals
-<!--nav: No sync, no cloud, no mobile, no plugin API, no second visual language, no light model-->
+<!--nav: No sync or cloud storage, no mobile, no plugin API, no second visual language, no light model-->
 
 - **No sync and no accounts.** The database is a file on your disk. There is no
   server to sign in to and nothing to be logged out of.
-- **No cloud anything.** The only outbound network traffic is image fetch and link
-  preview, both explicitly requested by you and both behind an SSRF guard
+- **No cloud storage or background model service.** Image fetch and link preview
+  are explicit requests behind an SSRF guard
   ([`src/editor/media/urlGuard.ts`](../../src/editor/media/urlGuard.ts) mirrors the Rust
-  one in [`src-tauri/src/media.rs`](../../src-tauri/src/media.rs)).
+  one in [`src-tauri/src/media.rs`](../../src-tauri/src/media.rs)). The optional AI
+  Agent calls Cohere only after the reader supplies a key and sends a task; it
+  does not sync the library, run in the background or make ordinary editing
+  depend on a model.
 - **No mobile, no web build.** Touch, small viewports and a shelf you cannot
   hover are three separate redesigns, not a media query. The browser dev server
   is a test harness, not a product.

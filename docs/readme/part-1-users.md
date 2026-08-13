@@ -22,8 +22,9 @@ Every section below is also on the [front page](../../README.md), which carries
 this text inline rather than linking to it, so read whichever one you landed on.
 The two cannot disagree: `scripts/gen-readme.mjs` lifts these sections into it
 and `npm run readme:check` fails when the copy has drifted. Every count is read
-out of the module that defines it and wrapped in a marker `npm test` recomputes, so a
-vocabulary that grows while this page does not is a failing test.
+out of the module that defines it and wrapped in a marker
+`npm run readme:check` recomputes, so a vocabulary that grows while this page
+does not is a red documentation gate.
 
 **On this page**
 
@@ -31,7 +32,7 @@ vocabulary that grows while this page does not is a failing test.
 - [Download and install](#download-and-install) — The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes
 - [A tour](#a-tour) — The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher
 - [Writing in a book](#writing-in-a-book) — Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end
-- [Written with an AI](#written-with-an-ai) — Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction
+- [Written with an AI](#written-with-an-ai) — The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant
 - [Notebook Script](#notebook-script) — The language itself — a whole worked script, the page it makes, and everything it can say
 - [Making it yours](#making-it-yours) — The two studios, every vocabulary counted, custom colours, stars and hiding, more bookcases, your own packs
 - [Sound](#sound) — Sound sets, ambience beds, the volume model, and the in-app credits
@@ -56,6 +57,11 @@ nothing left running when you close the window.
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 <!-- /gen -->
+
+> **The linked v0.6.6 downloads do not contain the native AI Agent described
+> later on this page.** They contain the key-free outside-assistant Notebook
+> Script workflow. The Agent exists only in the current unreleased source tree
+> until a later version is explicitly approved and published.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
 page after launch and offers newer signed versions in the app. If you installed
@@ -263,6 +269,28 @@ then insert above, insert below, duplicate, *copy block as script*, and delete.
 Blocks can be dragged by the handle that appears in the margin, and dropping one
 settles it into place rather than teleporting.
 
+A right-click inside a selection spanning several blocks keeps that selection
+intact while opening the menu. The same resolver follows custom blocks such as
+equations, code, diagrams and media back to their owning page block, so these do
+not fall through to the browser menu. On any page after the first, Backspace at
+the very beginning of its first block pulls that block onto the previous leaf
+when it fits; the context menu exposes the same action explicitly.
+
+The same menu also has **Copy content** and **Download / save…**. Pictures copy
+as real PNG clipboard pixels and save in their original format; videos save as
+their original file (and copy directly when the operating-system clipboard
+supports that video type); tables copy as both TSV and HTML for spreadsheets or
+documents and download as CSV; code copies as source text and saves with its
+language extension. Every other Alcove block falls back to portable Notebook
+Script, so a crafted card or diagram still has a useful way out.
+
+Plain-text paste is structure-aware too. Tabular spreadsheet text, quoted CSV
+and arrays of JSON records become native tables; fenced Markdown and Notebook
+Script become their real Alcove blocks; JSON objects and recognisable source
+code become code blocks. Rich HTML from a browser or spreadsheet still follows
+the editor's normal rich-paste path, and ordinary prose is left as prose rather
+than being “helpfully” misclassified.
+
 ### Pages never scroll, and that is the point
 
 A page is a fixed leaf of paper. When what you have written exceeds it, the
@@ -270,6 +298,11 @@ editor peels the trailing blocks off the end and hands them to the next page,
 creating one if there isn't one — and it carries your caret across the break, so
 you can keep typing straight through the join without noticing you crossed it.
 Deleting from a full page pulls the blocks back.
+
+Resizing the window or opening a panel changes only how the fixed book is drawn.
+It does not rewrite which blocks belong to which page. This is intentionally
+separate from real intrinsic growth such as an image finishing its load, which
+does still flow through the normal pagination contract.
 
 It would be easier to put a scrollbar in a page. The reason there isn't one:
 
@@ -306,7 +339,8 @@ documented TeX subset written for this app
 ([`src/editor/nodes/mathTex.ts`](../../src/editor/nodes/mathTex.ts)) — superscripts and
 subscripts, `\frac`, `\sqrt`, big operators with limits, delimiters that grow,
 the Greek alphabet and the usual relations and arrows, upright function names,
-`\text{}` — rendered as plain HTML in the page's own serif face rather than
+`\text{}`, plus TeX classification commands such as `\mathrel` and `\mathbin`
+— rendered as plain HTML in the page's own serif face rather than
 through KaTeX's Computer Modern.
 
 It does not do matrices, alignment, cases or arrays, and says so: those are
@@ -330,9 +364,11 @@ Paste or drop an image and it is stored under your library's `assets/` folder
 and inserted; several at once become an image row. Paste a bare URL on an
 empty line and you get a link card, which fills itself in with the page's title,
 description and favicon a moment later, and degrades to a plain link chip if the
-site does not answer. Those two moments are the only times the app reaches the
-internet at all, they only happen because you asked, and neither of them sends
-anything you wrote.
+site does not answer. These requests happen only because you asked, and neither
+of them sends anything you wrote. The optional AI Agent is the other networked
+feature: only after you connect your own Cohere key and start a task may it send
+the task instructions, current-book pages it inspects, attached sources and
+draft-review renders. Other books remain local.
 
 An image's expand control opens it in a large viewer. Wheel or the `+` and `−`
 buttons zoom, dragging moves around the enlarged image, and reset returns to
@@ -347,18 +383,19 @@ you pointed at lists yours back at the bottom
 
 ### The rail, end to end
 
-Ten hand-drawn icons down the left edge, each with its own tooltip. The first
-six open a panel; after a divider, four that just do something.
+Eleven hand-drawn icons down the left edge, each with its own tooltip. Seven
+open a panel; after a divider, four that just do something.
 
-![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. Ten glyphs in all: the paintbrush that dresses the book, page style, the catalogue's star, contents — lit, because that is the one being pointed at — page history, and the tray that opens "in and out". Then a short rule, and after it the bookmark that ribbons the page, focus mode, thumbnails and add-a-page. A nib and a word count sit at the foot below a dashed line.](img/rail.png)
+![The spread with the icon rail down its left edge, and a hand-drawn tooltip beside the table-of-contents icon with a Ctrl+Alt+T key cap on it. The rail groups the panels above a short rule and the direct page actions below it; a nib and word count sit at the foot.](img/rail.png)
 
 | Tool | What it opens |
 | --- | --- |
 | Customize this book | the book studio — binding, cover title, emblem, frame and page edges |
 | Page style | ruled, grid, dotted or blank, plus the line spacing |
 | Catalogue | everything you can put on a page, browsable and searchable |
+| **AI Agent** | a native workspace that studies sources, plans, drafts, visually reviews and previews pages before it may insert them |
 | Table of contents | every heading in the book, click to jump |
-| Page history | the autosave snapshots of this page, a line of preview each |
+| Page history | generous durable versions for this page, plus whole-book checkpoints that preserve page order and deletions |
 | **In and out** | the one sheet where writing enters and leaves |
 | Ribbon this page | marks it in one press, and opens the plate to pick a ribbon |
 | Focus mode | the rungs of the ladder, and the zoom |
@@ -368,6 +405,15 @@ six open a panel; after a divider, four that just do something.
 Every row carries its own key cap, read from your keymap rather than printed,
 and calls the same opener the keyboard calls — so a button and its shortcut
 cannot drift apart.
+
+Protected history is on by default. It keeps dense recent page versions and
+progressively spaced older recovery points, together with full-book checkpoints
+for structural accidents. Restoring a page or book first preserves the state
+you are leaving, so turning back does not consume the route forward. It can be
+disabled under **Settings → System → protected history**, but only after a
+warning; disabling stops new checkpoints and does not silently delete existing
+ones. This local history complements scheduled library backups rather than
+replacing them.
 
 To remove a leaf, right-click anywhere on that page and choose **Delete this
 page**. The option is deliberately absent when it is the book's only page.
@@ -388,11 +434,175 @@ a template is a way of starting a book rather than a thing you do to one.
 
 <!--lift: ai-->
 ## Written with an AI
-<!--nav: Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction-->
+<!--nav: The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant-->
 
-Most assistants hand you plain text. Alcove is built so an
-assistant can write the **whole page** — the sticky notes, the callouts, the
-diagrams — and so you never have to teach it how.
+> **Development note:** the native in-book Agent described below is in the
+> current source tree and is not part of the linked v0.6.6 installers. Those
+> installers keep the external Notebook Script workflow. No Agent release has
+> been versioned or published yet.
+
+Most assistants hand you plain text. Alcove is built so an assistant can write
+the **whole page** — paper, sticky notes, callouts, diagrams, pictures and all —
+and there are two ways to do it. The native **AI Agent** works inside the open
+book. The original **Notebook Script** route still lets any outside assistant
+write pages without connecting a model to Alcove.
+
+### The agent inside the book
+
+Open the sparkle-like **AI Agent** glyph in the same left rail as Page style,
+Catalogue and Contents, then describe an outcome in ordinary words. The
+context chip is its starting scope, not a hidden privacy wall: it may inspect
+other pages in the current book when the task requires them, while other books
+remain local. It can also study the managed sources you explicitly attach.
+Asking it not to lose anything is a real constraint: it keeps
+a page-by-page or source-unit coverage ledger and reads the complete source
+instead of quietly replacing that instruction with a few search results. For a
+large ordinary task it chooses the useful mix itself — direct reading when the
+material fits, local retrieval and reranking when search is better, or a full
+traversal when completeness matters.
+
+It is also a conversation, not an overeager page factory. Ask it to explain a
+topic, compare two ideas, quiz you or reason over an attachment and it can
+answer entirely in the panel. That is a finished answer: no hidden draft, no
+preview and no notebook change. It only enters the build-and-review path when
+you actually ask it to make, insert or change something.
+
+This looks like an agent at work rather than a typing bubble. The panel shows
+its goal, changing plan, source coverage, tool activity, grounded observations,
+checks and concise reasoning summaries; it never asks a model to reveal private
+chain-of-thought. It may ask one focused follow-up when the answer would
+materially change the result, but routine choices and repair rounds remain its
+job.
+
+Most importantly, **the agent sees the pages before you do**. It builds the
+draft in an isolated copy of Alcove's real editor, runs the Notebook Script
+parser and fixed-page pagination, renders every resulting page at its real
+proportions, and inspects those images. If it finds clipping, dead pages,
+awkward pacing, a broken diagram or another visible defect, it revises and
+renders again without turning you into its quality-control loop. Only a draft
+that passes those checks becomes the one polished preview shown to you.
+
+![The native AI Agent beside an open book after finishing a representative study-notes task. Its wider panel is scrolled to the reviewed three-page preview titled "Huffman Coding with Kittens", with the supplied kitten infographic visible on the first native page, parser and fixed-page-fit checks passed, and three affected pages confirmed; the preview-only banner says the Welcome book behind it has not changed yet.](img/agent.png)
+
+This screenshot and the Agent beat in the animated demo use a **frozen,
+human-vetted Cohere-authored fixture** rendered by Alcove's real disposable page
+sandbox. Playback makes no provider request and invents no live provider
+activity; it exists so the same honest result can be photographed every time.
+
+The preview is still not your book. Open it full-size, move through every page,
+ask for changes, choose where it belongs — before or after the current page, at
+the beginning or at the end — and approve only when it is right. Alcove then
+rechecks that the book has not changed, inserts the reviewed generation as one
+operation and gives the whole insertion one `Ctrl+Z`. A repeated approval
+cannot insert the same draft twice, and a failure rolls the book back to its
+pre-insertion checkpoint.
+
+When you **explicitly ask for images, illustrations, photos or picture slots**,
+the Agent leaves portable picture holders at the right points instead of
+pretending it generated pixels. It does not add empty picture cards or
+image-generation prompts merely for decoration. The final preview pairs every
+requested holder with a ready-to-copy prompt: what the picture needs to teach,
+its role, aspect ratio, useful pixel dimensions and what to avoid. Make the
+image in whichever image service you prefer, then click or drop it into the
+matching slot. Those prompts stay available after insertion. A later clear
+instruction such as *actually, no images* revokes that permission; native
+diagrams, charts, callouts and stickers never need it.
+
+### Sources, follow-ups and large pastes
+
+The attachment button is a source desk, not a file executor. It accepts the
+following current formats:
+
+| Source | What the Agent can actually read |
+| --- | --- |
+| **PDF** | Locally extracted page text and byte-valid embedded JPEG figures. It does not yet rasterise the composed page or run OCR, so preserve-everything work fails closed. |
+| **PNG, JPEG, WebP** | A bounded, metadata-stripped analysis derivative; the original stays local for the source chip. GIF is not accepted as Agent evidence. |
+| **Text, Markdown, code, HTML/CSS, CSV/TSV, JSON/JSONL, XML/SVG, YAML/TOML, config and logs** | Inert UTF-8 text. Nothing is run, rendered as active HTML, followed as an instruction, fetched or given a filesystem path. |
+| **DOCX** | Body, headers, footers, footnotes and endnotes from a bounded local Open XML extraction. |
+| **XLSX** | Sheet cells, inert formula text and cached values. Formulas are never calculated. |
+| **PPTX** | Ordered slide and speaker-note text. |
+
+Legacy `.doc`, `.xls` and `.ppt`, macro-enabled or encrypted Office files,
+unsafe archives and arbitrary binaries are rejected. Office macros and external
+relationships are never followed. Layout, styling, images, charts, drawings,
+animations, comments, tracked revisions and hidden-state meaning are not
+silently invented from the text extraction; when they matter to a
+preserve-everything request, the Agent reports unresolved evidence instead of
+claiming success.
+
+A follow-up message keeps the same task and the same attached-source ledger.
+The already attached PDF or document is not uploaded or extracted again; the
+Agent can answer conversationally, search or read further from the durable
+units it already has. If the source digest changes, the old reads no longer
+count and it must inspect the new version before it can finish.
+
+Pasting **500 characters or more** into either composer turns that clipboard
+body into a managed local source named `Pasted text.txt` and leaves any message
+you had already drafted untouched. Shorter pastes remain ordinary message text.
+Repeated identical files are content-addressed and deduplicated rather than
+shown as duplicate source chips.
+
+For a smaller edit, highlight some words and choose the AI glyph in the
+selection toolbar. Type what should change; the same agent panel opens with the
+exact selection anchored, builds and reviews the replacement, and shows the
+**integrated rendered page** — the proposed replacement inside its real
+surrounding page — before approval. It is not a text-only inline diff. That task
+stays locked to **Replace selected text** rather than offering misleading
+page-placement choices. Moving focus into the prompt never gives the model a
+direct editor mutation command.
+
+The guided tour briefly opens the real panel in a quiet read-only preview: it
+does not show key setup, touch the network or mark setup complete. The first
+time **you** open the panel afterwards, Alcove offers **Trial / evaluation** and
+**Production / enterprise** Cohere keys, with a *Skip for now* path. It does not
+interrupt onboarding, and the rest of Alcove needs no key. A key may live only
+for the current session or in the operating system's credential vault; it is
+cleared from the field immediately and never stored in a notebook or agent
+history. The current [Cohere Privacy
+Policy](https://cohere.com/privacy) says trial inputs and outputs may be used for
+research and development, trial environments should not contain personal
+information, and its Products are not intended for personal or household use.
+Trial setup requires acknowledging those limits; a production label means an
+organisation-approved account or contract, not an automatic privacy guarantee.
+You can change or remove the connection later in *Settings → AI &
+integrations*.
+
+**Connecting is not starting a task.** Testing a key sends only a
+credential-validation request to Cohere: no task instructions, book pages,
+attachments or draft renders. After you start a task, Cohere receives its
+instructions, the current-book pages the agent chooses to inspect, the sources
+you attached and the draft page renders used for self-review. Other books and
+ordinary writing stay local.
+
+*Settings → AI & integrations* also has **Text veil — mask private text**, off
+by default. A new task snapshots that choice. When it is on, Alcove uses a
+layered local recogniser for labelled or contextual names, contact and street
+details, dates and precise locations, usernames, network addresses, long IDs,
+credentials, payment details and government/account identifiers. It replaces
+matches and private structured fields with stable task-scoped placeholders
+before model work, keeps the reversible receipt local through retries and
+restart, restores exact values locally for the final preview or answer, then
+reruns the parser and fixed-page checks before anything can be applied. A
+placeholder the model mutates or invents fails closed rather than leaking into
+the page.
+
+This is exposure reduction, **not anonymisation or de-identification**. Unusual,
+context-dependent or identifying combinations can evade deterministic
+recognition, and text drawn inside images or scanned-PDF pixels is not masked.
+Veiled tasks also keep source retrieval local instead of sending text to
+embedding or reranking endpoints. Masking can make exact date, identifier,
+comparison or calculation tasks less accurate, so leave it off when those
+literal values are the work.
+
+PDF text is extracted locally, and Alcove can expose **embedded JPEG figures
+only** as separate visual evidence. It does not yet rasterise a composed PDF
+page or run OCR. Consequently a request to preserve everything from **any PDF**
+fails closed on every page until verified full-page rastering exists, even when
+text extraction looks complete; an ordinary non-preservation task may still use
+the extracted text and those JPEG figures with the limitation stated. Attach
+page screenshots or an OCRed PDF when complete visual reading matters.
+
+### The outside-assistant route is still here
 
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](img/ai.png)
 
@@ -414,13 +624,17 @@ starting mood and rewrite it. The generated guide still carries the complete
 live catalogue—every paper, card, callout, lettering treatment, diagram,
 sticker and piece of trim—so a mood never narrows what the assistant can make.
 The simpler *Paste a script in* dialog remains just for opening, previewing and
-inserting the resulting `.md`.
+inserting the resulting `.md`; it does not connect to the native agent.
 
-Nothing is sent anywhere — no API key, no model in the app, no request to
-anybody's server. You carry the text to whichever assistant you already use and
-carry the answer back, which is why it works with a chatbot that has never heard
-of Alcove. And it reads back out: *copy this page as script* hands a page to an
-assistant for revision.
+Copying or downloading the guide and opening an ordinary script does not call
+Cohere or send notebook text anywhere. One explicit script feature is
+networked: a `fetch:` image directive may contact Alcove's guarded open-image
+search while previewing or inserting, with an offline fallback. In other words,
+the outside-assistant route is provider-free, but a script that explicitly asks
+to fetch a picture is not network-free. Otherwise you carry the format to
+whichever assistant you already use and carry its `.md` answer back. And it
+reads back out: *copy this page as script* hands a page to an assistant for
+revision.
 
 The same idea runs through the customisation — the *your designs* dialog hands
 you a prompt for making a pack, generated from the importer's own schema
@@ -787,10 +1001,16 @@ folder and you have copied your library. The parcel desk also exports every page
 as ordinary Markdown, which any editor reads without Alcove installed.
 
 **Is it offline?**
-Yes. No account, no sync, no cloud, nothing reporting back. Two things reach the
-internet and only when you ask: finding an openly-licensed picture, and filling
-in the card for a link you pasted. How that is *enforced* rather than intended
-is in [the developer half](part-2-developers.md#how-its-built).
+Yes for the library itself: no account, sync, cloud storage or telemetry is
+required, and writing, editing, search, export and the outside-assistant
+Notebook Script route work without a connection. Finding an openly licensed
+picture and filling in a pasted link card are explicit network actions. The
+optional AI Agent is another: after you connect your own Cohere key and start a
+task, it sends task instructions, the current-book pages it inspects, attached
+evidence and its draft-review images; other books remain local. Trial keys carry
+the privacy caveat described [above](#the-agent-inside-the-book). How those
+boundaries are enforced is in [the developer
+half](part-2-developers.md#how-its-built).
 
 **Does uninstalling delete my notes?**
 No. The program and the library are separate folders and the uninstaller only

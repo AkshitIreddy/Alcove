@@ -45,19 +45,20 @@
 
 <!--
   The demo is generated, not recorded by hand: `node shots-now/demo-gif.mjs`
-  drives the real app with gifsmith and emits one animated WebP. It is a forward
-  loop with no crossfade — the scene returns to the shelf it started on and the
-  trim cuts between matching, visually seamless shelf holds.
+  drives the real app with gifsmith and emits one animated WebP plus a seekable
+  MP4 under qa/ for human review. It is a forward loop with no crossfade — the
+  scene returns to the shelf it started on and the trim cuts between matching,
+  visually seamless shelf holds.
 
   GitHub renders animated WebP inline, so generating a second copy as GIF only
   makes each demo refresh heavier for a repo people are meant to clone.
 -->
 <p align="center">
-  <img src="docs/readme/img/demo.webp" alt="A loop through Alcove: a stocked walnut bookcase is transformed in the full library studio through named room presets, carpentry, wallpaper and whole-room colours, then its shelves alone change from Lapis blue to Garnet red before the opening room is restored. The Welcome book pulls from the shelf and opens into ruled pages; every rail panel appears while the tour visits book styling, page styling, the catalogue, contents, a ruled ledger and postcard, kitten pictures, ribbons, history, thumbnails, hand-drawn diagrams, maths, code, footnotes, page links, sharing, search and the dedicated focus rail. The book closes and settles back into the same populated shelf where the loop began." width="880">
+  <img src="docs/readme/img/demo.webp" alt="A loop through Alcove: a stocked walnut bookcase is transformed through named room presets, carpentry, wallpaper and whole-room colours before returning to its opening room. The Welcome book opens into ruled pages; the tour visits book and page styling, the catalogue, contents, pictures, ribbons and diagrams. Midway, the native AI Agent answers a short question in conversation, plans and visually reviews three study-note pages, waits for approval, opens an exact reviewed page at full size, inserts all three pages into the open book and leaves them editable. The reader then types on Welcome's own writing exercise, without disturbing the designed Agent pages, before the reversible demo restores the book and continues. More page tools follow before the book closes into the same shelf where the loop began." width="880">
 </p>
 
 <p align="center">
-  <sub>Every frame is the real app. <a href="shots-now/demo-gif.mjs">How it is made</a> · built with <a href="https://www.npmjs.com/package/gifsmith">gifsmith</a></sub>
+  <sub>Every frame is the real app. The Agent beat replays frozen, human-vetted Cohere-authored demo data through Alcove's local renderer and reversible real insertion seam; it is not a live provider call. <a href="shots-now/demo-gif.mjs">How it is made</a> · built with <a href="https://www.npmjs.com/package/gifsmith">gifsmith</a></sub>
 </p>
 
 ---
@@ -70,18 +71,21 @@ notes, tape, and stickers — ruled leaves, block editor, callouts, and code.
 Pages are real pages: a page is a fixed leaf that never scrolls, so filling one
 flows your writing onto the next and turning it is a turn rather than a scroll.
 The room is yours to dress, and much further than a colour picker goes. And
-nothing you write leaves your machine — there is no account and nothing to sign
-into.
+nothing is synced, stored in a cloud library or reported back — there is no
+account and nothing to sign into. The optional in-book AI Agent uses your own
+Cohere key. Once you start a task, it may send that task's instructions, the
+pages it inspects from the current book, sources you attach and draft-review
+renders; other books and unrelated writing remain local.
 
-**And a page does not have to be typed by you.** Alcove reads *Notebook Script*,
-a small Markdown dialect any chatbot can write once it has been handed the
-grammar — which is one button, *copy the format for your AI*. Ask ChatGPT or
-Claude or whatever you already use for revision notes; paste the answer into
-*paste a script in*; it lands as real editable pages, with the sticky notes, the
-callouts, the highlights and the hand-drawn diagrams already made. No API key,
-no model inside the app, nothing sent anywhere: you carry the text there and
-back yourself, which is why it works with an assistant that has never heard of
-Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
+**And a page does not have to be typed by you.** Open the Agent glyph beside the
+other book tools and ask for an outcome: it can study the chosen pages, images
+and PDFs, plan the work, build real Alcove pages, render and inspect every page
+it made, repair its own visual mistakes, then show you one polished preview for
+placement and approval. Or keep using the key-free *Notebook Script* route:
+hand its generated grammar to ChatGPT, Claude or any assistant, then preview the
+downloaded `.md` in Alcove. Both routes land as editable pages with the sticky
+notes, callouts, highlights and hand-drawn diagrams already made.
+[The whole loop is a few inches down.](#written-with-an-ai)
 
 <p align="center">
   <img src="docs/readme/img/shelf.png" alt="The Alcove shelf: a dark walnut bookcase with a plain slab cornice, a chain of gilt rings running along every board, and an ogee arch cut into the back of every recess, standing against cream wallpaper netted with a fine gold trellis, three floors of individually drawn book spines, and a cream tool dock on the left." width="47%">
@@ -115,7 +119,7 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
 **Part 1 — Using Alcove** — for the person writing in it. No code below this line.
 
 - [What's in the box](#whats-in-the-box) — The five things that make this different from a folder of Markdown files
-- [Written with an AI](#written-with-an-ai) — Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction
+- [Written with an AI](#written-with-an-ai) — The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant
 - [Download and install](#download-and-install) — The installer, what it puts where, what the first launch looks like, and how to uninstall without losing your notes
 - [A tour](#a-tour) — The shelf, the spread, the page turn, the slash menu, the catalogue, the two studios, the switcher
 - [Writing in a book](#writing-in-a-book) — Every block a page can hold, the right-click menu, why pages never scroll, maths, diagrams, pictures, the rail end to end
@@ -129,10 +133,10 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
 **Part 2 — Building Alcove** — for a developer, or for an AI agent helping one. Nothing below is needed to use the app.
 
 - [How it's built](#how-its-built) — The three ways the app draws itself, what runs in which execution context, and the stack table with a reason per row
-- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks
+- [Getting it running](#getting-it-running) — `npm run tauri dev`, the browser-only dev path, and the everyday checks
 - [The map of the app](#the-map-of-the-app) — Directory by directory, plus the module-docstring convention this README points at instead of copying
 - [Building and releasing](#building-and-releasing) — The bundle artefacts, the icon pipeline, and the tag-driven release workflow
-- [Non-goals](#non-goals) — No sync, no cloud, no mobile, no plugin API, no second visual language, no light model
+- [Non-goals](#non-goals) — No sync or cloud storage, no mobile, no plugin API, no second visual language, no light model
 - [The repo at a glance](#the-repo-at-a-glance) — Six measurements of the tree, every one recomputed rather than typed
 - [Deeper reading](#deeper-reading) — The two halves as pages of their own, and every section of them this page does not already carry
 - [How this page stays honest](#how-this-page-stays-honest) — Why no number here is typed, why no paragraph is written twice, and what the check does and does not do
@@ -149,13 +153,13 @@ Alcove. [The whole loop is a few inches down.](#written-with-an-ai)
   as you care to build and <!--f:defaultFloors-->10<!--/f--> floors per case to
   start with. Books are drawn objects, not rows in a list — you recognise yours
   by its binding.
-- **A language an AI can write for you.** *Copy the format for your AI* puts
-  <!--f:specLines-->1196<!--/f--> lines of generated grammar on your clipboard;
-  any chatbot then writes you a note in it, and *paste a script in* turns that
-  answer into formatted pages — sticky notes, callouts, highlights, and trees,
-  graphs and timelines drawn as real diagrams rather than pasted as pictures.
-  Pages come back out in the same language, so one an assistant wrote can be
-  handed back to it. [The whole story is below](#written-with-an-ai).
+- **An AI that works in the book — and a language any other AI can write.** The
+  native Agent plans, studies pages/images/PDFs, drafts in an isolated copy of
+  the editor and visually reviews every native render before it asks you to
+  approve one preview. The provider-free route stays too: *Copy the format for
+  your AI* gives any chatbot <!--f:specLines-->1196<!--/f--> lines of generated
+  grammar, and *paste a script in* turns its `.md` into sticky notes, callouts,
+  highlights, trees, graphs and timelines. [The whole story is below](#written-with-an-ai).
 - **Pages that never scroll.** A page is a fixed leaf of paper. When you fill
   it, the trailing blocks flow onto the next page, and a new page is made if
   there isn't one. Turning a page is a page turn.
@@ -178,11 +182,175 @@ in a marker `npx vitest run` recomputes — see
 
 <!-- gen:lift-ai -->
 ## Written with an AI
-<!--nav: Notebook Script is a language a chatbot can write for you, with complete visual vocabulary and selectable creative direction-->
+<!--nav: The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant-->
 
-Most assistants hand you plain text. Alcove is built so an
-assistant can write the **whole page** — the sticky notes, the callouts, the
-diagrams — and so you never have to teach it how.
+> **Development note:** the native in-book Agent described below is in the
+> current source tree and is not part of the linked v0.6.6 installers. Those
+> installers keep the external Notebook Script workflow. No Agent release has
+> been versioned or published yet.
+
+Most assistants hand you plain text. Alcove is built so an assistant can write
+the **whole page** — paper, sticky notes, callouts, diagrams, pictures and all —
+and there are two ways to do it. The native **AI Agent** works inside the open
+book. The original **Notebook Script** route still lets any outside assistant
+write pages without connecting a model to Alcove.
+
+### The agent inside the book
+
+Open the sparkle-like **AI Agent** glyph in the same left rail as Page style,
+Catalogue and Contents, then describe an outcome in ordinary words. The
+context chip is its starting scope, not a hidden privacy wall: it may inspect
+other pages in the current book when the task requires them, while other books
+remain local. It can also study the managed sources you explicitly attach.
+Asking it not to lose anything is a real constraint: it keeps
+a page-by-page or source-unit coverage ledger and reads the complete source
+instead of quietly replacing that instruction with a few search results. For a
+large ordinary task it chooses the useful mix itself — direct reading when the
+material fits, local retrieval and reranking when search is better, or a full
+traversal when completeness matters.
+
+It is also a conversation, not an overeager page factory. Ask it to explain a
+topic, compare two ideas, quiz you or reason over an attachment and it can
+answer entirely in the panel. That is a finished answer: no hidden draft, no
+preview and no notebook change. It only enters the build-and-review path when
+you actually ask it to make, insert or change something.
+
+This looks like an agent at work rather than a typing bubble. The panel shows
+its goal, changing plan, source coverage, tool activity, grounded observations,
+checks and concise reasoning summaries; it never asks a model to reveal private
+chain-of-thought. It may ask one focused follow-up when the answer would
+materially change the result, but routine choices and repair rounds remain its
+job.
+
+Most importantly, **the agent sees the pages before you do**. It builds the
+draft in an isolated copy of Alcove's real editor, runs the Notebook Script
+parser and fixed-page pagination, renders every resulting page at its real
+proportions, and inspects those images. If it finds clipping, dead pages,
+awkward pacing, a broken diagram or another visible defect, it revises and
+renders again without turning you into its quality-control loop. Only a draft
+that passes those checks becomes the one polished preview shown to you.
+
+![The native AI Agent beside an open book after finishing a representative study-notes task. Its wider panel is scrolled to the reviewed three-page preview titled "Huffman Coding with Kittens", with the supplied kitten infographic visible on the first native page, parser and fixed-page-fit checks passed, and three affected pages confirmed; the preview-only banner says the Welcome book behind it has not changed yet.](docs/readme/img/agent.png)
+
+This screenshot and the Agent beat in the animated demo use a **frozen,
+human-vetted Cohere-authored fixture** rendered by Alcove's real disposable page
+sandbox. Playback makes no provider request and invents no live provider
+activity; it exists so the same honest result can be photographed every time.
+
+The preview is still not your book. Open it full-size, move through every page,
+ask for changes, choose where it belongs — before or after the current page, at
+the beginning or at the end — and approve only when it is right. Alcove then
+rechecks that the book has not changed, inserts the reviewed generation as one
+operation and gives the whole insertion one `Ctrl+Z`. A repeated approval
+cannot insert the same draft twice, and a failure rolls the book back to its
+pre-insertion checkpoint.
+
+When you **explicitly ask for images, illustrations, photos or picture slots**,
+the Agent leaves portable picture holders at the right points instead of
+pretending it generated pixels. It does not add empty picture cards or
+image-generation prompts merely for decoration. The final preview pairs every
+requested holder with a ready-to-copy prompt: what the picture needs to teach,
+its role, aspect ratio, useful pixel dimensions and what to avoid. Make the
+image in whichever image service you prefer, then click or drop it into the
+matching slot. Those prompts stay available after insertion. A later clear
+instruction such as *actually, no images* revokes that permission; native
+diagrams, charts, callouts and stickers never need it.
+
+### Sources, follow-ups and large pastes
+
+The attachment button is a source desk, not a file executor. It accepts the
+following current formats:
+
+| Source | What the Agent can actually read |
+| --- | --- |
+| **PDF** | Locally extracted page text and byte-valid embedded JPEG figures. It does not yet rasterise the composed page or run OCR, so preserve-everything work fails closed. |
+| **PNG, JPEG, WebP** | A bounded, metadata-stripped analysis derivative; the original stays local for the source chip. GIF is not accepted as Agent evidence. |
+| **Text, Markdown, code, HTML/CSS, CSV/TSV, JSON/JSONL, XML/SVG, YAML/TOML, config and logs** | Inert UTF-8 text. Nothing is run, rendered as active HTML, followed as an instruction, fetched or given a filesystem path. |
+| **DOCX** | Body, headers, footers, footnotes and endnotes from a bounded local Open XML extraction. |
+| **XLSX** | Sheet cells, inert formula text and cached values. Formulas are never calculated. |
+| **PPTX** | Ordered slide and speaker-note text. |
+
+Legacy `.doc`, `.xls` and `.ppt`, macro-enabled or encrypted Office files,
+unsafe archives and arbitrary binaries are rejected. Office macros and external
+relationships are never followed. Layout, styling, images, charts, drawings,
+animations, comments, tracked revisions and hidden-state meaning are not
+silently invented from the text extraction; when they matter to a
+preserve-everything request, the Agent reports unresolved evidence instead of
+claiming success.
+
+A follow-up message keeps the same task and the same attached-source ledger.
+The already attached PDF or document is not uploaded or extracted again; the
+Agent can answer conversationally, search or read further from the durable
+units it already has. If the source digest changes, the old reads no longer
+count and it must inspect the new version before it can finish.
+
+Pasting **500 characters or more** into either composer turns that clipboard
+body into a managed local source named `Pasted text.txt` and leaves any message
+you had already drafted untouched. Shorter pastes remain ordinary message text.
+Repeated identical files are content-addressed and deduplicated rather than
+shown as duplicate source chips.
+
+For a smaller edit, highlight some words and choose the AI glyph in the
+selection toolbar. Type what should change; the same agent panel opens with the
+exact selection anchored, builds and reviews the replacement, and shows the
+**integrated rendered page** — the proposed replacement inside its real
+surrounding page — before approval. It is not a text-only inline diff. That task
+stays locked to **Replace selected text** rather than offering misleading
+page-placement choices. Moving focus into the prompt never gives the model a
+direct editor mutation command.
+
+The guided tour briefly opens the real panel in a quiet read-only preview: it
+does not show key setup, touch the network or mark setup complete. The first
+time **you** open the panel afterwards, Alcove offers **Trial / evaluation** and
+**Production / enterprise** Cohere keys, with a *Skip for now* path. It does not
+interrupt onboarding, and the rest of Alcove needs no key. A key may live only
+for the current session or in the operating system's credential vault; it is
+cleared from the field immediately and never stored in a notebook or agent
+history. The current [Cohere Privacy
+Policy](https://cohere.com/privacy) says trial inputs and outputs may be used for
+research and development, trial environments should not contain personal
+information, and its Products are not intended for personal or household use.
+Trial setup requires acknowledging those limits; a production label means an
+organisation-approved account or contract, not an automatic privacy guarantee.
+You can change or remove the connection later in *Settings → AI &
+integrations*.
+
+**Connecting is not starting a task.** Testing a key sends only a
+credential-validation request to Cohere: no task instructions, book pages,
+attachments or draft renders. After you start a task, Cohere receives its
+instructions, the current-book pages the agent chooses to inspect, the sources
+you attached and the draft page renders used for self-review. Other books and
+ordinary writing stay local.
+
+*Settings → AI & integrations* also has **Text veil — mask private text**, off
+by default. A new task snapshots that choice. When it is on, Alcove uses a
+layered local recogniser for labelled or contextual names, contact and street
+details, dates and precise locations, usernames, network addresses, long IDs,
+credentials, payment details and government/account identifiers. It replaces
+matches and private structured fields with stable task-scoped placeholders
+before model work, keeps the reversible receipt local through retries and
+restart, restores exact values locally for the final preview or answer, then
+reruns the parser and fixed-page checks before anything can be applied. A
+placeholder the model mutates or invents fails closed rather than leaking into
+the page.
+
+This is exposure reduction, **not anonymisation or de-identification**. Unusual,
+context-dependent or identifying combinations can evade deterministic
+recognition, and text drawn inside images or scanned-PDF pixels is not masked.
+Veiled tasks also keep source retrieval local instead of sending text to
+embedding or reranking endpoints. Masking can make exact date, identifier,
+comparison or calculation tasks less accurate, so leave it off when those
+literal values are the work.
+
+PDF text is extracted locally, and Alcove can expose **embedded JPEG figures
+only** as separate visual evidence. It does not yet rasterise a composed PDF
+page or run OCR. Consequently a request to preserve everything from **any PDF**
+fails closed on every page until verified full-page rastering exists, even when
+text extraction looks complete; an ordinary non-preservation task may still use
+the extracted text and those JPEG figures with the limitation stated. Attach
+page screenshots or an OCRed PDF when complete visual reading matters.
+
+### The outside-assistant route is still here
 
 ![The "Insert script" dialog over a dimmed spread, subtitled "paste Notebook Script — from your AI, or your own pen". On the left a monospace box showing the shape of the language — a heading, some bold notes, and a ::: sticky-note block. On the right an empty preview panel reading "the preview appears here as you paste". "Copy the format for your AI" sits at the bottom left, Cancel and Insert at the bottom right.](docs/readme/img/ai.png)
 
@@ -204,13 +372,17 @@ starting mood and rewrite it. The generated guide still carries the complete
 live catalogue—every paper, card, callout, lettering treatment, diagram,
 sticker and piece of trim—so a mood never narrows what the assistant can make.
 The simpler *Paste a script in* dialog remains just for opening, previewing and
-inserting the resulting `.md`.
+inserting the resulting `.md`; it does not connect to the native agent.
 
-Nothing is sent anywhere — no API key, no model in the app, no request to
-anybody's server. You carry the text to whichever assistant you already use and
-carry the answer back, which is why it works with a chatbot that has never heard
-of Alcove. And it reads back out: *copy this page as script* hands a page to an
-assistant for revision.
+Copying or downloading the guide and opening an ordinary script does not call
+Cohere or send notebook text anywhere. One explicit script feature is
+networked: a `fetch:` image directive may contact Alcove's guarded open-image
+search while previewing or inserting, with an offline fallback. In other words,
+the outside-assistant route is provider-free, but a script that explicitly asks
+to fetch a picture is not network-free. Otherwise you carry the format to
+whichever assistant you already use and carry its `.md` answer back. And it
+reads back out: *copy this page as script* hands a page to an assistant for
+revision.
 
 The same idea runs through the customisation — the *your designs* dialog hands
 you a prompt for making a pack, generated from the importer's own schema
@@ -232,6 +404,11 @@ nothing left running when you close the window.
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
+
+> **The linked v0.6.6 downloads do not contain the native AI Agent described
+> later on this page.** They contain the key-free outside-assistant Notebook
+> Script workflow. The Agent exists only in the current unreleased source tree
+> until a later version is explicitly approved and published.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
 page after launch and offers newer signed versions in the app. If you installed
@@ -438,6 +615,28 @@ then insert above, insert below, duplicate, *copy block as script*, and delete.
 Blocks can be dragged by the handle that appears in the margin, and dropping one
 settles it into place rather than teleporting.
 
+A right-click inside a selection spanning several blocks keeps that selection
+intact while opening the menu. The same resolver follows custom blocks such as
+equations, code, diagrams and media back to their owning page block, so these do
+not fall through to the browser menu. On any page after the first, Backspace at
+the very beginning of its first block pulls that block onto the previous leaf
+when it fits; the context menu exposes the same action explicitly.
+
+The same menu also has **Copy content** and **Download / save…**. Pictures copy
+as real PNG clipboard pixels and save in their original format; videos save as
+their original file (and copy directly when the operating-system clipboard
+supports that video type); tables copy as both TSV and HTML for spreadsheets or
+documents and download as CSV; code copies as source text and saves with its
+language extension. Every other Alcove block falls back to portable Notebook
+Script, so a crafted card or diagram still has a useful way out.
+
+Plain-text paste is structure-aware too. Tabular spreadsheet text, quoted CSV
+and arrays of JSON records become native tables; fenced Markdown and Notebook
+Script become their real Alcove blocks; JSON objects and recognisable source
+code become code blocks. Rich HTML from a browser or spreadsheet still follows
+the editor's normal rich-paste path, and ordinary prose is left as prose rather
+than being “helpfully” misclassified.
+
 ### Pages never scroll, and that is the point
 
 A page is a fixed leaf of paper. When what you have written exceeds it, the
@@ -445,6 +644,11 @@ editor peels the trailing blocks off the end and hands them to the next page,
 creating one if there isn't one — and it carries your caret across the break, so
 you can keep typing straight through the join without noticing you crossed it.
 Deleting from a full page pulls the blocks back.
+
+Resizing the window or opening a panel changes only how the fixed book is drawn.
+It does not rewrite which blocks belong to which page. This is intentionally
+separate from real intrinsic growth such as an image finishing its load, which
+does still flow through the normal pagination contract.
 
 It would be easier to put a scrollbar in a page. The reason there isn't one:
 
@@ -481,7 +685,8 @@ documented TeX subset written for this app
 ([`src/editor/nodes/mathTex.ts`](src/editor/nodes/mathTex.ts)) — superscripts and
 subscripts, `\frac`, `\sqrt`, big operators with limits, delimiters that grow,
 the Greek alphabet and the usual relations and arrows, upright function names,
-`\text{}` — rendered as plain HTML in the page's own serif face rather than
+`\text{}`, plus TeX classification commands such as `\mathrel` and `\mathbin`
+— rendered as plain HTML in the page's own serif face rather than
 through KaTeX's Computer Modern.
 
 It does not do matrices, alignment, cases or arrays, and says so: those are
@@ -505,9 +710,11 @@ Paste or drop an image and it is stored under your library's `assets/` folder
 and inserted; several at once become an image row. Paste a bare URL on an
 empty line and you get a link card, which fills itself in with the page's title,
 description and favicon a moment later, and degrades to a plain link chip if the
-site does not answer. Those two moments are the only times the app reaches the
-internet at all, they only happen because you asked, and neither of them sends
-anything you wrote.
+site does not answer. These requests happen only because you asked, and neither
+of them sends anything you wrote. The optional AI Agent is the other networked
+feature: only after you connect your own Cohere key and start a task may it send
+the task instructions, current-book pages it inspects, attached sources and
+draft-review renders. Other books remain local.
 
 An image's expand control opens it in a large viewer. Wheel or the `+` and `−`
 buttons zoom, dragging moves around the enlarged image, and reset returns to
@@ -522,18 +729,19 @@ you pointed at lists yours back at the bottom
 
 ### The rail, end to end
 
-Ten hand-drawn icons down the left edge, each with its own tooltip. The first
-six open a panel; after a divider, four that just do something.
+Eleven hand-drawn icons down the left edge, each with its own tooltip. Seven
+open a panel; after a divider, four that just do something.
 
-![The spread with the icon rail down its left edge, and a hand-drawn tooltip out beside the fourth icon reading "Table of contents" with a Ctrl+Alt+T key cap on it. Ten glyphs in all: the paintbrush that dresses the book, page style, the catalogue's star, contents — lit, because that is the one being pointed at — page history, and the tray that opens "in and out". Then a short rule, and after it the bookmark that ribbons the page, focus mode, thumbnails and add-a-page. A nib and a word count sit at the foot below a dashed line.](docs/readme/img/rail.png)
+![The spread with the icon rail down its left edge, and a hand-drawn tooltip beside the table-of-contents icon with a Ctrl+Alt+T key cap on it. The rail groups the panels above a short rule and the direct page actions below it; a nib and word count sit at the foot.](docs/readme/img/rail.png)
 
 | Tool | What it opens |
 | --- | --- |
 | Customize this book | the book studio — binding, cover title, emblem, frame and page edges |
 | Page style | ruled, grid, dotted or blank, plus the line spacing |
 | Catalogue | everything you can put on a page, browsable and searchable |
+| **AI Agent** | a native workspace that studies sources, plans, drafts, visually reviews and previews pages before it may insert them |
 | Table of contents | every heading in the book, click to jump |
-| Page history | the autosave snapshots of this page, a line of preview each |
+| Page history | generous durable versions for this page, plus whole-book checkpoints that preserve page order and deletions |
 | **In and out** | the one sheet where writing enters and leaves |
 | Ribbon this page | marks it in one press, and opens the plate to pick a ribbon |
 | Focus mode | the rungs of the ladder, and the zoom |
@@ -543,6 +751,15 @@ six open a panel; after a divider, four that just do something.
 Every row carries its own key cap, read from your keymap rather than printed,
 and calls the same opener the keyboard calls — so a button and its shortcut
 cannot drift apart.
+
+Protected history is on by default. It keeps dense recent page versions and
+progressively spaced older recovery points, together with full-book checkpoints
+for structural accidents. Restoring a page or book first preserves the state
+you are leaving, so turning back does not consume the route forward. It can be
+disabled under **Settings → System → protected history**, but only after a
+warning; disabling stops new checkpoints and does not silently delete existing
+ones. This local history complements scheduled library backups rather than
+replacing them.
 
 To remove a leaf, right-click anywhere on that page and choose **Delete this
 page**. The option is deliberately absent when it is the book's only page.
@@ -920,10 +1137,16 @@ folder and you have copied your library. The parcel desk also exports every page
 as ordinary Markdown, which any editor reads without Alcove installed.
 
 **Is it offline?**
-Yes. No account, no sync, no cloud, nothing reporting back. Two things reach the
-internet and only when you ask: finding an openly-licensed picture, and filling
-in the card for a link you pasted. How that is *enforced* rather than intended
-is in [the developer half](#how-its-built).
+Yes for the library itself: no account, sync, cloud storage or telemetry is
+required, and writing, editing, search, export and the outside-assistant
+Notebook Script route work without a connection. Finding an openly licensed
+picture and filling in a pasted link card are explicit network actions. The
+optional AI Agent is another: after you connect your own Cohere key and start a
+task, it sends task instructions, the current-book pages it inspects, attached
+evidence and its draft-review images; other books remain local. Trial keys carry
+the privacy caveat described [above](#the-agent-inside-the-book). How those
+boundaries are enforced is in [the developer
+half](#how-its-built).
 
 **Does uninstalling delete my notes?**
 No. The program and the library are separate folders and the uninstaller only
@@ -953,7 +1176,8 @@ No. The shelf assumes a pointer, a wheel and a desktop-sized window.
 **Nothing below this line is needed to use Alcove.** Everything from here down is
 for somebody changing the code — a developer, or an AI agent working on their
 behalf — and it is where the facts a README usually opens with have been put
-instead: the storage model, the two outbound calls, what runs in which process.
+instead: the storage model, the explicit network boundaries, what runs in which
+process.
 It is the developer half's essentials: how the app draws itself three different
 ways at once, what it is made of and why, how to get it running, where
 everything lives, and how a release is cut.
@@ -971,10 +1195,11 @@ stay in [Part 2](docs/readme/part-2-developers.md) and are listed under
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
 webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
 Vite. Almost everything interesting happens in the frontend. The Rust side is
-<!--f:rustCommands-->15<!--/f--> commands — image assets, link previews, backups,
-tray, PDF export, markdown import, bundle read/write — plus the SQLite
-migrations, in <!--f:rustFiles-->9<!--/f--> files and
-<!--f:rustLines-->2635<!--/f--> lines.
+<!--f:rustCommands-->29<!--/f--> commands — image assets, link previews, backups,
+tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
+AI-attachment gateway — plus the SQLite
+migrations, in <!--f:rustFiles-->10<!--/f--> files and
+<!--f:rustLines-->7520<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -989,16 +1214,19 @@ one who does need it is you.
   this app to write.
 - **No account, no sync, no telemetry.** `telemetry` is typed as the literal
   `false` in [`src/data/types.ts`](src/data/types.ts), so it is not a
-  setting somebody can flip — it is a type error to try. Adding a network
-  dependency to a feature is therefore an architectural change, not a
-  convenience.
-- **Exactly two outbound calls, both reader-initiated.** Searching for an
-  openly-licensed picture (`::fetch`) and previewing a pasted link. Both go
+  setting somebody can flip — it is a type error to try. An unrelated feature
+  cannot quietly turn that into cloud sync or analytics.
+- **Outbound calls are narrow, visible and reader-initiated.** Searching for an
+  openly licensed picture (`::fetch`) and previewing a pasted link both go
   through an SSRF guard that is written twice on purpose —
   [`src-tauri/src/media.rs`](src-tauri/src/media.rs) is the real one and
   [`src/editor/media/urlGuard.ts`](src/editor/media/urlGuard.ts) mirrors
   it — https only, private and loopback addresses refused, fast timeouts, capped
-  body size.
+  body size. The optional AI Agent adds an explicit Cohere path: it is inert
+  without the reader's key and crosses a typed Rust gateway that accepts Cohere
+  endpoints and request shapes rather than arbitrary URLs. After a task starts,
+  it may send its instructions, current-book pages it inspects, attached sources
+  and draft-review renders; other books remain local.
 - **The webview is the OS's, not ours.** That is what makes the installer about
   sixteen megabytes rather than ten times that, and it is also why the app
   inherits the platform's autoplay policy, its IME and its font stack rather
@@ -1097,6 +1325,110 @@ so neither side drags the other's dependencies in, and it carries an
 `ART_PROTOCOL_VERSION` so a stale worker bundle is obvious rather than subtly
 wrong.
 
+### The Agent is a capability graph, not a privileged chat box
+
+The optional in-book Agent adds one more cross-process path, but no general
+network or mutation primitive. [`BookView.tsx`](src/views/BookView.tsx) is
+the composition root: it wires a provider-neutral runtime to read-only notebook
+and source adapters, the disposable page renderer, SQLite persistence and the
+Cohere provider. The panel receives a display controller assembled by
+[`aiAgentControllerAdapter.ts`](src/views/rail/aiAgentControllerAdapter.ts);
+it never imports Cohere, sees a saved key, owns checkpoint state or receives an
+unrestricted editor callback.
+
+```mermaid
+flowchart LR
+    UI["AI Agent panel<br/>intent · sources · activity · approval"]
+    ADAPTER["display controller<br/><i>aiAgentControllerAdapter.ts</i>"]
+    GRAPH["LangGraph StateGraph<br/>model → tools → human interrupt"]
+    TOOLS["Zod-validated capability tools<br/>read · retrieve · draft · render · propose"]
+    STORE[("SQLite<br/>task · events · checkpoints · pending writes")]
+    SANDBOX["disposable native PageEditor sandbox<br/>parse · paginate · render · inspect"]
+    PROVIDER["provider-neutral stream contract"]
+    RUST["Rust Cohere gateway<br/>request validation · vault · cancellation"]
+    APPLY["BookView approval seam<br/>revision · receipt · journal · Undo"]
+
+    UI <--> ADAPTER
+    ADAPTER <--> GRAPH
+    GRAPH <--> STORE
+    GRAPH --> TOOLS
+    TOOLS --> SANDBOX
+    GRAPH <--> PROVIDER
+    PROVIDER <--> RUST
+    ADAPTER -- "approved immutable proposal only" --> APPLY
+```
+
+The graph in [`graph.ts`](src/features/aiAgent/graph.ts) has only three
+nodes: `model`, `tools` and a statically checkpointed `human` breakpoint. That
+small topology is intentional. The autonomy lives in the model choosing among
+typed capabilities, while deterministic code owns every permission and exit
+condition. The model can inspect the current notebook, read or retrieve anchored
+source units, keep a coverage ledger, write Notebook Script, run validation,
+render disposable pages, inspect their images and propose a reviewed patch. It
+cannot execute SQL, open a path or URL, dispatch a TipTap transaction, manufacture
+an idempotency key or skip the reader's approval.
+
+Every tool starts as a strict Zod object in
+[`tools.ts`](src/features/aiAgent/tools.ts). The same definition becomes a
+sanitised Cohere strict-tool JSON Schema, and returned arguments are parsed again
+against the full local schema before execution. Optional values travel through
+Cohere as required-but-nullable fields, then null sentinels are removed locally;
+unknown fields remain errors. Tool effects are labelled `read`, `draft`,
+`interrupt` or `propose`, but that label is metadata rather than authority—the
+runtime's phase, call budget, source capability, generation hashes and policy
+gate decide whether a call can run.
+
+The provider seam is deliberately narrower than a LangChain model class.
+[`provider.ts`](src/features/aiAgent/provider.ts) accepts normalized
+messages and emits only public-text deltas, tool-plan deltas, complete typed tool
+calls, citations, usage and finish. [`cohereProvider.ts`](src/features/aiAgent/cohereProvider.ts)
+maps that contract to Cohere V2 and preserves the exact assistant `tool_plan`,
+tool-call ids and the contiguous result set required by the following turn.
+Rendered/source images are one-turn observations: only the trailing unanswered
+tool-result group is reattached, in batches of at most twenty, so checkpoint
+replay does not resend every old private bitmap. Rust then validates the bounded
+request vocabulary and fixed `https://api.cohere.com` origin, streams typed SSE
+events back through a Tauri channel, and owns the cancellation registry and API
+key. The WebView gets neither a bearer token nor a general `fetch` escape hatch.
+
+Resumability is real rather than a transcript illusion. All domain state in
+[`types.ts`](src/features/aiAgent/types.ts) is serialisable plain data;
+credentials, attachment bytes, editor/database handles, `AbortSignal`s, object
+URLs and image data are forbidden from it. The custom
+[`SqliteAgentCheckpointSaver`](src/data/aiAgentPersistence.ts) persists
+LangGraph checkpoints and pending writes beside task summaries and the ordered
+activity log. An interrupt is a durable turn boundary: if a model emits an
+approval/question call with parallel siblings, the siblings are discarded and
+the assistant call list is trimmed before pause, because they were authored
+without the reader's answer. Resume therefore returns one result to the exact
+call that caused the checkpoint rather than replaying work or creating an
+invalid partial tool-result history.
+
+Drafting still grants no write capability. The sandbox mounts the production
+TipTap schema and `PageEditor` with persistence and live-editor registration
+disabled, lets the fixed-page overflow contract settle across stable animation
+frames, captures native-size pages, and records structural/layout digests. The
+proposal gate requires current draft, validation, render and visual-review
+hashes to agree; every current page image must actually have been exposed to a
+later model turn, and no blocking finding may remain. With the opt-in text veil,
+the model reviews masked pixels first; Alcove restores values locally and runs a
+second parser/layout render before constructing the final preview.
+
+Only the preview's explicit reader approval reaches
+`applyApprovedAiProposal` in `BookView`. That seam freezes the live editors,
+recomputes the book revision, verifies the reviewed receipt and target page,
+prepares media/schema work, writes a whole-book rollback snapshot, and claims a
+durable idempotency key before the first page changes. After the edit it waits
+for pagination to settle and hashes every resulting reviewed page. A failure
+restores the snapshot; success converts the journal into one whole-operation
+`Ctrl+Z` receipt. Startup recovery also restores any journal left in `applying`
+or `undoing`, so “atomic” describes the reader-visible book even though the page
+operations span multiple asynchronous editor writes.
+
+The complete contracts, source formats, privacy transform and failure rules are
+in [The in-book AI Agent](docs/readme/part-2-developers.md#the-in-book-ai-agent) below and
+[`docs/design/ai-agent.md`](docs/design/ai-agent.md).
+
 ### The stack, and why each piece is here
 
 | Piece | Version | Why this one |
@@ -1114,7 +1446,9 @@ wrong.
 | `lowlight` | ^3.3 | Syntax highlighting inside code blocks, through `@tiptap/extension-code-block-lowlight`. |
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](src/art/wobble.ts). |
 | `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](src/views/Tooltip.tsx). |
-| Vitest | ^4.1 | Runs the single retained smoke file, [`tests/smoke.test.ts`](tests/smoke.test.ts), in Node. |
+| `@langchain/langgraph` + `@langchain/langgraph-checkpoint` | ^1.4 / ^1.1 | A resumable provider-neutral `StateGraph` and saver contract for the Agent's model/tool/interrupt loop. The saver is implemented against Alcove's browser-safe async SQLite surface; no LangGraph service or remote checkpoint store is involved. |
+| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive Cohere's strict-tool JSON Schema and then applied again to returned arguments before a capability executes. |
+| Vitest | ^4.1 | Runs an explicit high-signal Node allow-list through [`vitest.smoke.config.ts`](vitest.smoke.config.ts); the broad suite remains opt-in. |
 
 There is deliberately no state-management library, no CSS framework, no icon
 package, no chart library and no markdown library. The parser, the ZIP codec, the
@@ -1124,7 +1458,7 @@ would not meet (see [`src/features/transfer/zip.ts`](src/features/transfer/zip.t
 for the reasoning in one concrete case).
 
 ## Getting it running
-<!--nav: `npm run tauri dev`, the browser-only dev path, and the two bare-bones checks-->
+<!--nav: `npm run tauri dev`, the browser-only dev path, and the everyday checks-->
 
 ```bash
 npm install
@@ -1138,20 +1472,23 @@ persisted to `localStorage`, degrading to empty results rather than throwing on
 SQL it does not understand. A book created in the browser survives a reload. It
 is a convenient development path, not a substitute for the Tauri host.
 
-### The bare-bones gate
+### The everyday gate
 
-The owner performs visual and audio acceptance directly. Automated verification
-is deliberately limited to the two commands below.
+The owner performs visual and audio acceptance directly. The two commands below
+are the bounded everyday gate; broader suites are targeted or release-only.
 
 | Command | What it checks |
 |---|---|
 | `npx tsc --noEmit` | Frontend type safety in strict mode. |
-| `npm test` | Three smoke invariants: Notebook Script remains total, pagination keeps one block, and package/Tauri versions agree. |
+| `npm test` | Exactly the explicit file allow-list in `vitest.smoke.config.ts`: the current script/media/release, book-appearance, hydration and sound regressions. |
 
-The smoke suite is [`tests/smoke.test.ts`](tests/smoke.test.ts), selected by
-[`vitest.smoke.config.ts`](vitest.smoke.config.ts). It does not boot a
-browser, capture pixels, inspect audio, occupy port 1420 or claim anything about
-what the app looks or sounds like.
+The fast suite is the explicit file allow-list in
+[`vitest.smoke.config.ts`](vitest.smoke.config.ts), including but no
+longer limited to [`tests/smoke.test.ts`](tests/smoke.test.ts). The
+unreleased Agent's focused suites are not silently included by that command;
+they must be run explicitly until the release gate deliberately adds them. The
+fast suite does not boot a browser, capture pixels, occupy port 1420 or claim
+anything about what the app looks or sounds like.
 
 ## The map of the app
 <!--nav: Directory by directory, plus the module-docstring convention this README points at instead of copying-->
@@ -1169,21 +1506,23 @@ defending — why it is that way and what it replaced.
 | [`src/editor/`](src/editor/) | TipTap setup ([`extensions.ts`](src/editor/extensions.ts)), one editor per page ([`PageEditor.tsx`](src/editor/PageEditor.tsx)), custom nodes ([`nodes/`](src/editor/nodes/)), slash and right-click menus, [`pagination.ts`](src/editor/pagination.ts), [`effects/`](src/editor/effects/), media paste, exporters, the vendored [`solid/`](src/editor/solid/) bindings. |
 | [`src/flip/`](src/flip/) | The page-curl engine: [`curl.ts`](src/flip/curl.ts) (shaders), [`math.ts`](src/flip/math.ts) (pure, node-testable), [`rasterCache.ts`](src/flip/rasterCache.ts), [`gl.ts`](src/flip/gl.ts), [`cssFallback.ts`](src/flip/cssFallback.ts). |
 | [`src/script/`](src/script/) | The Notebook Script parser and printer. Total by construction: `parse()` never throws. |
+| [`src/features/aiAgent/`](src/features/aiAgent/) | The provider-neutral LangGraph runtime: serialisable contracts, tool policy, complete-source coverage, retrieval, Cohere adapter, draft sandbox and proposal gate. |
 | [`src/diagrams/`](src/diagrams/) | Layout algorithms (tidy tree, layered DAG, timeline) and hand-drawn SVG renderers. |
-| [`src/data/`](src/data/) | SQLite access and the persisted stores: [`bookcases.ts`](src/data/bookcases.ts), [`designPrefs.ts`](src/data/designPrefs.ts), [`settings.ts`](src/data/settings.ts), [`search.ts`](src/data/search.ts), [`keybindings.ts`](src/data/keybindings.ts). |
+| [`src/data/`](src/data/) | SQLite access and the persisted stores: books, design, search and settings, plus agent checkpoints, sources, idempotent apply receipts, the Rust-owned credential boundary and normalized provider gateway. |
 | [`src/features/transfer/`](src/features/transfer/) | Export/import bundles (`.nbk`), conflict resolution, restore points. |
 | [`src/features/system/`](src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](src/features/packs/), [`src/features/templates/`](src/features/templates/), [`src/features/tutorial/`](src/features/tutorial/), [`src/features/quickswitch/`](src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
 | [`src/sound/`](src/sound/) | The `@pixi/sound` engine, named sound sets, and the in-app credits panel. |
 | [`src/search/`](src/search/) | The fuzzy matcher and the full-text index behind `Ctrl+K` and `Ctrl+Shift+F`. In-repo, because the ranking rules are the product. |
 | [`src/state/`](src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
+| [`src/assets/`](src/assets/) | Source-owned static media which must ship with a feature, including the frozen, locally stored kitten illustration used by the deterministic Agent demo. |
 | [`src/features/settings/`](src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
-| [`src-tauri/src/`](src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs`, all registered in `lib.rs`. |
+| [`src-tauri/src/`](src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs` and `ai.rs`, all registered in `lib.rs`. `ai.rs` owns credentials, Cohere HTTPS, attachment bytes and local PDF extraction. |
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->319<!--/f--> of <!--f:srcFiles-->333<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7135<!--/f--> lines of it.
+<!--f:srcDocstrings-->343<!--/f--> of <!--f:srcFiles-->376<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7301<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1342,14 +1681,17 @@ reader.
 
 <!-- gen:lift-nongoals -->
 ## Non-goals
-<!--nav: No sync, no cloud, no mobile, no plugin API, no second visual language, no light model-->
+<!--nav: No sync or cloud storage, no mobile, no plugin API, no second visual language, no light model-->
 
 - **No sync and no accounts.** The database is a file on your disk. There is no
   server to sign in to and nothing to be logged out of.
-- **No cloud anything.** The only outbound network traffic is image fetch and link
-  preview, both explicitly requested by you and both behind an SSRF guard
+- **No cloud storage or background model service.** Image fetch and link preview
+  are explicit requests behind an SSRF guard
   ([`src/editor/media/urlGuard.ts`](src/editor/media/urlGuard.ts) mirrors the Rust
-  one in [`src-tauri/src/media.rs`](src-tauri/src/media.rs)).
+  one in [`src-tauri/src/media.rs`](src-tauri/src/media.rs)). The optional AI
+  Agent calls Cohere only after the reader supplies a key and sends a task; it
+  does not sync the library, run in the background or make ordinary editing
+  depend on a model.
 - **No mobile, no web build.** Touch, small viewports and a shelf you cannot
   hover are three separate redesigns, not a media query. The browser dev server
   is a test harness, not a product.
@@ -1369,12 +1711,12 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->333<!--/f--> TypeScript files, <!--f:srcDocstrings-->319<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7135<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
-| Rust host | <!--f:rustFiles-->9<!--/f--> files, <!--f:rustLines-->2635<!--/f--> lines, <!--f:rustCommands-->15<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
-| Bare-bones checks | One Vitest smoke file plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
-| Visual and audio acceptance | Performed directly by the owner; no automated browser, pixel, frame or waveform gate | [The bare-bones gate](docs/readme/part-2-developers.md#the-bare-bones-gate) |
+| Frontend source | <!--f:srcFiles-->376<!--/f--> TypeScript files, <!--f:srcDocstrings-->343<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7301<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Rust host | <!--f:rustFiles-->10<!--/f--> files, <!--f:rustLines-->7520<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
+| Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
+| Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |
-| Design record | <!--f:designDocs-->15<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
+| Design record | <!--f:designDocs-->16<!--/f--> documents in [`docs/design/`](docs/design/), <!--f:supersededDesignDocs-->5<!--/f--> of them explicitly superseded and kept on purpose | [The design record](docs/readme/part-2-developers.md#the-design-record) |
 
 ## Deeper reading
 <!--nav: The two halves as pages of their own, and every section of them this page does not already carry-->
@@ -1392,23 +1734,25 @@ is already on this page, plus the corners this page does not go into.
 | [The art pipeline](docs/readme/part-2-developers.md#the-art-pipeline) | Bake once, draw forever: atlas packing, LOD tiers, and the cache-key rule |
 | [The design vocabularies](docs/readme/part-2-developers.md#the-design-vocabularies) | Colour, carpentry, wall and binding as four orthogonal axes — and adding a value end to end |
 | [The editor](docs/readme/part-2-developers.md#the-editor) | The vendored Solid bindings, the pagination contract, block effects, and adding a block type step by step |
+| [Protected page and whole-book history](docs/readme/part-2-developers.md#protected-page-and-whole-book-history) | Why Alcove keeps separate generous leaf versions and structural notebook checkpoints, and how each restores without consuming the current state |
 | [The flip](docs/readme/part-2-developers.md#the-flip) | The cylinder curl, the snapshot cache, and the library bug worked around at length |
 | [Notebook Script](docs/readme/part-2-developers.md#notebook-script) | Why `parse()` is total, the round-trip invariant, and the generated spec |
+| [The in-book AI Agent](docs/readme/part-2-developers.md#the-in-book-ai-agent) | Provider-neutral LangGraph orchestration, source policy, native-render self-review and the approval-only mutation seam |
 | [The data layer](docs/readme/part-2-developers.md#the-data-layer) | The schema, the bookcase model, and why every read is validated |
 | [The failure modes this codebase has actually shipped](docs/readme/part-2-developers.md#the-failure-modes-this-codebase-has-actually-shipped) | The four ways work here has looked finished and been unreachable, unreadable, wrong or buttonless, with the real instances named |
-| [The gate](docs/readme/part-2-developers.md#the-gate) | The deliberately tiny smoke suite |
+| [The gate](docs/readme/part-2-developers.md#the-gate) | The bounded high-signal suite and proportionate release gates |
 | [Things that were harder than they look](docs/readme/part-2-developers.md#things-that-were-harder-than-they-look) | Five places the obvious implementation is wrong |
 | [The design record](docs/readme/part-2-developers.md#the-design-record) | The ADR set in `docs/design/`, including which documents are superseded and why they are kept |
 | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) | The `gen-*` scripts that write checked-in files, and which ones a forgotten regeneration actually fails |
 | [How this document stays true](docs/readme/part-2-developers.md#how-this-document-stays-true) | The spec check and the README check: markers recomputed, links resolved, navigation composed rather than typed |
 <!-- /gen -->
 
-The five design records in [`docs/design/`](docs/design/) are the canonical
-blueprints for the shelf renderer, the page flip, the block editor, the script
-language and the art pipeline; several older documents there carry a superseded
-banner and are kept on purpose. [`CLAUDE.md`](CLAUDE.md) is the binding rules
-file for agents working in this repo — it states the constraints and
-deliberately does not restate this page.
+The canonical records in [`docs/design/`](docs/design/) cover the shelf
+renderer, page flip, block editor, script language, art pipeline and unreleased
+AI Agent; several older documents there carry a superseded banner and are kept
+on purpose. [`CLAUDE.md`](CLAUDE.md) is the binding rules file for agents
+working in this repo — it states the constraints and deliberately does not
+restate this page.
 
 ## How this page stays honest
 <!--nav: Why no number here is typed, why no paragraph is written twice, and what the check does and does not do-->
@@ -1417,7 +1761,7 @@ A README that quotes numbers goes stale silently, so none of the numbers on this
 page are typed as prose. Each is written inside an invisible marker —
 `<!--f:wallpaperPapers-->126<!--/f-->`, which GitHub renders as `126` and
 nothing else — and recomputed from the tree. So are the
-<!--f:readmeShots-->25<!--/f--> screenshots: each one records the app it
+<!--f:readmeShots-->26<!--/f--> screenshots: each one records the app it
 photographed and the room it stood in, so a picture that has outlived what it
 shows says so rather than quietly lying.
 
@@ -1432,8 +1776,9 @@ prints a grouped list — numbers that no longer match the tree, links that go
 nowhere, pictures that no longer show this app, and generated regions that are
 out of date — then exits red. Things that are in the repo but on no page at all
 remain coverage notes: what a page *ought* to say is a judgement, and a script
-should not be making it. The retained Vitest gate checks the same facts, links
-and screenshot identity as part of `npm test`.
+should not be making it. Those documentation facts, links and screenshot
+identities belong to `npm run readme:check`; the deliberately bounded
+`npm test` allow-list does not silently duplicate that gate.
 
 **Nor is the prose typed twice.** The manual above is *lifted* out of
 [`docs/readme/part-1-users.md`](docs/readme/part-1-users.md) and

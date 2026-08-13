@@ -21,6 +21,7 @@ const opt = (name, fallback) => {
 const URL_BASE = opt('url', 'http://localhost:1420');
 const TAG = opt('tag', 'now');
 const SKIP_STUDIO_SHOT = args.includes('--skip-studio-shot');
+const APPENDED_EMBLEMS_ONLY = args.includes('--appended-emblems-only');
 const OUT = 'shots-now/out';
 mkdirSync(OUT, { recursive: true });
 
@@ -72,7 +73,7 @@ if (!SKIP_STUDIO_SHOT) {
   console.log('  shot', studioPath);
 }
 
-const report = await page.evaluate(async () => {
+const report = await page.evaluate(async (appendedEmblemsOnly) => {
   const sp = await import('/src/art/spines.ts');
   const cv = await import('/src/art/covers.ts');
   const charms = await import('/src/art/charms.ts');
@@ -195,9 +196,12 @@ const report = await page.evaluate(async () => {
 
   /* One emblem on the shelf spine and the matching cover: same index, no
      competing authored focal programme. */
-  const emblemTrue = board('emblems-true', 6, 205);
+  const activeEmblems = appendedEmblemsOnly
+    ? sp.ACTIVE_ORNAMENTS.filter(({ index }) => index >= 66)
+    : sp.ACTIVE_ORNAMENTS;
+  const emblemTrue = board('emblems-true', appendedEmblemsOnly ? 5 : 6, 205);
   const emblemDetail = board('emblems-detail', 4, 390);
-  sp.ACTIVE_ORNAMENTS.forEach(({ index, label }, position) => {
+  activeEmblems.forEach(({ index, label }, position) => {
     const seed = (0xe10000 + position * 0x9e37) >>> 0;
     const spine = drawSpine({ ornament: index, ornamentOn: true }, seed);
     const cover = drawCover({ frame: 0, medallion: index, titlePlate: 'gilt-direct' }, seed);
@@ -283,7 +287,7 @@ const report = await page.evaluate(async () => {
 
   return {
     counts: {
-      emblems: sp.ACTIVE_ORNAMENTS.length,
+      emblems: activeEmblems.length,
       frames: cv.ACTIVE_COVER_FRAMES.length,
       titles: sp.ACTIVE_TITLE_PLATE_OPTIONS.length,
       edges: sp.ACTIVE_EDGE_OPTIONS.length,
@@ -294,14 +298,14 @@ const report = await page.evaluate(async () => {
     activeCharms: [...charms.ACTIVE_CHARMS],
     studio,
     ids: {
-      emblems: sp.ACTIVE_ORNAMENTS,
+      emblems: activeEmblems,
       frames: cv.ACTIVE_COVER_FRAMES,
       titles: sp.ACTIVE_TITLE_PLATE_OPTIONS,
       edges: sp.ACTIVE_EDGE_OPTIONS,
       endbands: sp.ACTIVE_HEAD_TAIL_OPTIONS,
     },
   };
-});
+}, APPENDED_EMBLEMS_ONLY);
 
 const paths = [
   ['#emblems-true', `binding-surface-emblems-true-${TAG}.png`],
@@ -314,7 +318,7 @@ const paths = [
   ['#edges-detail', `binding-surface-edges-detail-${TAG}.png`],
   ['#endbands-true', `binding-surface-endbands-true-${TAG}.png`],
   ['#endbands-detail', `binding-surface-endbands-detail-${TAG}.png`],
-];
+].filter(([selector]) => !APPENDED_EMBLEMS_ONLY || selector.startsWith('#emblems-'));
 for (const [selector, filename] of paths) {
   const path = `${OUT}/${filename}`;
   await page.locator(selector).screenshot({ path });
@@ -324,7 +328,14 @@ for (const [selector, filename] of paths) {
 const reportPath = `${OUT}/binding-surface-report-${TAG}.json`;
 writeFileSync(
   reportPath,
-  `${JSON.stringify({ ...report, pageErrors, screenshots: [studioPath, ...paths.map(([, name]) => `${OUT}/${name}`)] }, null, 2)}\n`,
+  `${JSON.stringify({
+    ...report,
+    pageErrors,
+    screenshots: [
+      ...(SKIP_STUDIO_SHOT ? [] : [studioPath]),
+      ...paths.map(([, name]) => `${OUT}/${name}`),
+    ],
+  }, null, 2)}\n`,
 );
 console.log('  report', reportPath);
 await browser.close();

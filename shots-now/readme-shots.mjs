@@ -118,6 +118,7 @@ import {
   ROOT,
   SHOTS_DIR,
   SHOTS_MANIFEST,
+  SHOT_SOURCES,
   appIdentity,
   readShotsManifest,
   shotFiles,
@@ -840,6 +841,7 @@ const appShots = [
   // Sections 19-21: the three surfaces Part 1 described in prose and never
   // showed, once every other section had a picture beside it.
   'rail',
+  'agent',
   'ai',
   'transfer',
 ];
@@ -1542,8 +1544,56 @@ if (appShots.some(wanted)) {
     });
   }
 
+  if (wanted('agent')) {
+    await step(page, '20. the native AI Agent preview', async () => {
+      await ensureBookOpen();
+      await page.waitForFunction(
+        () => typeof globalThis.__aiAgentDemo?.reset === 'function',
+        null,
+        { polling: 200, timeout: 30_000 },
+      );
+      await page.evaluate(async () => {
+        await globalThis.__aiAgentDemo.reset('study-notes');
+        globalThis.__aiAgentDemo.open();
+        await globalThis.__aiAgentDemo.advance('ready');
+      });
+      await page.waitForSelector('.nb-ai-final-preview', {
+        state: 'visible',
+        timeout: 60_000,
+      });
+      mkdirSync(resolve(ROOT, 'qa/demo'), { recursive: true });
+      for (let index = 0; index < 3; index += 1) {
+        const bytes = await page.evaluate(async (pageIndex) => {
+          const image = document.querySelectorAll('.nb-ai-preview-thumb img')[pageIndex];
+          if (!(image instanceof HTMLImageElement) || image.src === '') {
+            throw new Error(`native Agent page ${pageIndex + 1} is unavailable`);
+          }
+          const response = await fetch(image.src);
+          if (!response.ok) throw new Error(`native Agent page ${pageIndex + 1} could not be read`);
+          return Array.from(new Uint8Array(await response.arrayBuffer()));
+        }, index);
+        writeFileSync(
+          resolve(ROOT, `qa/demo/readme-agent-page-${index + 1}.png`),
+          Buffer.from(bytes),
+        );
+      }
+      await settle(page, '.nb-rail-panel.is-ai-agent');
+      await page.locator('.nb-ai-agent-scroll').evaluate((node) => {
+        const preview = node.querySelector('.nb-ai-final-preview');
+        if (!(preview instanceof HTMLElement)) {
+          throw new Error('the final Agent preview disappeared before its screenshot');
+        }
+        node.scrollTop = Math.max(0, preview.offsetTop - 104);
+      });
+      await wait(page, 1800);
+      await shot(page, 'agent');
+      await page.evaluate(() => globalThis.__aiAgentDemo.reset());
+      await wait(page, 900);
+    });
+  }
+
   if (wanted('ai')) {
-    await step(page, '20. the AI front door', async () => {
+    await step(page, '21. the outside-AI script front door', async () => {
       await ensureBookOpen();
       /*
        * The EMPTY insert dialog, not the filled one. `script-dialog.png` shows a
@@ -1566,7 +1616,7 @@ if (appShots.some(wanted)) {
   }
 
   if (wanted('transfer')) {
-    await step(page, '21. the parcel desk', async () => {
+    await step(page, '22. the parcel desk', async () => {
       await ensureBookOpen();
       await page.evaluate(() => {
         const el = document.activeElement;
@@ -1795,12 +1845,32 @@ for (const file of [...kept.keys()]) {
  * are true.
  */
 const complete = ONLY.length === 0;
+/*
+ * A partial recapture preserves the set-wide identity, but it must refresh the
+ * sources that belong to the picture it actually retook. Keeping the whole old
+ * `sources` object made the first Agent-only capture impossible to validate:
+ * agent.png was new while its two frozen-fixture digests remained absent. This
+ * is the source equivalent of the per-shot merge above—refresh only what this
+ * shutter saw, leave every untouched picture's provenance alone.
+ */
+const refreshedPartialSources = (() => {
+  const wantedSources = new Set(
+    taken.flatMap((entry) => SHOT_SOURCES[entry.file] ?? []),
+  );
+  const current = sourceDigests();
+  return Object.fromEntries(
+    Object.entries(current).filter(([source]) => wantedSources.has(source)),
+  );
+})();
 const identity = complete
   ? { app: appIdentity(), depicts: depicts(), sources: sourceDigests() }
   : {
       app: previous?.app ?? appIdentity(),
       depicts: previous?.depicts ?? depicts(),
-      sources: previous?.sources ?? sourceDigests(),
+      sources: {
+        ...(previous?.sources ?? {}),
+        ...refreshedPartialSources,
+      },
     };
 if (!complete) {
   console.log(

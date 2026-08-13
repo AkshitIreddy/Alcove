@@ -9,67 +9,78 @@ for the current working tree rather than relying on the long development chat.
 
 ### Editor correctness
 
-- [ ] Window and panel resizing must be presentation-only: never persistently
-      repaginate, duplicate a section, or leave a different document when the
-      original window size returns. Verify full → minimum → full with exact
-      page IDs and JSON equality.
-- [ ] Right-click must open the same block menu for ordinary text, a selection
+- [x] Window, panel, monitor-resolution and monitor-DPI changes must be camera-
+      only: preserve one canonical CSS page/layout box and scale the whole book
+      to fit. Never rewrap, persistently repaginate, duplicate a section, or
+      leave a different document when the original size returns. Verify repeated
+      full → minimum → full and DPR 1 → 2 with exact DOM geometry, page IDs and
+      JSON equality.
+- [x] Right-click must open the same block menu for ordinary text, a selection
       spanning several blocks, display maths, code and every custom node-view;
       preserve a multi-block text selection when the click lands inside it.
-- [ ] Backspace at the start of the first block on a non-first page must pull
+- [x] Backspace at the start of the first block on a non-first page must pull
       that block into available room on the previous page. Cover both text and
       the display-math source editor, without duplication when the previous page
       is full.
-- [ ] Render TeX classification commands such as `\mathrel+` and `\mathbin`
+- [x] Render TeX classification commands such as `\mathrel+` and `\mathbin`
       instead of showing their source as unknown red text.
-- [ ] Show “Type / for commands…” only on the active empty page, never in an
+- [x] Show “Type / for commands…” only on the active empty page, never in an
       intentional blank paragraph between authored blocks.
-- [ ] Keep Welcome-page inline stickers/emblems clear of ruled-paper strokes.
+- [x] Keep Welcome-page inline stickers/emblems clear of ruled-paper strokes.
 
 ### Recovery history — default on and deliberately generous
 
-- [ ] Replace the 20-item page-history ring with protected, durable, generous
+- [x] Replace the 20-item page-history ring with protected, durable, generous
       per-page history plus whole-book checkpoints. A restore creates a new
       checkpoint and never destroys the state being left.
-- [ ] Retain dense recent versions and progressively spaced daily/weekly/monthly
+- [x] Retain dense recent versions and progressively spaced daily/weekly/monthly
       recovery points. Never prune the newest, a manually protected checkpoint,
       or the last known whole-book state.
-- [ ] Add a default-on Settings control. Turning protected history off requires
+- [x] Add a default-on Settings control. Turning protected history off requires
       an explicit warning that future recovery points stop; existing recovery
       data is not silently deleted.
-- [ ] Verify restart persistence, page restore, whole-book restore, bounded
+- [x] Verify restart persistence, page restore, whole-book restore, bounded
       pruning and crash-safe checkpoint writes.
 
 ### Demo and documentation acceptance
 
-- [ ] Use the supplied kitten image and explain Huffman coding with kittens;
+- [x] Use the supplied kitten image and explain Huffman coding with kittens;
       keep the native preview exactly three balanced pages at both README and
       demo viewports.
-- [ ] Slow question typing, show believable Thinking/Brainstorming pauses,
+- [x] Slow question typing, show believable Thinking/Brainstorming pauses,
       keep readiness after visual review, and record review/insert actions in
       the conversation timeline.
-- [ ] Remove blank camera frames, fake opening transitions, rapid post-insert
+- [x] Remove blank camera frames, fake opening transitions, rapid post-insert
       page turns and camera bounce. Review every transition as dense frames,
       not only contact-sheet samples.
-- [ ] After insertion, close the Agent panel and deliberately visit all three
+- [x] After insertion, close the Agent panel and deliberately visit all three
       new pages. Demonstrate ordinary page writing on the Welcome writing page
       without disturbing the Agent-authored layout.
-- [ ] Keep the wider, quieter Agent panel readable; preview must have scroll,
+- [x] Keep the wider, quieter Agent panel readable; preview must have scroll,
       previous/next controls and a useful whole-page fit.
-- [ ] Make the opening Studio changes perceptible at README size while keeping
+- [x] Make the opening Studio changes perceptible at README size while keeping
       the shelf palette restrained rather than vivid.
-- [ ] Rebuild README screenshots and both `demo.webp` and seekable `demo.mp4`,
+- [x] Rebuild README screenshots and both `demo.webp` and seekable `demo.mp4`,
       inspect native stills plus dense frame ranges, then promote the pair
       atomically. Stop the exclusive `:1420` server afterward.
 
 ### Sources and portability already implemented; keep gated
 
-- [ ] Confirm broad inert text/code/data/HTML, DOCX, XLSX and PPTX extraction,
+- [x] Confirm broad inert text/code/data/HTML, DOCX, XLSX and PPTX extraction,
       500-character managed `Pasted text.txt`, smart table/code/data paste, and
       block copy/download for images, video, tables, code and other portable
       content in the final focused gates.
-- [ ] Image prompt handoff remains explicit reader opt-in only. Text veil stays
+- [x] Image prompt handoff remains explicit reader opt-in only. Text veil stays
       off by default and is risk reduction, not a promise of anonymity.
+- [x] Reusing the same PDF in a follow-up keeps one content-addressed attachment,
+      source manifest and coverage ledger instead of re-uploading/re-ingesting.
+- [x] Keep the twenty new emblem programs unique and append-only, and keep the
+      onboarding Agent preview isolated from the first-use credential sheet.
+- [x] Structured paste must never silently truncate rows, misclassify ordinary
+      comma prose, overflow an unsplittable table, or escape a code block. Cover
+      compact JSON/code and rich clipboard payloads explicitly.
+- [x] Block portability must preserve original bytes, MIME and file extension
+      for every accepted image/video type, including image-row children.
 
 ## 🚧 ACTIVE — in-book AI agent (implemented, unreleased, awaiting owner review)
 
@@ -93,9 +104,9 @@ fail-closed for preserve-all requests until verified full-page rastering exists
 (embedded JPEG figures are supporting evidence only, and there is no OCR).
 Text veil protects recognizable text, not pixels in attached images or scanned
 PDF pages, and the UI says so. The selected-text path uses an integrated native-
-page render, not an inline text diff. Owner acceptance is now the release gate;
-only after explicit authorisation should this tree be committed, versioned,
-described in release notes, pushed, tagged or published.
+page render, not an inline text diff. The owner authorised small local atomic
+commits as safety checkpoints. Versioning, release-note finalisation, pushing,
+tagging and publication still require a later explicit go-ahead.
 
 A redacted live-provider compatibility smoke exercised both supplied key classes
 against the exact 23-tool production catalogue. It found and removed two

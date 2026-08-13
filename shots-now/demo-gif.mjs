@@ -20,6 +20,16 @@
  * tour while curating the strongest specimens: stationery, kittens, media,
  * diagrams, maths/code and linked notes. Contents and thumbnails are each used
  * once; real turns join the nearby spreads; every book panel gets its own beat.
+ * Midway, the native Agent gets one unhurried documentary sequence: a reader
+ * asks a question, then asks for study pages; the visible plan, actions,
+ * native-page self-review, final preview and explicit approval advance on a
+ * deterministic bridge. The words are frozen, human-vetted Cohere-authored
+ * representative output from `fixtures/ai-agent-study-notes.md`. Playback
+ * never calls a provider or saves an Agent row. The approval does exercise
+ * BookView's real Script parser/page insertion seam, shows the resulting pages,
+ * then returns to Welcome's own writing exercise for a direct edit without
+ * disturbing the Agent's reviewed layout. The exact pre-demo book is restored
+ * before the ordinary tour continues.
  *
  * ## The loop is the constraint that shapes everything
  *
@@ -70,8 +80,18 @@
  *   npm run dev          (a dev server on :1420)
  *   node shots-now/demo-gif.mjs --gifsmith-local=file:///C:/path/to/gifsmith/dist/index.js
  *   node shots-now/demo-gif.mjs --check     (dry run + contact sheet, no encode)
+ *   node shots-now/demo-gif.mjs --qa-only   (render staged WebP + MP4, do not publish)
+ *   node shots-now/demo-gif.mjs --promote-only (publish an accepted staged pair)
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import {
   SHOWCASE_BINDINGS,
   SHOWCASE_FLOORS,
@@ -255,7 +275,21 @@ async function waitForPanelClosed(page, ctx, selector, label = selector) {
 
 /** Exact source-resolution QA poses; ignored by git, useful before encoding. */
 async function writeQaStill(page, slug) {
-  const png = await page.screenshot({ type: 'png' });
+  const capture = async () => page.screenshot({ type: 'png' });
+  let png = await capture();
+  // A root-scale camera shot can occasionally hit Chromium's empty
+  // pre-composite surface even though the deterministic film frames around it
+  // are correct. Treat a near-solid full-frame PNG as missing evidence, wait a
+  // real compositor turn, and retry once. The byte threshold is deliberately
+  // far below every genuine 1360×850 app still (normally 100–500KB) and above
+  // the 12KB flat-parchment failure observed in this workflow.
+  if (png.length < 40_000) {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    png = await capture();
+  }
+  if (png.length < 40_000) {
+    throw new Error(`demo-gif: QA still ${slug} captured an empty compositor surface`);
+  }
   writeFileSync(`${QA_DIR}/target-${slug}.png`, png);
 }
 
@@ -305,12 +339,41 @@ async function cursorClickPoint(
 async function sceneScroll(page, ctx, selector, destination, durationMs) {
   const range = await page.evaluate(({ selector, destination }) => {
     const subject = document.querySelector(selector);
-    const scroller = subject?.closest('.nb-rail-panel-body');
+    const scroller = subject?.closest('.nb-ai-agent-scroll')
+      ?? subject?.closest('.nb-rail-panel-body');
     if (!(subject instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return null;
 
     const from = scroller.scrollTop;
     if (destination === 'end') {
       return { from, to: Math.max(0, scroller.scrollHeight - scroller.clientHeight) };
+    }
+
+    if (destination === 'start') {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const subjectRect = subject.getBoundingClientRect();
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const root = document.querySelector('#root');
+      let cameraScale = 1;
+      if (root instanceof HTMLElement) {
+        try {
+          const parsed = JSON.parse(root.dataset.demoCamera ?? '');
+          if (Number.isFinite(parsed?.scale) && parsed.scale > 0) {
+            cameraScale = parsed.scale;
+          }
+        } catch {
+          // An ordinary untransformed product frame uses CSS-pixel deltas.
+        }
+      }
+      return {
+        from,
+        // DOMRect is in transformed viewport pixels; scrollTop is in the
+        // scroller's untransformed CSS pixels. Mixing them overshot long Agent
+        // journeys whenever the documentary camera was already zoomed.
+        to: Math.max(
+          0,
+          Math.min(max, from + ((subjectRect.top - scrollerRect.top) / cameraScale) - 10),
+        ),
+      };
     }
 
     subject.scrollIntoView({ block: 'nearest', behavior: 'instant' });
@@ -325,7 +388,9 @@ async function sceneScroll(page, ctx, selector, destination, durationMs) {
     const p = step / steps;
     const eased = 1 - ((1 - p) ** 3);
     await page.evaluate(({ selector, top }) => {
-      const scroller = document.querySelector(selector)?.closest('.nb-rail-panel-body');
+      const subject = document.querySelector(selector);
+      const scroller = subject?.closest('.nb-ai-agent-scroll')
+        ?? subject?.closest('.nb-rail-panel-body');
       if (scroller instanceof HTMLElement) scroller.scrollTop = top;
     }, { selector, top: range.from + ((range.to - range.from) * eased) });
     await advanceScene(page, ctx, durationMs / steps);
@@ -362,6 +427,205 @@ async function sceneScrollInline(page, ctx, selector, durationMs) {
 }
 
 /**
+ * A quiet documentary camera for the dense Agent panel.
+ *
+ * The product itself does not zoom its chrome. The README film does, because
+ * 1360px is encoded down to 900px and a readable conversation would otherwise
+ * become thumbnail text. This transform is recording-only, advances at exact
+ * scene-frame boundaries, and always returns to identity before the next real
+ * product interaction. Reframing from an existing focus works from the
+ * untransformed geometry, so it never compounds scale or drifts.
+ */
+async function sceneCameraFocus(
+  page,
+  ctx,
+  selector,
+  {
+    scale = 1.18,
+    centerX = 365,
+    centerY = 470,
+    durationMs = 420,
+  } = {},
+) {
+  const movement = await page.evaluate(
+    ({ wanted, scale: nextScale, centerX: wantedX, centerY: wantedY }) => {
+      const root = document.querySelector('#root');
+      const subject = document.querySelector(wanted);
+      if (!(root instanceof HTMLElement) || !(subject instanceof HTMLElement)) return null;
+      const current = (() => {
+        try {
+          const parsed = JSON.parse(root.dataset.demoCamera ?? '');
+          if (
+            Number.isFinite(parsed?.tx) &&
+            Number.isFinite(parsed?.ty) &&
+            Number.isFinite(parsed?.scale) &&
+            parsed.scale > 0
+          ) return parsed;
+        } catch {
+          // First focus starts at the untransformed application frame.
+        }
+        return { tx: 0, ty: 0, scale: 1 };
+      })();
+      const rect = subject.getBoundingClientRect();
+      if (rect.width < 8 || rect.height < 8) return null;
+      const baseCenterX = (((rect.left + rect.right) / 2) - current.tx) / current.scale;
+      const baseCenterY = (((rect.top + rect.bottom) / 2) - current.ty) / current.scale;
+      return {
+        from: current,
+        to: {
+          tx: wantedX - (baseCenterX * nextScale),
+          ty: wantedY - (baseCenterY * nextScale),
+          scale: nextScale,
+        },
+      };
+    },
+    { wanted: selector, scale, centerX, centerY },
+  );
+  if (movement === null) {
+    throw new Error(`demo-gif: camera subject is not visible (${selector})`);
+  }
+
+  const steps = Math.max(3, Math.ceil(durationMs / 70));
+  for (let step = 1; step <= steps; step += 1) {
+    const p = step / steps;
+    const eased = p * p * (3 - (2 * p));
+    const frame = {
+      tx: movement.from.tx + ((movement.to.tx - movement.from.tx) * eased),
+      ty: movement.from.ty + ((movement.to.ty - movement.from.ty) * eased),
+      scale: movement.from.scale + ((movement.to.scale - movement.from.scale) * eased),
+    };
+    await page.evaluate((next) => {
+      const root = document.querySelector('#root');
+      if (!(root instanceof HTMLElement)) return;
+      root.style.transformOrigin = '0 0';
+      root.style.willChange = 'transform';
+      root.style.transform = `translate3d(${next.tx}px, ${next.ty}px, 0) scale(${next.scale})`;
+      root.dataset.demoCamera = JSON.stringify(next);
+    }, frame);
+    await advanceScene(page, ctx, durationMs / steps);
+  }
+}
+
+async function sceneCameraReset(page, ctx, durationMs = 420) {
+  const from = await page.evaluate(() => {
+    const root = document.querySelector('#root');
+    if (!(root instanceof HTMLElement)) return null;
+    try {
+      const parsed = JSON.parse(root.dataset.demoCamera ?? '');
+      if (
+        Number.isFinite(parsed?.tx) &&
+        Number.isFinite(parsed?.ty) &&
+        Number.isFinite(parsed?.scale)
+      ) return parsed;
+    } catch {
+      // A missing camera pose is already identity.
+    }
+    return null;
+  });
+  if (from === null) return;
+
+  const steps = Math.max(3, Math.ceil(durationMs / 70));
+  for (let step = 1; step <= steps; step += 1) {
+    const p = step / steps;
+    const eased = p * p * (3 - (2 * p));
+    const frame = {
+      tx: from.tx * (1 - eased),
+      ty: from.ty * (1 - eased),
+      scale: from.scale + ((1 - from.scale) * eased),
+    };
+    await page.evaluate((next) => {
+      const root = document.querySelector('#root');
+      if (!(root instanceof HTMLElement)) return;
+      root.style.transform = `translate3d(${next.tx}px, ${next.ty}px, 0) scale(${next.scale})`;
+      root.dataset.demoCamera = JSON.stringify(next);
+    }, frame);
+    await advanceScene(page, ctx, durationMs / steps);
+  }
+  await page.evaluate(() => {
+    const root = document.querySelector('#root');
+    if (!(root instanceof HTMLElement)) return;
+    root.style.removeProperty('transform');
+    root.style.removeProperty('transform-origin');
+    root.style.removeProperty('will-change');
+    delete root.dataset.demoCamera;
+  });
+}
+
+/**
+ * Remove the documentary crop between captured frames.
+ *
+ * A modal is viewport-level while the camera transform lives on `#root`.
+ * Interpolating that root after the modal trigger produced the reported run
+ * of flat pink frames: the old translated app left the viewport before the
+ * portalled reviewer had painted.  Modal hand-offs use this atomic reset and
+ * then spend two populated compositor frames at honest product geometry.
+ */
+async function sceneCameraSnapReset(page, ctx, label = 'camera snap') {
+  const populated = await page.evaluate(() => {
+    const root = document.querySelector('#root');
+    if (!(root instanceof HTMLElement)) return false;
+    root.style.removeProperty('transform');
+    root.style.removeProperty('transform-origin');
+    root.style.removeProperty('will-change');
+    delete root.dataset.demoCamera;
+    return root.getBoundingClientRect().width > 100 &&
+      document.querySelector('.nb-spread-stage, .shelf-stage') !== null;
+  });
+  if (!populated) throw new Error(`demo-gif: ${label} lost the application frame`);
+  await advanceSceneFrames(page, ctx, 2);
+}
+
+async function sceneType(page, ctx, selector, value, delayMs = 18) {
+  const focused = await page.evaluate((wanted) => {
+    const field = document.querySelector(wanted);
+    if (!(field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement)) return false;
+    field.focus();
+    return true;
+  }, selector);
+  if (!focused) throw new Error(`demo-gif: typing field is unavailable (${selector})`);
+  for (const character of value) {
+    await page.keyboard.type(character);
+    await advanceScene(page, ctx, delayMs);
+  }
+}
+
+/**
+ * A camera can make an element's centre land on screen while its scroller is
+ * still clipping the top. Assert against the actual visible band before a QA
+ * still—or an expensive encode—can claim a complete prompt card was shown.
+ */
+async function assertAgentCardFullyVisible(page, selector, label) {
+  const metrics = await page.evaluate((wanted) => {
+    const card = document.querySelector(wanted);
+    const scroller = card?.closest('.nb-ai-agent-scroll');
+    if (!(card instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return null;
+    const cardRect = card.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    return {
+      cardTop: cardRect.top,
+      cardBottom: cardRect.bottom,
+      cardHeight: cardRect.height,
+      scrollerTop: scrollerRect.top,
+      scrollerBottom: scrollerRect.bottom,
+      scrollerHeight: scrollerRect.height,
+      visible:
+        cardRect.top >= scrollerRect.top - 1 &&
+        cardRect.bottom <= scrollerRect.bottom + 1,
+    };
+  }, selector);
+  if (metrics === null || !metrics.visible) {
+    throw new Error(
+      `demo-gif: ${label} is clipped by the Agent transcript (${JSON.stringify(metrics)})`,
+    );
+  }
+  console.log(
+    `[demo-gif] ${label} fully visible ` +
+    `(card ${metrics.cardTop.toFixed(1)}..${metrics.cardBottom.toFixed(1)}, ` +
+    `scroller ${metrics.scrollerTop.toFixed(1)}..${metrics.scrollerBottom.toFixed(1)})`,
+  );
+}
+
+/**
  * Wait until every mounted spine has finished baking before a declared hold.
  * The temporal review caught lo/hi arrivals two seconds into holds at f0206
  * and f0322; `ctx.advance` alone cannot see worker completions.
@@ -376,6 +640,8 @@ const opt = (name, fallback) => {
   return hit ? hit.split('=').slice(1).join('=') : fallback;
 };
 const CHECK = args.includes('--check');
+const QA_ONLY = args.includes('--qa-only');
+const PROMOTE_ONLY = args.includes('--promote-only');
 const URL_BASE = opt('url', 'http://localhost:1420');
 
 /*
@@ -384,6 +650,16 @@ const URL_BASE = opt('url', 'http://localhost:1420');
  * picture of the product. Both are the same two the README shots take.
  */
 const APP_URL = `${URL_BASE}/?fx=force&dev=0`;
+
+const AGENT_DEMO = Object.freeze({
+  fixture: 'shots-now/fixtures/ai-agent-study-notes.md',
+  provenance: 'shots-now/fixtures/ai-agent-study-notes.provenance.json',
+  playback: 'frozen representative output; no provider request; reversible real page insertion',
+  explainRequest:
+    'Can you explain Huffman coding with kittens?',
+  buildRequest:
+    'Great — turn that into three study-note pages and use the kitten infographic I attached.',
+});
 
 /*
  * The anchor sees the cursor before its first journey. Bring it back to this
@@ -405,6 +681,48 @@ mkdirSync(OUT_DIR, { recursive: true });
  */
 const QA_DIR = 'qa/demo';
 mkdirSync(QA_DIR, { recursive: true });
+const DEMO_OUT = `${OUT_DIR}/demo.webp`;
+const DEMO_STAGING = `${QA_DIR}/demo.next.webp`;
+const DEMO_MP4 = `${QA_DIR}/demo.mp4`;
+const DEMO_MP4_STAGING = `${QA_DIR}/demo.next.mp4`;
+
+/**
+ * Publish the README film and its seekable review copy as one recoverable pair.
+ * Windows reviewers commonly keep the MP4 open, which can lock that target;
+ * replacing the WebP first would then leave two different cuts. Back up both
+ * current outputs, move both staged outputs, and restore the old pair on any
+ * failure. Gifsmith already publishes the staging pair atomically; this is the
+ * outer repo-level transaction from qa/ into their final destinations.
+ */
+function promoteDemoPair() {
+  const files = [
+    { staged: DEMO_MP4_STAGING, final: DEMO_MP4, backup: `${DEMO_MP4}.previous` },
+    { staged: DEMO_STAGING, final: DEMO_OUT, backup: `${DEMO_OUT}.previous` },
+  ];
+  for (const file of files) rmSync(file.backup, { force: true });
+  const backedUp = [];
+  const promoted = [];
+  try {
+    for (const file of files) {
+      if (!existsSync(file.final)) continue;
+      copyFileSync(file.final, file.backup);
+      backedUp.push(file);
+    }
+    // Try the reviewer-held MP4 first. If it is locked, the README WebP has
+    // not moved yet and the published pair remains untouched.
+    for (const file of files) {
+      renameSync(file.staged, file.final);
+      promoted.push(file);
+    }
+    for (const file of backedUp) rmSync(file.backup, { force: true });
+  } catch (error) {
+    for (const file of promoted.reverse()) rmSync(file.final, { force: true });
+    for (const file of backedUp) {
+      if (existsSync(file.backup)) renameSync(file.backup, file.final);
+    }
+    throw error;
+  }
+}
 
 const [FLOOR_1, FLOOR_2, FLOOR_3] = SHOWCASE_FLOORS;
 const SEEDED_TITLES = SHOWCASE_TITLES;
@@ -436,15 +754,21 @@ const EXPECTED_SHELF_BOOKS = SEEDED_TITLES.length + 1; // the authored Welcome b
  */
 const STUDIO_TOUR = [
   { strip: 'Room presets', name: 'Gilt Salon' },
-  // Card Room is outside the authored five-card strip. The loop below keeps it
-  // in its original place in the tour through the real full picker.
-  { strip: 'Room presets', name: 'Card Room', picker: 'room-preset' },
-  { strip: 'Room presets', name: 'Carnival' },
+  // Near-black pointed bays after the golden salon remain legible even in a
+  // 900px README film; the old bright-to-bright Carnival step read as only a
+  // colour flicker once the whole shelf was reduced.
+  { strip: 'Room presets', name: 'Chapter House' },
   { strip: 'Bookcase build', name: 'Atelier' },
+  // A second direct carpentry press communicates structural range without
+  // detouring into a search sheet in the middle of a visual tour.
+  { strip: 'Bookcase build', name: 'Ladder Shelf' },
   // The carving/timber treatment is its own axis. Keep this explicit in the
   // film: changing only the build was previously easy to mistake for showing
   // the whole of shelf customisation.
-  { strip: 'Timber pattern', name: 'Fluted' },
+  // A high-relief bead-and-quirk is available directly in the inline strip,
+  // so this remains one obvious click instead of detouring through a search
+  // sheet. It also survives README scale better than the old shallow fluting.
+  { strip: 'Timber pattern', name: 'Bead & Quirk' },
   { strip: 'Wallpaper', name: 'Watered Silk' },
   { strip: 'Library colours', name: 'Limed Oak' },
   {
@@ -821,169 +1145,33 @@ const tl = timeline((t) => {
   t.cue('studio');
 
   for (const step of STUDIO_TOUR) {
-    if (step.picker === 'room-preset') {
-      /* Card Room is intentionally outside the five-card preset strip. Keep
-       * the scene in its original Gilt → Card → Carnival place and show the
-       * real way a reader reaches it: more, search, apply, back. */
-      t.click('[aria-label="Room presets"] .nb-strip-more', { via: 'cursor' });
-      t.call(async function landRoomPresetPicker(page, ctx) {
-        try {
-          await settleScene(
-            ctx,
-            page.waitForFunction(() => {
-              const studio = document.querySelector('.nb-library-studio');
-              const picker = document.querySelector('.nb-pick');
-              const input = document.querySelector('.nb-pick-search input');
-              const cardRoom = document.querySelector('.nb-pick-card[aria-label^="Card Room"]');
-              if (
-                !(studio instanceof HTMLElement) ||
-                !(picker instanceof HTMLElement) ||
-                !(input instanceof HTMLInputElement) ||
-                !(cardRoom instanceof HTMLElement)
-              ) return false;
-              const pickerRect = picker.getBoundingClientRect();
-              const inputRect = input.getBoundingClientRect();
-              const visibleCards = [...document.querySelectorAll('.nb-pick-card')].filter((candidate) => {
-                if (!(candidate instanceof HTMLElement)) return false;
-                const rect = candidate.getBoundingClientRect();
-                return rect.width > 20 && rect.height > 20 &&
-                  rect.left < innerWidth && rect.right > 0 &&
-                  rect.top < innerHeight && rect.bottom > 0;
-              });
-              return (
-                studio.dataset.sheet === 'preset' &&
-                pickerRect.width > 40 && pickerRect.height > 40 &&
-                pickerRect.left < innerWidth && pickerRect.right > 0 &&
-                pickerRect.top < innerHeight && pickerRect.bottom > 0 &&
-                inputRect.width > 20 && inputRect.height > 10 &&
-                inputRect.left < innerWidth && inputRect.right > 0 &&
-                inputRect.top < innerHeight && inputRect.bottom > 0 &&
-                visibleCards.length > 0
-              );
-            }, { timeout: 15_000 }),
-            { capMs: 15_000, label: 'open the room-preset picker' },
-          );
-        } catch (cause) {
-          const state = await page.evaluate(() => {
-            const rectOf = (selector) => {
-              const element = document.querySelector(selector);
-              if (!(element instanceof HTMLElement)) return null;
-              const rect = element.getBoundingClientRect();
-              return {
-                left: Math.round(rect.left),
-                top: Math.round(rect.top),
-                right: Math.round(rect.right),
-                bottom: Math.round(rect.bottom),
-                width: Math.round(rect.width),
-                height: Math.round(rect.height),
-              };
-            };
-            const cards = [...document.querySelectorAll('.nb-pick-card')];
-            const visibleCards = cards.filter((candidate) => {
-              if (!(candidate instanceof HTMLElement)) return false;
-              const rect = candidate.getBoundingClientRect();
-              return rect.width > 20 && rect.height > 20 &&
-                rect.left < innerWidth && rect.right > 0 &&
-                rect.top < innerHeight && rect.bottom > 0;
-            });
-            return {
-              sheet: document.querySelector('.nb-library-studio')?.getAttribute('data-sheet'),
-              pickerRect: rectOf('.nb-pick'),
-              searchRect: rectOf('.nb-pick-search input'),
-              cardRoomRect: rectOf('.nb-pick-card[aria-label^="Card Room"]'),
-              cardCount: cards.length,
-              visibleCardCount: visibleCards.length,
-              bodyScrollTop: document.querySelector('.nb-rail-panel-body')?.scrollTop ?? null,
-            };
-          });
-          throw new Error(
-            `demo-gif: room-preset picker did not open (${JSON.stringify(state)})`,
-            { cause },
-          );
-        }
-        await advanceSceneFrames(page, ctx, 1);
-      }, { name: 'land room-preset picker', seconds: 0.2 });
-      t.click('.nb-pick-search input', { via: 'cursor' });
-      t.call(async function searchForCardRoom(page, ctx) {
-        await page.evaluate(() => {
-          const input = document.querySelector('.nb-pick-search input');
-          if (!(input instanceof HTMLInputElement)) {
-            throw new Error('demo-gif: room preset search did not mount');
-          }
-          input.value = '';
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        });
-        for (const character of 'Card Room') {
-          await page.keyboard.type(character);
-          await advanceScene(page, ctx, 45);
-        }
-        await settleScene(
-          ctx,
-          page.waitForFunction(() => {
-            const input = document.querySelector('.nb-pick-search input');
-            const card = document.querySelector('.nb-pick-card[aria-label^="Card Room"]');
-            if (!(input instanceof HTMLInputElement) || !(card instanceof HTMLElement)) return false;
-            const rect = card.getBoundingClientRect();
-            return input.value === 'Card Room' &&
-              rect.width > 20 && rect.height > 20 &&
-              rect.left < innerWidth && rect.right > 0 &&
-              rect.top < innerHeight && rect.bottom > 0;
-          }, { timeout: 5_000 }),
-          { capMs: 5_000, label: 'filter the room-preset picker to Card Room' },
-        );
-        await advanceSceneFrames(page, ctx, 1);
-      }, { name: 'search for Card Room', seconds: 0.5 });
-      t.click('.nb-pick-card[aria-label^="Card Room"]', { via: 'cursor' });
-      t.call(async function applyCardRoom(page, ctx) {
-        await waitForStudioChoice(
-          page,
-          ctx,
-          '.nb-pick-card[aria-label^="Card Room"]',
-          'Card Room',
-        );
-      }, { name: 'apply Card Room', seconds: 0.65 });
-      t.hold(0.65);
-      t.click('.nb-pick-back', { via: 'cursor' });
-      t.call(async function returnFromRoomPresetPicker(page, ctx) {
-        await settleScene(
-          ctx,
-          page.waitForFunction(() => {
-            const studio = document.querySelector('.nb-library-studio');
-            const carnival = document.querySelector(
-              '[aria-label="Room presets"] .nb-strip-tile[aria-label^="Carnival"]',
-            );
-            if (!(studio instanceof HTMLElement) || !(carnival instanceof HTMLElement)) return false;
-            const rect = carnival.getBoundingClientRect();
-            return studio.dataset.sheet === 'none' && rect.width > 20 && rect.height > 20;
-          }, { timeout: 15_000 }),
-          { capMs: 15_000, label: 'return from the room-preset picker' },
-        );
-        await advanceSceneFrames(page, ctx, 2);
-      }, { name: 'return from room-preset picker', seconds: 0.2 });
-      t.hold(0.25);
-      continue;
-    }
     const selector = tileSelector(step);
     // A pick can rebuild every preview card because its art depends on the
     // applied room. Wait for the named successor to exist after that rebuild;
     // otherwise a fast capture can scroll/click the one-frame gap and silently
     // omit a choice from the film.
     t.call(async function waitForStudioTile(page, ctx) {
-      await settleScene(
-        ctx,
-        page.waitForFunction(
-          (wanted) => {
-            const option = document.querySelector(wanted);
-            const studio = document.querySelector('.nb-library-studio');
-            if (!(option instanceof HTMLElement) || !(studio instanceof HTMLElement)) return false;
-            const rect = option.getBoundingClientRect();
-            return studio.dataset.sheet === 'none' && rect.width > 8 && rect.height > 8;
-          },
-          { timeout: 15_000 },
-          selector,
-        ),
-        { capMs: 15_000, label: `find ${step.name ?? step.strip} in Library studio` },
-      );
+      try {
+        await settleScene(
+          ctx,
+          page.waitForFunction(
+            (wanted) => {
+              const option = document.querySelector(wanted);
+              const studio = document.querySelector('.nb-library-studio');
+              if (!(option instanceof HTMLElement) || !(studio instanceof HTMLElement)) return false;
+              const rect = option.getBoundingClientRect();
+              return studio.dataset.sheet === 'none' && rect.width > 8 && rect.height > 8;
+            },
+            { timeout: 15_000 },
+            selector,
+          ),
+          { capMs: 15_000, label: `find ${step.name ?? step.strip} in Library studio` },
+        );
+      } catch (error) {
+        throw new Error(`demo-gif: studio option ${step.strip} / ${step.name ?? step.index} did not become ready`, {
+          cause: error,
+        });
+      }
     }, { name: `find ${step.name ?? `${step.strip} #${step.index}`}`, seconds: 0.08 });
     // Bring it into the sheet's own scroll before pointing at it — the later
     // axes are below the fold, and a cursor glide to an off-screen tile lands
@@ -1083,110 +1271,27 @@ const tl = timeline((t) => {
   t.waitFor('.pulled-book');
   // Let the hinge, the arc and the overshoot finish before touching it.
   t.hold(1.1);
-  /*
-   * A REAL pointer, which `via: 'cursor'` gives. The cover listens for pointer
-   * events, so a synthetic `element.click()` does nothing at all — checked,
-   * because it silently left the demo on the shelf for the rest of the scene.
-   *
-   * The click is also a route boundary: the pulled cover unmounts and the live
-   * spread mounts in one product frame. Chrome's View Transition API looked
-   * right in a live dry run but `Page.captureScreenshot` did not expose its
-   * pseudo-layer to deterministic capture, so the encoded demo still hard-cut.
-   *
-   * Keep an exact, full-resolution photograph of the REAL pre-click frame over
-   * the route swap, split it at the book's gutter, then part the two OPAQUE
-   * halves over the REAL live spread. A crossfade is the wrong transition for
-   * two detailed scenes: its middle necessarily shows the cover, shelf and
-   * readable pages at once. The centre reveal gives every pixel one owner and
-   * still reads as the same book opening. Transform is stepped on gifsmith's
-   * scene clock, so every intermediate paint is guaranteed to become an
-   * output frame. The synthetic cursor is hidden only while the photograph is
-   * taken and remains live/crisp above it.
-   */
-  t.call(async function stageRealBookHandoff(page) {
-    const cursorVisibility = await page.evaluate(() => {
-      const cursor = document.getElementById('__gifsmith_cursor');
-      if (cursor === null) return null;
-      const before = cursor.style.visibility;
-      cursor.style.visibility = 'hidden';
-      return before;
-    });
-    const pngBase64 = await page.screenshot({ type: 'png', encoding: 'base64' });
-    await page.evaluate((visibility) => {
-      const cursor = document.getElementById('__gifsmith_cursor');
-      if (cursor !== null) cursor.style.visibility = visibility ?? '';
-    }, cursorVisibility);
-    const dataUrl = `data:image/png;base64,${pngBase64}`;
-    const staged = await page.evaluate(async (src) => {
-      if (!document.querySelector('.pulled-book')) return false;
-      document.getElementById('__demo-book-handoff')?.remove();
-      const handoff = document.createElement('div');
-      handoff.id = '__demo-book-handoff';
-      handoff.style.cssText = [
-        'position:fixed',
-        'inset:0',
-        'overflow:hidden',
-        'pointer-events:none',
-        // Above the app + captured bezel, below gifsmith's live cursor/ripple.
-        'z-index:2147483640',
-      ].join(';');
-
-      const half = (side) => {
-        const image = document.createElement('img');
-        image.alt = '';
-        image.src = src;
-        image.dataset.demoHandoffHalf = side;
-        image.style.cssText = [
-          'position:absolute',
-          'inset:0',
-          'width:100%',
-          'height:100%',
-          'object-fit:fill',
-          `clip-path:${side === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)'}`,
-          'transform:translate3d(0,0,0)',
-          'will-change:transform',
-        ].join(';');
-        handoff.append(image);
-        return image;
-      };
-
-      const halves = [half('left'), half('right')];
-      document.body.append(handoff);
-      try {
-        await Promise.all(halves.map((image) => image.decode()));
-      } catch {
-        handoff.remove();
-        return false;
-      }
-      return halves.every((image) => image.complete && image.naturalWidth > 0);
-    }, dataUrl);
-    if (!staged) throw new Error('demo-gif: cannot stage cover-to-spread handoff');
-  }, { name: 'stage real cover-to-spread handoff' });
+  // Use the product route exactly as a reader does. The old recording-only
+  // split-screen photograph made the cover fly apart like a slide transition
+  // and concealed the real opening fallback. Keeping the real pointer, pulled
+  // cover, BookOpening sheet and first live spread gives the film the same
+  // visual contract as the shipped app.
   t.click('.pulled-book', { via: 'cursor' });
   t.waitFor('.nb-prose');
-  t.call(async function revealRealBookHandoff(page, ctx) {
-    const steps = Math.max(7, Math.round(440 / Math.max(1, ctx?.frameMs || 63)));
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const eased = t * t * (3 - 2 * t);
-      const present = await page.evaluate((progress) => {
-        const handoff = document.getElementById('__demo-book-handoff');
-        const left = handoff?.querySelector('[data-demo-handoff-half="left"]');
-        const right = handoff?.querySelector('[data-demo-handoff-half="right"]');
-        if (!(left instanceof HTMLImageElement) || !(right instanceof HTMLImageElement)) {
-          return false;
-        }
-        // Each image is viewport-wide but exposes one half, so 50% clears it.
-        left.style.transform = `translate3d(${-50 * progress}%,0,0)`;
-        right.style.transform = `translate3d(${50 * progress}%,0,0)`;
-        return true;
-      }, eased);
-      if (!present) throw new Error('demo-gif: staged book handoff disappeared early');
-      await advanceScene(page, ctx, 440 / steps);
-    }
-    await page.evaluate(() => document.getElementById('__demo-book-handoff')?.remove());
-  }, { name: 'reveal real cover-to-spread handoff', seconds: 0.44 });
-  t.hold(1.1);
+  t.call(async function settleRealBookOpening(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelector('.nb-prose') instanceof HTMLElement &&
+          document.querySelector('.pulled-book') === null &&
+          document.querySelector('.nb-book-opening') === null,
+        { timeout: 20_000 },
+      ),
+      { capMs: 20_000, label: 'settle the real product book opening' },
+    );
+    await advanceSceneFrames(page, ctx, 4);
+  }, { name: 'settle the real product book opening', seconds: 0.38 });
+  t.hold(1.25);
   t.cue('book');
   t.call(async function normalizeBookChrome(page, ctx) {
     // A failed prior check can leave the persistent thumbnail preference on.
@@ -1269,13 +1374,15 @@ const tl = timeline((t) => {
    * beat. A cache race therefore cannot turn a shorter demo pause into a blank
    * or rigid-fold frame.
    */
-  const turn = (expectedHeading, expectedSpread) => {
+  const turn = (expectedHeading, expectedSpread, { requireWarmCurl = true } = {}) => {
     // Keep the filmed curl on the warmed path. A real reader can use the live
     // fold fallback immediately; the demo can wait briefly and show the
     // richer curl rather than filming a cache race.
-    t.call(async function waitForWarmCurl(page, ctx) {
-      await waitForWarmNextFlip(page, ctx, expectedHeading);
-    }, { name: `warm curl before ${expectedHeading}`, seconds: 0.08 });
+    if (requireWarmCurl) {
+      t.call(async function waitForWarmCurl(page, ctx) {
+        await waitForWarmNextFlip(page, ctx, expectedHeading);
+      }, { name: `warm curl before ${expectedHeading}`, seconds: 0.08 });
+    }
     t.call(async function clickTheVisiblePageCorner(page, ctx) {
       const before = await page.$eval('[data-spread-index]', (node) =>
         Number(node.getAttribute('data-spread-index')),
@@ -1652,6 +1759,496 @@ const tl = timeline((t) => {
   turn('Local video', 14);
   // spread 14: Local video · Stickers of your own
 
+  /* --------------------- 4a. the native Agent at work ------------------- */
+
+  /*
+   * This is a deterministic replay through the real panel and real disposable
+   * page renderer. It is deliberately placed in the middle of the book tour,
+   * not appended like a release-note advert. The Welcome book remains the
+   * visual context. Approval runs the browser-only bridge through BookView's
+   * real Script parser and page insertion seam; reset restores the exact
+   * pre-demo checkpoint before the ordinary tour resumes.
+   */
+  t.call(async function prepareFrozenAgentDemo(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => typeof globalThis.__aiAgentDemo?.reset === 'function',
+        { timeout: 30_000 },
+      ),
+      { capMs: 30_000, label: 'mount frozen Agent bridge' },
+    );
+    const publicMethods = await page.evaluate(() =>
+      Object.keys(globalThis.__aiAgentDemo ?? {}).sort()
+    );
+    if (publicMethods.join(',') !== 'advance,open,reset,state') {
+      throw new Error(
+        `demo-gif: unsafe or incomplete Agent bridge (${publicMethods.join(', ')})`,
+      );
+    }
+    // Placement in the fixture is "After the current page". The ordinary
+    // page turns leave keyboard focus on the prior leaf, so explicitly focus
+    // the visible right page before opening the Agent. That makes the filmed
+    // placement and the reversible insertion anchor the same real page.
+    const focusedVisiblePage = await page.evaluate(() => {
+      const editor = document.querySelector(
+        '.nb-leaf-paper[data-side="right"] .ProseMirror',
+      );
+      if (!(editor instanceof HTMLElement)) return false;
+      editor.focus({ preventScroll: true });
+      return true;
+    });
+    if (!focusedVisiblePage) {
+      throw new Error('demo-gif: the visible right page could not become the Agent insertion target');
+    }
+    await settleScene(
+      ctx,
+      page.evaluate(async () => {
+        await globalThis.__aiAgentDemo.reset('study-notes');
+        globalThis.__aiAgentDemo.open();
+      }),
+      { capMs: 10_000, label: 'reset and open frozen Agent scene' },
+    );
+    await waitForPanelOpen(page, ctx, '.nb-ai-agent', { label: 'AI Agent' });
+  }, { name: 'open the frozen native Agent demo', seconds: 0.65 });
+  t.cue('agent');
+  t.call(async function frameAgentComposer(page, ctx) {
+    await sceneCameraFocus(page, ctx, '.nb-ai-composer-wrap', {
+      scale: 1.2,
+      centerX: 375,
+      centerY: 665,
+      durationMs: 440,
+    });
+  }, { name: 'camera finds the Agent composer', seconds: 0.44 });
+  t.click('.nb-ai-composer textarea', { via: 'cursor', glideSeconds: 0.24 });
+  t.call(async function typeConversationQuestion(page, ctx) {
+    await sceneType(
+      page,
+      ctx,
+      '.nb-ai-composer textarea',
+      AGENT_DEMO.explainRequest,
+      185,
+    );
+  }, { name: 'type a conversation-only question at a human reading pace', seconds: 8.9 });
+  t.hold(0.9);
+  t.click('.nb-ai-send', { via: 'cursor', glideSeconds: 0.18 });
+  t.call(async function showConversationThinking(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-ai-working-whisper', { visible: true, timeout: 5_000 }),
+      { capMs: 5_000, label: 'show conversational thinking beat' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-working-whisper', 'nearest', 260);
+    await sceneCameraFocus(page, ctx, '.nb-ai-working-whisper', {
+      scale: 1.2,
+      centerX: 370,
+      centerY: 430,
+      durationMs: 300,
+    });
+    await writeQaStill(page, 'ai-agent-thinking-answer');
+  }, { name: 'Agent takes a small thinking breath', seconds: 0.62 });
+  t.hold(2.25);
+  t.call(async function showConversationAnswer(page, ctx) {
+    await settleScene(
+      ctx,
+      page.evaluate(() => globalThis.__aiAgentDemo.advance('answer')),
+      { capMs: 5_000, label: 'publish frozen answer-only response' },
+    );
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelectorAll('.nb-ai-message').length === 2 &&
+          document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'complete',
+        { timeout: 5_000 },
+      ),
+      { capMs: 5_000, label: 'land answer-only response' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-message[data-role="agent"]', 'nearest', 320);
+    await sceneCameraFocus(page, ctx, '.nb-ai-message[data-role="agent"]', {
+      scale: 1.22,
+      centerX: 365,
+      centerY: 385,
+      durationMs: 360,
+    });
+    await writeQaStill(page, 'ai-agent-answer');
+  }, { name: 'Agent answers without editing the book', seconds: 0.9 });
+  t.hold(2.05);
+
+  t.call(async function returnCameraToComposer(page, ctx) {
+    await sceneCameraFocus(page, ctx, '.nb-ai-composer-wrap', {
+      scale: 1.2,
+      centerX: 375,
+      centerY: 665,
+      durationMs: 360,
+    });
+  }, { name: 'camera returns to the follow-up', seconds: 0.36 });
+  t.click('.nb-ai-composer textarea', { via: 'cursor', glideSeconds: 0.2 });
+  t.call(async function typeNotebookRequest(page, ctx) {
+    await sceneType(
+      page,
+      ctx,
+      '.nb-ai-composer textarea',
+      AGENT_DEMO.buildRequest,
+      165,
+    );
+  }, { name: 'type the study-page follow-up at a human reading pace', seconds: 15.4 });
+  t.hold(0.9);
+  t.click('.nb-ai-send', { via: 'cursor', glideSeconds: 0.18 });
+
+  t.call(async function showNotebookThinking(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-ai-working-whisper', { visible: true, timeout: 5_000 }),
+      { capMs: 5_000, label: 'show notebook thinking beat' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-working-whisper', 'nearest', 260);
+    await sceneCameraFocus(page, ctx, '.nb-ai-working-whisper', {
+      scale: 1.18,
+      centerX: 370,
+      centerY: 440,
+      durationMs: 300,
+    });
+    await writeQaStill(page, 'ai-agent-thinking-pages');
+  }, { name: 'Agent imagines the page shape', seconds: 0.62 });
+  t.hold(2.2);
+
+  t.call(async function showAgentPlan(page, ctx) {
+    await settleScene(
+      ctx,
+      page.evaluate(() => globalThis.__aiAgentDemo.advance('plan')),
+      { capMs: 5_000, label: 'publish frozen Agent plan' },
+    );
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-ai-plan-card', { visible: true, timeout: 5_000 }),
+      { capMs: 5_000, label: 'land Agent plan' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-plan-card', 'nearest', 300);
+    await sceneCameraFocus(page, ctx, '.nb-ai-plan-card', {
+      scale: 1.2,
+      centerX: 365,
+      centerY: 390,
+      durationMs: 340,
+    });
+  }, { name: 'Agent plans the study pages', seconds: 0.9 });
+  t.hold(1.45);
+
+  t.call(async function showAgentSourceRead(page, ctx) {
+    await page.evaluate(() => globalThis.__aiAgentDemo.advance('read'));
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-ai-tool-card', { visible: true, timeout: 5_000 }),
+      { capMs: 5_000, label: 'land source-reading action' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-tool-card', 'nearest', 300);
+  }, { name: 'Agent reads the representative source', seconds: 0.65 });
+  t.hold(1.25);
+
+  t.call(async function showAgentDraftAction(page, ctx) {
+    await page.evaluate(() => globalThis.__aiAgentDemo.advance('draft'));
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelectorAll('.nb-ai-tool-card').length >= 2,
+        { timeout: 5_000 },
+      ),
+      { capMs: 5_000, label: 'land notebook-draft action' },
+    );
+    const cards = await page.$$('.nb-ai-tool-card');
+    if (cards.length < 2) throw new Error('demo-gif: draft action did not appear');
+    await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.nb-ai-tool-card')];
+      for (const card of cards) card.removeAttribute('data-demo-agent-action');
+      cards.at(-1)?.setAttribute('data-demo-agent-action', 'draft');
+    });
+    await sceneScroll(
+      page,
+      ctx,
+      '.nb-ai-tool-card[data-demo-agent-action="draft"]',
+      'nearest',
+      300,
+    );
+  }, { name: 'Agent builds native Notebook Script', seconds: 0.65 });
+  t.hold(1.2);
+
+  t.call(async function showAgentSelfReview(page, ctx) {
+    // Pagination measures the real, untransformed page geometry. The recording
+    // camera had been focused at 1.2x for the plan/actions; leaving that scale
+    // on #root while the disposable renderer mounted could turn the exact
+    // three-leaf fixture into a fourth spill leaf. Return to product identity
+    // before rendering, then frame the landed review card afterwards.
+    await sceneCameraReset(page, ctx, 320);
+    await settleScene(
+      ctx,
+      page.evaluate(() => globalThis.__aiAgentDemo.advance('review')),
+      { capMs: 60_000, label: 'render frozen pages for native self-review' },
+    );
+    await settleScene(
+      ctx,
+      page.waitForSelector('.nb-ai-review-gate', { visible: true, timeout: 15_000 }),
+      { capMs: 15_000, label: 'land native-page review gate' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-review-gate', 'nearest', 340);
+    await sceneCameraFocus(page, ctx, '.nb-ai-review-gate', {
+      scale: 1.22,
+      centerX: 365,
+      centerY: 420,
+      durationMs: 360,
+    });
+  }, { name: 'Agent inspects and repairs the real pages', seconds: 1.25 });
+  t.hold(1.7);
+
+  t.call(async function showAgentFinalPreview(page, ctx) {
+    await page.evaluate(() => globalThis.__aiAgentDemo.advance('ready'));
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => {
+          const preview = document.querySelector('.nb-ai-final-preview');
+          const images = [...document.querySelectorAll('.nb-ai-preview-stage img')];
+          return preview instanceof HTMLElement && images.length >= 2 && images.every(
+            (image) => image instanceof HTMLImageElement &&
+              image.complete && image.naturalWidth > 0,
+          );
+        },
+        { timeout: 20_000 },
+      ),
+      { capMs: 22_000, label: 'land reviewed native preview' },
+    );
+    await sceneScroll(page, ctx, '.nb-ai-final-preview', 'nearest', 460);
+    await sceneCameraFocus(page, ctx, '.nb-ai-final-head', {
+      scale: 1.18,
+      centerX: 365,
+      centerY: 300,
+      durationMs: 380,
+    });
+  }, { name: 'Agent presents the final preview', seconds: 1.05 });
+  t.hold(2.2);
+
+  t.call(async function prepareFullReviewedPageClick(page, ctx) {
+    // A viewport-level sheet must be opened from honest product geometry. The
+    // old choreography invoked HTMLElement.click() while resetting the camera,
+    // so the visible cursor never touched Review and a few flat transition
+    // frames could precede the modal.
+    await sceneCameraSnapReset(page, ctx, 'frame full-page review control');
+    await sceneScroll(page, ctx, '.nb-ai-preview-stage', 'nearest', 300);
+    await advanceSceneFrames(page, ctx, 2);
+  }, { name: 'frame the full-page review control', seconds: 0.46 });
+  t.click('.nb-ai-preview-stage', { via: 'cursor', glideSeconds: 0.32 });
+  t.call(async function waitForFullReviewedPage(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => {
+          const dialog = document.querySelector('.nb-ai-full-preview');
+          const image = dialog?.querySelector('.nb-ai-full-preview-canvas > img');
+          return dialog instanceof HTMLElement &&
+            image instanceof HTMLImageElement &&
+            image.complete && image.naturalWidth > 0 && image.naturalHeight > 0 &&
+            dialog.getBoundingClientRect().width > 700;
+        },
+        { timeout: 12_000 },
+      ),
+      { capMs: 12_000, label: 'open a populated full reviewed-page preview' },
+    );
+    await writeQaStill(page, 'ai-agent-full-preview');
+  }, { name: 'open one exact reviewed page', seconds: 0.5 });
+  t.hold(1.4);
+  t.click('.nb-ai-full-preview-nav button[aria-label="Next reviewed page"]', { via: 'cursor', glideSeconds: 0.24 });
+  t.call(async function showNextReviewedPage(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelector('.nb-ai-full-preview-nav')?.textContent?.includes('page 2 of 3') === true,
+        { timeout: 5_000 },
+      ),
+      { capMs: 5_000, label: 'show the next reviewed page' },
+    );
+    await advanceSceneFrames(page, ctx, 3);
+    await writeQaStill(page, 'ai-agent-full-preview-page-2');
+  }, { name: 'inspect the next reviewed page', seconds: 0.42 });
+  t.hold(1.35);
+  t.click('.nb-ai-full-preview .nb-ai-modal-close', { via: 'cursor', glideSeconds: 0.24 });
+  t.call(async function closeFullReviewedPage(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(() => document.querySelector('.nb-ai-full-preview') === null),
+      { capMs: 5_000, label: 'return from full reviewed-page preview' },
+    );
+    await advanceSceneFrames(page, ctx, 3);
+  }, { name: 'return to the insertion decision', seconds: 0.32 });
+
+  t.call(async function frameAgentApproval(page, ctx) {
+    // Reframe from product identity. Interpolating either between the two
+    // crops or back through the old crop's translated coordinates can drive
+    // the whole root outside the viewport. Snap recording-only camera state
+    // to identity between captured frames, hold that fully visible pose, then
+    // begin the deliberate approval focus from clean product geometry.
+    await sceneCameraReset(page, ctx, 420);
+    await sceneScroll(page, ctx, '.nb-ai-final-actions', 'end', 480);
+    await sceneCameraFocus(page, ctx, '.nb-ai-final-actions', {
+      scale: 1.15,
+      centerX: 390,
+      centerY: 610,
+      durationMs: 380,
+    });
+    // Capture after the second settled reframe. Chromium occasionally exposes
+    // a flat pre-composite surface immediately after the first root transform;
+    // this point is the same reviewed preview, now with its placement and
+    // insertion choice visible too.
+    await writeQaStill(page, 'ai-agent-preview');
+  }, { name: 'frame the final insertion choice', seconds: 0.62 });
+  t.hold(1.15);
+  t.call(async function explainInsertionBeforeItStarts(page, ctx) {
+    await page.evaluate(() => globalThis.__aiAgentDemo.advance('applying'));
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'applying' &&
+          document.body.textContent?.includes('Adding the three reviewed pages') === true,
+        { timeout: 5_000 },
+      ),
+      { capMs: 5_000, label: 'show the insertion preparation receipt' },
+    );
+    await writeQaStill(page, 'ai-agent-pages-settling');
+  }, { name: 'explain how the exact pages will settle', seconds: 0.55 });
+  t.hold(1.15);
+  t.click('.nb-ai-approve-action', { via: 'cursor', glideSeconds: 0.28 });
+  t.call(async function waitForReviewedPagesToLand(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => {
+          const state = globalThis.__aiAgentDemo?.state();
+          return state?.stage === 'inserted' && state.insertedPages === 3 &&
+            document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'complete';
+        },
+        { timeout: 60_000 },
+      ),
+      { capMs: 60_000, label: 'insert the three reviewed pages' },
+    );
+    await page.evaluate(() => {
+      const messages = [...document.querySelectorAll('.nb-ai-message[data-role="agent"]')];
+      messages.forEach((message) => message.removeAttribute('data-demo-inserted-message'));
+      messages.at(-1)?.setAttribute('data-demo-inserted-message', 'true');
+    });
+    await sceneScroll(page, ctx, '[data-demo-inserted-message="true"]', 'nearest', 320);
+    await writeQaStill(page, 'ai-agent-inserted');
+  }, { name: 'Agent inserts the reviewed pages', seconds: 1.25 });
+  t.hold(2.0);
+
+  t.call(async function leaveAgentCamera(page, ctx) {
+    await sceneCameraReset(page, ctx, 440);
+  }, { name: 'camera returns to the whole book', seconds: 0.44 });
+  t.click('[aria-label^="Close AI agent"]', { via: 'cursor', glideSeconds: 0.26 });
+  t.call(async function revealInsertedAgentPages(page, ctx) {
+    await waitForPanelClosed(page, ctx, '.nb-ai-agent', 'AI agent');
+    // The rail has closed, but BookView still needs captured scene time to
+    // recompute its fitted spread and paint the newly inserted editors. A
+    // real-time wait freezes Gifsmith's virtual clock here and can therefore
+    // wait forever for pixels that were never allowed to advance.
+    await advanceScene(page, ctx, 700);
+    const spread = await page.$eval('[data-spread-index]', (node) =>
+      Number(node.getAttribute('data-spread-index')),
+    );
+    if (spread !== 14) {
+      throw new Error(`demo-gif: Agent closed on spread ${spread}, expected the pre-insertion spread 14`);
+    }
+  }, { name: 'close the Agent over the real book', seconds: 0.75 });
+  t.hold(0.65);
+
+  // The insert operation never teleports the camera. Show the real product
+  // interaction instead: one deliberate curl reaches pages 1–2, a reading
+  // hold lets the large kitten infographic land, then one more curl reaches
+  // page 3. This replaces the old rapid automatic-looking page burst.
+  turn('Huffman Coding with Kittens', 15, { requireWarmCurl: false });
+  t.call(async function recordFirstInsertedSpread(page) {
+    const headings = await page.$$eval('.nb-leaf-paper h1', (nodes) =>
+      nodes.map((node) => node.textContent?.trim()),
+    );
+    if (
+      !headings.includes('Huffman Coding with Kittens') ||
+      !headings.includes('Build the Kitten Tree')
+    ) {
+      throw new Error(`demo-gif: first inserted spread is missing (${headings.join(' | ')})`);
+    }
+    await writeQaStill(page, 'ai-agent-inserted-pages');
+  }, { name: 'show the first two inserted pages', seconds: 0.12 });
+  t.hold(2.35);
+
+  // One ordinary, deliberate page curl proves that all three inserted leaves
+  // live in the book.  The prior cut jumped through thumbnails, so the third
+  // page was easy to miss and the insertion itself looked like rapid paging.
+  turn('Read, Check, Decode', 16, { requireWarmCurl: false });
+  t.hold(2.0);
+
+  t.click('.nb-rail button[aria-label^="Thumbnails strip"]', { via: 'cursor' });
+  t.waitFor('.nb-thumb-strip');
+  jumpWithThumbnail('Your first five minutes', 0, { hold: 0.85 });
+  t.click('.nb-rail button[aria-label^="Thumbnails strip"]', { via: 'cursor' });
+  t.waitUntil(() => document.querySelector('.nb-thumb-strip') === null);
+  t.call(async function placeCaretInWelcomeWritingPage(page) {
+    const paragraph = '.nb-leaf-paper[data-side="right"] .ProseMirror > p:first-of-type';
+    const focused = await page.evaluate((wanted) => {
+      const target = document.querySelector(wanted);
+      const editor = target?.closest('.ProseMirror');
+      if (!(target instanceof HTMLElement) || !(editor instanceof HTMLElement)) return false;
+      editor.focus();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return true;
+    }, paragraph);
+    if (!focused) throw new Error('demo-gif: Welcome writing page is unavailable');
+  }, { name: 'place the caret on Welcome’s writing exercise', seconds: 0.22 });
+  t.type(
+    '.nb-leaf-paper[data-side="right"] .ProseMirror',
+    ' — and this sentence is mine.',
+    { delayMs: 104 },
+  );
+  t.call(async function verifyWelcomePageWriting(page, ctx) {
+    await settleScene(
+      ctx,
+      page.waitForFunction(
+        () => document.querySelector('.nb-leaf-paper[data-side="right"] .ProseMirror')
+          ?.textContent?.includes('and this sentence is mine.') === true,
+        { timeout: 5_000 },
+      ),
+      { capMs: 5_000, label: 'write on Welcome’s dedicated writing exercise' },
+    );
+    await writeQaStill(page, 'welcome-writing-page');
+  }, { name: 'verify ordinary writing without disturbing the Agent pages', seconds: 0.35 });
+  t.hold(1.8);
+
+  t.call(async function restoreFrozenAgentDemo(page, ctx) {
+    await settleScene(
+      ctx,
+      page.evaluate(() => globalThis.__aiAgentDemo.reset('study-notes')),
+      { capMs: 30_000, label: 'restore the exact pre-Agent notebook' },
+    );
+    const state = await page.evaluate(() => globalThis.__aiAgentDemo.state());
+    const spread = await page.$eval('[data-spread-index]', (node) =>
+      Number(node.getAttribute('data-spread-index')),
+    );
+    const writingLeaked = await page.evaluate(() =>
+      document.body.textContent?.includes('and this sentence is mine.') === true
+    );
+    if (
+      state.panelOpen || state.renderedPages !== 0 || state.insertedPages !== 0 ||
+      state.stage !== 'idle' || spread !== 14 ||
+      writingLeaked
+    ) {
+      throw new Error(
+        `demo-gif: Agent reset leaked scene state (${JSON.stringify({ state, spread })})`,
+      );
+    }
+    await writeQaStill(page, 'ai-agent-restored');
+  }, { name: 'restore the exact pre-Agent notebook and writing page', seconds: 0.8 });
+  t.hold(0.7);
+
   /* One filmstrip jump introduces the other navigation surface. Its live page
      previews remain on screen long enough to be read, then the strip closes
      and ordinary page turns resume. */
@@ -1790,7 +2387,10 @@ const scene = {
     // rasteriser every probe in this repo uses.
     args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
   },
-  out: `${OUT_DIR}/demo.webp`,
+  // Never let a failed late storyboard gate truncate the README's current
+  // film. Gifsmith opens its destination before capture, so write the whole
+  // candidate under ignored QA first and promote it only after render returns.
+  out: DEMO_STAGING,
   viewport: { width: 1360, height: 850 },
   props: [cursor({ start: LOOP_CURSOR_HOME }), bezel()],
   timeline: tl,
@@ -1858,9 +2458,22 @@ const scene = {
     width: 900, fps: DEMO_FPS, speed: DEMO_SPEED, targetMB: 20,
     colors: 256, dither: 'none', palette: 'full',
   },
+  // Gifsmith v0.3.4 derives a seekable H.264 review copy from the exact same
+  // paced frames. It stays under qa/ for humans who need pause/scrub/frame
+  // stepping; the README continues to embed only the publication WebP.
+  mp4Sidecar: true,
 };
 
-if (CHECK) {
+if (PROMOTE_ONLY) {
+  const stagedBytes = statSync(DEMO_STAGING).size;
+  const stagedMp4Bytes = statSync(DEMO_MP4_STAGING).size;
+  if (stagedBytes <= 0 || stagedMp4Bytes <= 0) {
+    throw new Error('demo-gif: cannot promote an empty staged WebP/MP4 pair');
+  }
+  promoteDemoPair();
+  console.log(`promoted accepted demo -> ${DEMO_OUT} (${stagedBytes} bytes)`);
+  console.log(`promoted accepted review -> ${DEMO_MP4} (${stagedMp4Bytes} bytes)`);
+} else if (CHECK) {
   const plan = await dryRun(scene);
   console.log(JSON.stringify(plan, null, 2));
   const sheet = await contactSheet(scene, 16);
@@ -1872,12 +2485,29 @@ if (CHECK) {
     writeFileSync(file, Buffer.from(b64, 'base64'));
     console.log(`\ncontact sheet -> ${file}`);
     console.log(
-      `targeted stills -> ${QA_DIR}/target-{book-studio,lapis-shelves,garnet-shelves}.png`,
+      `targeted stills -> ${QA_DIR}/{target-book-studio,target-lapis-shelves,target-garnet-shelves,ai-agent-thinking-answer,ai-agent-answer,ai-agent-thinking-pages,ai-agent-full-preview,ai-agent-preview,ai-agent-pages-settling,ai-agent-inserted,ai-agent-inserted-pages,welcome-writing-page,ai-agent-restored}.png`,
     );
+    console.log(`Agent fixture -> ${JSON.stringify(AGENT_DEMO)}`);
   } else {
     console.log('\ncontact sheet keys:', Object.keys(sheet).join(', '));
   }
 } else {
   const result = await render(scene);
+  const stagedBytes = statSync(DEMO_STAGING).size;
+  if (stagedBytes <= 0) {
+    throw new Error('demo-gif: renderer returned without a non-empty staged film');
+  }
+  const stagedMp4Bytes = statSync(DEMO_MP4_STAGING).size;
+  if (stagedMp4Bytes <= 0) {
+    throw new Error('demo-gif: renderer returned without a non-empty seekable MP4 review copy');
+  }
+  if (QA_ONLY) {
+    console.log(`QA-only candidate retained -> ${DEMO_STAGING} (${stagedBytes} bytes)`);
+    console.log(`QA-only review retained -> ${DEMO_MP4_STAGING} (${stagedMp4Bytes} bytes)`);
+  } else {
+    promoteDemoPair();
+    console.log(`promoted complete demo -> ${DEMO_OUT} (${stagedBytes} bytes)`);
+    console.log(`promoted seekable review -> ${DEMO_MP4} (${stagedMp4Bytes} bytes)`);
+  }
   console.log(JSON.stringify(result, null, 2));
 }

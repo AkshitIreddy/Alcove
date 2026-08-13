@@ -467,6 +467,14 @@ export const SHOT_SOURCES = {
     'assets/brand/alcove-art.png',
     'assets/brand/alcove-1024.png',
   ],
+  // The native Agent frame is deliberately deterministic. Its notebook is a
+  // frozen, reviewed Cohere-authored fixture rather than an API call performed
+  // by the README recorder, so changing either the page source or its declared
+  // provenance must age the screenshot immediately.
+  'agent.png': [
+    'shots-now/fixtures/ai-agent-study-notes.md',
+    'shots-now/fixtures/ai-agent-study-notes.provenance.json',
+  ],
 };
 
 /**

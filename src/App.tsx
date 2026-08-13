@@ -123,7 +123,9 @@ function BookOpening(): JSX.Element {
   };
   const [scale, setScale] = createSignal(Math.max(0.3, fit()));
   onMount(() => {
-    const resize = (): void => setScale(Math.max(0.3, fit()));
+    const resize = (): void => {
+      setScale(Math.max(0.3, fit()));
+    };
     window.addEventListener("resize", resize);
     onCleanup(() => window.removeEventListener("resize", resize));
   });

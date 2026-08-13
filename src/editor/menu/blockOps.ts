@@ -15,6 +15,49 @@ export interface BlockRef {
   readonly node: ProseMirrorNode;
 }
 
+export interface BlockRangeRef extends BlockRef {
+  /** Zero-based index among the document's top-level blocks. */
+  readonly index: number;
+}
+
+/**
+ * Every top-level block touched by a retained reader selection.
+ *
+ * ProseMirror text selections normally begin/end *inside* textblocks, while
+ * atom selections sit on the node boundary. Treat the range as half-open so
+ * a caret/range ending exactly at the next block does not accidentally take
+ * that next block with it. The returned positions are full-node boundaries:
+ * page-level actions move complete blocks even when the visible highlight
+ * starts midway through the first paragraph.
+ */
+export function topLevelBlocksInRange(
+  editor: Editor,
+  range: { readonly from: number; readonly to: number },
+): readonly BlockRangeRef[] {
+  const { doc } = editor.state;
+  const from = Math.max(0, Math.min(range.from, range.to, doc.content.size));
+  const to = Math.max(
+    0,
+    Math.min(Math.max(range.from, range.to), doc.content.size),
+  );
+  if (from === to) {
+    const block = topLevelBlockAt(editor, from);
+    if (block === null) return [];
+    let index = 0;
+    doc.forEach((_node, offset) => {
+      if (offset < block.pos) index += 1;
+    });
+    return [{ ...block, index }];
+  }
+
+  const blocks: BlockRangeRef[] = [];
+  doc.forEach((node, pos, index) => {
+    const end = pos + node.nodeSize;
+    if (pos < to && end > from) blocks.push({ pos, node, index });
+  });
+  return blocks;
+}
+
 /** The top-level block containing the selection head (or an explicit pos). */
 export function topLevelBlockAt(
   editor: Editor,

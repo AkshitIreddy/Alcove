@@ -57,4 +57,26 @@ describe('backward page flow', () => {
       ).content,
     ).toEqual([paragraph('setup'), image]);
   });
+
+  it('appends an ordered multi-block selection as one contiguous run', () => {
+    const moved = [
+      {
+        type: 'heading',
+        attrs: { level: 2 },
+        content: [{ type: 'text', text: 'Idea' }],
+      },
+      paragraph('explanation'),
+      {
+        type: 'blockquote',
+        content: [paragraph('evidence')],
+      },
+    ];
+
+    expect(
+      appendBlocksToDoc(
+        { type: 'doc', content: [paragraph('previous'), paragraph()] },
+        moved,
+      ).content,
+    ).toEqual([paragraph('previous'), ...moved]);
+  });
 });

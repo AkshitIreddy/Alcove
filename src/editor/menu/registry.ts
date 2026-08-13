@@ -681,6 +681,7 @@ export function buildBlockContextMenu(
         id: 'move-block-to-previous-page',
         title: 'Move to previous page',
         glyph: '↥',
+        selectionAware: true,
         run: (context) => pageActions.onMoveBlockToPrevious?.(context),
       });
     }

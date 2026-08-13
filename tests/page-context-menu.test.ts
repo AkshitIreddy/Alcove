@@ -24,8 +24,13 @@ describe('page deletion in the editor context menu', () => {
     expect(item).toMatchObject({
       kind: 'item',
       title: 'Move to previous page',
+      selectionAware: true,
     });
-    const context = { editor: {} as never, pos: 7 };
+    const context = {
+      editor: {} as never,
+      pos: 7,
+      selectionRange: { from: 8, to: 31 },
+    };
     item?.run(context);
     expect(onMoveBlockToPrevious).toHaveBeenCalledWith(context);
   });

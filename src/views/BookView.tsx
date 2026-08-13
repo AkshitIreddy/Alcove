@@ -103,7 +103,11 @@ import {
   type BookRecoverySnapshot,
 } from '../editor/history/bookHistory';
 import { getPageEditor } from '../editor/instances';
-import { topLevelBlockAt } from '../editor/menu/blockOps';
+import {
+  topLevelBlockAt,
+  topLevelBlocksInRange,
+  type BlockRangeRef,
+} from '../editor/menu/blockOps';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
@@ -1085,70 +1089,309 @@ export default function BookView(): JSX.Element {
     notify(side === 'before' ? 'page added before' : 'page added after');
   };
 
+  let backwardMoveOverflowTarget:
+    | { readonly pageId: string; overflowed: boolean }
+    | null = null;
+
+  /** Copy the rendered block roots while the source leaf is still mounted. */
+  const cloneMoveBlocks = (
+    editor: Editor,
+    blocks: readonly BlockRangeRef[],
+  ): readonly HTMLElement[] =>
+    blocks.flatMap((block) => {
+      const dom = editor.view.nodeDOM(block.pos);
+      return dom instanceof HTMLElement
+        ? [dom.cloneNode(true) as HTMLElement]
+        : [];
+    });
+
   /**
-   * Pull the leading block of a page back into the previous leaf.
+   * Measure a proposed append in an invisible clone of the real destination.
    *
-   * Only the leading block may cross this boundary: moving a middle block
-   * would silently reorder it ahead of its own page's earlier content. The
-   * previous page remounts immediately and runs the normal capacity drain; if
-   * it was already full, that same block naturally flows forward again rather
-   * than being clipped or forcing an illegal page scrollbar.
+   * This is deliberately a rendered preflight, not a word-count estimate.
+   * Tables, maths, pictures, handwriting wraps and authored cards all occupy
+   * different heights. The cloned page has the destination's exact width,
+   * CSS variables and existing DOM, so the same block-bottom + padding test as
+   * PageEditor's overflow drain can answer whether the *entire* selection
+   * fits. Nothing is written until that answer is yes; a rejected multi-block
+   * move therefore cannot leave half the selection behind or duplicate the
+   * overflowed half on the source page.
+   */
+  const appendedBlocksFit = (
+    destination: Editor,
+    blockClones: readonly HTMLElement[],
+  ): boolean => {
+    if (qaNoPagination) return true;
+    const capacity = pageCapacity();
+    if (!(capacity > 0) || blockClones.length === 0) return false;
+    const liveRoot = destination.view.dom;
+    const livePage = liveRoot.closest<HTMLElement>('.nb-page');
+    if (livePage === null) return false;
+    const probePage = livePage.cloneNode(true) as HTMLElement;
+    const probeRoot = probePage.querySelector<HTMLElement>('.nb-prose');
+    if (probeRoot === null) return false;
+
+    // appendBlocksToDoc removes TipTap's empty trailing writing lines before
+    // appending real content. Keep the measurement DOM byte-for-byte aligned
+    // with the JSON that will be committed below.
+    let docIndex = destination.state.doc.childCount - 1;
+    while (docIndex >= 0) {
+      const node = destination.state.doc.child(docIndex);
+      if (node.type.name !== 'paragraph' || node.content.size > 0) break;
+      probeRoot.lastElementChild?.remove();
+      docIndex -= 1;
+    }
+    for (const clone of blockClones) probeRoot.append(clone.cloneNode(true));
+
+    probePage.setAttribute('aria-hidden', 'true');
+    Object.assign(probePage.style, {
+      position: 'fixed',
+      left: '-20000px',
+      top: '0',
+      width: `${livePage.offsetWidth}px`,
+      height: `${livePage.offsetHeight}px`,
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      transform: 'none',
+      zIndex: '-1',
+    });
+    document.body.append(probePage);
+    try {
+      const rootRect = probeRoot.getBoundingClientRect();
+      const last = probeRoot.lastElementChild?.getBoundingClientRect();
+      if (last === undefined) return true;
+      const padBottom =
+        Number.parseFloat(getComputedStyle(probeRoot).paddingBottom) || 0;
+      return last.bottom - rootRect.top + padBottom <= capacity + 0.5;
+    } finally {
+      probePage.remove();
+    }
+  };
+
+  /**
+   * Pull one block, or every complete block touched by a retained selection,
+   * into the previous leaf in one all-or-nothing page transaction.
    */
   const moveBlockToPreviousPage = (
     pageId: string,
     editor: Editor,
     pos: number,
+    selectionRange?: { readonly from: number; readonly to: number },
   ): void => {
     if (aiPatchApplying()) return;
     clearScriptInsertionUndo();
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot <= 0) return;
-    const block = topLevelBlockAt(editor, pos);
-    if (block === null) return;
-    if (block.pos !== 0) {
+    const selected =
+      selectionRange === undefined
+        ? (() => {
+            const block = topLevelBlockAt(editor, pos);
+            return block === null
+              ? []
+              : [
+                  ...topLevelBlocksInRange(editor, {
+                    from: block.pos,
+                    to: block.pos + block.node.nodeSize,
+                  }),
+                ];
+          })()
+        : [...topLevelBlocksInRange(editor, selectionRange)];
+    if (selected.length === 0) return;
+    if (selectionRange === undefined && selected[0]?.pos !== 0) {
       notify('only the first block can move to the previous page', 'error');
       return;
     }
     const previous = pages()[slot - 1];
     if (previous === undefined) return;
+    const first = selected[0]!;
+    const last = selected[selected.length - 1]!;
+    const deleteFrom = first.pos;
+    const deleteTo = last.pos + last.node.nodeSize;
+    const sourceBefore = editor.getJSON() as PageDoc;
+    const sourceBeforeKey = JSON.stringify(sourceBefore);
+    const sourceAfter = editor.state.tr.delete(deleteFrom, deleteTo).doc.toJSON() as PageDoc;
+    const moved = selected.map((block) => block.node.toJSON());
+    const blockClones = cloneMoveBlocks(editor, selected);
+    const sourceSpread = spreadOfSlot(slot);
+    const targetSpread = spreadOfSlot(slot - 1);
+    const relativeSelection =
+      selectionRange === undefined
+        ? null
+        : {
+            from: selectionRange.from - deleteFrom,
+            to: selectionRange.to - deleteFrom,
+          };
 
-    const moved = block.node.toJSON();
-    const tr = editor.state.tr.delete(
-      block.pos,
-      block.pos + block.node.nodeSize,
-    );
-    editor.view.dispatch(tr.setMeta('addToHistory', false));
-    const sourceDoc = editor.getJSON() as PageDoc;
-
-    const fallbackAttrs: Record<string, unknown> = {
-      pageStyle: bookPageStyle(),
-    };
-    const line = bookLineHeight();
-    if (line !== undefined) fallbackAttrs.lineHeightPx = line;
-    const merged = appendBlocksToDoc(previous.doc, [moved], fallbackAttrs);
-    // The source may be the left leaf of the following spread. Navigating to
-    // `previous` below unmounts it before PageEditor's queued mirror callback
-    // gets a chance to publish the deletion. Keep both halves of the move in
-    // the synchronous page mirror; otherwise turning forward reconstructs the
-    // old source JSON and the reader sees a copy on both pages.
-    updatePageDoc(pageId, sourceDoc);
-    updatePageDoc(previous.id, merged);
-    bumpDocVersion(previous.id);
-    flipApi?.invalidateSnapshots();
-
-    const pending = appendLane.then(async () => {
-      await savePageDoc(pageId, sourceDoc);
-      await savePageDoc(previous.id, merged);
-    });
-    appendLane = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-
-    setSpreadIndex(spreadOfSlot(slot - 1));
+    if (targetSpread !== spreadIndex()) setSpreadIndex(targetSpread);
     setFocusedSide((slot - 1) % 2 === 0 ? 'left' : 'right');
-    withPageEditor(previous.id, (instance) => instance.commands.focus('end'));
-    notify('block moved to the previous page');
+
+    withPageEditor(previous.id, (destination) => {
+      const currentSource = pages().find((page) => page.id === pageId)?.doc;
+      if (
+        currentSource === undefined ||
+        JSON.stringify(currentSource) !== sourceBeforeKey
+      ) {
+        notify('that selection changed before it could move', 'error');
+        return;
+      }
+      if (!appendedBlocksFit(destination, blockClones)) {
+        notify(
+          selected.length === 1
+            ? 'that block does not fit on the previous page'
+            : 'that selection does not fit on the previous page',
+          'error',
+        );
+        if (sourceSpread !== spreadIndex()) setSpreadIndex(sourceSpread);
+        setFocusedSide(slot % 2 === 0 ? 'left' : 'right');
+        if (relativeSelection !== null) {
+          withPageEditor(pageId, (source) => {
+            source
+              .chain()
+              .focus()
+              .setTextSelection(selectionRange!)
+              .run();
+          });
+        }
+        return;
+      }
+
+      const fallbackAttrs: Record<string, unknown> = {
+        pageStyle: bookPageStyle(),
+      };
+      const line = bookLineHeight();
+      if (line !== undefined) fallbackAttrs.lineHeightPx = line;
+      const destinationBefore = destination.getJSON() as PageDoc;
+      const merged = appendBlocksToDoc(destinationBefore, moved, fallbackAttrs);
+      let insertedAt = 0;
+      try {
+        const mergedNode = destination.schema.nodeFromJSON(merged);
+        insertedAt = mergedNode.content.size;
+        for (const json of moved) {
+          insertedAt -= destination.schema.nodeFromJSON(json).nodeSize;
+        }
+      } catch {
+        insertedAt = destination.state.doc.content.size;
+      }
+
+      /*
+       * Let the real destination editor make the final capacity decision in
+       * this same JavaScript task. The invisible clone above avoids almost all
+       * rejected writes, but node views can finish intrinsic sizing between
+       * the clone and this transaction. Suppress that one overflow carry while
+       * the transaction is provisional: if PageEditor peels anything, restore
+       * both complete pre-move documents before paint. This is the second,
+       * authoritative all-or-nothing guard; without it a late image/math size
+       * could put two selected blocks back while leaving the first one moved.
+       */
+      const liveSource = getPageEditor(pageId);
+      if (liveSource?.view.dom.isConnected) {
+        liveSource.view.dispatch(
+          liveSource.state.tr
+            .delete(deleteFrom, deleteTo)
+            .setMeta('addToHistory', false),
+        );
+      }
+      backwardMoveOverflowTarget = {
+        pageId: previous.id,
+        overflowed: false,
+      };
+      try {
+        const mergedNode = destination.schema.nodeFromJSON(merged);
+        destination.view.dispatch(
+          destination.state.tr
+            .replaceWith(
+              0,
+              destination.state.doc.content.size,
+              mergedNode.content,
+            )
+            .setMeta('addToHistory', false),
+        );
+      } catch {
+        backwardMoveOverflowTarget.overflowed = true;
+      }
+      const overflowed = backwardMoveOverflowTarget.overflowed;
+      backwardMoveOverflowTarget = null;
+      if (overflowed) {
+        const destinationNode = destination.schema.nodeFromJSON(destinationBefore);
+        destination.view.dispatch(
+          destination.state.tr
+            .replaceWith(
+              0,
+              destination.state.doc.content.size,
+              destinationNode.content,
+            )
+            .setMeta('addToHistory', false),
+        );
+        if (liveSource?.view.dom.isConnected) {
+          const sourceNode = liveSource.schema.nodeFromJSON(sourceBefore);
+          liveSource.view.dispatch(
+            liveSource.state.tr
+              .replaceWith(
+                0,
+                liveSource.state.doc.content.size,
+                sourceNode.content,
+              )
+              .setMeta('addToHistory', false),
+          );
+        }
+        updatePageDoc(pageId, sourceBefore);
+        updatePageDoc(previous.id, destinationBefore);
+        notify(
+          selected.length === 1
+            ? 'that block does not fit on the previous page'
+            : 'that selection does not fit on the previous page',
+          'error',
+        );
+        if (sourceSpread !== spreadIndex()) setSpreadIndex(sourceSpread);
+        setFocusedSide(slot % 2 === 0 ? 'left' : 'right');
+        if (selectionRange !== undefined) {
+          withPageEditor(pageId, (source) => {
+            source
+              .chain()
+              .focus()
+              .setTextSelection(selectionRange)
+              .run();
+          });
+        }
+        return;
+      }
+
+      // Publish both halves in one task. The source may have unmounted while
+      // the destination was being mounted; the mirror still receives its
+      // prepared deletion before either save is allowed onto appendLane.
+      updatePageDoc(pageId, sourceAfter);
+      updatePageDoc(previous.id, merged);
+      // The destination is live by construction and already owns `merged`.
+      // A source on the adjacent spread may have unmounted while we chased the
+      // destination; remount only that absent leaf from its updated mirror.
+      if (!liveSource?.view.dom.isConnected) bumpDocVersion(pageId);
+      flipApi?.invalidateSnapshots();
+
+      const pending = appendLane.then(async () => {
+        await savePageDoc(pageId, sourceAfter);
+        await savePageDoc(previous.id, merged);
+      });
+      appendLane = pending.then(
+        () => undefined,
+        () => undefined,
+      );
+
+      withPageEditor(previous.id, (instance) => {
+        if (relativeSelection === null) {
+          instance.commands.focus('end');
+          return;
+        }
+        const size = instance.state.doc.content.size;
+        const from = Math.max(0, Math.min(insertedAt + relativeSelection.from, size));
+        const to = Math.max(from, Math.min(insertedAt + relativeSelection.to, size));
+        instance.chain().focus().setTextSelection({ from, to }).run();
+      });
+      notify(
+        selected.length === 1
+          ? 'block moved to the previous page'
+          : `${selected.length} blocks moved to the previous page`,
+      );
+    });
   };
 
   /**
@@ -1761,6 +2004,10 @@ export default function BookView(): JSX.Element {
     caretOffset: number | null,
   ): void => {
     if (!Array.isArray(blocks) || blocks.length === 0) return;
+    if (backwardMoveOverflowTarget?.pageId === pageId) {
+      backwardMoveOverflowTarget.overflowed = true;
+      return;
+    }
     enqueueCarry(() => carryOverflow(pageId, blocks, cursorCarried, caretOffset));
   };
 
@@ -4052,8 +4299,13 @@ export default function BookView(): JSX.Element {
               }
               onMoveBlockToPrevious={
                 pages().findIndex((candidate) => candidate.id === current.id) > 0
-                  ? (editor, pos) =>
-                      moveBlockToPreviousPage(current.id, editor, pos)
+                  ? (editor, pos, selectionRange) =>
+                      moveBlockToPreviousPage(
+                        current.id,
+                        editor,
+                        pos,
+                        selectionRange,
+                      )
                   : undefined
               }
               onDeletePage={

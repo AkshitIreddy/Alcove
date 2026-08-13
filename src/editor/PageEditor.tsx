@@ -192,8 +192,12 @@ export interface PageEditorProps {
   readonly onInsertPageBefore?: () => void;
   /** Add a blank leaf immediately after this page. */
   readonly onInsertPageAfter?: () => void;
-  /** Move this page's first block into available room on the previous leaf. */
-  readonly onMoveBlockToPrevious?: (editor: Editor, pos: number) => void;
+  /** Move one block, or every block touched by a retained selection, back. */
+  readonly onMoveBlockToPrevious?: (
+    editor: Editor,
+    pos: number,
+    selectionRange?: { readonly from: number; readonly to: number },
+  ) => void;
   /**
    * Fires on every editor update with the fresh doc JSON (same payload the
    * debounced save persists). The spread host uses it to keep its in-memory
@@ -938,8 +942,12 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
                   onMoveBlockToPrevious:
                     props.onMoveBlockToPrevious === undefined
                       ? undefined
-                      : ({ editor: contextEditor, pos }) =>
-                          props.onMoveBlockToPrevious?.(contextEditor, pos),
+                      : ({ editor: contextEditor, pos, selectionRange }) =>
+                          props.onMoveBlockToPrevious?.(
+                            contextEditor,
+                            pos,
+                            selectionRange,
+                          ),
                   onInsertPageBefore: props.onInsertPageBefore,
                   onInsertPageAfter: props.onInsertPageAfter,
                   onDeletePage: props.onDeletePage,

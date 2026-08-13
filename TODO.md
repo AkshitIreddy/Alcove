@@ -9,6 +9,12 @@ for the current working tree rather than relying on the long development chat.
 
 ### Editor correctness
 
+- [x] Move a multi-block selection to the previous page as one ordered,
+      atomic selection. Never silently move only its first block, duplicate a
+      block, or partially move the range when the destination cannot accept it.
+- [x] Tune inline emoji optical baseline slightly downward while preserving
+      the rule grid and line metrics at native and fitted book scales.
+
 - [x] Window, panel, monitor-resolution and monitor-DPI changes must be camera-
       only: preserve one canonical CSS page/layout box and scale the whole book
       to fit. Never rewrap, persistently repaginate, duplicate a section, or
@@ -43,6 +49,12 @@ for the current working tree rather than relying on the long development chat.
       pruning and crash-safe checkpoint writes.
 
 ### Demo and documentation acceptance
+
+- [x] Remove the owner-rejected Agent context-scope explainer from the panel,
+      replace the Agent's open-book mark with an original Alcove toy-robot
+      face, and verify every small/large icon context before recapturing.
+- [ ] Regenerate and inspect the full seekable demo plus README screenshots
+      only after the editor, emoji, Agent copy and robot mark changes settle.
 
 - [x] Keep ruled-paper lines continuous through the canonical centre gutter
       with every rail panel open and after it closes; a camera/layout change

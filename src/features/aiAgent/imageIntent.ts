@@ -21,7 +21,7 @@ const SLOT_NOUN = String.raw`(?:(?:image|picture|photo|illustration)[ _-]?(?:slo
 // as one directive instead of stopping early at “picture”.
 const IMAGE_OR_SLOT = String.raw`(?:${SLOT_NOUN}|${IMAGE_NOUN})`;
 const POSITIVE = new RegExp(
-  String.raw`(?:\b(?:add|include|insert|create|generate|make|use|provide|prepare|leave|want|need|with|show|draw|give)(?:\s+me)?(?:\s+(?:some|many|more|lots?\s+of|tons?\s+of|a|an|the))?\s+${IMAGE_NOUN}\b|\b(?:illustrate|visualize|visualise)\s+(?:this|that|these|the|my)\b|\b${SLOT_NOUN}\b|\b${IMAGE_NOUN}\s+(?:throughout|alongside|for\s+(?:each|the)|in\s+(?:the|my|these))\b)`,
+  String.raw`(?:\b(?:add|include|insert|create|generate|make|use|provide|prepare|leave|want|need|with|show|draw|give)(?:\s+me)?(?:\s+(?:some|many|more|another|additional|lots?\s+of|tons?\s+of|a|an|the))?\s+${IMAGE_NOUN}\b|\b(?:illustrate|visualize|visualise)\s+(?:this|that|these|the|my)\b|\b${SLOT_NOUN}\b|\b${IMAGE_NOUN}\s+(?:throughout|alongside|for\s+(?:each|the)|in\s+(?:the|my|these))\b)`,
   'giu',
 );
 const NEGATIVE = new RegExp(
@@ -45,6 +45,17 @@ function lastDirective(text: string): {
   for (const match of text.matchAll(POSITIVE)) {
     if (match.index === undefined) continue;
     const end = match.index + match[0].length;
+    // Reusing pixels the reader already attached is a managed-asset request,
+    // not permission to add a different external image or generation slot.
+    // Keep scanning because the same message may separately ask for both.
+    const before = text.slice(Math.max(0, match.index - 16), match.index);
+    const after = text.slice(end, Math.min(text.length, end + 40));
+    if (
+      /\b(?:attached|uploaded|supplied|provided)\s*$/i.test(before) ||
+      /^\s+(?:that\s+)?(?:i|we)\s+(?:attached|uploaded|supplied|provided)\b/i.test(after)
+    ) {
+      continue;
+    }
     if (last !== null && end < last.end) continue;
     last = { requested: true, index: match.index, end, evidence: match[0] };
   }

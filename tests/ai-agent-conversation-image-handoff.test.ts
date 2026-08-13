@@ -321,6 +321,25 @@ describe('portable generated-image handoff', () => {
       { widthPx: 1536, heightPx: 1152, slot: { slotId: 'page-1-image-1' } },
       { widthPx: 1024, heightPx: 1280, slot: { slotId: 'page-2-image-1' } },
     ]);
+    expect(handoff.prompts[0]?.prompt).toContain(
+      'Output exactly 1536 x 1152 pixels (Landscape 4:3 aspect ratio).',
+    );
+    expect(handoff.prompts[1]?.prompt).toContain(
+      'Output exactly 1024 x 1280 pixels (Portrait 4:5 aspect ratio).',
+    );
+    const rebuilt = buildImagePromptHandoff({
+      draftHash: 'draft-1',
+      script: SCRIPT,
+      prompts: handoff.prompts.map((prompt) => ({
+        slotId: prompt.slot.slotId,
+        role: prompt.role,
+        aspect: prompt.aspect,
+        prompt: prompt.prompt,
+        ...(prompt.avoid === undefined ? {} : { avoid: prompt.avoid }),
+      })),
+      now: NOW,
+    });
+    expect(rebuilt.prompts[0]?.prompt.match(/Output exactly/g)).toHaveLength(1);
     expect(imagePromptHandoffMatchesDraft(handoff, 'draft-1', SCRIPT)).toBe(true);
     expect(imagePromptHandoffMatchesDraft(handoff, 'draft-2', SCRIPT)).toBe(false);
     const reversed = buildImagePromptHandoff({
@@ -334,12 +353,46 @@ describe('portable generated-image handoff', () => {
       'page-2-image-1',
     ]);
     expect(imagePromptHandoffMatchesDraft(reversed, 'draft-1', SCRIPT)).toBe(true);
+    expect(imagePromptHandoffMatchesDraft({
+      ...handoff,
+      prompts: handoff.prompts.map((prompt, index) => index === 0
+        ? { ...prompt, prompt: 'Legacy prompt without dimensions in its copyable text.' }
+        : prompt),
+    }, 'draft-1', SCRIPT)).toBe(false);
     expect(() => buildImagePromptHandoff({
       draftHash: 'draft-1',
       script: SCRIPT,
       prompts: prompts.slice(0, 1),
       now: NOW,
     })).toThrow(/missing page-2-image-1/i);
+  });
+
+  it('does not confuse exact attached-image reuse with external image permission', () => {
+    const ordinary = baseState();
+    const attachedOnly: AgentState = {
+      ...ordinary,
+      conversation: [{
+        id: 'use-attached',
+        role: 'user',
+        text: 'Please include the image I attached in these pages.',
+        createdAt: NOW,
+      }],
+    };
+    expect(explicitImageRequest(attachedOnly)).toEqual({ requested: false });
+
+    const attachedAndExternal: AgentState = {
+      ...ordinary,
+      conversation: [{
+        id: 'attached-and-new',
+        role: 'user',
+        text: 'Use the attached photo, and also generate another illustration.',
+        createdAt: NOW,
+      }],
+    };
+    expect(explicitImageRequest(attachedAndExternal)).toMatchObject({
+      requested: true,
+      messageId: 'attached-and-new',
+    });
   });
 
   it('stores a durable prompt handoff and invalidates it when the draft changes', async () => {

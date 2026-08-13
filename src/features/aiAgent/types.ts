@@ -306,6 +306,13 @@ export interface SourceRead {
     readonly image: AgentImageRef;
     readonly anchor: SourceAnchor;
     readonly label: string;
+    /**
+     * Exact library-relative asset identity when this visual is a reader
+     * attachment that may be placed in Notebook Script. PDF render evidence
+     * deliberately has no portable path: it is analysis material, not a
+     * reader-supplied picture to silently copy into the book.
+     */
+    readonly portableAssetPath?: string;
   }[];
 }
 

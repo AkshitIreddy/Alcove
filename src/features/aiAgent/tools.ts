@@ -1164,7 +1164,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'submit_notebook_script',
       description:
-        'Submit a complete Notebook Script draft into the disposable agent workspace. This creates no book write. Use again after visual/parser repair, within the repair budget.',
+        'Submit a complete Notebook Script draft into the disposable agent workspace. This creates no book write. For supplied-material formatting, first submit faithful natural pagination; after rendered inspection, a repair may add at most one compact relevant enrichment to an awkward gap only when rearranging content would harm a semantic boundary. Use again after visual/parser repair, within the repair budget.',
       effect: 'draft',
       schema: submitScriptSchema,
       async execute(state, args, context) {
@@ -1270,7 +1270,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'prepare_image_generation_prompts',
       description:
-        'For the current Notebook Script draft, prepare exactly one ready-to-copy prompt for every empty portable image slot. Include the image role and intended aspect; Alcove supplies safe pixel dimensions. This never generates or uploads an image.',
+        'For the current Notebook Script draft, prepare exactly one ready-to-copy prompt for every empty portable image slot. Include the image role and intended aspect; Alcove appends the exact selected width x height pixels and aspect ratio to the copyable prompt text and metadata. This never generates or uploads an image.',
       effect: 'draft',
       schema: imagePromptSchema,
       async execute(state, args, context) {
@@ -1508,7 +1508,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'record_visual_review',
       description:
-        'Record observable findings after actually viewing rendered pages. Every page in the current generation must be inspected; blocking findings require draft repair and a new render.',
+        'Record observable findings after actually viewing rendered pages. Every page in the current generation must be inspected; blocking findings require draft repair and a new render. Unused space is a finding only when it is visibly awkward, not when it is intentional breathing room; prefer semantic rearrangement before one compact relevant enrichment.',
       effect: 'draft',
       schema: recordVisualSchema,
       async execute(state, args, context) {

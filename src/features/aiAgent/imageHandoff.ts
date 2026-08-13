@@ -104,6 +104,21 @@ export interface ImagePromptDraft {
   readonly avoid?: string;
 }
 
+function promptWithDimensions(
+  prompt: string,
+  aspect: ImageGenerationAspect,
+  dimensions: { readonly width: number; readonly height: number },
+): string {
+  const aspectLabel = IMAGE_GENERATION_ASPECT_LABELS[aspect];
+  const dimensionSentence =
+    `Output exactly ${dimensions.width} x ${dimensions.height} pixels (${aspectLabel} aspect ratio).`;
+  if (prompt.trim().endsWith(dimensionSentence)) return prompt.trim();
+  return [
+    prompt.trim().replace(/[\s.]+$/u, ''),
+    dimensionSentence,
+  ].join('. ');
+}
+
 /**
  * Build an exact one-prompt-per-slot handoff. Unknown, duplicate or missing
  * slot ids are rejected so the model cannot silently strand an upload card.
@@ -126,12 +141,13 @@ export function buildImagePromptHandoff(input: {
     if (seen.has(candidate.slotId)) {
       throw new Error(`image prompt repeats slot ${candidate.slotId}`);
     }
-    const prompt = candidate.prompt.trim();
-    if (prompt.length < 24) {
+    const authoredPrompt = candidate.prompt.trim();
+    if (authoredPrompt.length < 24) {
       throw new Error(`image prompt for ${candidate.slotId} is too short to be useful`);
     }
     seen.add(candidate.slotId);
     const dimensions = IMAGE_GENERATION_DIMENSIONS[candidate.aspect];
+    const prompt = promptWithDimensions(authoredPrompt, candidate.aspect, dimensions);
     const avoid = optionalString(candidate.avoid);
     promptsBySlot.set(candidate.slotId, {
       id: `${input.draftHash}:${candidate.slotId}`,
@@ -166,5 +182,17 @@ export function imagePromptHandoffMatchesDraft(
   if (slots.length === 0) return handoff === undefined || handoff.prompts.length === 0;
   if (handoff === undefined || handoff.draftHash !== draftHash) return false;
   if (handoff.prompts.length !== slots.length) return false;
-  return slots.every((slot, index) => handoff.prompts[index]?.slot.slotId === slot.slotId);
+  return slots.every((slot, index) => {
+    const prompt = handoff.prompts[index];
+    if (prompt === undefined || prompt.slot.slotId !== slot.slotId) return false;
+    const dimensions = IMAGE_GENERATION_DIMENSIONS[prompt.aspect];
+    const aspectLabel = IMAGE_GENERATION_ASPECT_LABELS[prompt.aspect];
+    return (
+      prompt.widthPx === dimensions.width &&
+      prompt.heightPx === dimensions.height &&
+      prompt.prompt.includes(
+        `Output exactly ${dimensions.width} x ${dimensions.height} pixels (${aspectLabel} aspect ratio).`,
+      )
+    );
+  });
 }

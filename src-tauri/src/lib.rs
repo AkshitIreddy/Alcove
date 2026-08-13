@@ -9,6 +9,7 @@ mod library;
 mod media;
 mod transfer;
 mod tray;
+mod vector_index;
 
 /// Migrations for the app database.
 ///
@@ -113,6 +114,13 @@ fn migrations() -> Vec<Migration> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // SQLx opens plugin-sql's pool during plugin setup. Register sqlite-vec
+    // before constructing the builder so every pooled connection sees vec0.
+    // The index is derived and the frontend falls back to local cosine if this
+    // optional capability cannot be registered; never prevent Alcove opening.
+    if let Err(error) = vector_index::register() {
+        eprintln!("Alcove vector index unavailable: {error}");
+    }
     let library_paths =
         library::LibraryPaths::resolve().expect("could not resolve Alcove's library folder");
     let db_url = library_paths.db_url().to_string();

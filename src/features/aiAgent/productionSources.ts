@@ -29,6 +29,11 @@ import {
   type StoredAiAgentSource,
 } from '../../data/aiAgent';
 import { getPage } from '../../data/pages';
+import {
+  hasAiAgentRetrievalVectors,
+  searchAiAgentRetrievalIndex,
+  type AiAgentRetrievalQuery,
+} from '../../data/aiAgentRetrievalIndex';
 import { NOTEBOOK_SCRIPT_SPEC } from '../../editor/script/spec';
 import type {
   AgentHashAdapter,
@@ -102,6 +107,13 @@ interface ProductionSourceGateway {
   readonly deleteAttachment?: typeof deleteAiAttachment;
 }
 
+interface ProductionLocalRetrievalIndex {
+  readonly search: (
+    input: AiAgentRetrievalQuery,
+  ) => ReturnType<typeof searchAiAgentRetrievalIndex>;
+  readonly hasVectors?: typeof hasAiAgentRetrievalVectors;
+}
+
 export interface ProductionSourceDependencies {
   readonly notebook: NotebookReadAdapter;
   readonly hash: AgentHashAdapter;
@@ -115,6 +127,8 @@ export interface ProductionSourceDependencies {
   readonly providerRerank: boolean;
   /** Rechecked immediately before every provider-derived embedding/rerank. */
   readonly providerPrivacyReady: () => boolean;
+  /** Optional native FTS5/vec0 acceleration; `null` preserves the TS fallback. */
+  readonly localIndex: ProductionLocalRetrievalIndex | null;
 }
 
 export interface ProductionSourceAdapterBundle {
@@ -156,6 +170,11 @@ const DEFAULT_GATEWAY: ProductionSourceGateway = {
   embedTexts: embedAiTexts,
   rerankTexts: rerankAiTexts,
   deleteAttachment: deleteAiAttachment,
+};
+
+const DEFAULT_LOCAL_INDEX: ProductionLocalRetrievalIndex = {
+  search: searchAiAgentRetrievalIndex,
+  hasVectors: hasAiAgentRetrievalVectors,
 };
 
 function abortIfNeeded(signal: AbortSignal): void {
@@ -1084,6 +1103,9 @@ export function createProductionSourceAdapters(
     semanticIndex: input.semanticIndex ?? true,
     providerRerank: input.providerRerank ?? true,
     providerPrivacyReady: input.providerPrivacyReady ?? (() => true),
+    localIndex: 'localIndex' in input
+      ? input.localIndex ?? null
+      : input.store === undefined ? DEFAULT_LOCAL_INDEX : null,
   };
 
   type CachedSource = { descriptor: AgentSourceDescriptor; meta: ProductionSourceMeta };
@@ -1224,14 +1246,33 @@ export function createProductionSourceAdapters(
     );
     const visualRefs: NonNullable<SourceRead['visualRefs']>[number][] = [];
     const seenResources = new Set<string>();
-    const addVisual = (image: AgentImageRef, anchor: SourceAnchor, label: string): void => {
+    const addVisual = (
+      image: AgentImageRef,
+      anchor: SourceAnchor,
+      label: string,
+      portableAssetPath?: string,
+    ): void => {
       if (seenResources.has(image.resourceId)) return;
       seenResources.add(image.resourceId);
-      visualRefs.push({ image, anchor, label });
+      visualRefs.push({
+        image,
+        anchor,
+        label,
+        ...(portableAssetPath === undefined ? {} : { portableAssetPath }),
+      });
     };
     if (meta.image !== undefined) {
       const imageUnit = selectedUnits.find((unit) => unit.hasVisual);
-      if (imageUnit !== undefined) addVisual(meta.image, imageUnit.anchor, imageUnit.label);
+      if (imageUnit !== undefined) {
+        addVisual(
+          meta.image,
+          imageUnit.anchor,
+          imageUnit.label,
+          meta.managedAttachmentId === undefined
+            ? undefined
+            : `ai/attachments/${meta.managedAttachmentId}`,
+        );
+      }
     }
     if (meta.pdf !== undefined) {
       for (const unit of selectedUnits) {
@@ -1460,16 +1501,30 @@ export function createProductionSourceAdapters(
       const selected = options.sourceIds.map((sourceId) =>
         cachedSource(sourceId, options.capability),
       );
-      const all = (await Promise.all(selected.map(async (source) => ({
-        source,
-        chunks: await deps.store.listChunks(source.descriptor.id),
-      })))).flatMap(({ source, chunks }) => chunks.map((chunk) => ({ source, chunk })));
+      type ScopedChunk = { source: CachedSource; chunk: StoredAiAgentChunk };
+      let all: readonly ScopedChunk[] | null = null;
+      const loadAll = async (): Promise<readonly ScopedChunk[]> => {
+        all ??= (await Promise.all(selected.map(async (source) => ({
+          source,
+          chunks: await deps.store.listChunks(source.descriptor.id),
+        })))).flatMap(({ source, chunks }) => chunks.map((chunk) => ({ source, chunk })));
+        return all;
+      };
       abortIfNeeded(options.signal);
       let queryEmbedding: readonly number[] | null = null;
+      const indexedVectors = deps.localIndex?.hasVectors === undefined
+        ? null
+        : await deps.localIndex.hasVectors({
+            threadId: options.capability.taskId,
+            sourceIds: selected.map((source) => source.descriptor.id),
+            signal: options.signal,
+          });
+      const hasSemanticChunks = indexedVectors ??
+        (await loadAll()).some(({ chunk }) => chunk.embedding !== null);
       if (
         deps.semanticIndex &&
         options.providerTextMode !== 'local_only' &&
-        all.some(({ chunk }) => chunk.embedding !== null)
+        hasSemanticChunks
       ) {
         try {
           if (!deps.providerPrivacyReady()) {
@@ -1486,7 +1541,38 @@ export function createProductionSourceAdapters(
           if (isAbort(error, options.signal)) throw error;
         }
       }
-      const hits = all.flatMap(({ source, chunk }): RetrievalHit[] => {
+      if (deps.localIndex !== null) {
+        const indexed = await deps.localIndex.search({
+          threadId: options.capability.taskId,
+          sourceIds: selected.map((source) => source.descriptor.id),
+          query,
+          queryEmbedding,
+          limit: Math.max(1, options.limit),
+          signal: options.signal,
+        });
+        abortIfNeeded(options.signal);
+        if (indexed !== null) {
+          const selectedById = new Map(selected.map((source) => [source.descriptor.id, source]));
+          return indexed.flatMap((hit): RetrievalHit[] => {
+            const source = selectedById.get(hit.sourceId);
+            if (source === undefined) return [];
+            const unit = source.descriptor.units.find((candidate) => candidate.ordinal === hit.ordinal);
+            // The index is derived. A cached capability or descriptor mismatch
+            // is never allowed to promote a current-but-different chunk.
+            if (unit === undefined || unit.digest !== hit.digest) return [];
+            return [{
+              sourceId: hit.sourceId,
+              unitId: unit.id,
+              anchor: unit.anchor,
+              text: hit.text,
+              digest: hit.digest,
+              lexicalScore: hit.rrfScore,
+            }];
+          });
+        }
+      }
+      const fallbackChunks = await loadAll();
+      const hits = fallbackChunks.flatMap(({ source, chunk }): RetrievalHit[] => {
         const unit = descriptorForChunk(source.descriptor, chunk);
         if (unit === null) return [];
         const lexicalScore = scoreLexicalText(query, chunk.text);

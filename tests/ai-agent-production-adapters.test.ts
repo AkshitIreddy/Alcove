@@ -63,6 +63,7 @@ describe('AI agent production read/source adapters', () => {
     let chunkCounter = 0;
     let embedCalls = 0;
     let rerankCalls = 0;
+    let unavailableLocalIndexCalls = 0;
     const store = {
       async saveSource<Meta>(source: StoredAiAgentSource<Meta>) {
         sources.set(source.id, source as StoredAiAgentSource<unknown>);
@@ -136,6 +137,12 @@ describe('AI agent production read/source adapters', () => {
       gateway,
       semanticIndex: true,
       providerRerank: true,
+      localIndex: {
+        async search() {
+          unavailableLocalIndexCalls += 1;
+          return null;
+        },
+      },
     });
     const manifest = await bundle.ingestion.ingest([{
       kind: 'notebook_page',
@@ -157,6 +164,7 @@ describe('AI agent production read/source adapters', () => {
       providerTextMode: 'local_only',
     });
     expect(hits[0]?.text).toContain('alice@example.org');
+    expect(unavailableLocalIndexCalls).toBe(1);
     await bundle.retrieval.rerank('contact', hits, {
       limit: 4,
       quality: 'pro',
@@ -471,7 +479,7 @@ describe('AI agent production read/source adapters', () => {
       width: 640,
       height: 480,
       mimeType: 'image/png',
-    } }]);
+    }, portableAssetPath: 'ai/attachments/managed-image.png' }]);
     expect(sources.get(image.id)?.relPath).toBe('ai/attachments/managed-image.png');
     expect(await bundle.listManagedResources('task-1', idleSignal())).toMatchObject([
       {

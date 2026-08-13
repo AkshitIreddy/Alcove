@@ -10,6 +10,11 @@
 import { nanoid } from 'nanoid';
 import { getDb } from './db';
 import { countPendingAiAgentAttachmentReferences } from './aiAgentPersistence';
+import {
+  purgeAiAgentRetrievalSource,
+  purgeAiAgentRetrievalThread,
+  refreshAiAgentRetrievalSource,
+} from './aiAgentRetrievalIndex';
 
 export type AiAgentTaskStatus =
   | 'idle'
@@ -147,6 +152,49 @@ async function ensureTables(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_agent_chunks_source_ord ' +
         'ON ai_agent_chunks (source_id, ordinal)',
+    );
+    // Ordinary SQLite revision ledger: unlike vec0/FTS this is safe even when
+    // the optional extension is unavailable. Triggers catch writes from every
+    // connection, so lazy reconciliation never relies on process-local memory.
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS ai_agent_retrieval_dirty (' +
+        'source_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 1)',
+    );
+    await db.execute(
+      'INSERT OR IGNORE INTO ai_agent_retrieval_dirty (source_id, revision) ' +
+        'SELECT id, 1 FROM ai_agent_sources',
+    );
+    await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS ai_agent_chunks_retrieval_insert ' +
+        'AFTER INSERT ON ai_agent_chunks BEGIN ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (NEW.source_id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; END',
+    );
+    await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS ai_agent_chunks_retrieval_update ' +
+        'AFTER UPDATE ON ai_agent_chunks BEGIN ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (OLD.source_id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (NEW.source_id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; END',
+    );
+    await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS ai_agent_chunks_retrieval_delete ' +
+        'AFTER DELETE ON ai_agent_chunks BEGIN ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (OLD.source_id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; END',
+    );
+    await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS ai_agent_sources_retrieval_insert ' +
+        'AFTER INSERT ON ai_agent_sources BEGIN ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (NEW.id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; END',
+    );
+    await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS ai_agent_sources_retrieval_update ' +
+        'AFTER UPDATE ON ai_agent_sources BEGIN ' +
+        'INSERT INTO ai_agent_retrieval_dirty (source_id, revision) VALUES (NEW.id, 1) ' +
+        'ON CONFLICT(source_id) DO UPDATE SET revision = revision + 1; END',
     );
   })();
   return tablesReady;
@@ -316,6 +364,8 @@ export async function deleteAiAgentThread(id: string): Promise<void> {
   }
   await db.execute('DELETE FROM ai_agent_sources WHERE thread_id = $1', [id]);
   await db.execute('DELETE FROM ai_agent_threads WHERE id = $1', [id]);
+  // Derived index cleanup is fail-open and may be repaired lazily later.
+  await purgeAiAgentRetrievalThread(id);
 }
 
 export async function saveAiAgentSource<Meta>(
@@ -338,6 +388,10 @@ export async function saveAiAgentSource<Meta>(
       source.createdAt,
     ],
   );
+  // Chunks are intentionally written before their source descriptor. This
+  // second publication step is therefore where an existing/new source becomes
+  // eligible for task-scoped vector and lexical retrieval.
+  await refreshAiAgentRetrievalSource(source.id);
 }
 
 export async function listAiAgentSources<Meta = unknown>(
@@ -429,6 +483,7 @@ export async function replaceAiAgentSourceChunks(
       ],
     );
   }
+  await refreshAiAgentRetrievalSource(sourceId);
 }
 
 export async function listAiAgentSourceChunks(
@@ -449,6 +504,7 @@ export async function forgetAiAgentSource(sourceId: string): Promise<void> {
   const db = await getDb();
   await db.execute('DELETE FROM ai_agent_chunks WHERE source_id = $1', [sourceId]);
   await db.execute('DELETE FROM ai_agent_sources WHERE id = $1', [sourceId]);
+  await purgeAiAgentRetrievalSource(sourceId);
 }
 
 /** Test/dev helper: a collision-resistant chunk id without leaking text. */

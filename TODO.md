@@ -1,5 +1,443 @@
 # Alcove — running TODO
 
+## 🚧 ACTIVE — 2026-08-13 owner review and regression ledger
+
+No release, version, tag, push or publication is authorised until the owner
+reviews the rebuilt README images and WebP/MP4 demo. Local atomic commits are
+authorised as recovery/review checkpoints. Keep this list as the source-of-truth
+for the current working tree rather than relying on the long development chat.
+
+### Editor correctness
+
+- [ ] Window and panel resizing must be presentation-only: never persistently
+      repaginate, duplicate a section, or leave a different document when the
+      original window size returns. Verify full → minimum → full with exact
+      page IDs and JSON equality.
+- [ ] Right-click must open the same block menu for ordinary text, a selection
+      spanning several blocks, display maths, code and every custom node-view;
+      preserve a multi-block text selection when the click lands inside it.
+- [ ] Backspace at the start of the first block on a non-first page must pull
+      that block into available room on the previous page. Cover both text and
+      the display-math source editor, without duplication when the previous page
+      is full.
+- [ ] Render TeX classification commands such as `\mathrel+` and `\mathbin`
+      instead of showing their source as unknown red text.
+- [ ] Show “Type / for commands…” only on the active empty page, never in an
+      intentional blank paragraph between authored blocks.
+- [ ] Keep Welcome-page inline stickers/emblems clear of ruled-paper strokes.
+
+### Recovery history — default on and deliberately generous
+
+- [ ] Replace the 20-item page-history ring with protected, durable, generous
+      per-page history plus whole-book checkpoints. A restore creates a new
+      checkpoint and never destroys the state being left.
+- [ ] Retain dense recent versions and progressively spaced daily/weekly/monthly
+      recovery points. Never prune the newest, a manually protected checkpoint,
+      or the last known whole-book state.
+- [ ] Add a default-on Settings control. Turning protected history off requires
+      an explicit warning that future recovery points stop; existing recovery
+      data is not silently deleted.
+- [ ] Verify restart persistence, page restore, whole-book restore, bounded
+      pruning and crash-safe checkpoint writes.
+
+### Demo and documentation acceptance
+
+- [ ] Use the supplied kitten image and explain Huffman coding with kittens;
+      keep the native preview exactly three balanced pages at both README and
+      demo viewports.
+- [ ] Slow question typing, show believable Thinking/Brainstorming pauses,
+      keep readiness after visual review, and record review/insert actions in
+      the conversation timeline.
+- [ ] Remove blank camera frames, fake opening transitions, rapid post-insert
+      page turns and camera bounce. Review every transition as dense frames,
+      not only contact-sheet samples.
+- [ ] After insertion, close the Agent panel and deliberately visit all three
+      new pages. Demonstrate ordinary page writing on the Welcome writing page
+      without disturbing the Agent-authored layout.
+- [ ] Keep the wider, quieter Agent panel readable; preview must have scroll,
+      previous/next controls and a useful whole-page fit.
+- [ ] Make the opening Studio changes perceptible at README size while keeping
+      the shelf palette restrained rather than vivid.
+- [ ] Rebuild README screenshots and both `demo.webp` and seekable `demo.mp4`,
+      inspect native stills plus dense frame ranges, then promote the pair
+      atomically. Stop the exclusive `:1420` server afterward.
+
+### Sources and portability already implemented; keep gated
+
+- [ ] Confirm broad inert text/code/data/HTML, DOCX, XLSX and PPTX extraction,
+      500-character managed `Pasted text.txt`, smart table/code/data paste, and
+      block copy/download for images, video, tables, code and other portable
+      content in the final focused gates.
+- [ ] Image prompt handoff remains explicit reader opt-in only. Text veil stays
+      off by default and is risk reduction, not a promise of anonymity.
+
+## 🚧 ACTIVE — in-book AI agent (implemented, unreleased, awaiting owner review)
+
+**Status — 2026-08-12:** the provider-neutral LangGraph runtime, secure Rust
+Cohere gateway, production notebook/source adapters, real PageEditor preview
+sandbox, model-first visual review loop, approval-only whole-book apply path,
+left-rail panel, integrated rendered selection preview, Settings and onboarding
+mention are in the source tree. It also supports grounded conversational answers
+that leave the book untouched, portable picture slots with copyable generation
+prompts and exact dimensions, an optional local Text veil, and a tour-only panel
+preview that never opens the credential sheet. The native Agent is **not in the
+linked v0.6.6 installers** and no commit, version, tag, push or publication is
+authorised beyond local atomic commits.
+
+The large unchecked list below is the original design/acceptance ledger, not a
+claim that implemented items remain absent. The final expansion security audit,
+focused native-Agent/type/Rust gates, responsive native-preview checks, Settings
+and onboarding visual checks, and frozen representative demo review are green.
+The remaining deliberate product limitation is that **every PDF page** stays
+fail-closed for preserve-all requests until verified full-page rastering exists
+(embedded JPEG figures are supporting evidence only, and there is no OCR).
+Text veil protects recognizable text, not pixels in attached images or scanned
+PDF pages, and the UI says so. The selected-text path uses an integrated native-
+page render, not an inline text diff. Owner acceptance is now the release gate;
+only after explicit authorisation should this tree be committed, versioned,
+described in release notes, pushed, tagged or published.
+
+A redacted live-provider compatibility smoke exercised both supplied key classes
+against the exact 23-tool production catalogue. It found and removed two
+Command A+ request fields the live API rejected (`citation_options` and
+`tool_choice`), after which both calls returned a complete streamed strict-tool
+result. The public animation uses a frozen, human-vetted Command A+ fixture and
+does not call Cohere during playback.
+
+### Product decision
+
+- [ ] Add one first-class **AI agent** button to the open-book left rail. It is
+      not a chatbot bolted onto the app and not a second onboarding flow: the
+      tour only mentions that it exists, while first use happens in its own
+      rail sheet. This is the SAME vertical tool rail as Customize book, Page
+      style, Catalogue/stickers, TOC, History, Ribbon and In and out—not a
+      control inside In and out and not a new toolbar elsewhere.
+- [ ] Draw an Alcove-native `AgentIcon`: a bowed open page with one writing
+      stroke ending in a four-point sparkle, using flat colour, one `FLAT.ink`
+      outline and the rail's hand-drawn geometry. Do not use a robot head,
+      stock magic wand, glow, gradient lighting or a generic chat bubble.
+- [ ] Keep the complete workflow inside this one panel. Remove the proposed
+      separate topic/preset form: a reader can simply describe the task, and
+      the agent asks only the missing high-value questions before it works.
+- [ ] Reuse the existing Creative Direction presets and custom directions as
+      optional context chips inside the conversation/composer. Replace native
+      dropdowns with the app's paper-card combobox/menu pattern; let the reader
+      inspect a preset, borrow it into a custom direction, edit it in a proper
+      centred sheet, or leave style to sensible defaults.
+- [ ] Give the composer an app-drawn attach button and expand button. Expand
+      opens a centred, roomy writing sheet without losing draft text,
+      attachments, context choices or the agent thread.
+
+### Agency philosophy — binding
+
+- [ ] Give the model the same kind of **goal-directed freedom Codex has inside
+      its authorized workspace**. Alcove supplies a broad, typed notebook and
+      source toolbelt; the agent decides what to inspect, what questions to ask,
+      how to structure the work, whether to search or read exhaustively, when
+      to revise its plan and which validation/repair action is useful. Do not
+      turn it into a hidden wizard whose strategy was chosen by UI code.
+- [ ] Treat prebuilt workflows as skills and good defaults, not rails. The
+      agent may follow, skip, repeat, reorder or combine them when the user's
+      goal warrants it, and may create explicit subplans for source study,
+      notebook composition, visuals, verification and revision.
+- [ ] Put freedom behind a deterministic capability boundary rather than
+      reducing it: read/inspect/search/plan/draft/validate/render tools may run
+      autonomously inside the selected book and attached sources; external
+      access and mutations remain scoped; final book writes remain previewed,
+      reversible and explicitly approved.
+- [ ] Make the work observable like a Codex task. Stream the evolving plan,
+      concise reasoning summaries, questions, tool name + arguments, progress,
+      useful tool observations, source coverage, diagnostics, draft changes and
+      final messages in chronological order. Never expose raw private hidden
+      chain-of-thought; translate it into honest, useful work notes instead.
+- [ ] Make **native visual self-review** the reason this belongs inside Alcove.
+      Before insertion the agent builds a disposable draft book, paginates it
+      with the real editor rules, renders the real pages, inspects those page
+      images plus parser/layout findings, revises awkward work and rerenders.
+      Text-only confidence is not a preview and is not sufficient.
+- [ ] The agent is the **first reviewer**, not the reader. Intermediate renders,
+      diagnostics and repair rounds are autonomous and merely visible in the
+      activity stream; they do not create approval chores. Interrupt the reader
+      only for materially missing intent or a blocker the agent cannot resolve,
+      then show one polished final preview for change feedback or insertion.
+- [ ] A request such as “do not lose any information from this PDF” is a change
+      in strategy, not a prompt decoration. The agent can inspect the complete
+      source manifest, read every page/chunk (in multiple passes when needed),
+      maintain a coverage ledger, ask about ambiguous scans and prove that all
+      source units were represented. Top-k retrieval must never silently
+      substitute for an explicit full-coverage instruction.
+
+### Provider and orchestration decision
+
+- [ ] Ship a provider-neutral `AgentProvider` boundary with **Cohere as the
+      first provider**, so notebook workflow, approvals and UI do not become
+      coupled to one vendor's request schema.
+- [ ] Use a **LangGraph.js durable agent loop**, not a fixed state-machine
+      conveyor belt and not an unbounded swarm. The model owns planning and tool
+      choice; LangGraph owns resumable task state, interrupts, streaming,
+      cancellation and recovery; Alcove owns capabilities, validation and
+      transactional writes.
+- [ ] Use Cohere's native V2 request shape behind that graph. The current
+      `@langchain/cohere` JavaScript page still marks image input unsupported,
+      while Alcove needs images and current Command A+ features. Start with a
+      small proof spike: if the current adapter proves full text/tool/stream/
+      image parity, use it; otherwise keep LangGraph and implement a narrow
+      Cohere model adapter over Alcove's Rust gateway rather than giving up the
+      supported features or adding a Python/Node sidecar.
+- [ ] Default the Cohere connector to `command-a-plus-05-2026` after runtime
+      capability validation. It is the current text+image, reasoning, tool-use
+      model. Keep the model id remotely/configurably replaceable so a retired
+      model does not require rewriting the agent graph.
+- [ ] Give the agent an **adaptive RAG and full-reading tool suite**, not a
+      reader-facing RAG checkbox and not one hardcoded source policy. It can put
+      a small source directly in context, search/index/rerank a large corpus,
+      inspect arbitrary page ranges, or deliberately traverse every source unit
+      for a lossless/coverage-sensitive task.
+- [ ] Prove Cohere's current retrieval stack in Phase 0: `embed-v4.0` for
+      multilingual text plus rendered PDF-page/image embeddings, and
+      `rerank-v4.0-fast` by default (with `rerank-v4.0-pro` reserved for a
+      quality-sensitive final pass). Use local SQLite/FTS retrieval before paid
+      reranking where it is sufficient, cache embeddings by content hash, and
+      never re-embed unchanged sources. The UI says which sources/pages were
+      used and shows citations; it does not ask the reader to understand RAG.
+- [ ] Put a visible default budget around ordinary work, not a strategy cage.
+      The agent can extend/revise a plan when source coverage or quality truly
+      needs it, while the UI shows calls/context/coverage and offers Stop.
+      Network retries remain bounded to 408/429/5xx; accidental loops, repeated
+      identical calls and unproductive tool churn are detected and interrupted.
+- [ ] Stream useful product phases (`reading sources`, `planning`, `drafting`,
+      `checking the script`, `building preview`, `waiting for you`) and the
+      assistant's user-facing messages. Never expose or persist hidden
+      chain-of-thought.
+
+### Keys, privacy and first use
+
+- [ ] On the first AI Agent open only, show a quiet centred setup sheet with
+      **Trial/evaluation key**, **Production/enterprise key**, **Use for this
+      session**, **Save securely**, **Test key**, a link to create a Cohere key,
+      and **Skip for now**. Skipping opens the agent in an unconfigured state
+      and sends nothing; it must not block the rest of Alcove.
+- [ ] After first use, move all credential management to a dedicated
+      **Settings → Integrations → AI agent** section: connection status,
+      self-declared key kind, Test, Replace, Remove/Disconnect, privacy summary
+      and default context policy. The provider validation endpoint does not
+      report trial versus production tier, so make the choice editable rather
+      than pretending Alcove can infer it. Keep the normal agent panel clean—
+      at most one compact `not connected`/provider-status line linking to
+      Settings, never a permanent key-management card.
+- [ ] Support trial keys for non-sensitive evaluation, but do not describe them
+      as appropriate for private notebooks. Current Cohere limits are 20 Chat
+      requests/minute and 1,000 calls/month; more importantly, Cohere says
+      trial inputs/outputs may be used for R&D, should not contain personal
+      information, and its products are not intended for personal/household
+      use. The reader must actively acknowledge this when using a trial key.
+- [ ] Run a credential-storage spike before UI work: prefer the operating
+      system vault (Windows Credential Manager, macOS Keychain, Linux Secret
+      Service); evaluate official Tauri Stronghold only if its unlock secret is
+      not itself persisted insecurely. If no secure Linux vault exists, offer
+      session-only rather than plaintext fallback.
+- [ ] Keep the saved key behind Rust. The WebView sees it only while the reader
+      types it, submits it immediately, clears the field/reactive state, and
+      never receives it again. Do not place it in SQLite settings, localStorage,
+      IndexedDB, URLs, logs, crash reports, exports, backups, graph checkpoints
+      or telemetry.
+- [ ] Add narrow Rust commands for key test/save/delete and normalized Cohere
+      V2 streaming requests. Redact authorization headers and provider bodies
+      from errors. Add key rotation/removal and an obvious `Disconnect Cohere`
+      action.
+- [ ] Default context to the current selection/page plus explicitly attached
+      sources—not the whole book or library. Show exactly what will be sent,
+      with toggles for current page, nearby pages or whole book. Add Delete
+      thread / Forget sources controls and keep cloud tracing off by default.
+
+### Agent graph and human checkpoints
+
+- [ ] Persist one versioned graph thread per user task, associated with a book,
+      using an Alcove SQLite checkpointer. State contains messages, task brief,
+      source ids/digests, plan, draft, diagnostics, page anchors, status and
+      apply receipt; it never contains API keys, raw attachment bytes or
+      runtime handles.
+- [ ] Implement this resumable capability loop (a common route, not a mandatory
+      order):
+
+      ```text
+      user goal -> agent plans -> agent chooses tools
+        -> inspect notebook / inspect or retrieve complete sources / ask user
+        -> revise plan -> draft or patch -> inspect diagnostics/layout/render
+        -> repeat useful work until agent proposes a result
+        -> exact native rendered preview + insertion approval
+        -> stale-book conflict check -> atomic apply -> verify receipt
+      ```
+
+- [ ] Ask a small group of high-information questions in one turn and include
+      **Use sensible defaults**. Topic/intent and a usable desired outcome are
+      normally the only blocking facts; audience, depth, length and style can
+      receive visible assumptions that the reader may edit.
+- [ ] Ask where the result belongs and reconfirm it on the preview: at the
+      current caret, replacing the selection, before/after the current page,
+      at the beginning/end of the book, or as newly inserted pages. Show the
+      proposed location and expected page count before any mutation.
+- [ ] Make every book-writing operation a deterministic approval gate. The
+      model may only propose `submit_notebook_script`/`NotebookPatch`; it never
+      receives unrestricted page, SQL, filesystem or editor commands.
+- [ ] Give every draft/apply attempt a run id, draft version and idempotency
+      key. Re-read the book revision before apply; if pages changed meanwhile,
+      stop at a conflict card instead of overwriting. Apply in one transaction,
+      verify content/page ids, and create one complete book-level Undo step.
+- [ ] Make Stop real: abort the provider stream, suppress late events by run id,
+      prevent entry to the apply node, and retain the last complete checkpoint
+      for optional resume. App restart/network loss should resume from a safe
+      checkpoint, never repeat insertion.
+
+### Notebook generation, preview and revisions
+
+- [ ] Make the live Notebook Script spec/catalogue the canonical generation
+      source. Retrieve only the relevant syntax, page/card/callout/lettering/
+      diagram/sticker/tape/trim and Creative Direction sections per graph node,
+      so agent prompts cannot drift from the format guide shipped to people.
+- [ ] Have Cohere return the large artifact through a strict
+      `submit_notebook_script` tool argument. Keep requirements, plans, audits
+      and patches schema-validated; do not combine Cohere `response_format`
+      with tools/documents where its API forbids that combination.
+- [ ] Refactor manual Paste Script and AI apply onto one shared
+      `applyNotebookScript` service: same tolerant parser, diagnostics,
+      placeholder/media resolution, authored page boundaries, overflow
+      settlement, duplicate prevention, protected pages and whole-import Undo.
+- [ ] Expose local parser, image-reference, page-ledger, dry-layout and rendered
+      preview checks as first-class tools. The agent chooses and repeats the
+      useful repair work, but cannot mark a parser/layout failure as successful
+      merely because a model score is high.
+- [ ] Add an isolated draft-sandbox service: exact TipTap schema, page styles,
+      pagination, media placeholders/assets, headings, diagrams and fixed page
+      dimensions, but no writes to the live book. Key every preview by draft
+      hash/generation so late renders and stale agent observations cannot be
+      mistaken for the current draft.
+- [ ] Add a `render_draft_pages` / `inspect_draft_render` tool pair. Return page
+      manifests and capped page images to Command A+ for visual review; let it
+      inspect selected pages or every page, record concrete layout/quality
+      findings, revise the script and request a new render. Preserve original
+      local image assets while sending only analysis-sized preview images.
+- [ ] Show the complete draft in a trustworthy preview: page count, insertion
+      target, sources/citations, parser/layout status, assumptions and affected
+      pages. Show the SAME exact rendered pages the agent inspected, with a
+      page/spread filmstrip, zoom/full-preview, visual-review findings and
+      revision history. Let the reader approve, reject, change location, or
+      send feedback without losing the thread. Only explicit approval copies
+      the isolated draft into the live book.
+- [ ] Tie later revision requests to the last apply receipt and current page
+      revisions. The agent proposes a scoped diff, calls out conflicts with
+      user edits, asks follow-ups when intent is ambiguous and requires approval
+      again before changing the book.
+
+### Images, PDFs and source grounding
+
+- [ ] Accept local PNG/JPEG/WebP/non-animated GIF and PDF attachments with
+      explicit size/type caps, preview/remove controls, hashing and cancellation.
+      Preserve the original image asset for insertion/fullscreen viewing; make
+      a resized analysis copy only for the model request.
+- [ ] Do **not** pretend Cohere accepts arbitrary PDFs directly. Extract PDF
+      text locally by page and preserve page anchors. V1 may expose byte-valid
+      embedded JPEG figures only; it has no OCR or full-page PDF raster. Until a
+      verified full-page raster exists, every PDF page must remain unresolved
+      for preserve-all work even when extracted text looks complete.
+- [ ] Cite attached sources at page/figure level in plans and generated notes.
+      If extraction is weak, say so and ask whether the reader wants OCR/
+      visual analysis rather than silently inventing content.
+- [ ] Use a three-level retrieval policy: direct grounded context for a small
+      source; local FTS/semantic candidate retrieval plus Cohere Rerank for a
+      long text source; page-image/text embeddings plus Rerank for visual or
+      mixed PDFs. Record page/chunk ids in the plan so every cited claim can be
+      traced back to the attachment and stale indexes can be invalidated.
+- [ ] Treat every attachment, OCR result and image as untrusted data. A
+      quarantined source-reader step gets no tools and returns typed facts,
+      anchored excerpts and prompt-injection warnings. Instructions found
+      inside a source never change the user's goal, permissions or insertion
+      approval.
+- [ ] V1 does not browse arbitrary URLs or generate new images. If image
+      generation is added later it needs a separate provider/tool, clear
+      consent and the existing aspect-ratio/role requirements; Cohere itself
+      returns text rather than generated image assets.
+
+### Conversation and selection UX
+
+- [ ] Build the AI Agent rail sheet in the same parchment/ink language as other
+      book sheets: task threads, source chips, readable assistant/user cards,
+      compact phase ledger, app-styled menus, retry/stop, citations, preview
+      card and a fixed composer. The panel may scroll; pages never do.
+- [ ] Preserve one task thread across panel close/reopen and allow a new task,
+      rename, delete and resume. Summarize old conversation locally and send
+      only recent turns plus canonical task/plan/source state to avoid stale,
+      expensive context.
+- [ ] Add one Alcove AI action to the existing text-selection toolbar. It opens
+      a small hand-drawn prompt card above the selection, with optional quick
+      intents (rewrite, shorten, clarify, continue) and free text. The sandbox
+      integrates the replacement into the captured target-page document and
+      shows that exact native rendered page for approval—not an inline text diff
+      and not an immediate mutation.
+- [ ] Anchor selection rewrites to page/block ids and a document revision. If
+      the reader edits or moves the selection while the request runs, refuse
+      the stale patch and ask them to reselect.
+- [ ] Add only a mention to onboarding: where the AI Agent icon lives, that it
+      uses the reader's own provider key, and that nothing is sent until they
+      open it and consent. Do not put key setup or a forced agent task in the
+      tour.
+
+### Delivery order and gates
+
+- [ ] **Phase 0 — proof spikes:** validate a trial and production key through
+      the actual secure Rust path; prove current Command A+ text, streaming,
+      strict tools, images, citations and cancellation; measure Embed v4 plus
+      Rerank v4 quality/call cost on text and mixed-PDF fixtures; prove
+      LangChain Cohere parity or lock in the custom LangGraph provider adapter;
+      select the secure credential backend. Use only synthetic/non-sensitive
+      fixtures. Never print, screenshot, commit or echo local development key
+      values.
+- [ ] **Phase 1 — safe foundation:** provider interface, Rust gateway, secure
+      key lifecycle, graph/checkpointer, typed state/events, fake provider,
+      cancellation, redaction and deterministic approval policy.
+- [ ] **Phase 2 — generation path:** intake/follow-ups, spec retrieval, source
+      ingestion, planning/drafting/repair graph, shared script apply service,
+      dry-run preview, placement choices, atomic apply and Undo.
+- [ ] **Phase 3 — UI:** rail icon/panel, styled creative-direction menus,
+      expandable composer, attachments, streaming phases, citations, preview/
+      approval/conflict cards and thread management.
+- [ ] **Phase 4 — selected-text AI:** anchored mini composer, transform graph,
+      integrated target-page render and stale-selection protection.
+- [ ] **Phase 5 — acceptance:** deterministic fake-provider tests first, then
+      redacted real-key smoke tests and an adversarial eval set covering missing
+      requirements, long/malformed output, text/scanned/mixed PDFs, images,
+      prompt injection, rate limit/auth/network failures, cancellation/restart,
+      stale-book conflicts, exactly-once insertion, Undo and revisions.
+- [ ] Visually inspect the real rail panel, key gate, expanded composer,
+      attachment states, follow-up choices, progress, preview, insertion target,
+      selection popover, errors and narrow-height layouts. Also inspect several
+      generated notebooks page by page; zero parser errors, duplicate sections,
+      page overflow, missing media, stale writes or unapproved mutations is the
+      release floor.
+- [ ] After owner acceptance, update the downloadable AI guide relationship,
+      onboarding mention, README/manual/privacy text and release notes. Keep the
+      manual copy/download flow as a provider-independent fallback rather than
+      deleting it.
+
+### Research authority (recheck at implementation time)
+
+- Cohere: [rate limits](https://docs.cohere.com/v2/docs/rate-limits),
+  [Command A+](https://docs.cohere.com/docs/command-a-plus),
+  [tool use](https://docs.cohere.com/v2/docs/tool-use-overview/),
+  [structured outputs](https://docs.cohere.com/v2/docs/structured-outputs),
+  [image inputs](https://docs.cohere.com/v2/docs/image-inputs),
+  [Embed v4](https://docs.cohere.com/docs/cohere-embed),
+  [Rerank v4](https://docs.cohere.com/v2/docs/rerank),
+  [privacy policy](https://cohere.com/privacy).
+- LangChain/LangGraph: [JS agent overview](https://docs.langchain.com/oss/javascript/langchain/agents),
+  [persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence),
+  [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts),
+  [functional API](https://docs.langchain.com/oss/javascript/langgraph/functional-api),
+  [ChatCohere JS capability table](https://docs.langchain.com/oss/javascript/integrations/chat/cohere).
+- Security/design: [OWASP Agentic Top 10](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/),
+  [Tauri Stronghold](https://v2.tauri.app/plugin/stronghold/),
+  [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents).
+
 ## ✅ 0.6.6 — safer pictures and whole-import undo (2026-08-11)
 
 - [x] Make one `Ctrl+Z` restore the complete pre-import book after a successful

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseNotebookScriptPages } from '../src/editor/script/pageBoundaries';
+import { demoAttachmentVisible } from '../src/views/rail/aiAgentDemoBridge';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const sourcePath = resolve(ROOT, 'shots-now/fixtures/ai-agent-study-notes.md');
@@ -12,8 +13,15 @@ const provenancePath = resolve(
 const bridgePath = resolve(ROOT, 'src/views/rail/aiAgentDemoBridge.ts');
 const bookViewPath = resolve(ROOT, 'src/views/BookView.tsx');
 const demoPath = resolve(ROOT, 'shots-now/demo-gif.mjs');
+const probePath = resolve(ROOT, 'shots-now/probe-agent-demo.mjs');
 
 describe('AI Agent documentation fixture', () => {
+  it('adds the kitten source only with the page-building follow-up', () => {
+    expect(demoAttachmentVisible(0)).toBe(false);
+    expect(demoAttachmentVisible(1)).toBe(false);
+    expect(demoAttachmentVisible(2)).toBe(true);
+  });
+
   it('uses the real product opening and an honest pointer-driven Review interaction', () => {
     const film = readFileSync(resolve(ROOT, 'shots-now/demo-gif.mjs'), 'utf8');
 
@@ -57,6 +65,7 @@ describe('AI Agent documentation fixture', () => {
     const bridge = readFileSync(bridgePath, 'utf8');
     const bookView = readFileSync(bookViewPath, 'utf8');
     const demo = readFileSync(demoPath, 'utf8');
+    const probe = readFileSync(probePath, 'utf8');
     const publicContract = bridge.match(
       /export interface AiAgentDemoPublicBridge \{([\s\S]*?)\n\}/,
     )?.[1] ?? '';
@@ -75,6 +84,9 @@ describe('AI Agent documentation fixture', () => {
     );
     expect(bridge).toContain('await prior.disposeAll()');
     expect(bridge).toContain('prior.releaseUrls()');
+    expect(bridge).toContain('demo-reader-approve');
+    expect(bridge).toContain('Insert the three reviewed pages.');
+    expect(bridge).not.toContain('Opened the full-page review.');
     expect(bridge).toContain('generation.pageCount !== 3');
     expect(bridge).toContain('generation.pages.length !== 3');
     expect(bridge).toContain('insertReviewedPages(hydratedStudyNotesScript)');
@@ -85,9 +97,12 @@ describe('AI Agent documentation fixture', () => {
     expect(bookView).toContain('await insertPagesAfter(anchor.id, additions)');
     expect(bookView).toContain('actualRun.join');
     expect(bookView).toContain('exact three reviewed pages');
+    expect(bookView.indexOf('await setScriptInsertionActivity(false)')).toBeLessThan(
+      bookView.indexOf('setSpreadIndex(spreadOfSlot(firstSlot))'),
+    );
     expect(bookView).toContain('restoreInsertedPages: async () =>');
     expect(bookView).toContain('const restored = await restoreScriptInsertion(true)');
-    expect(bridge).toContain("? { id, kind: 'message', role, text, citations: [CITATION] }");
+    expect(bridge).toContain("...(citeSource ? { citations: [CITATION] } : {})");
     expect(bridge).not.toMatch(/SqliteAgentPersistence|CohereTauriAgentProvider|applyApprovedAiProposal/);
     expect(bridge).toContain("imageGenerationPrompts: []");
     expect(bridge).not.toContain('demo-image-prompt-');
@@ -100,7 +115,19 @@ describe('AI Agent documentation fixture', () => {
     expect(demo).toContain("writeQaStill(page, 'ai-agent-thinking-pages')");
     expect(demo).toContain("writeQaStill(page, 'ai-agent-full-preview')");
     expect(demo).toContain("writeQaStill(page, 'ai-agent-pages-settling')");
-    expect(demo).toContain("turn('Read, Check, Decode', 16)");
+    expect(demo.indexOf("t.click('.nb-ai-approve-action'")).toBeLessThan(
+      demo.indexOf("document.body.textContent?.includes('Adding the three reviewed pages')"),
+    );
+    expect(demo).not.toContain("globalThis.__aiAgentDemo.advance('applying')");
+    expect(demo).not.toContain("turn('Huffman Coding with Kittens'");
+    expect(demo).toContain('insertion did not land on the first kitten spread');
+    expect(probe).toContain("firstInsertedSpread.spread !== '15'");
+    expect(probe).toContain('first conversational reply leaked outside its box');
+    expect(probe).toContain('cited a source that was not attached');
+    expect(demo.indexOf("headings.includes('Huffman Coding with Kittens')")).toBeLessThan(
+      demo.indexOf("t.click('[aria-label^=\"Close AI agent\"]'"),
+    );
+    expect(demo).toContain("turn('Read, Check, Decode', 16,");
     expect(demo).toContain("jumpWithThumbnail('Your first five minutes', 0");
     expect(demo).toContain("writeQaStill(page, 'welcome-writing-page')");
     expect(demo).not.toContain('placeCaretInInsertedPage');

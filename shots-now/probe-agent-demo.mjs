@@ -83,6 +83,44 @@ try {
         document.querySelector('.nb-rail-panel.is-ai-agent')?.getAttribute('aria-hidden') === 'false'
       );
       await page.waitForTimeout(700);
+      if (await page.locator('.nb-ai-attachment').count() !== 0) {
+        throw new Error(`${size.label}: the frozen demo opened with a source attached before the reader sent anything.`);
+      }
+      await page.locator('textarea[aria-label="What should the agent do?"]').fill(
+        'Can you explain Huffman coding with kittens?',
+      );
+      await page.locator('button[aria-label="Send to AI agent"]').click();
+      await page.waitForFunction(() => globalThis.__aiAgentDemo?.state().stage === 'intake');
+      await page.evaluate(() => globalThis.__aiAgentDemo.advance('answer'));
+      await page.waitForFunction(() =>
+        document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'complete'
+      );
+      const firstReply = await page.evaluate(() => {
+        const transcript = document.querySelector('.nb-ai-agent-scroll');
+        const reply = [...document.querySelectorAll('.nb-ai-message[data-role="agent"]')].at(-1);
+        if (!(transcript instanceof HTMLElement) || !(reply instanceof HTMLElement)) return null;
+        const transcriptRect = transcript.getBoundingClientRect();
+        const replyRect = reply.getBoundingClientRect();
+        return {
+          contained: replyRect.left >= transcriptRect.left - 1 && replyRect.right <= transcriptRect.right + 1,
+          citations: reply.querySelectorAll('.nb-ai-citations').length,
+          attachments: document.querySelectorAll('.nb-ai-attachment').length,
+        };
+      });
+      if (!firstReply?.contained || firstReply.citations !== 0 || firstReply.attachments !== 0) {
+        throw new Error(`${size.label}: first conversational reply leaked outside its box or cited a source that was not attached (${JSON.stringify(firstReply)}).`);
+      }
+      await page.locator('.nb-ai-agent').screenshot({
+        path: resolve(QA_DIR, `agent-${size.label}-first-answer.png`),
+      });
+      await page.locator('textarea[aria-label="What should the agent do?"]').fill(
+        'Make this into three visual study-note pages and use this kitten infographic.',
+      );
+      await page.locator('button[aria-label="Send to AI agent"]').click();
+      await page.waitForFunction(() =>
+        globalThis.__aiAgentDemo?.state().stage === 'intake' &&
+          document.querySelectorAll('.nb-ai-attachment').length === 1
+      );
       await page.evaluate(() => globalThis.__aiAgentDemo.advance('ready'));
       await page.waitForSelector('.nb-ai-final-preview', { state: 'visible' });
       const evidence = await page.evaluate(async () => {
@@ -185,7 +223,7 @@ try {
             .map((node) => node.textContent?.trim()),
         }));
         if (
-          firstInsertedSpread.spread !== '14' ||
+          firstInsertedSpread.spread !== '15' ||
           !firstInsertedSpread.headings.includes('Huffman Coding with Kittens') ||
           !firstInsertedSpread.headings.includes('Build the Kitten Tree')
         ) {

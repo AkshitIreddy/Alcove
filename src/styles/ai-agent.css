@@ -468,6 +468,7 @@
 }
 
 .nb-ai-message {
+  min-width: 0;
   max-width: 82%;
   display: grid;
   gap: var(--space-4);
@@ -572,6 +573,8 @@
 }
 
 .nb-ai-citations {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
@@ -579,6 +582,8 @@
 }
 
 .nb-ai-citations button {
+  min-width: 0;
+  width: 100%;
   max-width: 100%;
   overflow: hidden;
   padding: 3px var(--space-8);

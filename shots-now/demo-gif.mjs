@@ -1977,7 +1977,10 @@ const tl = timeline((t) => {
     // on #root while the disposable renderer mounted could turn the exact
     // three-leaf fixture into a fourth spill leaf. Return to product identity
     // before rendering, then frame the landed review card afterwards.
-    await sceneCameraReset(page, ctx, 320);
+    // The native renderer must measure at product identity.  Do not animate
+    // the recording crop back to identity: translating the entire root while
+    // the review panel changes height can leave only empty parchment in view.
+    await sceneCameraSnapReset(page, ctx, 'prepare native self-review');
     await settleScene(
       ctx,
       page.evaluate(() => globalThis.__aiAgentDemo.advance('review')),
@@ -2072,10 +2075,24 @@ const tl = timeline((t) => {
   t.call(async function closeFullReviewedPage(page, ctx) {
     await settleScene(
       ctx,
-      page.waitForFunction(() => document.querySelector('.nb-ai-full-preview') === null),
+      page.waitForFunction(() => {
+        if (document.querySelector('.nb-ai-full-preview') !== null) return false;
+        const preview = document.querySelector('.nb-ai-final-preview');
+        const images = [...document.querySelectorAll('.nb-ai-preview-stage img')];
+        return preview instanceof HTMLElement &&
+          preview.getBoundingClientRect().width > 200 &&
+          images.length >= 2 && images.every((image) =>
+            image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+          );
+      }),
       { capMs: 5_000, label: 'return from full reviewed-page preview' },
     );
-    await advanceSceneFrames(page, ctx, 3);
+    // Modal removal changes the viewport composition.  Reassert product
+    // geometry atomically and require several populated frames before any
+    // documentary crop is allowed to begin.  An animated reset here used to
+    // translate the entire app out of view for a brief pink-screen interval.
+    await sceneCameraSnapReset(page, ctx, 'return from full-page review');
+    await advanceSceneFrames(page, ctx, 4);
   }, { name: 'return to the insertion decision', seconds: 0.32 });
 
   t.call(async function frameAgentApproval(page, ctx) {
@@ -2084,7 +2101,7 @@ const tl = timeline((t) => {
     // the whole root outside the viewport. Snap recording-only camera state
     // to identity between captured frames, hold that fully visible pose, then
     // begin the deliberate approval focus from clean product geometry.
-    await sceneCameraReset(page, ctx, 420);
+    await sceneCameraSnapReset(page, ctx, 'frame final insertion choice');
     await sceneScroll(page, ctx, '.nb-ai-final-actions', 'end', 480);
     await sceneCameraFocus(page, ctx, '.nb-ai-final-actions', {
       scale: 1.15,
@@ -2099,8 +2116,8 @@ const tl = timeline((t) => {
     await writeQaStill(page, 'ai-agent-preview');
   }, { name: 'frame the final insertion choice', seconds: 0.62 });
   t.hold(1.15);
-  t.call(async function explainInsertionBeforeItStarts(page, ctx) {
-    await page.evaluate(() => globalThis.__aiAgentDemo.advance('applying'));
+  t.click('.nb-ai-approve-action', { via: 'cursor', glideSeconds: 0.28 });
+  t.call(async function showInsertionAfterActivation(page, ctx) {
     await settleScene(
       ctx,
       page.waitForFunction(
@@ -2108,20 +2125,23 @@ const tl = timeline((t) => {
           document.body.textContent?.includes('Adding the three reviewed pages') === true,
         { timeout: 5_000 },
       ),
-      { capMs: 5_000, label: 'show the insertion preparation receipt' },
+      { capMs: 5_000, label: 'show insertion state after the visible approval click' },
     );
     await writeQaStill(page, 'ai-agent-pages-settling');
-  }, { name: 'explain how the exact pages will settle', seconds: 0.55 });
+  }, { name: 'Agent begins inserting after approval', seconds: 0.55 });
   t.hold(1.15);
-  t.click('.nb-ai-approve-action', { via: 'cursor', glideSeconds: 0.28 });
   t.call(async function waitForReviewedPagesToLand(page, ctx) {
     await settleScene(
       ctx,
       page.waitForFunction(
         () => {
           const state = globalThis.__aiAgentDemo?.state();
+          const headings = [...document.querySelectorAll('.nb-leaf-paper h1')]
+            .map((node) => node.textContent?.trim());
           return state?.stage === 'inserted' && state.insertedPages === 3 &&
-            document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'complete';
+            document.querySelector('.nb-ai-agent')?.getAttribute('data-stage') === 'complete' &&
+            headings.includes('Huffman Coding with Kittens') &&
+            headings.includes('Build the Kitten Tree');
         },
         { timeout: 60_000 },
       ),
@@ -2148,20 +2168,20 @@ const tl = timeline((t) => {
     // real-time wait freezes Gifsmith's virtual clock here and can therefore
     // wait forever for pixels that were never allowed to advance.
     await advanceScene(page, ctx, 700);
-    const spread = await page.$eval('[data-spread-index]', (node) =>
-      Number(node.getAttribute('data-spread-index')),
+    const headings = await page.$$eval('.nb-leaf-paper h1', (nodes) =>
+      nodes.map((node) => node.textContent?.trim()),
     );
-    if (spread !== 14) {
-      throw new Error(`demo-gif: Agent closed on spread ${spread}, expected the pre-insertion spread 14`);
+    if (
+      !headings.includes('Huffman Coding with Kittens') ||
+      !headings.includes('Build the Kitten Tree')
+    ) {
+      throw new Error(`demo-gif: insertion did not land on the first kitten spread (${headings.join(' | ')})`);
     }
   }, { name: 'close the Agent over the real book', seconds: 0.75 });
   t.hold(0.65);
 
-  // The insert operation never teleports the camera. Show the real product
-  // interaction instead: one deliberate curl reaches pages 1–2, a reading
-  // hold lets the large kitten infographic land, then one more curl reaches
-  // page 3. This replaces the old rapid automatic-looking page burst.
-  turn('Huffman Coding with Kittens', 15, { requireWarmCurl: false });
+  // The real insertion deliberately lands on the first reviewed spread. Show
+  // it at rest before one ordinary curl visits the third study page.
   t.call(async function recordFirstInsertedSpread(page) {
     const headings = await page.$$eval('.nb-leaf-paper h1', (nodes) =>
       nodes.map((node) => node.textContent?.trim()),

@@ -103,7 +103,7 @@ describe('AI agent conversational transcript', () => {
     expect(prompts).toContain('without making them say “keep it in this conversation.”');
     expect(prompts).toContain('Ordinary questions and requests to explain, teach, compare, brainstorm or answer are conversational by default');
     expect(prompts).toContain('Create or change notebook content only when the reader clearly asks');
-    expect(demo).toContain("'Explain photosynthesis with a cute analogy first.'");
+    expect(demo).toContain("'Can you explain Huffman coding with kittens?'");
     expect(demo).not.toContain('Keep it here in our conversation');
   });
 
@@ -114,6 +114,16 @@ describe('AI agent conversational transcript', () => {
     expect(panel).toContain('<p>{item.text}</p>');
     expect(styles).toMatch(/\.nb-ai-message p\s*\{[^}]*white-space:\s*pre-wrap;/s);
     expect(styles).toMatch(/\.nb-ai-message p\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(styles).toMatch(/\.nb-ai-message\s*\{[^}]*min-width:\s*0;/s);
+    expect(styles).toMatch(/\.nb-ai-citations\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
+    expect(styles).toMatch(/\.nb-ai-citations button\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s);
+  });
+
+  it('does not invent a reader message when the preview viewer is opened', () => {
+    const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
+
+    expect(panel).not.toContain('Opened the full-page review.');
+    expect(panel).not.toContain('localDecisions');
   });
 
   it('remembers the pre-update bottom position before following newly appended work', () => {

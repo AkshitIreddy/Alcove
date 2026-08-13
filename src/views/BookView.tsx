@@ -3496,11 +3496,6 @@ export default function BookView(): JSX.Element {
             }
             armScriptInsertionUndo();
             aiDemoInsertionActive = true;
-            const firstSlot = pages().findIndex((page) => page.id === inserted[0]);
-            if (firstSlot >= 0) {
-              setSpreadIndex(spreadOfSlot(firstSlot));
-              setFocusedSide(firstSlot % 2 === 0 ? 'left' : 'right');
-            }
             // Keep the opaque settling card over the live spread until the
             // final page order *and* destination spread have painted.  Taking
             // it down immediately after the DB inserts exposed Solid's three
@@ -3510,6 +3505,19 @@ export default function BookView(): JSX.Element {
               requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
             });
             await setScriptInsertionActivity(false);
+            // The settling sweep deliberately restores the reader's original
+            // spread before it uncovers the book. Land on the first reviewed
+            // page only after that cleanup, then wait for its live editors to
+            // paint before the Agent reports that insertion has completed.
+            const firstSlot = pages().findIndex((page) => page.id === inserted[0]);
+            if (firstSlot < 0) {
+              throw new Error('The first reviewed demo page disappeared while insertion settled.');
+            }
+            setSpreadIndex(spreadOfSlot(firstSlot));
+            setFocusedSide(firstSlot % 2 === 0 ? 'left' : 'right');
+            await new Promise<void>((resolve) => {
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+            });
             return inserted;
           } catch (error) {
             aiDemoInsertionActive = false;

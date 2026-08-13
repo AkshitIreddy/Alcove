@@ -85,7 +85,7 @@ declare global {
 const EXPLAIN_REQUEST =
   'Can you explain Huffman coding with kittens?';
 const BUILD_REQUEST =
-  'Great — turn that into three study-note pages and use the kitten infographic I attached.';
+  'Great — turn that into three study-note pages and use this kitten infographic.';
 
 const EXPLAIN_ANSWER =
   'Imagine a kitten shelter giving every sound a tag. The loudest regular “meow” gets a tiny tag because staff hear it constantly; a rare squeak can use a longer one. Huffman coding does the same with bits: repeatedly pair the two least-frequent symbols, grow a binary tree, then read each symbol\'s root-to-leaf path. Common symbols end up close to the root, so the whole message becomes shorter, and the leaf paths stay prefix-free so decoding never has to guess. I kept this explanation in our conversation because you asked a question rather than asking me to change the notebook.';
@@ -249,10 +249,20 @@ const PLAN = (active: number): AiAgentTimelineItem => ({
   ],
 });
 
-function message(id: string, role: 'reader' | 'agent', text: string): AiAgentTimelineItem {
+function message(
+  id: string,
+  role: 'reader' | 'agent',
+  text: string,
+  citeSource = false,
+): AiAgentTimelineItem {
   return role === 'agent'
-    ? { id, kind: 'message', role, text, citations: [CITATION] }
+    ? { id, kind: 'message', role, text, ...(citeSource ? { citations: [CITATION] } : {}) }
     : { id, kind: 'message', role, text };
+}
+
+/** The supplied image joins the task with the page-building follow-up, not the opening question. */
+export function demoAttachmentVisible(sentMessageCount: number): boolean {
+  return Number.isFinite(sentMessageCount) && sentMessageCount >= 2;
 }
 
 function timelineFor(
@@ -320,10 +330,13 @@ function timelineFor(
       : ['No clipping, overflow, duplicate content or empty page remains.'],
   });
   if (stage === 'applying' || stage === 'inserted') {
+    // Record the reader's real approval only after the visible Insert click.
+    // Opening the review viewer itself remains a local UI action and never
+    // invents a conversation message.
     out.push(message(
       'demo-reader-approve',
       'reader',
-      'Insert these reviewed pages into my notebook.',
+      'Insert the three reviewed pages.',
     ));
     out.push({
       id: 'demo-insert-reviewed-pages',
@@ -426,7 +439,7 @@ function stageView(
       status: inserted || stage === 'answer' ? 'complete' : ready ? 'paused' : 'active',
     }],
     timeline: timelineFor(stage, sent),
-    attachments: [DEMO_ATTACHMENT],
+    attachments: demoAttachmentVisible(sent.length) ? [DEMO_ATTACHMENT] : [],
     context: CONTEXT,
     preview: visiblePreview,
     canStop: working || reviewing || applying,

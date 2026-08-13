@@ -431,7 +431,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   const [previewPage, setPreviewPage] = createSignal(0);
   const [fullPreviewOpen, setFullPreviewOpen] = createSignal(false);
   const [previewZoom, setPreviewZoom] = createSignal<'fit' | number>('fit');
-  const [localDecisions, setLocalDecisions] = createSignal<readonly AiAgentTimelineItem[]>([]);
   const [placementMenuOpen, setPlacementMenuOpen] = createSignal(false);
   const [renameId, setRenameId] = createSignal<string | null>(null);
   const [renameDraft, setRenameDraft] = createSignal('');
@@ -439,7 +438,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   let composerRef: HTMLTextAreaElement | undefined;
   let fileInput: HTMLInputElement | undefined;
   let transcriptWasNearEnd = true;
-  let decisionThreadId: string | undefined;
 
   const storedDirections = loadAiSpecStyleState();
   const [directionId, setDirectionId] = createSignal(storedDirections.selectedId);
@@ -447,14 +445,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
     storedDirections.customPresets,
   );
   const direction = createMemo(() => resolveAiSpecStyle(directionId(), customDirections()));
-
-  createEffect(() => {
-    const nextThreadId = state().threadId;
-    if (decisionThreadId !== undefined && nextThreadId !== decisionThreadId) {
-      setLocalDecisions([]);
-    }
-    decisionThreadId = nextThreadId;
-  });
 
   createEffect(() => {
     if (props.tourPreview || props.panelOpen !== true) {
@@ -487,7 +477,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   // fold. Scroll events keep the pre-update intent without yanking somebody
   // who deliberately moved upward to read an older receipt.
   createEffect(() => {
-    const count = state().timeline.length + localDecisions().length;
+    const count = state().timeline.length;
     state().headline;
     const viewport = transcriptRef;
     if (!viewport) return;
@@ -531,7 +521,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   createEffect(() => {
     const viewport = transcriptRef;
     if (viewport === undefined) return;
-    const extent = state().timeline.length + localDecisions().length;
+    const extent = state().timeline.length;
     if (extent < 0) return;
     queueMicrotask(() => viewport.dispatchEvent(new Event('scroll')));
   });
@@ -694,16 +684,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
               />
             )}
           </For>
-          <For each={localDecisions()}>
-            {(item) => (
-              <TimelineItem
-                item={item}
-                onCitation={(id) => props.controller?.openCitation?.(id)}
-                onAnswer={() => undefined}
-                onDefaults={() => undefined}
-              />
-            )}
-          </For>
           <Show when={workingWhisper()} keyed>
             {(note) => <AgentWorkingWhisper note={note} />}
           </Show>
@@ -729,14 +709,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
               onSelectPage={setPreviewPage}
               onOpen={() => {
                 setPreviewZoom('fit');
-                setLocalDecisions((items) => items.some((item) => item.id === `opened:${preview.id}`)
-                  ? items
-                  : [...items, {
-                      id: `opened:${preview.id}`,
-                      kind: 'message',
-                      role: 'reader',
-                      text: 'Opened the full-page review.',
-                    }]);
                 setFullPreviewOpen(true);
               }}
               placementMenuOpen={placementMenuOpen()}

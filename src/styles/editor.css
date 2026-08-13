@@ -309,7 +309,7 @@
  * Unicode. A colour glyph is a little illustration, not a handwritten
  * descender: if it shares Patrick Hand's baseline the printed rule cuts
  * through its bottom pixels. `emojiBaseline.ts` wraps complete sequences, so
- * the smaller, lifted treatment never touches punctuation, ordinary symbols
+ * the smaller, gently lifted treatment never touches punctuation, ordinary symbols
  * or the stored document. It stays inside the existing line box and therefore
  * cannot change pagination.
  */
@@ -319,7 +319,10 @@
   margin-inline: 0.03em;
   font-size: 0.9em;
   line-height: 1;
-  vertical-align: 0.25em;
+  /* Windows colour emoji need a small lift to clear the rule, but 0.25em
+     pulled them visibly above the handwritten cap-height. 0.15em keeps their
+     bottom pixels clear while restoring the surrounding word rhythm. */
+  vertical-align: 0.15em;
 }
 
 .nb-prose h1,

@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { emojiTextRanges } from '../src/editor/emojiBaseline';
+
+const editorCss = readFileSync(new URL('../src/styles/editor.css', import.meta.url), 'utf8');
 
 describe('inline emoji baseline ranges', () => {
   it('keeps whole emoji sequences in one visual wrapper', () => {
@@ -14,5 +17,15 @@ describe('inline emoji baseline ranges', () => {
 
   it('does not wrap ordinary text and punctuation', () => {
     expect(emojiTextRanges('No symbols © + = or handwritten words.')).toEqual([]);
+  });
+
+  it('gently clears ruled paper without pulling emoji above the handwritten line', () => {
+    const rule = editorCss.match(/\.nb-prose \.nb-inline-emoji\s*\{([^}]*)\}/s)?.[1] ?? '';
+
+    expect(rule).toContain('display: inline-block;');
+    expect(rule).toContain('font-size: 0.9em;');
+    expect(rule).toContain('line-height: 1;');
+    expect(rule).toContain('vertical-align: 0.15em;');
+    expect(rule).not.toMatch(/(?:padding|transform|position|top|bottom)\s*:/);
   });
 });

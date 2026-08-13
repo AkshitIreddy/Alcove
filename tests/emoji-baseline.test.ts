@@ -27,7 +27,7 @@ describe('inline emoji baseline ranges', () => {
     expect(rule).toContain('line-height: 1;');
     expect(rule).toContain('margin-inline-start: 0.24em;');
     expect(rule).toContain('margin-inline-end: 0.04em;');
-    expect(rule).toContain('vertical-align: -0.16em;');
+    expect(rule).toContain('vertical-align: 0.1em;');
     expect(rule).not.toMatch(/(?:padding|transform|position|top|bottom)\s*:/);
   });
 });

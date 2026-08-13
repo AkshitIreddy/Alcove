@@ -321,9 +321,9 @@
   font-size: 0.9em;
   line-height: 1;
   /* Keep the colour glyph just clear of the rule without making it float above
-     the handwriting. The dedicated wrapper lets this sit lower than text while
-     leaving the surrounding Patrick Hand baseline untouched. */
-  vertical-align: -0.16em;
+     the handwriting. The wrapper changes only the pictorial glyph, never the
+     surrounding Patrick Hand baseline or the stored document. */
+  vertical-align: 0.1em;
 }
 
 .nb-prose h1,
@@ -2273,12 +2273,15 @@ html[data-nb-col-resizing='true'] {
   display: inline-block;
   /*
    * A sticker is a small drawing, not a Patrick Hand descender.  Aligning its
-   * 28px box to `text-bottom` put the lower half directly on the ruled-paper
-   * stroke (most visibly on the Welcome headings).  Lift the node-view host,
-   * not the SVG: the hover rotation can still own the inner transform and the
-   * box remains inside the existing line height, so pagination is unchanged.
+   * 28px box used to float well above the heading while also touching the
+   * preceding word. Give the drawing an optical gutter and lower its host
+   * toward the writing line. The SVG keeps ownership of its hover rotation,
+   * and the box remains inside the existing line height, so pagination is
+   * unchanged.
    */
-  vertical-align: 0.24em;
+  margin-inline-start: 0.22em;
+  margin-inline-end: 0.04em;
+  vertical-align: -0.08em;
   line-height: 0;
 }
 

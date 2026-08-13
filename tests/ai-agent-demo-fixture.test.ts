@@ -30,6 +30,9 @@ describe('AI Agent documentation fixture', () => {
     expect(film).not.toContain('__demo-book-handoff');
     expect(film).toContain("t.click('.nb-ai-preview-stage', { via: 'cursor'");
     expect(film).toContain('show the next reviewed page');
+    expect(film).toContain('Math.max(minTy, Math.min(0, rawTy))');
+    expect(film.indexOf("sceneCameraSnapReset(page, ctx, 'prepare final Agent preview')"))
+      .toBeLessThan(film.indexOf("globalThis.__aiAgentDemo.advance('ready')"));
   });
 
   it('is a clean, intentional three-page Notebook Script planned around the supplied 3:2 image', () => {

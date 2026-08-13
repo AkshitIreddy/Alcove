@@ -470,11 +470,22 @@ async function sceneCameraFocus(
       if (rect.width < 8 || rect.height < 8) return null;
       const baseCenterX = (((rect.left + rect.right) / 2) - current.tx) / current.scale;
       const baseCenterY = (((rect.top + rect.bottom) / 2) - current.ty) / current.scale;
+      const rootRect = root.getBoundingClientRect();
+      const baseWidth = rootRect.width / current.scale;
+      const baseHeight = rootRect.height / current.scale;
+      const rawTx = wantedX - (baseCenterX * nextScale);
+      const rawTy = wantedY - (baseCenterY * nextScale);
+      // Documentary zoom may crop the app, but it must never translate the
+      // app itself beyond an edge of the viewport. The old unconstrained
+      // target calculation could become positive after a transcript reflow,
+      // pushing the whole root down and leaving several flat pink frames.
+      const minTx = Math.min(0, window.innerWidth - (baseWidth * nextScale));
+      const minTy = Math.min(0, window.innerHeight - (baseHeight * nextScale));
       return {
         from: current,
         to: {
-          tx: wantedX - (baseCenterX * nextScale),
-          ty: wantedY - (baseCenterY * nextScale),
+          tx: Math.max(minTx, Math.min(0, rawTx)),
+          ty: Math.max(minTy, Math.min(0, rawTy)),
           scale: nextScale,
         },
       };
@@ -2002,6 +2013,11 @@ const tl = timeline((t) => {
   t.hold(1.7);
 
   t.call(async function showAgentFinalPreview(page, ctx) {
+    // The review card and final preview have very different transcript
+    // heights. Change that product state from identity, otherwise the old
+    // review-card crop becomes an invalid coordinate system while Solid
+    // replaces the card and can drive the entire root outside the viewport.
+    await sceneCameraSnapReset(page, ctx, 'prepare final Agent preview');
     await page.evaluate(() => globalThis.__aiAgentDemo.advance('ready'));
     await settleScene(
       ctx,

@@ -44,6 +44,27 @@ for the current working tree rather than relying on the long development chat.
 
 ### Demo and documentation acceptance
 
+- [x] Keep ruled-paper lines continuous through the canonical centre gutter
+      with every rail panel open and after it closes; a camera/layout change
+      must not erase a wide middle band or leave a smaller permanent seam.
+- [x] Keep the first conversational Agent reply contained inside its message
+      card at every supported panel width, with long unbroken and formatted
+      content wrapping safely.
+- [x] Start the frozen Agent demonstration with an empty attachment tray. The
+      kitten image may enter only as explicit task evidence when the study-page
+      request begins, and must not remain as a pre-attached source.
+- [x] Make review/modal/approval transitions state-ordered and camera-safe:
+      no off-screen root interpolation, no blank parchment interval, no
+      `Adding three pages` status before the visible Insert click, and no
+      synthetic user review message in the product timeline.
+- [x] After approval, land the live reader on the first inserted Huffman spread
+      before closing the Agent; never expose the old Local video spread for a
+      beat and then jump later.
+- [x] Expand maths regression coverage beyond the reported `\mathrel` case:
+      classification/operator commands, malformed input, exact source/attrs,
+      context menu, cross-page movement, resize/focus/DPR invariance and safe
+      fallback must all be exercised.
+
 - [x] Use the supplied kitten image and explain Huffman coding with kittens;
       keep the native preview exactly three balanced pages at both README and
       demo viewports.

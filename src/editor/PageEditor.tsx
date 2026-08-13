@@ -43,6 +43,8 @@ import {
   type EditorView,
 } from '@tiptap/pm/view';
 import type { Slice } from '@tiptap/pm/model';
+import { isHistoryTransaction, undoDepth } from '@tiptap/pm/history';
+import type { Transaction } from '@tiptap/pm/state';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
 import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
@@ -79,6 +81,14 @@ import {
   trailingCompanionCount,
   trailingOverflowCount,
 } from './pagination';
+
+/** Exact bookends of one native ProseMirror history event that caused a reflow. */
+export interface PaginationUndoOrigin {
+  readonly token: string;
+  readonly historyDepth: number;
+  readonly beforeDoc: PageDoc;
+  readonly afterAuthoredDoc: PageDoc;
+}
 // The spread's own answer to "how much is this being DRAWN at". Imported
 // rather than restated: a second copy of that division is a second chance to
 // get the direction of it wrong, and the two callers are measuring the same
@@ -206,6 +216,8 @@ export interface PageEditorProps {
   readonly onDocChange?: (doc: PageDoc) => void;
   /** Pagination contract: fixed-capacity page that hands overflow onward. */
   readonly paginated?: boolean;
+  /** Freeze the layout drain while BookView reverses a cross-page history event. */
+  readonly suppressPagination?: boolean;
   /** Content budget in px, compared against the prose root's scrollHeight. */
   readonly pageCapacityPx?: number;
   /**
@@ -218,7 +230,10 @@ export interface PageEditorProps {
     blocks: unknown[],
     cursorCarried: boolean,
     caretOffset?: number | null,
+    origin?: PaginationUndoOrigin | null,
   ) => void;
+  /** Publish the authored history event before its layout-only drain runs. */
+  readonly onAuthoredEdit?: (origin: PaginationUndoOrigin) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -607,11 +622,19 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       ? value
       : undefined;
   };
-  const isPaginated = (): boolean => props.paginated === true;
+  const isPaginated = (): boolean =>
+    props.paginated === true && props.suppressPagination !== true;
 
   let extracting = false;
+  let authoredBefore: PageDoc | null = null;
+  let authoredBeforeDepth: number | null = null;
+  let authoredOrigin: PaginationUndoOrigin | null = null;
+  let authoredSequence = 0;
 
-  const extractOverflow = (instance: Editor): void => {
+  const extractOverflow = (
+    instance: Editor,
+    origin: PaginationUndoOrigin | null = null,
+  ): void => {
     const capacity = capacityPx();
     if (!isPaginated() || capacity === undefined) return;
     if (extracting || instance.isDestroyed) return;
@@ -804,7 +827,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
          * neither the caret nor the spread, and this is the only line of it.
          */
         publish(instance);
-        props.onOverflow?.(removed, caretOffset !== null, caretOffset);
+        props.onOverflow?.(removed, caretOffset !== null, caretOffset, origin);
       }
     } finally {
       extracting = false;
@@ -956,10 +979,40 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         },
       },
     },
-    onUpdate: ({ editor: instance }) => {
+    onUpdate: ({ editor: instance, transaction }) => {
+      const historyTransaction = isHistoryTransaction(transaction);
+      const depth = Number(undoDepth(instance.state));
+      const historyBearing =
+        transaction.docChanged &&
+        transaction.getMeta('addToHistory') !== false &&
+        (!historyTransaction ||
+          (authoredBeforeDepth !== null && depth > authoredBeforeDepth));
+      // A native undo ends the old pagination group. A later edit can reach
+      // the same numerical history depth, but it must never inherit the old
+      // receipt. Redo is the opposite: it is a fresh authored event whose
+      // resulting carry needs its own receipt so a second Ctrl+Z stays whole.
+      if (historyTransaction && !historyBearing) authoredOrigin = null;
+      if (historyBearing && authoredBefore !== null) {
+        const previous = authoredOrigin;
+        authoredOrigin = {
+          token:
+            previous !== null && previous.historyDepth === depth
+              ? previous.token
+              : `${pageId}:${depth}:${authoredSequence += 1}`,
+          historyDepth: depth,
+          beforeDoc:
+            previous !== null && previous.historyDepth === depth
+              ? previous.beforeDoc
+              : authoredBefore,
+          afterAuthoredDoc: instance.getJSON() as PageDoc,
+        };
+        props.onAuthoredEdit?.(authoredOrigin);
+      }
+      authoredBefore = null;
+      authoredBeforeDepth = null;
       // Overflow stays synchronous: the no-scrollbars contract has to hold on
       // the frame the text was typed, not one frame later.
-      extractOverflow(instance);
+      extractOverflow(instance, historyBearing ? authoredOrigin : null);
       scheduleSave(instance);
       queueGridSnap();
     },
@@ -969,6 +1022,19 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       if (props.draftSandbox !== true) setActiveEditor(instance);
     },
   }));
+
+  createEffect(() => {
+    const instance = editor();
+    if (!instance) return;
+    const capture = ({ transaction }: { transaction: Transaction }): void => {
+      if (transaction.docChanged && transaction.getMeta('addToHistory') !== false) {
+        authoredBefore = instance.getJSON() as PageDoc;
+        authoredBeforeDepth = Number(undoDepth(instance.state));
+      }
+    };
+    instance.on('beforeTransaction', capture);
+    onCleanup(() => instance.off('beforeTransaction', capture));
+  });
 
   /* A display-math atom has a small plaintext editor inside its node view.
    * ProseMirror correctly leaves those keystrokes alone, so it reports the

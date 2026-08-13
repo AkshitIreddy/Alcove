@@ -32,6 +32,7 @@ import {
   type JSX,
 } from 'solid-js';
 import type { Editor, JSONContent } from '@tiptap/core';
+import { undo, undoDepth } from '@tiptap/pm/history';
 import { appState } from '../state/app';
 import { editorState } from '../editor/state';
 import {
@@ -53,6 +54,7 @@ import {
   listPages,
   persistPageDocIdentity,
   restorePageSnapshot,
+  restoreOrCreatePageSnapshot,
   savePageDoc,
   setPageFlowStart,
   setPageScript,
@@ -86,7 +88,10 @@ import {
 } from '../art/covers';
 import { openCoverDataUrl } from '../art/openCover';
 import { getTheme } from '../art/themes';
-import PageEditor, { type PageEditorProps } from '../editor/PageEditor';
+import PageEditor, {
+  type PageEditorProps,
+  type PaginationUndoOrigin,
+} from '../editor/PageEditor';
 import {
   pageDocForRendering,
   preparePageRenderDocs,
@@ -103,6 +108,10 @@ import {
   type BookRecoverySnapshot,
 } from '../editor/history/bookHistory';
 import { getPageEditor } from '../editor/instances';
+import {
+  reversePaginationLegs,
+  type PaginationUndoLeg,
+} from '../editor/paginationUndo';
 import {
   topLevelBlockAt,
   topLevelBlocksInRange,
@@ -282,11 +291,6 @@ interface BookSession {
 type PaginatedPageEditorProps = PageEditorProps & {
   paginated?: boolean;
   pageCapacityPx?: number;
-  onOverflow?(
-    blocks: unknown[],
-    cursorCarried: boolean,
-    caretOffset?: number | null,
-  ): void;
 };
 const PaginatedPageEditor = PageEditor as (
   props: PaginatedPageEditorProps,
@@ -690,6 +694,15 @@ export default function BookView(): JSX.Element {
 
   onMount(() => {
     const onBookUndo = (event: KeyboardEvent): void => {
+      const ordinaryPaginatedUndo =
+        event.key.toLowerCase() === 'z' &&
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        canUndoPaginatedEdit();
+      if (ordinaryPaginatedUndo) {
+        void undoPaginatedEdit(event);
+        return;
+      }
       if (
         scriptInsertionUndo === null ||
         event.key.toLowerCase() !== 'z' ||
@@ -1772,6 +1785,54 @@ export default function BookView(): JSX.Element {
   let carryChain: Promise<void> = Promise.resolve();
   let carryPending = 0;
   let carryRevision = 0;
+  interface PaginationUndoReceipt {
+    readonly token: string;
+    readonly sourcePageId: string;
+    readonly historyDepth: number;
+    readonly beforeDoc: PageDoc;
+    readonly afterAuthoredDoc: PageDoc;
+    readonly bookBefore: readonly Page[];
+    readonly legs: PaginationUndoLeg[];
+  }
+  const paginationUndoReceipts: PaginationUndoReceipt[] = [];
+  const latestPaginationUndoReceipt = (): PaginationUndoReceipt | null =>
+    paginationUndoReceipts.length === 0
+      ? null
+      : paginationUndoReceipts[paginationUndoReceipts.length - 1]!;
+  const pendingPaginationOrigins = new Map<string, PaginationUndoOrigin>();
+  const [reversingPagination, setReversingPagination] = createSignal(false);
+
+  const noteAuthoredEdit = (
+    pageId: string,
+    origin: PaginationUndoOrigin,
+  ): void => {
+    const current = latestPaginationUndoReceipt();
+    if (current !== null && current.token === origin.token) {
+      paginationUndoReceipts[paginationUndoReceipts.length - 1] = {
+        ...current,
+        historyDepth: origin.historyDepth,
+        beforeDoc: origin.beforeDoc,
+        afterAuthoredDoc: origin.afterAuthoredDoc,
+      };
+      return;
+    }
+    paginationUndoReceipts.push({
+      token: origin.token,
+      sourcePageId: pageId,
+      historyDepth: origin.historyDepth,
+      beforeDoc: origin.beforeDoc,
+      afterAuthoredDoc: origin.afterAuthoredDoc,
+      bookBefore: pages().map((page) => clonePage({
+        ...page,
+        doc: page.id === pageId ? origin.beforeDoc : page.doc,
+      })),
+      legs: [],
+    });
+    // This stack shadows the editor's in-memory history only. Bound it well
+    // above ordinary editing needs so a long session cannot retain whole-book
+    // snapshots forever.
+    if (paginationUndoReceipts.length > 256) paginationUndoReceipts.shift();
+  };
 
   /**
    * Put one carry on the serialized chain and make its lifetime observable by
@@ -1928,6 +1989,7 @@ export default function BookView(): JSX.Element {
     blocks: unknown[],
     cursorCarried: boolean,
     caretOffset: number | null,
+    origin: PaginationUndoOrigin | null,
   ): Promise<void> => {
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot < 0) return;
@@ -1942,6 +2004,7 @@ export default function BookView(): JSX.Element {
     anchorFreeMarks(pageId, freed);
 
     let next: Page | null = pages()[slot + 1] ?? null;
+    let createdTarget = false;
     if (next && (await isPageFlowStart(next.id))) {
       const spill = await insertPageAfter(pageId, {
         doc: newPageDoc(bookPageStyle(), bookLineHeight()),
@@ -1949,17 +2012,36 @@ export default function BookView(): JSX.Element {
       if (spill === null) return;
       await refreshPageOrderPreservingLiveDocs(spill.bookId);
       next = spill;
+      createdTarget = true;
     }
     if (!next) {
       next = await appendPage();
       if (!next) return;
+      createdTarget = true;
     }
 
     const fallbackAttrs: Record<string, unknown> = { pageStyle: bookPageStyle() };
     const line = bookLineHeight();
     if (line !== undefined) fallbackAttrs.lineHeightPx = line;
 
-    const merged = prependBlocksToDoc(next.doc, kept, fallbackAttrs);
+    const targetBefore = next.doc;
+    const merged = prependBlocksToDoc(targetBefore, kept, fallbackAttrs);
+    if (origin !== null && !reversingPagination()) {
+      const receipt = paginationUndoReceipts.find(
+        (candidate) => candidate.token === origin.token,
+      ) ?? null;
+      if (receipt !== null) {
+        receipt.legs.push({
+          sourcePageId: pageId,
+          targetPageId: next.id,
+          moved: kept as Record<string, unknown>[],
+          targetBefore,
+          targetAfter: merged,
+          createdTarget,
+        });
+        pendingPaginationOrigins.set(next.id, origin);
+      }
+    }
     updatePageDoc(next.id, merged);
     bumpDocVersion(next.id); // remounts the leaf when it is on this spread
     await savePageDoc(next.id, merged);
@@ -2002,13 +2084,146 @@ export default function BookView(): JSX.Element {
     blocks: unknown[],
     cursorCarried: boolean,
     caretOffset: number | null,
+    origin: PaginationUndoOrigin | null = null,
   ): void => {
     if (!Array.isArray(blocks) || blocks.length === 0) return;
+    if (reversingPagination()) return;
     if (backwardMoveOverflowTarget?.pageId === pageId) {
       backwardMoveOverflowTarget.overflowed = true;
       return;
     }
-    enqueueCarry(() => carryOverflow(pageId, blocks, cursorCarried, caretOffset));
+    const inherited = origin ?? pendingPaginationOrigins.get(pageId) ?? null;
+    pendingPaginationOrigins.delete(pageId);
+    enqueueCarry(() =>
+      carryOverflow(pageId, blocks, cursorCarried, caretOffset, inherited),
+    );
+  };
+
+  /** Undo one authored edit and every layout-only page carry it caused. */
+  const canUndoPaginatedEdit = (): boolean => {
+    while (latestPaginationUndoReceipt()?.legs.length === 0) {
+      paginationUndoReceipts.pop();
+    }
+    const receipt = latestPaginationUndoReceipt();
+    const source = receipt === null ? null : getPageEditor(receipt.sourcePageId);
+    return (
+      receipt !== null &&
+      receipt.legs.length > 0 &&
+      (source === null ||
+        Number(undoDepth(source.state)) === receipt.historyDepth) &&
+      !reversingPagination()
+    );
+  };
+
+  const undoPaginatedEdit = async (
+    event: KeyboardEvent,
+  ): Promise<boolean> => {
+    const receipt = latestPaginationUndoReceipt();
+    if (receipt === null || !canUndoPaginatedEdit()) return false;
+    const pageId = receipt.sourcePageId;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setReversingPagination(true);
+    try {
+      await carryChain;
+      const current = new Map(pages().map((page) => [page.id, page.doc]));
+      const fallbackAttrs: Record<string, unknown> = {
+        pageStyle: bookPageStyle(),
+      };
+      const line = bookLineHeight();
+      if (line !== undefined) fallbackAttrs.lineHeightPx = line;
+      const reversed = reversePaginationLegs(
+        current,
+        receipt.legs,
+        fallbackAttrs,
+      );
+      if (reversed === null) {
+        notify('The pages changed after that edit, so it was not safe to undo', 'error');
+        return true;
+      }
+      const createdTargets = new Set(
+        receipt.legs.filter((leg) => leg.createdTarget).map((leg) => leg.targetPageId),
+      );
+
+      const sourceEditor = getPageEditor(pageId);
+      const originalEditorStillMounted =
+        sourceEditor !== null &&
+        Number(undoDepth(sourceEditor.state)) === receipt.historyDepth;
+      if (originalEditorStillMounted && sourceEditor !== null && !undo(sourceEditor.state)) {
+        notify('Could not undo that edit', 'error');
+        return true;
+      }
+
+      // Reinstall every displaced block before asking ProseMirror to reverse
+      // the authored edit. The history plugin maps its inverse through these
+      // addToHistory:false replacements, so Ctrl+Shift+Z remains native.
+      for (const [affectedId, doc] of reversed) {
+        const before = current.get(affectedId);
+        if (before === undefined || JSON.stringify(before) === JSON.stringify(doc)) continue;
+        const live = getPageEditor(affectedId);
+        if (live?.view.dom.isConnected) {
+          const node = live.schema.nodeFromJSON(doc);
+          live.view.dispatch(
+            live.state.tr
+              .replaceWith(0, live.state.doc.content.size, node.content)
+              .setMeta('addToHistory', false),
+          );
+        } else {
+          bumpDocVersion(affectedId);
+        }
+        updatePageDoc(affectedId, doc);
+      }
+      let sourceAfterUndo: PageDoc;
+      if (originalEditorStillMounted && sourceEditor !== null) {
+        if (!undo(sourceEditor.state, sourceEditor.view.dispatch, sourceEditor.view)) {
+          notify('Could not undo that edit', 'error');
+          return true;
+        }
+        sourceAfterUndo = sourceEditor.getJSON() as PageDoc;
+      } else {
+        // A caret carry can move to another spread and destroy the source
+        // editor—and its in-memory PM history. The receipt therefore keeps an
+        // exact pre-edit book snapshot rather than pretending history survived.
+        sourceAfterUndo = receipt.beforeDoc;
+        const beforeIds = new Set(receipt.bookBefore.map((page) => page.id));
+        for (const page of await listPages(receipt.bookBefore[0]?.bookId ?? '')) {
+          if (!beforeIds.has(page.id)) await deletePage(page.id);
+        }
+        for (const beforePage of receipt.bookBefore) {
+          await restoreOrCreatePageSnapshot(beforePage);
+        }
+        const restored = receipt.bookBefore.map(clonePage);
+        setPages(restored);
+        for (const beforePage of restored) bumpDocVersion(beforePage.id);
+      }
+      updatePageDoc(pageId, sourceAfterUndo);
+      for (const createdId of createdTargets) {
+        const doc = reversed.get(createdId);
+        if (doc === undefined || docHasContent(doc)) continue;
+        await deletePage(createdId);
+        reversed.delete(createdId);
+        setPages((currentPages) => currentPages.filter((page) => page.id !== createdId));
+      }
+      if (createdTargets.size > 0 && receipt.bookBefore[0]?.bookId) {
+        await refreshPageOrderPreservingLiveDocs(receipt.bookBefore[0].bookId);
+      }
+      paginationUndoReceipts.pop();
+      pendingPaginationOrigins.clear();
+      const writes = [...reversed.entries()].map(([affectedId, doc]) => [
+        affectedId,
+        affectedId === pageId ? sourceAfterUndo : doc,
+      ] as const);
+      const pending = appendLane.then(async () => {
+        await Promise.all(
+          writes.map(([affectedId, doc]) => savePageDoc(affectedId, doc)),
+        );
+      });
+      appendLane = pending.then(() => undefined, () => undefined);
+      flipApi?.invalidateSnapshots();
+      return true;
+    } finally {
+      setReversingPagination(false);
+    }
   };
 
   /**
@@ -2072,7 +2287,7 @@ export default function BookView(): JSX.Element {
     bumpDocVersion(pageId);
     enqueueCarry(async () => {
       await savePageDoc(pageId, trimmed);
-      await carryOverflow(pageId, moved, false, null);
+      await carryOverflow(pageId, moved, false, null, null);
     });
   };
 
@@ -4291,6 +4506,7 @@ export default function BookView(): JSX.Element {
               pageId={current.id}
               initialDoc={current.doc}
               readOnly={aiPatchApplying()}
+              suppressPagination={reversingPagination()}
               onInsertPageBefore={() =>
                 void insertBlankPageBeside(current.id, 'before')
               }
@@ -4314,17 +4530,19 @@ export default function BookView(): JSX.Element {
                   : undefined
               }
               onDocChange={(doc) => handlePageDocChange(current.id, doc)}
+              onAuthoredEdit={(origin) => noteAuthoredEdit(current.id, origin)}
               paginated={!qaNoPagination}
               pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
               onOverflow={
                 qaNoPagination
                   ? undefined
-                  : (blocks, cursorCarried, caretOffset) =>
+                  : (blocks, cursorCarried, caretOffset, origin) =>
                       handleOverflow(
                         current.id,
                         blocks,
                         cursorCarried,
                         caretOffset ?? null,
+                        origin ?? null,
                       )
               }
             />

@@ -1,10 +1,10 @@
 {
   "$schema": "see scripts/check-readme.mjs — checkShots()",
   "capturedBy": "shots-now/readme-shots.mjs",
-  "lastRunAt": "2026-08-13T11:16:21.194Z",
+  "lastRunAt": "2026-08-13T21:25:46.373Z",
   "commit": {
-    "sha": "476424480bf60384329ce3341240437207bcbc02",
-    "short": "4764244",
+    "sha": "893ac0b8bee32ae4ffb782e34d3bf9d4d503c5c8",
+    "short": "893ac0b",
     "dirty": true
   },
   "viewport": {
@@ -33,84 +33,84 @@
   "shots": [
     {
       "file": "agent.png",
-      "bytes": 253751,
-      "sha256": "5c1eae443be0a3c0",
+      "bytes": 253593,
+      "sha256": "1074533d944bba6d",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "ai.png",
-      "bytes": 151261,
-      "sha256": "f16c354953a5be83",
+      "bytes": 151274,
+      "sha256": "5871c4a25268d35a",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "appearance.png",
-      "bytes": 323768,
-      "sha256": "d70f32e8ba89b3e5",
+      "bytes": 323669,
+      "sha256": "37c919ce530d9dd1",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "book-studio.png",
-      "bytes": 217130,
-      "sha256": "e92a40b52ed23b40",
+      "bytes": 217356,
+      "sha256": "c10e8ab1a70ce705",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "box.png",
-      "bytes": 333440,
-      "sha256": "7caf79df9fd5dd22",
+      "bytes": 333697,
+      "sha256": "a3b6fcccf0f3b950",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "catalogue.png",
-      "bytes": 203179,
-      "sha256": "5681faaca3131504",
+      "bytes": 203325,
+      "sha256": "38295134c4010941",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "diagrams.png",
-      "bytes": 136793,
-      "sha256": "6f99945b665c696c",
+      "bytes": 136608,
+      "sha256": "f94c75001db07720",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "first-run.png",
-      "bytes": 464754,
-      "sha256": "06e728e6e802fed6",
+      "bytes": 464538,
+      "sha256": "c8d4a06f0326deae",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "focus.png",
-      "bytes": 107866,
-      "sha256": "f1a547bbae493de9",
+      "bytes": 108539,
+      "sha256": "fc59b55ab40ef610",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "hero.png",
@@ -118,17 +118,17 @@
       "sha256": "a646f8e0d0b8e1de",
       "width": 2080,
       "height": 840,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "keyboard.png",
-      "bytes": 272085,
-      "sha256": "2f860b97d5df8e5a",
+      "bytes": 273147,
+      "sha256": "6fc97769aaa1ecd9",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "kittens.png",
@@ -141,129 +141,129 @@
     },
     {
       "file": "page-turn.png",
-      "bytes": 220650,
-      "sha256": "e7ba9b374542c562",
+      "bytes": 219707,
+      "sha256": "166485aeb0d72f77",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "quickswitch.png",
-      "bytes": 161007,
-      "sha256": "cbf3ec2acf18519f",
+      "bytes": 161039,
+      "sha256": "eb614acfd189e15e",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "rail.png",
-      "bytes": 193820,
-      "sha256": "176bf1941d78f3e6",
+      "bytes": 192943,
+      "sha256": "94547c06355c6465",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "script-dialog.png",
-      "bytes": 177398,
-      "sha256": "891e85fca9c27058",
+      "bytes": 178342,
+      "sha256": "59346e66a36d15c8",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "script-page.png",
-      "bytes": 115185,
-      "sha256": "498daf25e6a91af0",
+      "bytes": 115809,
+      "sha256": "c1796f4ca7cbdbe8",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "settings.png",
-      "bytes": 319731,
-      "sha256": "b4fdb71d9f8e4054",
+      "bytes": 319672,
+      "sha256": "6207af3763632d1f",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "share.png",
-      "bytes": 199558,
-      "sha256": "7dc66f51d93193a1",
+      "bytes": 200592,
+      "sha256": "fa5209e680f485c4",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "shelf-zoomout.png",
-      "bytes": 334111,
-      "sha256": "b6c5672738794ada",
+      "bytes": 333179,
+      "sha256": "8af1353f9d6b3e6f",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "shelf.png",
-      "bytes": 479616,
-      "sha256": "694b6403d03a17e6",
+      "bytes": 480000,
+      "sha256": "f9fe6e610dc0ffdb",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "slash.png",
-      "bytes": 171892,
-      "sha256": "21f4755a2c478431",
+      "bytes": 170986,
+      "sha256": "a61b8be3cb3ead1c",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "spread.png",
-      "bytes": 183026,
-      "sha256": "b50b2807f931a565",
+      "bytes": 182301,
+      "sha256": "5c3efd9be2cee32c",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "studio.png",
-      "bytes": 464292,
-      "sha256": "5805f233619450a5",
+      "bytes": 465002,
+      "sha256": "992fa0ff098f32a9",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "tour.png",
-      "bytes": 308953,
-      "sha256": "c03749492707a64f",
+      "bytes": 309936,
+      "sha256": "ad6f98769a2333dd",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     },
     {
       "file": "transfer.png",
-      "bytes": 348538,
-      "sha256": "c88c81e1b69a6edc",
+      "bytes": 348310,
+      "sha256": "08606932e44325c2",
       "width": 1500,
       "height": 940,
-      "at": "2026-08-13T11:16:21.194Z",
-      "commit": "4764244+dirty"
+      "at": "2026-08-13T21:25:46.373Z",
+      "commit": "893ac0b+dirty"
     }
   ]
 }

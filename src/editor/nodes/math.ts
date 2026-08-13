@@ -38,12 +38,13 @@ declare module '@tiptap/core' {
   }
 }
 
-function latexOf(node: ProseMirrorNode): string {
+/** Exact source extractor shared by storage, HTML and the live node view. */
+export function mathLatexSource(node: Pick<ProseMirrorNode, 'attrs'>): string {
   const raw: unknown = node.attrs.latex;
   return typeof raw === 'string' ? raw : '';
 }
 
-const latexAttribute = {
+export const mathLatexAttribute = {
   default: '',
   parseHTML: (element: HTMLElement): string =>
     element.getAttribute('data-latex') ?? element.textContent ?? '',
@@ -51,6 +52,44 @@ const latexAttribute = {
     'data-latex': typeof attributes.latex === 'string' ? attributes.latex : '',
   }),
 };
+
+/**
+ * Pure fit decision in layout pixels. Returning null means the authored size
+ * fits. Keeping this outside the node view lets tests prove camera/DPR changes
+ * cannot participate in the decision.
+ */
+export interface DisplayMathFitPlan {
+  readonly scale: number;
+  /** The readability floor cannot contain the row; wrap at atom boundaries. */
+  readonly wrap: boolean;
+}
+
+export function displayMathFitPlan(
+  availableLayoutPx: number,
+  neededLayoutPx: number,
+): DisplayMathFitPlan | null {
+  if (
+    !Number.isFinite(availableLayoutPx) ||
+    !Number.isFinite(neededLayoutPx) ||
+    availableLayoutPx <= 0 ||
+    neededLayoutPx <= availableLayoutPx
+  ) {
+    return null;
+  }
+  const proportional = (availableLayoutPx - 2) / neededLayoutPx;
+  return {
+    scale: Math.max(0.62, proportional),
+    wrap: proportional < 0.62,
+  };
+}
+
+/** Compatibility/readability helper for callers that need only the scale. */
+export function displayMathFitScale(
+  availableLayoutPx: number,
+  neededLayoutPx: number,
+): number | null {
+  return displayMathFitPlan(availableLayoutPx, neededLayoutPx)?.scale ?? null;
+}
 
 /**
  * The node view both nodes share.
@@ -84,15 +123,17 @@ function mathNodeView(display: boolean) {
       if (rendered === null) return;
       rendered.style.fontSize = '';
       rendered.removeAttribute('data-fit-scale');
+      rendered.classList.remove('is-wrapped');
       const available = dom.clientWidth;
       // Both values are layout pixels. getBoundingClientRect() includes the
       // outer book camera transform, which made the same equation fit
       // differently after a window/monitor move or focus zoom.
       const needed = Math.max(rendered.scrollWidth, rendered.offsetWidth);
-      if (available <= 0 || needed <= available) return;
-      const scale = Math.max(0.62, (available - 2) / needed);
-      rendered.style.fontSize = `${(1.25 * scale).toFixed(3)}em`;
-      rendered.setAttribute('data-fit-scale', scale.toFixed(3));
+      const plan = displayMathFitPlan(available, needed);
+      if (plan === null) return;
+      rendered.style.fontSize = `${(1.25 * plan.scale).toFixed(3)}em`;
+      rendered.setAttribute('data-fit-scale', plan.scale.toFixed(3));
+      if (plan.wrap) rendered.classList.add('is-wrapped');
     };
 
     const scheduleFit = (): void => {
@@ -102,14 +143,19 @@ function mathNodeView(display: boolean) {
 
     const draw = (): void => {
       if (field !== null) return; // being edited — do not pull the rug
-      dom.innerHTML = mathToHtml(latexOf(node), { display });
+      const source = mathLatexSource(node);
+      // The node view replaces renderHTML's DOM, so it must carry the durable
+      // source attribute itself. setAttribute keeps angle brackets/quotes inert
+      // and gives export, probes and assistive tooling the exact author bytes.
+      dom.setAttribute('data-latex', source);
+      dom.innerHTML = mathToHtml(source, { display });
       scheduleFit();
     };
 
     const commit = (next: string): void => {
       const pos = typeof getPos === 'function' ? getPos() : null;
       if (pos === null || pos === undefined) return;
-      if (next === latexOf(node)) return;
+      if (next === mathLatexSource(node)) return;
       editor.view.dispatch(
         editor.view.state.tr.setNodeMarkup(pos, undefined, {
           ...node.attrs,
@@ -135,7 +181,7 @@ function mathNodeView(display: boolean) {
       input.className = 'nb-math-source';
       input.contentEditable = 'plaintext-only';
       input.spellcheck = false;
-      input.textContent = latexOf(node);
+      input.textContent = mathLatexSource(node);
       input.dataset.hint = display ? '\\frac{a}{b}' : 'x^2';
       input.addEventListener('keydown', (event: KeyboardEvent) => {
         if (
@@ -195,7 +241,7 @@ function mathNodeView(display: boolean) {
     // slash menu, or by typing `$$`. Open its source straight away rather than
     // making them click the placeholder they have not read yet. The focus test
     // is what keeps a saved-empty formula from grabbing the caret on load.
-    if (latexOf(node) === '' && editor.isEditable && editor.isFocused) {
+    if (mathLatexSource(node) === '' && editor.isEditable && editor.isFocused) {
       requestAnimationFrame(() => {
         if (dom.isConnected) open();
       });
@@ -231,7 +277,7 @@ export const MathBlock = Node.create({
   draggable: true,
 
   addAttributes() {
-    return { latex: latexAttribute };
+    return { latex: mathLatexAttribute };
   },
 
   parseHTML() {
@@ -242,7 +288,7 @@ export const MathBlock = Node.create({
     return [
       'div',
       mergeAttributes(HTMLAttributes, { 'data-type': 'math' }),
-      latexOf(node),
+      mathLatexSource(node),
     ];
   },
 
@@ -286,7 +332,7 @@ export const MathInline = Node.create({
   atom: true,
 
   addAttributes() {
-    return { latex: latexAttribute };
+    return { latex: mathLatexAttribute };
   },
 
   parseHTML() {
@@ -297,7 +343,7 @@ export const MathInline = Node.create({
     return [
       'span',
       mergeAttributes(HTMLAttributes, { 'data-type': 'mathInline' }),
-      latexOf(node),
+      mathLatexSource(node),
     ];
   },
 

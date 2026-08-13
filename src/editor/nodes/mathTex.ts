@@ -110,10 +110,21 @@ export const KNOWN_MACROS: readonly string[] = [
   ...Object.keys(SYMBOLS),
   ...Object.keys(BIG_OPERATORS),
   ...FUNCTIONS,
-  'frac', 'dfrac', 'tfrac', 'sqrt', 'text', 'mathrm', 'mathbf', 'mathit',
-  'bar', 'overline', 'boxed', 'mathbin', 'mathrel', 'mathord', 'mathop',
-  'left', 'right', 'quad', 'qquad',
+  'frac', 'dfrac', 'tfrac', 'sqrt',
+  'text', 'textrm', 'mathrm', 'textbf', 'mathbf', 'mathit', 'operatorname',
+  'bar', 'overline', 'boxed',
+  'mathbin', 'mathrel', 'mathord', 'mathop',
+  'mathopen', 'mathclose', 'mathpunct', 'mathinner',
+  'limits', 'nolimits', 'left', 'right', 'quad', 'qquad',
 ];
+
+/**
+ * Rendering is deliberately bounded while the stored LaTeX remains exact.
+ * A pasted megabyte of braces must not lock the reader while producing a
+ * megabyte of nested spans. The source attribute/node JSON is untouched; this
+ * cap governs only the disposable presentation tree.
+ */
+export const MAX_RENDER_LATEX_CHARACTERS = 20_000;
 
 // ---------------------------------------------------------------------------
 // Tokens
@@ -205,7 +216,8 @@ export type Atom =
   | { kind: 'root'; index: Atom[] | null; body: Atom[] }
   | { kind: 'overline'; body: Atom[]; short: boolean }
   | { kind: 'boxed'; body: Atom[] }
-  | { kind: 'classed'; body: Atom[]; role: 'bin' | 'rel' | 'ord' | 'fn' }
+  | { kind: 'classed'; body: Atom[]; role: 'bin' | 'rel' | 'ord' | 'fn' | 'open' | 'close' | 'punct' | 'inner' }
+  | { kind: 'namedOperator'; text: string; stackLimits: boolean }
   | { kind: 'script'; base: Atom; sup: Atom[] | null; sub: Atom[] | null; limits: boolean }
   | { kind: 'text'; text: string; upright: boolean; bold: boolean }
   | { kind: 'fence'; open: string; close: string; body: Atom[] }
@@ -372,16 +384,39 @@ function macroAtom(cursor: Cursor, name: string): Atom | null {
   if (name === 'boxed') {
     return { kind: 'boxed', body: parseCommandArgument(cursor) };
   }
-  if (name === 'mathbin' || name === 'mathrel' || name === 'mathord' || name === 'mathop') {
-    const role =
-      name === 'mathbin'
-        ? 'bin'
-        : name === 'mathrel'
-          ? 'rel'
-          : name === 'mathop'
-            ? 'fn'
-            : 'ord';
+  if (
+    name === 'mathbin' ||
+    name === 'mathrel' ||
+    name === 'mathord' ||
+    name === 'mathop' ||
+    name === 'mathopen' ||
+    name === 'mathclose' ||
+    name === 'mathpunct' ||
+    name === 'mathinner'
+  ) {
+    const role = ({
+      mathbin: 'bin',
+      mathrel: 'rel',
+      mathord: 'ord',
+      mathop: 'fn',
+      mathopen: 'open',
+      mathclose: 'close',
+      mathpunct: 'punct',
+      mathinner: 'inner',
+    } as const)[name];
     return { kind: 'classed', body: parseCommandArgument(cursor), role };
+  }
+  if (name === 'operatorname') {
+    // KaTeX/LaTeX's starred form is the common spelling for a named operator
+    // whose bounds belong above/below in display maths (`\operatorname*{argmax}`).
+    const star = peek(cursor);
+    const stackLimits = star?.kind === 'char' && star.text === '*';
+    if (stackLimits) cursor.index += 1;
+    return {
+      kind: 'namedOperator',
+      text: parseTextArgument(cursor),
+      stackLimits,
+    };
   }
   if (name === 'text' || name === 'mathrm' || name === 'textrm') {
     return { kind: 'text', text: parseTextArgument(cursor), upright: true, bold: false };
@@ -467,6 +502,7 @@ function takesLimits(atom: Atom): boolean {
       !SIDE_LIMIT_OPERATORS.has(atom.text)
     );
   }
+  if (atom.kind === 'namedOperator') return atom.stackLimits;
   return atom.kind === 'text' && atom.upright && LIMIT_FUNCTIONS.includes(atom.text);
 }
 
@@ -517,12 +553,24 @@ function parseAtom(cursor: Cursor): Atom | null {
   if (base === null) return null;
   if (base.kind === 'space') return base;
 
-  // Scripts, in either order, at most one of each.
+  // Scripts, in either order, at most one of each. `\limits` and
+  // `\nolimits` are postfix modifiers rather than visible atoms, and TeX lets
+  // them sit before or after the scripts (`\sum\limits_{i=1}^n`). Treating
+  // them as ordinary unknown macros detached the bounds from their operator.
   let sup: Atom[] | null = null;
   let sub: Atom[] | null = null;
+  let forcedLimits: boolean | null = null;
   for (;;) {
     const next = peek(cursor);
     if (next === undefined) break;
+    if (
+      next.kind === 'macro' &&
+      (next.name === 'limits' || next.name === 'nolimits')
+    ) {
+      cursor.index += 1;
+      forcedLimits = next.name === 'limits';
+      continue;
+    }
     if (next.kind === 'sup' && sup === null) {
       cursor.index += 1;
       sup = parseArgument(cursor);
@@ -536,7 +584,13 @@ function parseAtom(cursor: Cursor): Atom | null {
     break;
   }
   if (sup === null && sub === null) return base;
-  return { kind: 'script', base, sup, sub, limits: takesLimits(base) };
+  return {
+    kind: 'script',
+    base,
+    sup,
+    sub,
+    limits: forcedLimits ?? takesLimits(base),
+  };
 }
 
 /**
@@ -544,8 +598,19 @@ function parseAtom(cursor: Cursor): Atom | null {
  * is what the tests read.
  */
 export function parseMath(latex: string): Atom[] {
-  const cursor: Cursor = { tokens: tokenize(latex), index: 0 };
-  return parseRow(cursor, false);
+  if (latex.length > MAX_RENDER_LATEX_CHARACTERS) {
+    return [{ kind: 'unknown', name: 'formula too long to render' }];
+  }
+  try {
+    const cursor: Cursor = { tokens: tokenize(latex), index: 0 };
+    return parseRow(cursor, false);
+  } catch {
+    // Deeply adversarial nesting can exhaust JavaScript's call stack before a
+    // tolerant recursive parser reaches the closing brace. Parsing remains
+    // total: show a visible diagnostic atom, while the exact source continues
+    // to live in the node attribute and is available for editing/export.
+    return [{ kind: 'unknown', name: 'invalid formula' }];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +719,8 @@ function renderAtom(atom: Atom, display: boolean, unary = false): string {
         `nb-m-text${atom.upright ? '' : ' is-italic'}${atom.bold ? ' is-bold' : ''}`,
         escapeHtml(atom.text),
       );
+    case 'namedOperator':
+      return span('nb-m-text nb-m-operator-name', escapeHtml(atom.text));
     case 'space':
       return span(`nb-m-space${atom.wide ? ' is-wide' : ''}`, '');
     case 'unknown':
@@ -685,7 +752,11 @@ function renderAtom(atom: Atom, display: boolean, unary = false): string {
     case 'boxed':
       return span('nb-m-boxed', renderRow(atom.body, display));
     case 'classed':
-      return span(`nb-m-${atom.role}`, renderRow(atom.body, display));
+      // The outer class is the classification the author explicitly asked
+      // for. The first/last child retain their semantic markup but CSS removes
+      // their edge spacing, preventing `\mathrel+` from receiving both the
+      // relation's spacing and the nested plus's binary spacing.
+      return span(`nb-m-classed nb-m-${atom.role}`, renderRow(atom.body, display));
     case 'fence': {
       // Scale the delimiters to the content instead of measuring it: one line
       // of maths is 1, a fraction is 2, and 1.05 of leading looks right.
@@ -710,7 +781,9 @@ function renderAtom(atom: Atom, display: boolean, unary = false): string {
       const scripts =
         (atom.sup === null ? '' : span('nb-m-sup', renderRow(atom.sup, display))) +
         (atom.sub === null ? '' : span('nb-m-sub', renderRow(atom.sub, display)));
-      return `${base}${span('nb-m-scripts', scripts)}`;
+      // One wrapping unit: a multiline safety layout may break BETWEEN atoms,
+      // never between x and its exponent/subscript.
+      return span('nb-m-scripted', `${base}${span('nb-m-scripts', scripts)}`);
     }
     default:
       return '';

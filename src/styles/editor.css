@@ -1838,6 +1838,18 @@ html[data-nb-col-resizing='true'] {
   transform: translateY(2px);
 }
 
+/* A display row that would have to shrink below the 0.62 readability floor
+   becomes several centred maths lines. The renderer groups each scripted atom,
+   fraction and fence, so wrapping never strands an exponent from its base. */
+.nb-math-render.is-display.is-wrapped {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  white-space: normal;
+  row-gap: 0.18em;
+}
+
 /* The source field, while the formula is being written. */
 .nb-math-source {
   display: inline-block;
@@ -1860,7 +1872,8 @@ html[data-nb-col-resizing='true'] {
 
 /* --- the atoms ----------------------------------------------------------- */
 .nb-m-row,
-.nb-m-scripts {
+.nb-m-scripts,
+.nb-m-scripted {
   display: inline-flex;
   align-items: center;
 }
@@ -1872,6 +1885,26 @@ html[data-nb-col-resizing='true'] {
 .nb-m-bin,
 .nb-m-rel {
   margin: 0 0.24em;
+}
+
+/* Explicit TeX classification wraps an entire sub-formula as one atom. Keep
+   spacing *inside* a compound body, but do not charge the first/last child a
+   second set of edge margins (`\mathrel+` used to look twice as wide as `=`). */
+.nb-m-classed {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nb-m-classed > :first-child {
+  margin-left: 0;
+}
+
+.nb-m-classed > :last-child {
+  margin-right: 0;
+}
+
+.nb-m-inner {
+  margin-inline: 0.08em;
 }
 
 /* A sign, not an operation: `-b` reads as negative b only if the minus is

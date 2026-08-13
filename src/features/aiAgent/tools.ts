@@ -37,6 +37,7 @@ import {
   restorePrivateText,
 } from './textPrivacy';
 import type {
+  AgentConversationMessage,
   AgentImageRef,
   AgentInterrupt,
   AgentJsonValue,
@@ -579,6 +580,7 @@ const imagePromptSchema = z
   .strict();
 const finishConversationSchema = z
   .object({
+    answer: z.string().min(1),
     citedUnitIds: z.array(z.string().min(1)).max(256).default([]),
   })
   .strict();
@@ -1639,7 +1641,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'finish_conversation',
       description:
-        'Finish an answer-only conversational turn without drafting, previewing, proposing or mutating notebook pages. Put the complete friendly answer in assistant prose immediately before this call; pass only grounded source unit ids actually used.',
+        'Finish an answer-only conversational turn without drafting, previewing, proposing or mutating notebook pages. Put the complete friendly reader-facing answer in `answer`; pass only grounded source unit ids actually used.',
       effect: 'propose',
       schema: finishConversationSchema,
       async execute(state, args, context) {
@@ -1665,13 +1667,11 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         const trailingTurns = modelTurnIndex === undefined
           ? []
           : state.modelHistory.slice(modelTurnIndex + 1);
-        const lastConversationMessage = state.conversation[state.conversation.length - 1];
-        const lastAssistantMessage = lastConversationMessage?.role === 'assistant'
-          ? lastConversationMessage
-          : undefined;
-        const restoredCurrentAnswer = modelTurn?.role === 'assistant'
-          ? restorePrivateText(modelTurn.content.trim(), state.textPrivacy)
-          : '';
+        assertPrivatePlaceholdersRestorable(args.answer, state.textPrivacy);
+        const restoredCurrentAnswer = restorePrivateText(
+          args.answer.trim(),
+          state.textPrivacy,
+        );
         if (modelTurn?.role === 'assistant') {
           assertPrivatePlaceholdersRestorable(modelTurn.content, state.textPrivacy);
         }
@@ -1688,13 +1688,10 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (
           !currentTurnOwnsCall ||
           modelTurn?.role !== 'assistant' ||
-          modelTurn.content.trim() === '' ||
-          lastAssistantMessage === undefined ||
-          lastAssistantMessage.createdAt !== modelTurn.createdAt ||
-          lastAssistantMessage.text !== restoredCurrentAnswer
+          restoredCurrentAnswer === ''
         ) {
           throw new Error(
-            'write the complete reader-facing answer in this assistant turn before finishing the conversation',
+            'write the complete reader-facing answer in this finish call before finishing the conversation',
           );
         }
         const decision = canCompleteConversation(state, args.citedUnitIds);
@@ -1710,11 +1707,18 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           );
         }
         const citations = verifiedConversationCitations(state, args.citedUnitIds);
-        const conversation = state.conversation.map((message) =>
-          message.id === lastAssistantMessage.id
-            ? { ...message, ...(citations.length === 0 ? {} : { citations }) }
-            : message,
-        );
+        const answerMessage: AgentConversationMessage = {
+          id: context.adapters.ids.create('msg'),
+          role: 'assistant',
+          text: restoredCurrentAnswer,
+          createdAt: context.adapters.clock.now(),
+          ...(citations.length === 0 ? {} : { citations }),
+        };
+        await context.events.emit({
+          type: 'assistant.message',
+          message: answerMessage,
+        });
+        const conversation = [...state.conversation, answerMessage];
         const appliedPatch = state.patchProposal?.status === 'applied'
           ? state.patchProposal
           : undefined;

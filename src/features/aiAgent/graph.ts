@@ -112,6 +112,43 @@ function discardInterruptSiblings(
   return { ...state, modelHistory, pendingToolCalls: [] };
 }
 
+/**
+ * Command A+ supports strict tool schemas but does not support REQUIRED tool
+ * choice. A conversational turn may therefore end with useful prose and no
+ * call at all. Treat that narrow case as an answer-only completion, never as
+ * notebook authority. Explicit book-editing language still fails closed so a
+ * provider cannot silently replace requested pages with a chat response.
+ */
+const NOTEBOOK_MUTATION_REQUEST = new RegExp(
+  String.raw`\b(?:add|append|insert|create|make|build|write|draft|format|polish|organ(?:i[sz]e|ized?)|lay\s*out|turn|convert|rewrite|replace|edit|change|update|revise|design|put|move|delete|remove)\b[\s\S]{0,64}\b(?:notebook|book|page|pages|notes?|study\s+guide|summary|cheat\s*sheet|selection|highlighted|pasted|document|pdf|file|material|content)\b|\b(?:notebook|book|page|pages|notes?|selection|highlighted)\b[\s\S]{0,64}\b(?:add|append|insert|create|make|build|write|draft|format|polish|organ(?:i[sz]e|ized?)|lay\s*out|turn|convert|rewrite|replace|edit|change|update|revise|design|put|move|delete|remove)\b`,
+  'iu',
+);
+
+function proseOnlyConversationFallback(
+  state: AgentState,
+  turn: CollectedProviderTurn,
+): AgentModelToolCall | undefined {
+  const answer = turn.publicText.trim();
+  if (answer === '' || turn.finishReason !== 'stop') return undefined;
+  if (
+    state.draft !== undefined ||
+    state.insertionTarget !== undefined ||
+    state.previewGeneration !== undefined ||
+    (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
+  ) {
+    return undefined;
+  }
+  const latestReaderText = [...state.conversation]
+    .reverse()
+    .find((message) => message.role === 'user')?.text ?? state.taskBrief.goal;
+  if (NOTEBOOK_MUTATION_REQUEST.test(latestReaderText)) return undefined;
+  return {
+    id: `conversation-fallback-${state.identity.runId}-${state.usage.providerCalls + 1}`,
+    name: 'finish_conversation',
+    arguments: { answer, citedUnitIds: [] },
+  };
+}
+
 function publicErrorFromProvider(error: unknown): AgentPublicError {
   if (!(error instanceof AgentProviderError)) {
     return {
@@ -318,7 +355,13 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         request,
         dependencies,
       );
-      if (turn.toolCalls.length === 0) {
+      const fallbackCall = turn.toolCalls.length === 0
+        ? proseOnlyConversationFallback(providerState, turn)
+        : undefined;
+      const toolCalls = fallbackCall === undefined
+        ? turn.toolCalls
+        : [fallbackCall];
+      if (toolCalls.length === 0) {
         throw new AgentProviderError({
           code: 'invalid_response',
           message: 'provider stopped without choosing a completion or work tool',
@@ -330,14 +373,18 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         role: 'assistant',
         content: turn.publicText,
         ...(turn.toolPlan === '' ? {} : { toolPlan: turn.toolPlan }),
-        toolCalls: turn.toolCalls,
+        toolCalls,
         createdAt: now,
       };
       assertPrivatePlaceholdersRestorable(
         turn.publicText,
         providerState.textPrivacy,
       );
-      const publicMessage: AgentConversationMessage | undefined = turn.publicText.trim()
+      const answerWillBePublishedByFinish = toolCalls.some(
+        (call) => call.name === 'finish_conversation',
+      );
+      const publicMessage: AgentConversationMessage | undefined =
+        !answerWillBePublishedByFinish && turn.publicText.trim()
         ? {
             id: dependencies.adapters.ids.create('msg'),
             role: 'assistant',
@@ -364,7 +411,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
             ? providerState.conversation
             : [...providerState.conversation, publicMessage],
         modelHistory: [...providerState.modelHistory, assistantTurn],
-        pendingToolCalls: turn.toolCalls,
+        pendingToolCalls: toolCalls,
         usage: {
           ...providerState.usage,
           providerCalls: providerState.usage.providerCalls + 1,

@@ -200,7 +200,7 @@ function withCurrentAnswer(
         toolCalls: [{
           id: callId,
           name: 'finish_conversation',
-          arguments: { citedUnitIds: [] },
+          arguments: { answer: text, citedUnitIds: [] },
         }],
         createdAt: NOW,
       },
@@ -571,14 +571,13 @@ describe('answer-only agent completion', () => {
       async *streamTurn(request): AsyncIterable<AgentProviderStreamEvent> {
         requests.push(request);
         yield {
-          type: 'public_text_delta',
-          text: 'At a high level, entropy is like measuring how surprised a kitten is by which toy appears next.',
-        };
-        yield {
           type: 'tool_call',
           id: 'finish-one',
           name: 'finish_conversation',
-          arguments: { citedUnitIds: [] },
+          arguments: {
+            answer: 'At a high level, entropy is like measuring how surprised a kitten is by which toy appears next.',
+            citedUnitIds: [],
+          },
         };
         yield { type: 'finish', reason: 'tool_calls' };
       },
@@ -604,6 +603,82 @@ describe('answer-only agent completion', () => {
     expect(requests[0]?.tools.map((tool) => tool.name)).toContain('finish_conversation');
   });
 
+  it('finishes safe prose-only chat when Command A+ omits the optional tool call', async () => {
+    const provider: AgentProvider = {
+      id: 'prose-only-conversation-test',
+      capabilities: async (): Promise<AgentProviderCapabilities> => ({
+        providerId: 'prose-only-conversation-test',
+        modelId: 'prose-only-conversation-test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 16_000,
+        maxOutputTokens: 2_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(): AsyncIterable<AgentProviderStreamEvent> {
+        yield {
+          type: 'public_text_delta',
+          text: 'Math is the language we use to describe patterns, quantities, shapes, and change.',
+        };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    };
+    const runtime = new AgentRuntime(
+      provider,
+      adapters(),
+      new InMemoryAgentPersistence(),
+    );
+
+    const result = await runtime.start({
+      taskId: 'prose-only-task',
+      threadId: 'prose-only-thread',
+      runId: 'prose-only-run',
+      bookId: 'book-1',
+      goal: 'What is math?',
+    });
+
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.conversation.at(-1)?.text).toContain('language');
+    expect(result.state.patchProposal).toBeUndefined();
+  });
+
+  it('does not reinterpret prose-only output as completion for a notebook edit', async () => {
+    const provider: AgentProvider = {
+      id: 'prose-only-edit-test',
+      capabilities: async (): Promise<AgentProviderCapabilities> => ({
+        providerId: 'prose-only-edit-test',
+        modelId: 'prose-only-edit-test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 16_000,
+        maxOutputTokens: 2_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(): AsyncIterable<AgentProviderStreamEvent> {
+        yield { type: 'public_text_delta', text: 'I can help with that.' };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    };
+    const runtime = new AgentRuntime(
+      provider,
+      adapters(),
+      new InMemoryAgentPersistence(),
+    );
+
+    const result = await runtime.start({
+      taskId: 'prose-only-edit-task',
+      threadId: 'prose-only-edit-thread',
+      runId: 'prose-only-edit-run',
+      bookId: 'book-1',
+      goal: 'Create two notebook pages about math.',
+    });
+    expect(result.state.lifecycle).toBe('failed');
+    expect(result.state.lastError?.message).toMatch(/without choosing a completion or work tool/i);
+    expect(result.state.conversation).toHaveLength(1);
+  });
+
   it('finishes a conversational answer without a draft, preview or mutation', async () => {
     const state = withCurrentAnswer({
       ...baseState(),
@@ -613,7 +688,10 @@ describe('answer-only agent completion', () => {
     const result = await catalog().execute(state, {
       id: 'finish-chat',
       name: 'finish_conversation',
-      arguments: { citedUnitIds: [] },
+      arguments: {
+        answer: 'Think of compression as a kitten packing only its favourite toys into one tiny basket.',
+        citedUnitIds: [],
+      },
     }, new AbortController().signal);
 
     expect(result.result).toMatchObject({
@@ -665,7 +743,10 @@ describe('answer-only agent completion', () => {
       {
         id: 'finish-after-draft',
         name: 'finish_conversation',
-        arguments: { citedUnitIds: [] },
+        arguments: {
+          answer: 'Here is the explanation in chat instead; I will not leave an old notebook preview behind.',
+          citedUnitIds: [],
+        },
       },
       new AbortController().signal,
     );
@@ -766,7 +847,10 @@ describe('answer-only agent completion', () => {
       {
         id: 'finish-after-apply',
         name: 'finish_conversation',
-        arguments: { citedUnitIds: [] },
+        arguments: {
+          answer: 'Of course — here is the follow-up explanation, while your inserted-page receipt stays available.',
+          citedUnitIds: [],
+        },
       },
       new AbortController().signal,
     );
@@ -805,7 +889,10 @@ describe('answer-only agent completion', () => {
     const result = await catalog(adaptersForManifest(sourceManifest)).execute(state, {
       id: 'finish-grounded-chat',
       name: 'finish_conversation',
-      arguments: { citedUnitIds: ['pdf-page-1'] },
+      arguments: {
+        answer: 'The guide describes a compact food web; imagine a picnic where every guest also feeds another guest.',
+        citedUnitIds: ['pdf-page-1'],
+      },
     }, new AbortController().signal);
 
     expect(result.state.conversation.at(-1)?.citations).toEqual([{
@@ -852,7 +939,10 @@ describe('answer-only agent completion', () => {
     }).execute(state, {
       id: 'finish-stale-chat',
       name: 'finish_conversation',
-      arguments: { citedUnitIds: ['pdf-page-1'] },
+      arguments: {
+        answer: 'The old source said the forest food web begins with photosynthesis.',
+        citedUnitIds: ['pdf-page-1'],
+      },
     }, new AbortController().signal);
 
     expect(result.result).toMatchObject({
@@ -868,7 +958,7 @@ describe('answer-only agent completion', () => {
       {
         id: 'silent-finish',
         name: 'finish_conversation',
-        arguments: { citedUnitIds: [] },
+        arguments: { answer: ' ', citedUnitIds: [] },
       },
       new AbortController().signal,
     );

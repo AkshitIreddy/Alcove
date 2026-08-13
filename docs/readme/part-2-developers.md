@@ -72,8 +72,8 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 <!--f:rustCommands-->29<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
-migrations, in <!--f:rustFiles-->10<!--/f--> files and
-<!--f:rustLines-->7520<!--/f--> lines.
+migrations, in <!--f:rustFiles-->11<!--/f--> files and
+<!--f:rustLines-->7795<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -314,6 +314,7 @@ in [The in-book AI Agent](#the-in-book-ai-agent) below and
 | [TipTap v3](https://tiptap.dev/) | ^3.29 | `@tiptap/core` is genuinely framework-agnostic (core + `@tiptap/pm` only), so it runs under Solid with a thin binding layer. ProseMirror underneath supplies IME/composition handling and transaction-based undo against a strict schema, which is not cheaply replicable. In June 2025 Tiptap MIT-licensed ten formerly-Pro extensions, including the exact set this app needs: DragHandle, NodeRange, UniqueID, Details, Mathematics, TableOfContents. |
 | Vendored Solid bindings | in-repo | [`src/editor/solid/`](../../src/editor/solid/) rather than a dependency, because there is no Solid adapter upstream worth taking and an editor binding is not a thing to upgrade by lockfile bump. Three files; see [The vendored Solid bindings](#the-vendored-solid-bindings). |
 | SQLite via `tauri-plugin-sql` | ^2.4 | Migrations are registered on the Rust side in [`src-tauri/src/lib.rs`](../../src-tauri/src/lib.rs). No ORM; the repos in [`src/data/`](../../src/data/) speak SQL directly. |
+| [`sqlite-vec`](https://github.com/asg017/sqlite-vec) | 0.1.9, pinned | A statically linked `vec0` accelerator for the Agent's 512-float embeddings. It is registered into the same SQLite ABI before plugin-sql opens its pool; canonical source rows remain ordinary SQLite, and an extension/index failure falls back to the in-WebView scorer. FTS5 supplies lexical candidates in the same database. |
 | GSAP | ^3.15 | Every plugin is free as of 2024, including Flip, which is what makes a dragged block settle into its new position instead of teleporting. Transform/opacity only in hot paths. |
 | [`@pixi/sound`](https://pixijs.io/sound/) | ^6.0 | <!--f:soundCues-->64<!--/f--> cues and <!--f:ambienceBeds-->10<!--/f--> ambience beds, in four categories (`ui`, `pages`, `shelf`, `ambient`) with category volumes under one master. It shares the app's Pixi runtime and provides pooled Web Audio playback without maintaining a second audio framework. Provenance and licensing are under [Licence and credits](#licence-and-credits); the design is [`docs/design/sound.md`](../design/sound.md). |
 | `html-to-image` | ^1.11 | Page → `ImageBitmap` for the curl. The one library in the app with a bug worked around at length ([`svgSnapshot.ts`](../../src/flip/svgSnapshot.ts)). |
@@ -380,9 +381,9 @@ defending — why it is that way and what it replaced.
 | [`src/editor/`](../../src/editor/) | TipTap setup ([`extensions.ts`](../../src/editor/extensions.ts)), one editor per page ([`PageEditor.tsx`](../../src/editor/PageEditor.tsx)), custom nodes ([`nodes/`](../../src/editor/nodes/)), slash and right-click menus, [`pagination.ts`](../../src/editor/pagination.ts), [`effects/`](../../src/editor/effects/), media paste, exporters, the vendored [`solid/`](../../src/editor/solid/) bindings. |
 | [`src/flip/`](../../src/flip/) | The page-curl engine: [`curl.ts`](../../src/flip/curl.ts) (shaders), [`math.ts`](../../src/flip/math.ts) (pure, node-testable), [`rasterCache.ts`](../../src/flip/rasterCache.ts), [`gl.ts`](../../src/flip/gl.ts), [`cssFallback.ts`](../../src/flip/cssFallback.ts). |
 | [`src/script/`](../../src/script/) | The Notebook Script parser and printer. Total by construction: `parse()` never throws. |
-| [`src/features/aiAgent/`](../../src/features/aiAgent/) | The provider-neutral LangGraph runtime: serialisable contracts, tool policy, complete-source coverage, retrieval, Cohere adapter, draft sandbox and proposal gate. |
+| [`src/features/aiAgent/`](../../src/features/aiAgent/) | The provider-neutral LangGraph runtime: serialisable contracts, tool policy, complete-source coverage, retrieval, Cohere adapter, supplied-material composition/image intent, draft sandbox and proposal gate. |
 | [`src/diagrams/`](../../src/diagrams/) | Layout algorithms (tidy tree, layered DAG, timeline) and hand-drawn SVG renderers. |
-| [`src/data/`](../../src/data/) | SQLite access and the persisted stores: books, design, search and settings, plus agent checkpoints, sources, idempotent apply receipts, the Rust-owned credential boundary and normalized provider gateway. |
+| [`src/data/`](../../src/data/) | SQLite access and the persisted stores: books, design, search and settings, plus agent checkpoints, canonical sources, the derived [`aiAgentRetrievalIndex.ts`](../../src/data/aiAgentRetrievalIndex.ts) FTS5/vec0 accelerator, idempotent apply receipts, the Rust-owned credential boundary and normalized provider gateway. |
 | [`src/features/transfer/`](../../src/features/transfer/) | Export/import bundles (`.nbk`), conflict resolution, restore points. |
 | [`src/features/system/`](../../src/features/system/) | Backups, tray quick capture, launch behaviour, diagnostics, perf HUD. |
 | [`src/features/packs/`](../../src/features/packs/), [`src/features/templates/`](../../src/features/templates/), [`src/features/tutorial/`](../../src/features/tutorial/), [`src/features/quickswitch/`](../../src/features/quickswitch/) | The reader's own uploads, the page templates, the guided tour, the `Ctrl+K` switcher. |
@@ -391,12 +392,12 @@ defending — why it is that way and what it replaced.
 | [`src/state/`](../../src/state/) | Which scene the shell is showing, and which book is open. One file, deliberately: everything else that persists is a store under `src/data/`. |
 | [`src/assets/`](../../src/assets/) | Source-owned static media which must ship with a feature, including the frozen, locally stored kitten illustration used by the deterministic Agent demo. |
 | [`src/features/settings/`](../../src/features/settings/) | The settings sheet, the appearance rules it applies, and the drawn pointer sets. |
-| [`src-tauri/src/`](../../src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs` and `ai.rs`, all registered in `lib.rs`. `ai.rs` owns credentials, Cohere HTTPS, attachment bytes and local PDF extraction. |
+| [`src-tauri/src/`](../../src-tauri/src/) | `media.rs`, `backup.rs`, `tray.rs`, `export.rs`, `import.rs`, `transfer.rs`, `ai.rs` and `vector_index.rs`, all registered in `lib.rs`. `ai.rs` owns credentials, Cohere HTTPS, attachment bytes and local source extraction; `vector_index.rs` statically registers sqlite-vec before plugin-sql opens SQLite. |
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->343<!--/f--> of <!--f:srcFiles-->376<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7301<!--/f--> lines of it.
+<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->377<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1032,6 +1033,7 @@ The implementation authority is
 | Serializable task, source, draft, review and proposal contracts | [`src/features/aiAgent/types.ts`](../../src/features/aiAgent/types.ts) |
 | Durable, resumable control flow and interrupts | [`graph.ts`](../../src/features/aiAgent/graph.ts), [`runtime.ts`](../../src/features/aiAgent/runtime.ts) and the SQLite-backed LangGraph saver in [`src/data/aiAgentPersistence.ts`](../../src/data/aiAgentPersistence.ts) |
 | Notebook and source reads | [`productionNotebook.ts`](../../src/features/aiAgent/productionNotebook.ts) and [`productionSources.ts`](../../src/features/aiAgent/productionSources.ts) |
+| Derived local retrieval acceleration | [`aiAgentRetrievalIndex.ts`](../../src/data/aiAgentRetrievalIndex.ts), ordinary source/chunk authority in [`aiAgent.ts`](../../src/data/aiAgent.ts), and static SQLite registration in [`src-tauri/src/vector_index.rs`](../../src-tauri/src/vector_index.rs) |
 | Real editor render sandbox | [`draftSandbox.ts`](../../src/features/aiAgent/draftSandbox.ts) and [`draftSandboxMount.tsx`](../../src/features/aiAgent/draftSandboxMount.tsx) |
 | Model boundary | provider-neutral [`provider.ts`](../../src/features/aiAgent/provider.ts), Cohere V2 adapter [`cohereProvider.ts`](../../src/features/aiAgent/cohereProvider.ts), normalized WebView calls in [`src/data/aiGateway.ts`](../../src/data/aiGateway.ts), and Rust [`src-tauri/src/ai.rs`](../../src-tauri/src/ai.rs) |
 | The only live mutation seam | `applyApprovedAiProposal` in [`BookView.tsx`](../../src/views/BookView.tsx), behind a revision check and durable idempotency claim |
@@ -1195,14 +1197,40 @@ make a suspicious passage visible, but even an unflagged file is still evidence,
 never authority. The generated Notebook Script specification is the one
 canonical source and is chunked on headings so citations remain intelligible.
 
-Retrieval remains local-first. The lexical index is always available; semantic
-Embed v4 indexing and Rerank v4 are optional provider hops and are re-authorized
-immediately before each request. A task chooses direct context, retrieval or a
-complete sweep from actual source size and the reader's guarantee. Reads update
-the source-unit ledger with the provider-call count at which evidence was
-exposed; policy requires a later model turn to have observed every supporting
-read before an answer or patch may claim it. In complete mode, required units
-cannot be replaced by top-k hits, and source digest drift invalidates the ledger.
+Retrieval remains local-first. Ordinary `ai_agent_sources` and
+`ai_agent_chunks` rows are the sole authority. A disposable local mirror uses
+FTS5 plus a pinned sqlite-vec `vec0` table with `float[512]`, cosine distance,
+task partition, source id and chunk digest. Rust registers sqlite-vec through
+SQLite's process-wide auto-extension hook **before** plugin-sql/SQLx opens its
+pool, so every pooled connection sees the same extension and no sidecar service
+or second database is introduced.
+
+Every lexical/vector hit is joined back to the current canonical task, source,
+chunk id and digest before it is accepted. FTS and vector candidate ranks are
+combined locally with deterministic reciprocal-rank fusion; the existing
+Cohere Rerank v4 pass may then reorder that bounded list. Embed v4 remains the
+optional source of 512-float document/query vectors. Text-veil tasks force
+local-only retrieval: no Embed or Rerank text leaves the machine, while FTS5
+and the existing TypeScript lexical scorer remain usable.
+
+The mirror is crash-repairable rather than transactionally authoritative.
+Ordinary SQLite triggers bump a durable per-source dirty revision on every
+source/chunk insert, update or delete, including writes from another pooled
+connection. Lazy reconciliation reads a revision, snapshots canonical rows,
+deletes the published index-state claim, rebuilds both mirrors, rereads the
+revision and publishes completeness only if both revisions match. One moving
+source is retried; repeated movement, a missing extension, malformed/non-finite
+or non-512 vector, schema failure or partial rebuild returns to the established
+TypeScript lexical/cosine path. Existing libraries are backfilled only when a
+task searches the relevant source—opening a notebook never launches a global
+embedding/index migration.
+
+A task still chooses direct context, retrieval or a complete sweep from actual
+source size and the reader's guarantee. Reads update the source-unit ledger
+with the provider-call count at which evidence was exposed; policy requires a
+later model turn to have observed every supporting read before an answer or
+patch may claim it. In complete mode, required units cannot be replaced by
+top-k hits, and source digest drift invalidates the ledger.
 
 ### A conversation can finish without a proposal
 
@@ -1223,6 +1251,27 @@ TipTap schema, mounts real `PageEditor` instances, lets the fixed-page overflow
 contract settle, checks for blank/clipped/unrendered content, and captures each
 page. Command A+ receives those current-generation page images for visual
 inspection. Blocking findings route back to repair and another render.
+
+When the reader supplies pasted text, an external-AI document or another
+source and asks Alcove to put it into the book, no magic phrase is required.
+The Agent first treats the supplied material as the factual authority,
+preserves its meaning and claims, and composes it with the same semantic
+catalogue vocabulary available to an ordinary Notebook Script author. Layout
+improvement is an explicit two-pass contract. Pass one structures faithfully
+and lets native pagination settle. Only after inspecting those rendered pages
+may pass two repair an awkward gap: first by removing a premature boundary or
+pulling one coherent block backward, and—only when that would damage a
+meaningful section boundary—by adding at most one compact, relevant example,
+analogy, definition, caution, recall question, why-it-matters note or
+mini-summary. Intentional breathing room is valid; generic filler, repeated
+claims and invented source facts are not.
+
+A managed image supplied by the reader is not an image-generation request. A
+visual source read may expose its exact opaque `ai/attachments/...` asset path
+and intrinsic dimensions; the draft can reuse that exact local asset, choose a
+proportional display width and verify it in the immutable preview. PDF analysis
+renders never receive such a portable path. Separate empty image slots and
+generation prompts still require the reader's explicit, revocable request.
 
 [`policy.ts`](../../src/features/aiAgent/policy.ts) is the non-model gate: it
 refuses to build a user preview unless the current draft hash matches the
@@ -1247,7 +1296,9 @@ portable upload cards in Notebook Script, then call
 discovered slot. Policy reconciles those prompts against the **current** rendered
 generation and rejects missing, extra or stale slot ids. The preview can
 therefore show each slot beside a ready-to-copy subject/composition/style brief,
-page role, aspect ratio, useful pixel dimensions and negative constraints
+page role, aspect ratio, useful pixel dimensions and negative constraints. The
+copyable prompt text itself is normalized to include the exact selected width x
+height pixels and aspect ratio, not merely display those values in adjacent UI,
 without inventing a URL or claiming that a picture was generated. The handoff
 remains visible after insertion so the reader can generate elsewhere and click
 or drop the result into the real portable slot.

@@ -94,6 +94,13 @@ browser never receives a general fetch primitive or arbitrary provider URL.
 size and time limits, owns cancellation and maps provider errors into bounded
 application errors.
 
+Semantic search does not introduce a remote or second local database. Pinned
+sqlite-vec 0.1.9 is statically registered into the same SQLite ABI used by
+SQLx/plugin-sql before its pool opens. Versioned FTS5 and `vec0 float[512]`
+tables are disposable mirrors; `ai_agent_sources` and `ai_agent_chunks` remain
+canonical. The local layer fuses lexical and cosine ranks with reciprocal-rank
+fusion before any optional Cohere rerank.
+
 ### Dependency direction
 
 The dependency arrows are one-way on purpose:
@@ -305,6 +312,32 @@ Every source descriptor records a digest, unit ledger, extraction quality and
 prompt-injection warnings. A complete-reading task cannot reach the proposal
 gate while required units are uncovered. Retrieval scores are evidence for
 ordering work, never proof that unread material was unimportant.
+
+### Local retrieval index and recovery protocol
+
+[`src/data/aiAgentRetrievalIndex.ts`](../../src/data/aiAgentRetrievalIndex.ts)
+owns the derived schema `cohere-embed-v4.0-f32-512+fts5-rrf-v1`. Its vector table
+stores exactly 512 finite floats with cosine distance and partitions by task;
+its FTS5 mirror stores lexical text plus source/chunk/digest identity. Queries
+are always task- and source-scoped, and every candidate joins to current
+canonical rows on chunk id, source id, task id and digest. A stale mirror can
+therefore order nothing authoritative.
+
+Ordinary SQLite triggers maintain a durable dirty revision per source for
+writes from every connection. Reconciliation reads revision A, snapshots the
+canonical chunks, invalidates the published source-state row before changing
+either mirror, rebuilds, and reads revision B. It publishes B only when A and B
+match; one mismatch retries from a fresh snapshot. An exception or repeatedly
+moving source leaves state invalidated and makes the caller use the existing
+TypeScript lexical/cosine path. This also makes legacy backfill lazy and scoped:
+only sources involved in a retrieval are reconciled, never the whole library at
+startup.
+
+Document/query embeddings still come from Cohere Embed v4 only when the current
+privacy gate permits that outbound text. Rerank v4 remains an optional final
+ordering pass. Text veil sets `local_only`, which skips both provider calls but
+retains FTS5 and the TypeScript fallback. Neither a derived-index failure nor a
+missing native extension is allowed to fail canonical source ingestion.
 
 ### Intake and format matrix
 
@@ -555,6 +588,35 @@ stale slots; a repaired draft invalidates the old handoff. The final preview
 pairs each prompt with its exact slot and the applied proposal retains the
 handoff so the reader can generate elsewhere and click/drop the result later.
 
+The prompt string, not only its metadata card, contains the selected exact
+pixel width x height and aspect ratio. Handoff matching rejects older prompts
+that omit or disagree with those dimensions.
+
+## Supplied-material composition and bounded enrichment
+
+Pasted text and attached documents are valid notebook-authoring requests even
+when the reader does not say “insert” or “make notes” verbatim. Prompt policy
+distinguishes conversational questions from an instruction to format supplied
+material, then treats that material as evidence rather than executable
+instructions. The Agent may choose native catalogue elements that improve
+hierarchy and recall, but it must preserve the source's claims and never invent
+a citation or fact merely to occupy paper.
+
+Composition has two passes. The first produces faithful natural pagination and
+must be rendered before the second is considered. On the rendered pages, an
+awkward gap is repaired first by layout—removing a premature page boundary or
+pulling a coherent block backward. If that would break a meaningful semantic
+boundary, exactly one compact relevant enrichment may be added to that gap,
+followed by full parse, native render and visual review again. Deliberate
+whitespace is acceptable; blanket “fill every page” behavior, generic filler,
+repetition and unsupported source claims are forbidden.
+
+An original managed image can be placed directly only through the exact opaque
+portable asset path returned by its visual-source read, using its intrinsic
+dimensions to preserve aspect. Rendered PDF evidence is never portable. Using
+an attached image does not imply permission to create additional empty picture
+slots; those still follow the explicit external-image intent gate above.
+
 ## External Notebook Script remains supported
 
 The provider-free route is a permanent sibling, not a migration shim. Readers
@@ -578,10 +640,13 @@ the script explicitly requests a fetched picture.
 - `src/editor/toolbar/aiRewrite.ts` — immutable selection handoff.
 - `src/views/BookView.tsx` — composition root and sole approved proposal apply.
 - `src/data/aiAgentPersistence.ts`, `aiAgentApply.ts`, `aiCredentials.ts` and
-  `aiGateway.ts` — checkpoints/pending writes/task history, idempotency/recovery,
-  secret boundary and normalized WebView calls.
+  `aiGateway.ts`, plus `aiAgentRetrievalIndex.ts` — checkpoints/pending writes/
+  task history, idempotency/recovery, secret boundary, normalized WebView calls
+  and the fail-open FTS5/vec0 retrieval mirror.
 - `src-tauri/src/ai.rs` — key vault/session lifecycle, Cohere HTTPS, cancellation,
   Embed/Rerank, managed attachments and local PDF/DOCX/XLSX/PPTX/text extraction.
+- `src-tauri/src/vector_index.rs` — process-wide static sqlite-vec registration
+  before plugin-sql creates its connection pool.
 
 ## Verification map
 
@@ -595,9 +660,11 @@ than one mocked end-to-end assertion:
   V2 message/tool/image continuity, malformed SSE rejection and cancellation
   races. Rust unit tests in `ai.rs` independently exercise request validation,
   credential status, attachment sniffing, Open XML extraction and PDF limits.
-- `ai-agent-production-adapters.test.ts`, `ai-agent-attachment-intake.test.ts`
+- `ai-agent-production-adapters.test.ts`, `ai-agent-attachment-intake.test.ts`,
+  `ai-agent-retrieval-index.test.ts`, `ai-agent-source-formatting-intent.test.ts`
   and `ai-agent-store.test.ts` cover notebook/source capabilities, file/paste
-  classification, ownership, units, retrieval and injection quarantine.
+  classification, ownership, revision-safe FTS/vector reconciliation, RRF,
+  supplied-material composition, units, retrieval and injection quarantine.
 - `ai-agent-draft-sandbox.test.ts`, `ai-agent-conversation-image-handoff.test.ts`
   and `ai-agent-text-privacy.test.ts` cover native generation identity,
   deterministic/visual gates, explicit-only image handoff, placeholder

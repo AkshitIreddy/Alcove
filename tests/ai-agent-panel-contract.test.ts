@@ -126,6 +126,15 @@ describe('AI agent conversational transcript', () => {
     expect(panel).not.toContain('localDecisions');
   });
 
+  it('keeps the verbose context-scope disclosure out of the conversation panel', () => {
+    const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
+
+    expect(panel).not.toContain('The context chip is a starting scope.');
+    expect(panel).not.toContain('other books stay local.');
+    expect(panel).toContain('Text veil reduces exposure in recognized text for this task.');
+    expect(panel).toContain('privacy & connection');
+  });
+
   it('remembers the pre-update bottom position before following newly appended work', () => {
     const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
 

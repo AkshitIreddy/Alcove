@@ -877,15 +877,13 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           </div>
         </div>
         <p class="nb-ai-privacy-line font-ui">
-          <span aria-hidden="true">◌</span>{' '}
-          <Show
-            when={state().textPrivacy}
-            fallback={<>The context chip is a starting scope. Cohere receives the current-book pages the agent inspects, attached evidence and draft review images; other books stay local.</>}
-          >
-            Text veil reduces exposure in recognized text for this task. It may miss context-dependent details and cannot mask words or numbers baked into image or scanned-PDF pixels.
+          <Show when={state().textPrivacy}>
+            <span aria-hidden="true">◌</span>{' '}
+            <span>Text veil reduces exposure in recognized text for this task. It may miss context-dependent details and cannot mask words or numbers baked into image or scanned-PDF pixels.</span>
           </Show>
           <Show when={state().connection.status === 'connected'}>
-            {' '}<button type="button" onClick={() => props.controller?.openIntegrationSettings?.()}>privacy & connection</button>
+            <Show when={state().textPrivacy}>{' '}</Show>
+            <button type="button" onClick={() => props.controller?.openIntegrationSettings?.()}>privacy & connection</button>
           </Show>
         </p>
       </section>

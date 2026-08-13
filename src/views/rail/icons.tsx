@@ -87,34 +87,53 @@ export function AiSpecIcon(): JSX.Element {
 }
 
 /**
- * Bowed open page + a live writing stroke — the in-book AI agent.
+ * A friendly toy robot face — the in-book AI agent.
  *
- * It is deliberately neither a robot nor a magic wand.  The agent belongs to
- * the same act as the rest of Alcove: opening a page and writing in it.  The
- * four-point mark is where the stroke is still becoming something, drawn with
- * the same current-colour ink as every rail icon (no glow or second outline).
+ * Lucide's Bot and Google's Smart Toy were used only to confirm the tiny-icon
+ * vocabulary (antenna, boxy head, paired eyes). This is an original Alcove
+ * drawing: the shell bows, the ears do not match exactly, and its shy smile is
+ * laid in with the same current-colour ink as every rail icon. No stock path,
+ * runtime filter, texture, lighting or second outline is involved.
+ *
+ * References: https://lucide.dev/icons/bot
+ *             https://fonts.google.com/icons?selected=Material+Symbols+Outlined:smart_toy
  */
 export function AgentIcon(): JSX.Element {
   return frame(
     <>
       <path
-        d="M 3.5 6.1 C 6.1 5.2 8.6 5.3 11.6 6.6 C 14.4 5.2 17.2 5.2 20.4 6.2 C 20.1 10.4 20.1 14.5 20.4 18.5 C 17.3 17.7 14.5 17.8 11.7 19.1 C 8.8 17.8 6.2 17.7 3.5 18.5 C 3.8 14.3 3.8 10.2 3.5 6.1 Z"
+        data-part="head"
+        d="M 5.3 7.5 C 9.6 6.8 14.3 6.8 18.7 7.5 C 19.2 10.9 19.2 14.7 18.7 18.2 C 14.5 18.9 9.7 18.9 5.4 18.2 C 4.8 14.8 4.8 11 5.3 7.5 Z"
         {...S}
+        fill="currentColor"
+        fill-opacity="0.08"
       />
       <path
-        d="M 11.7 6.7 C 11.5 10.7 11.5 14.8 11.7 19 M 6.2 9.2 C 7.6 8.9 8.9 9 10.1 9.5 M 6.1 12 C 7.4 11.7 8.6 11.8 9.6 12.2"
+        data-part="antenna"
+        d="M 12 6.8 C 12.1 5.8 12 4.9 11.9 4 M 10.7 3.2 C 11.3 2.6 12.3 2.5 13 3.1 C 12.8 4 12.2 4.4 11.4 4.2 C 10.9 4 10.7 3.7 10.7 3.2 Z"
         {...S}
-        stroke-width="1.35"
+        stroke-width="1.5"
+        fill="currentColor"
+        fill-opacity="0.16"
       />
       <path
-        d="M 14.1 14.6 C 15.1 13.5 16.2 12.7 17.3 12.1 C 17.5 11.2 17.9 10.5 18.5 9.9"
+        data-part="ears"
+        d="M 5 10.2 C 3.8 9.9 3.1 10.4 3 11.5 L 3.1 14.2 C 3.3 15.1 3.9 15.5 5 15.2 M 19 10.2 C 20.2 9.9 20.9 10.4 21 11.4 L 20.9 14.1 C 20.7 15.1 20.1 15.5 19 15.2"
         {...S}
-        stroke-width="1.45"
+        stroke-width="1.55"
       />
       <path
-        d="M 18.7 7.5 C 18.9 8.6 19.5 9.2 20.7 9.4 C 19.5 9.7 18.9 10.3 18.6 11.4 C 18.4 10.3 17.8 9.7 16.7 9.4 C 17.8 9.2 18.4 8.6 18.7 7.5 Z"
+        data-part="eyes"
+        d="M 8.2 11.1 C 8.9 10.8 9.6 11 9.9 11.6 C 10 12.4 9.6 13 8.9 13.1 C 8.2 13.1 7.8 12.6 7.8 12 C 7.8 11.6 7.9 11.3 8.2 11.1 Z M 14.7 11.1 C 15.4 10.9 16.1 11.1 16.3 11.7 C 16.4 12.4 16 13 15.3 13.1 C 14.6 13.1 14.2 12.6 14.2 12 C 14.2 11.6 14.4 11.3 14.7 11.1 Z"
         {...S}
         stroke-width="1.2"
+        fill="currentColor"
+      />
+      <path
+        data-part="smile"
+        d="M 9.5 15.5 C 10.9 16.2 12.5 16.3 14.2 15.5"
+        {...S}
+        stroke-width="1.45"
       />
     </>,
   );

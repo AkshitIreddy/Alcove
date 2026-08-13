@@ -101,11 +101,32 @@
 /* The house ruling: one line to write on, every line. */
 .nb-page[data-style='ruled'],
 .nb-pagestyle-thumb[data-style='ruled'] {
-  --rule-image: repeating-linear-gradient(
+  /*
+   * ONE LAYOUT-PITCH TILE, repeated down the paper.
+   *
+   * This used to be a page-height `repeating-linear-gradient` with the
+   * background layer itself left at `auto`. When the canonical book is fitted
+   * beside a rail panel, Chromium promotes the transformed frame and may
+   * raster that large procedural image in compositor tiles. A tile boundary
+   * could then lose a band of horizontal rules during the scale tween and the
+   * stale, more tightly sampled band sometimes survived after the panel
+   * closed. The document box never moved; only its paint was damaged.
+   *
+   * Make the paint's unit the same fixed layout-space pitch the prose uses.
+   * The browser now rasterizes one 32px-ish strip and repeats it on the page's
+   * own untransformed y axis; the outer camera transform scales the complete
+   * result uniformly. Opening a panel can change its drawn pitch, never its
+   * phase, continuity or authored layout. The thumbnail reads the same four
+   * properties, so it keeps the exact miniature of this contract.
+   */
+  --rule-image: linear-gradient(
     to bottom,
     transparent 0 calc(var(--rule) - 1px),
     var(--rule-ink) calc(var(--rule) - 1px) var(--rule)
   );
+  --rule-size: 100% var(--rule);
+  --rule-pos: 0 0;
+  --rule-repeat: repeat-y;
 }
 
 /* Half pitch. A rule between every pair of writing lines, drawn fainter — a

@@ -25,6 +25,7 @@ import {
   type JSX,
 } from 'solid-js';
 import { Portal } from 'solid-js/web';
+import { isTauri } from '../../data/db';
 import {
   AI_SPEC_STYLE_PRESETS,
   createCustomAiSpecStyle,
@@ -1680,6 +1681,7 @@ function KeySetupSheet(props: {
   onSkip(): void;
   onSubmit(input: AiAgentKeySubmission): void;
 }): JSX.Element {
+  const desktopCredentialBoundary = isTauri();
   const [kind, setKind] = createSignal<AiAgentKeyKind>('trial');
   const [persistence, setPersistence] = createSignal<AiAgentKeyPersistence>('session');
   const [key, setKey] = createSignal('');
@@ -1722,7 +1724,14 @@ function KeySetupSheet(props: {
               <div><span class="nb-ai-card-kicker font-ui">first use · your own connection</span><h2 id="nb-ai-key-title">Invite the agent into this book</h2></div>
             </div>
           </header>
-          <p class="nb-ai-key-intro">Alcove can plan, build and review notebook pages with Cohere. Connecting sends only a credential-validation request; no notebook or source content is sent until you start a task.</p>
+          <p class="nb-ai-key-intro">
+            <Show
+              when={desktopCredentialBoundary}
+              fallback={<>This browser preview cannot test or store Cohere keys. Open Alcove through the desktop app to connect; your key has not been sent anywhere from localhost.</>}
+            >
+              Alcove can plan, build and review notebook pages with Cohere. Connecting sends only a credential-validation request; no notebook or source content is sent until you start a task.
+            </Show>
+          </p>
 
           <fieldset class="nb-ai-key-kind">
             <legend class="font-ui">Which key are you using?</legend>
@@ -1761,7 +1770,7 @@ function KeySetupSheet(props: {
 
           <footer>
             <p class="font-ui"><span aria-hidden="true">◇</span> You always preview the final Alcove pages before anything is inserted.</p>
-            <button type="button" class="nb-ai-approve-action font-ui" disabled={!canSubmit() || props.connection.status === 'testing'} onClick={submit}>
+            <button type="button" class="nb-ai-approve-action font-ui" disabled={!desktopCredentialBoundary || !canSubmit() || props.connection.status === 'testing'} onClick={submit}>
               <Show when={props.connection.status === 'testing'} fallback={<><CheckIcon /> Test key & connect</>}><span class="nb-ai-button-spinner" /> Testing safely…</Show>
             </button>
           </footer>

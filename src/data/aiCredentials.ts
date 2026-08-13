@@ -67,7 +67,16 @@ export async function saveAiCredential(
 export async function testAiCredential(
   apiKey?: string,
 ): Promise<AiCredentialTestResult> {
-  if (!isTauri()) return { valid: false };
+  // A plain Vite page has no Rust-owned HTTPS gateway or protected credential
+  // store. Returning `{ valid:false }` here used to make localhost claim that
+  // Cohere rejected a key even though no request had left the browser at all.
+  // Fail explicitly; never move provider credentials into browser fetches just
+  // to make development mode resemble the desktop security boundary.
+  if (!isTauri()) {
+    throw new Error(
+      'Cohere keys can only be tested in the Alcove desktop app, not the localhost browser preview',
+    );
+  }
   const request = apiKey === undefined ? {} : { apiKey: normalizedKey(apiKey) };
   return invoke<AiCredentialTestResult>('ai_credential_test', { request });
 }

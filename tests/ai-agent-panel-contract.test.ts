@@ -246,3 +246,14 @@ describe('AI agent tutorial preview', () => {
     expect(panel).toContain('Optional setup waits until you open the Agent yourself.');
   });
 });
+
+describe('AI agent localhost credential boundary', () => {
+  it('never presents the browser preview as a working Cohere key test', () => {
+    const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
+
+    expect(panel).toContain('const desktopCredentialBoundary = isTauri()');
+    expect(panel).toContain('This browser preview cannot test or store Cohere keys.');
+    expect(panel).toContain('your key has not been sent anywhere from localhost');
+    expect(panel).toContain('disabled={!desktopCredentialBoundary || !canSubmit()');
+  });
+});

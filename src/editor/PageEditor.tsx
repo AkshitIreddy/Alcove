@@ -36,7 +36,7 @@
  * remount with a keyed <Show>/<For> when the page changes.
  */
 import type { Editor, JSONContent } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state';
 import {
   Decoration,
   DecorationSet,
@@ -45,7 +45,7 @@ import {
 import type { Slice } from '@tiptap/pm/model';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import { createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
 import { bumpLinkGraph } from '../search/backlinks';
@@ -66,6 +66,7 @@ import { recordSnapshot } from './history/pageHistory';
 import { registerPageEditor, unregisterPageEditor } from './instances';
 import { setActiveEditor } from './insert/activeEditor';
 import { handleEditorContextMenu } from './menu/contextMenuController';
+import { topLevelBlockAt } from './menu/blockOps';
 import {
   createMediaPastePlugin,
   insertMediaFiles,
@@ -177,6 +178,14 @@ gsap.registerPlugin(Flip);
 export interface PageEditorProps {
   readonly pageId: string;
   readonly initialDoc: PageDoc;
+  /** Temporarily prevent reader edits while a whole-book atomic write settles. */
+  readonly readOnly?: boolean;
+  /**
+   * Disposable AI/export staging: use the real editor, nodes, pagination and
+   * layout without registering as the reader's active editor or persisting a
+   * byte. The sandbox owns the returned document through `onDocChange`.
+   */
+  readonly draftSandbox?: boolean;
   /** Page-level action surfaced at the bottom of the right-click menu. */
   readonly onDeletePage?: () => void;
   /** Add a blank leaf immediately before this page. */
@@ -500,6 +509,15 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       clearTimeout(saveTimer);
       saveTimer = undefined;
     }
+    // The draft sandbox runs the real editor and real pagination, but its
+    // synthetic page ids must never reach SQLite, search, history, or the
+    // saved indicator when the hidden editor unmounts after capture.
+    if (props.draftSandbox === true) {
+      dirtyEditor = null;
+      pendingDoc = null;
+      mirrorQueued = false;
+      return;
+    }
     mirror(); // materialize anything the microtask has not picked up yet
     if (pendingDoc !== null) {
       const doc = pendingDoc;
@@ -513,11 +531,15 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       });
       // Page history (roadmap #13): the flushed doc is snapshot-worthy —
       // the ring throttles internally so bursts collapse to one snapshot.
-      recordSnapshot(pageId, doc);
+      recordSnapshot(pageId, doc, { enabled: settings.protectedHistoryEnabled });
     }
   };
 
   const scheduleSave = (instance: Editor): void => {
+    if (props.draftSandbox === true) {
+      props.onDocChange?.(instance.getJSON() as PageDoc);
+      return;
+    }
     dirtyEditor = instance;
     if (!mirrorQueued) {
       mirrorQueued = true;
@@ -873,10 +895,29 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     // PageDoc's content is unknown[] on purpose (the data layer only owns the
     // envelope); the schema validates the deep shape when the editor parses it.
     content: normalizePageDoc(props.initialDoc) as JSONContent,
+    editable: props.readOnly !== true,
     editorProps: {
       attributes: { class: 'nb-prose', spellcheck: 'true' },
       handleDrop,
       handleClick,
+      handleKeyDown: (view, event): boolean => {
+        if (event.key !== 'Backspace' || props.onMoveBlockToPrevious === undefined) {
+          return false;
+        }
+        const instance = editor();
+        if (!instance) return false;
+        const { selection } = view.state;
+        const first = topLevelBlockAt(instance, selection.from);
+        if (first?.pos !== 0) return false;
+        const atStart =
+          selection instanceof NodeSelection
+            ? selection.from === 0
+            : selection.empty && selection.$from.parentOffset === 0;
+        if (!atStart) return false;
+        event.preventDefault();
+        props.onMoveBlockToPrevious(instance, 0);
+        return true;
+      },
       handleDOMEvents: {
         // Right-click block menu; the native menu is suppressed only here.
         contextmenu: (_view, event: Event): boolean => {
@@ -916,8 +957,52 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     },
     // Two editors are mounted at once in the spread view; the focused one is
     // the "active" editor the script toolbar/dialog should target.
-    onFocus: ({ editor: instance }) => setActiveEditor(instance),
+    onFocus: ({ editor: instance }) => {
+      if (props.draftSandbox !== true) setActiveEditor(instance);
+    },
   }));
+
+  /* A display-math atom has a small plaintext editor inside its node view.
+   * ProseMirror correctly leaves those keystrokes alone, so it reports the
+   * one cross-page boundary gesture through a cancellable DOM event. */
+  onMount(() => {
+    const moveMathBack = (event: Event): void => {
+      if (
+        props.onMoveBlockToPrevious === undefined ||
+        !(event instanceof CustomEvent) ||
+        event.type !== 'alcove:backspace-block-start'
+      ) {
+        return;
+      }
+      const detail = event.detail as { pos?: unknown; latex?: unknown } | null;
+      const pos = detail?.pos;
+      if (pos !== 0) return;
+      const instance = editor();
+      if (!instance) return;
+      event.preventDefault();
+      const node = instance.state.doc.nodeAt(pos);
+      if (node?.type.name === 'math' && typeof detail?.latex === 'string') {
+        instance.view.dispatch(
+          instance.state.tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            latex: detail.latex,
+          }),
+        );
+      }
+      props.onMoveBlockToPrevious(instance, pos);
+    };
+    mountElement.addEventListener('alcove:backspace-block-start', moveMathBack);
+    onCleanup(() => {
+      mountElement.removeEventListener('alcove:backspace-block-start', moveMathBack);
+    });
+  });
+
+  createEffect(() => {
+    const instance = editor();
+    if (instance != null && !instance.isDestroyed) {
+      instance.setEditable(props.readOnly !== true, false);
+    }
+  });
 
   // Media node views need the same laid-out capacity as pagination so a newly
   // uploaded full-resolution image can reduce only its page display width
@@ -991,8 +1076,17 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
      * idempotent; removals naturally cause one more observer delivery that
      * confirms the settled page.
      */
-    const resize = new ResizeObserver(() => {
-      extractOverflow(instance);
+    const resize = new ResizeObserver((entries) => {
+      /*
+       * A resize of the prose root is the WINDOW/PAGE BOX changing. Its child
+       * blocks can wrap differently in that delivery, but moving their JSON
+       * to another page would turn a reversible viewport resize into a
+       * permanent edit. Intrinsic block-only changes remain authoritative:
+       * an image decoding, a table growing or a card treatment arriving does
+       * not resize the fixed prose root, and still runs the overflow drain.
+       */
+      const pageBoxChanged = entries.some((entry) => entry.target === root);
+      if (!pageBoxChanged) extractOverflow(instance);
       queueGridSnap();
     });
     const observeCurrentBlocks = (): void => {
@@ -1034,8 +1128,10 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
   let detachDragWiring: (() => void) | undefined;
   createEffect(() => {
     const instance = editor();
-    setActiveEditor(instance ?? null);
-    if (instance) registerPageEditor(pageId, instance);
+    if (props.draftSandbox !== true) {
+      setActiveEditor(instance ?? null);
+      if (instance) registerPageEditor(pageId, instance);
+    }
     if (instance && gridSnapPluginInstalled !== instance) {
       instance.registerPlugin(gridSnapPlugin);
       gridSnapPluginInstalled = instance;
@@ -1068,6 +1164,7 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     detachDragWiring = undefined;
   });
   onCleanup(() => {
+    if (props.draftSandbox === true) return;
     setActiveEditor(null);
     const instance = editor();
     if (instance) unregisterPageEditor(pageId, instance);

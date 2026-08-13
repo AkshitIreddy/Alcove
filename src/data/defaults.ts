@@ -61,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autosaveIntervalMs: 400,
   backupEnabled: true,
   backupIntervalDays: 7,
+  protectedHistoryEnabled: true,
   spellcheck: true,
 
   // Input
@@ -107,6 +108,16 @@ export const DEFAULT_SETTINGS: Settings = {
   perfHud: false,
   // Replacing a reader's edited guide is always an explicit opt-in.
   refreshWelcomeBookOnUpdate: false,
+
+  // The AI Agent opens with a skippable key explanation once. These are
+  // non-secret preferences; credentials themselves live behind Rust.
+  aiAgentSetupSeen: false,
+  aiAgentKeyKind: 'trial',
+  aiAgentTrialPrivacyAcknowledged: false,
+  aiAgentDefaultContext: 'current-page',
+  // Opt-in because replacement is conservative and can make provider prose a
+  // little less natural. When enabled, the receipt remains local to the task.
+  aiAgentObfuscatePrivateText: false,
 
   telemetry: false,
 };

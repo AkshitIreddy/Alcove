@@ -30,8 +30,7 @@
 .nb-spread-stage {
   flex: 1 1 auto;
   min-height: 0;
-  /* Cap the aspect so ultrawide screens keep a believable book. */
-  width: min(100%, calc((100vh - 96px) * 1.58), 1760px);
+  width: 100%;
   /*
    * THIS WIDTH KNOWS NOTHING ABOUT AN OPEN RAIL SHEET, AND MUST NOT.
    *
@@ -50,6 +49,89 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+}
+
+/*
+ * THE PAGE LAYOUT IS A DOCUMENT CONSTANT, NOT A WINDOW BREAKPOINT.
+ *
+ * 1334 × 920 is the settled open-book canvas used by the authored Welcome
+ * book and native Agent previews. A window resize, a panel opening, or a move
+ * to a monitor with another resolution/DPI may only transform this frame; it
+ * must never alter the CSS-pixel box that wraps prose or feeds pagination.
+ * `BookView.fitSpread` fits this complete frame in both axes. Keeping the
+ * transform one level outside `.nb-spread-stage` also lets focus zoom/pan
+ * compose independently without ever relaying out a leaf.
+ */
+.nb-spread-fit-frame {
+  flex: 0 0 920px;
+  width: 1334px;
+  height: 920px;
+  min-width: 1334px;
+  min-height: 920px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.nb-insertion-settling {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 32px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink);
+  border-radius: 18px 22px 20px 17px / 22px 18px 21px 19px;
+  text-align: center;
+}
+
+.nb-insertion-settling strong {
+  font-family: var(--font-heading);
+  font-size: 27px;
+  font-weight: 600;
+}
+
+.nb-insertion-settling > span:last-child {
+  max-width: 330px;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui);
+  line-height: 1.45;
+}
+
+.nb-insertion-settling-dots {
+  width: 58px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--accent-ink);
+  background: var(--wash-moss-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 17px 21px 16px 20px / 20px 16px 21px 17px;
+}
+
+.nb-insertion-settling-dots i {
+  width: 5px;
+  height: 5px;
+  display: block;
+  background: currentColor;
+  border-radius: 50%;
+  animation: nb-insertion-settling-dot 1.2s var(--ease-in-out) infinite;
+}
+
+.nb-insertion-settling-dots i:nth-child(2) { animation-delay: 0.15s; }
+.nb-insertion-settling-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes nb-insertion-settling-dot {
+  0%, 62%, 100% { opacity: 0.35; transform: translateY(0); }
+  28% { opacity: 1; transform: translateY(-3px); }
 }
 
 /* ----------------------------------------------------------------------------
@@ -777,12 +859,16 @@
    Horizontal scroll stays inside the strip (thin styled bar), never the page.
    -------------------------------------------------------------------------- */
 .nb-thumb-strip {
-  flex: 0 0 auto;
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
   display: flex;
   align-items: flex-end;
   gap: var(--space-8);
-  max-width: 100%;
-  margin-top: var(--space-8);
+  max-width: calc(100% - 64px);
+  margin: 0;
   padding: var(--space-4) var(--space-8);
   overflow-x: auto;
   overflow-y: hidden;

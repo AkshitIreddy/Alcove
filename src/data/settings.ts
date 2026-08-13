@@ -146,6 +146,10 @@ function mergeStored(raw: unknown): MutableSettings {
     autosaveIntervalMs: takeNumber(s.autosaveIntervalMs, d.autosaveIntervalMs),
     backupEnabled: takeBoolean(s.backupEnabled, d.backupEnabled),
     backupIntervalDays: takeNumber(s.backupIntervalDays, d.backupIntervalDays),
+    protectedHistoryEnabled: takeBoolean(
+      s.protectedHistoryEnabled,
+      d.protectedHistoryEnabled,
+    ),
     spellcheck: takeBoolean(s.spellcheck, d.spellcheck),
     keybindings: takeKeybindings(s.keybindings, d.keybindings),
     wheelMode: takeEnum(s.wheelMode, ['zoom', 'scroll'] as const, d.wheelMode),
@@ -194,6 +198,25 @@ function mergeStored(raw: unknown): MutableSettings {
     refreshWelcomeBookOnUpdate: takeBoolean(
       s.refreshWelcomeBookOnUpdate,
       d.refreshWelcomeBookOnUpdate,
+    ),
+    aiAgentSetupSeen: takeBoolean(s.aiAgentSetupSeen, d.aiAgentSetupSeen),
+    aiAgentKeyKind: takeEnum(
+      s.aiAgentKeyKind,
+      ['trial', 'production'] as const,
+      d.aiAgentKeyKind,
+    ),
+    aiAgentTrialPrivacyAcknowledged: takeBoolean(
+      s.aiAgentTrialPrivacyAcknowledged,
+      d.aiAgentTrialPrivacyAcknowledged,
+    ),
+    aiAgentDefaultContext: takeEnum(
+      s.aiAgentDefaultContext,
+      ['current-page', 'nearby-pages', 'whole-book'] as const,
+      d.aiAgentDefaultContext,
+    ),
+    aiAgentObfuscatePrivateText: takeBoolean(
+      s.aiAgentObfuscatePrivateText,
+      d.aiAgentObfuscatePrivateText,
     ),
     telemetry: false,
   };

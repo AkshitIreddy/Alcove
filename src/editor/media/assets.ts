@@ -98,10 +98,31 @@ export async function storeImageFile(file: File | Blob): Promise<StoredAsset> {
   return storeImageBytes(bytes, ext, name === null ? null : { fileName: name });
 }
 
+export function videoFileExtension(file: File | Blob): string {
+  const mime = file.type.split(';')[0]?.toLowerCase() ?? '';
+  const byMime: Record<string, string> = {
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'video/quicktime': 'mov',
+    'video/x-msvideo': 'avi',
+    'video/x-matroska': 'mkv',
+    'video/mpeg': 'mpeg',
+    'video/ogg': 'ogv',
+  };
+  if (byMime[mime]) return byMime[mime]!;
+  if (file instanceof File) {
+    const candidate = file.name.toLowerCase().match(/\.([a-z0-9]{1,8})$/)?.[1];
+    if (candidate && ['mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', 'mpeg', 'mpg', 'ogv'].includes(candidate)) {
+      return candidate;
+    }
+  }
+  return 'mp4';
+}
+
 /** Persist a dropped video through the same content-addressed asset writer. */
 export async function storeVideoFile(file: File | Blob): Promise<StoredAsset> {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const ext = file.type.startsWith('video/') ? file.type.slice(6) : 'mp4';
+  const ext = videoFileExtension(file);
   const name = file instanceof File ? file.name : null;
   return storeMediaBytes(
     bytes,
@@ -123,11 +144,136 @@ export interface FetchedImageIpc {
   thumbUrl: string | null;
   attribution: string;
   license: string;
+  sha256: string;
+  sizeBytes: number;
 }
 
 export interface FetchedImageResult extends FetchedImageIpc {
   /** Displayable src resolved for the current environment. */
   src: string;
+}
+
+/**
+ * Durable provenance retained by an AI reviewed-generation receipt.
+ *
+ * `src` is deliberately absent: it is a WebView display URL, not identity.
+ * `relPath` names the content-addressed bytes Rust already downloaded. During
+ * an AI preview this receipt is staged without an `assets` row; explicit
+ * approval promotes the same bytes instead of searching or downloading again.
+ */
+export interface FetchedImageAssetReceipt extends FetchedImageIpc {
+  readonly provider: string;
+  readonly query: string;
+}
+
+export function fetchedImageAssetReceipt(
+  image: FetchedImageResult,
+  query: string,
+  provider = 'openverse',
+): FetchedImageAssetReceipt {
+  return {
+    id: image.id,
+    relPath: image.relPath,
+    url: image.url,
+    thumbUrl: image.thumbUrl,
+    attribution: image.attribution,
+    license: image.license,
+    sha256: image.sha256,
+    sizeBytes: image.sizeBytes,
+    provider,
+    query,
+  };
+}
+
+/**
+ * Search/download through Rust without making the bytes part of the notebook.
+ *
+ * The Rust command currently writes a content-addressed file beneath the
+ * library asset root, which is the only safe SSRF-guarded download seam. This
+ * function intentionally creates no database row. Rejected previews therefore
+ * cannot appear in the normal asset catalogue, while approved previews can
+ * promote this exact `relPath` without refetching mutable remote content.
+ */
+export async function stageFetchedImages(
+  query: string,
+  count = 3,
+  provider = 'openverse',
+): Promise<FetchedImageResult[]> {
+  if (!isTauri()) return [];
+  const { invoke } = await import('@tauri-apps/api/core');
+  const fetched = await invoke<FetchedImageIpc[]>('fetch_images', {
+    query,
+    count,
+    provider,
+  });
+  return Promise.all(
+    fetched.map(async (item) => ({ ...item, src: await resolveAssetSrc(item.relPath) })),
+  );
+}
+
+/** Promote already-downloaded immutable bytes into the notebook asset index. */
+export async function promoteFetchedImageAssets(
+  receipts: readonly FetchedImageAssetReceipt[],
+): Promise<void> {
+  const unique = new Map(receipts.map((receipt) => [receipt.id, receipt]));
+  for (const item of unique.values()) {
+    if (isTauri()) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const verified = await invoke<{
+        relPath: string;
+        sha256: string;
+        sizeBytes: number;
+      }>('verify_image_asset', { relPath: item.relPath });
+      if (
+        verified.relPath !== item.relPath ||
+        verified.sha256 !== item.sha256 ||
+        verified.sizeBytes !== item.sizeBytes
+      ) {
+        throw new Error(
+          'A searched image changed after the reviewed preview. Refresh the preview before inserting.',
+        );
+      }
+    }
+    await recordAssetRow(item.id, item.relPath, {
+      sourceUrl: item.url,
+      attribution: item.attribution,
+      license: item.license,
+      provider: item.provider,
+      query: item.query,
+    }, 'image');
+  }
+}
+
+/**
+ * Remove only catalogue rows created by an abandoned AI apply. Content bytes
+ * remain content-addressed and may still be shared by another asset/preview.
+ */
+export async function rollbackFetchedImageAssetPromotions(
+  receipts: readonly FetchedImageAssetReceipt[],
+  createdIds: readonly string[] = receipts.map((receipt) => receipt.id),
+): Promise<void> {
+  if (createdIds.length === 0) return;
+  const db = await getDb();
+  for (const id of new Set(createdIds)) {
+    await db.execute('DELETE FROM assets WHERE id = $1', [id]);
+  }
+}
+
+/** Snapshot which staged assets lack a catalogue row before promotion. */
+export async function missingFetchedImageAssetIds(
+  receipts: readonly FetchedImageAssetReceipt[],
+): Promise<readonly string[]> {
+  if (receipts.length === 0) return [];
+  const db = await getDb();
+  const missing: string[] = [];
+  for (const id of new Set(receipts.map((receipt) => receipt.id))) {
+    const rows = await db.select<Array<{ id: string }>>(
+      'SELECT id FROM assets WHERE id = $1 LIMIT 1',
+      [id],
+    );
+    if (rows.length === 0) missing.push(id);
+  }
+  return missing;
 }
 
 /**
@@ -140,23 +286,9 @@ export async function fetchImages(
   count = 3,
   provider = 'openverse',
 ): Promise<FetchedImageResult[]> {
-  if (!isTauri()) return [];
-  const { invoke } = await import('@tauri-apps/api/core');
-  const fetched = await invoke<FetchedImageIpc[]>('fetch_images', {
-    query,
-    count,
-    provider,
-  });
-  const results: FetchedImageResult[] = [];
-  for (const item of fetched) {
-    await recordAssetRow(item.id, item.relPath, {
-      sourceUrl: item.url,
-      attribution: item.attribution,
-      license: item.license,
-      provider,
-      query,
-    }, 'image');
-    results.push({ ...item, src: await resolveAssetSrc(item.relPath) });
-  }
+  const results = await stageFetchedImages(query, count, provider);
+  await promoteFetchedImageAssets(
+    results.map((result) => fetchedImageAssetReceipt(result, query, provider)),
+  );
   return results;
 }

@@ -60,8 +60,10 @@ import {
   MATERIALS,
   MATERIAL_LOOKS,
   bindingMaterialFor,
+  drawOpenBinderTool,
   materialLookFor,
   presetForSeed,
+  type BroadFocalGlyph,
   type MaterialLook,
   type MaterialSpec,
 } from './bookDesign';
@@ -88,6 +90,8 @@ import {
 } from './titleContrast';
 import {
   MAX_RAISED_BANDS,
+  ACTIVE_ORNAMENT_INDICES,
+  ACTIVE_ORNAMENTS,
   ORNAMENT_COUNT,
   PIGMENT_COUNT,
   clothForPalette,
@@ -158,33 +162,11 @@ export const COVER_MEDALLION_COUNT = ORNAMENT_COUNT;
  * heraldic set. Animals, hardware, astrology marks, dots and novelty symbols
  * remain migration-only. `-1` remains the deliberate bare-board choice.
  */
-export const ACTIVE_COVER_EMBLEM_INDICES = [
-  0, 1, 2, 5, 12, 13, 14, 20, 23, 26, 28, 29, 30, 31, 43, 56,
-] as const;
+export const ACTIVE_COVER_EMBLEM_INDICES = ACTIVE_ORNAMENT_INDICES;
 
 export type ActiveCoverEmblemIndex = (typeof ACTIVE_COVER_EMBLEM_INDICES)[number];
 
-export const ACTIVE_COVER_EMBLEMS: readonly {
-  index: ActiveCoverEmblemIndex;
-  label: string;
-}[] = [
-  { index: 0, label: 'Foliate lozenge' },
-  { index: 1, label: 'Broad laurel branch' },
-  { index: 2, label: 'Foliate starflower' },
-  { index: 5, label: 'Rising sun' },
-  { index: 12, label: 'Three-leaf fleuron' },
-  { index: 13, label: 'Oak-and-acorn spray' },
-  { index: 14, label: 'Thistle bloom' },
-  { index: 20, label: 'Open royal crown' },
-  { index: 23, label: 'Stemmed rosette' },
-  { index: 26, label: 'Broad fleur-de-lis' },
-  { index: 28, label: 'Oak acanthus volutes' },
-  { index: 29, label: 'Wheat sheaf' },
-  { index: 30, label: 'Split pomegranate' },
-  { index: 31, label: 'Open tulip' },
-  { index: 43, label: 'Five-leaf anthemion' },
-  { index: 56, label: 'Fern palmette' },
-];
+export const ACTIVE_COVER_EMBLEMS = ACTIVE_ORNAMENTS;
 
 const ACTIVE_COVER_EMBLEM_SET: ReadonlySet<number> = new Set(ACTIVE_COVER_EMBLEM_INDICES);
 
@@ -3945,7 +3927,27 @@ export type CoverEmblemProgramme =
   | 'pinecone-needles'
   | 'anthemion-fan'
   | 'fern-palmette'
-  | 'ginkgo-fans';
+  | 'ginkgo-fans'
+  | 'acanthus-spearhead'
+  | 'carnation-standard'
+  | 'iris-triptych'
+  | 'artichoke-finial'
+  | 'poppy-capsule'
+  | 'olive-cutting'
+  | 'strawberry-sprig'
+  | 'vine-cluster'
+  | 'honeysuckle-scroll'
+  | 'lotus-waterline'
+  | 'samara-spray'
+  | 'willow-catkin'
+  | 'rowan-spray'
+  | 'columbine-bell'
+  | 'primrose-stem'
+  | 'dog-rose-branch'
+  | 'cedar-cone-spray'
+  | 'reed-bundle'
+  | 'moresque-knot'
+  | 'tudor-rose-standard';
 
 const COVER_EMBLEM_PROGRAMMES: Readonly<Record<number, CoverEmblemProgramme>> = {
   0: 'lozenge-fleuron',
@@ -3968,6 +3970,26 @@ const COVER_EMBLEM_PROGRAMMES: Readonly<Record<number, CoverEmblemProgramme>> = 
   43: 'anthemion-fan',
   56: 'fern-palmette',
   57: 'ginkgo-fans',
+  66: 'acanthus-spearhead',
+  67: 'carnation-standard',
+  68: 'iris-triptych',
+  69: 'artichoke-finial',
+  70: 'poppy-capsule',
+  71: 'olive-cutting',
+  72: 'strawberry-sprig',
+  73: 'vine-cluster',
+  74: 'honeysuckle-scroll',
+  75: 'lotus-waterline',
+  76: 'samara-spray',
+  77: 'willow-catkin',
+  78: 'rowan-spray',
+  79: 'columbine-bell',
+  80: 'primrose-stem',
+  81: 'dog-rose-branch',
+  82: 'cedar-cone-spray',
+  83: 'reed-bundle',
+  84: 'moresque-knot',
+  85: 'tudor-rose-standard',
 };
 
 /** Per-programme optical scale: open linework needs more board than a badge. */
@@ -3992,6 +4014,53 @@ const COVER_EMBLEM_DEVICE_SCALES: Readonly<Record<CoverEmblemProgramme, number>>
   'anthemion-fan': 1.2,
   'fern-palmette': 1.24,
   'ginkgo-fans': 1.24,
+  'acanthus-spearhead': 1.2,
+  'carnation-standard': 1.22,
+  'iris-triptych': 1.2,
+  'artichoke-finial': 1.18,
+  'poppy-capsule': 1.2,
+  'olive-cutting': 1.28,
+  'strawberry-sprig': 1.2,
+  'vine-cluster': 1.22,
+  'honeysuckle-scroll': 1.25,
+  'lotus-waterline': 1.22,
+  'samara-spray': 1.25,
+  'willow-catkin': 1.24,
+  'rowan-spray': 1.24,
+  'columbine-bell': 1.22,
+  'primrose-stem': 1.22,
+  'dog-rose-branch': 1.26,
+  'cedar-cone-spray': 1.25,
+  'reed-bundle': 1.18,
+  'moresque-knot': 1.2,
+  'tudor-rose-standard': 1.18,
+};
+
+/** The twenty append-only cover programmes share the exact semantic strike
+ * used by their spine partner, enlarged without inventing a second icon set. */
+const APPENDED_COVER_EMBLEM_GLYPHS: Readonly<
+  Partial<Record<CoverEmblemProgramme, BroadFocalGlyph>>
+> = {
+  'acanthus-spearhead': 'acanthus-spear',
+  'carnation-standard': 'carnation',
+  'iris-triptych': 'iris-fan',
+  'artichoke-finial': 'artichoke',
+  'poppy-capsule': 'poppy-seedhead',
+  'olive-cutting': 'olive-spray',
+  'strawberry-sprig': 'strawberry-sprig',
+  'vine-cluster': 'vine-cluster',
+  'honeysuckle-scroll': 'honeysuckle-scroll',
+  'lotus-waterline': 'lotus-palmette',
+  'samara-spray': 'maple-samara',
+  'willow-catkin': 'willow-catkin',
+  'rowan-spray': 'rowan-spray',
+  'columbine-bell': 'columbine-bell',
+  'primrose-stem': 'primrose-stem',
+  'dog-rose-branch': 'dog-rose',
+  'cedar-cone-spray': 'cedar-cone',
+  'reed-bundle': 'reed-bundle',
+  'moresque-knot': 'moresque-knot',
+  'tudor-rose-standard': 'tudor-rose',
 };
 
 /** The actual cover-finishing programme reached by a persisted ornament id. */
@@ -4161,6 +4230,12 @@ function paintCoverCentreTool(
   colour: string,
   line: number,
 ): void {
+  const appendedGlyph = APPENDED_COVER_EMBLEM_GLYPHS[programme];
+  if (appendedGlyph) {
+    drawOpenBinderTool(ctx, appendedGlyph, cx, cy, r * 2.08, colour, line);
+    return;
+  }
+
   const openLeaf = (
     baseX: number,
     baseY: number,
@@ -4876,6 +4951,46 @@ function paintEmblemSetting(
     case 'fern-palmette':
     case 'ginkgo-fans':
       return 1.06;
+    case 'acanthus-spearhead':
+      return 1.03;
+    case 'carnation-standard':
+      return 1.02;
+    case 'iris-triptych':
+      return 1.04;
+    case 'artichoke-finial':
+      return 1;
+    case 'poppy-capsule':
+      return 1.02;
+    case 'olive-cutting':
+      return 1.08;
+    case 'strawberry-sprig':
+      return 1.01;
+    case 'vine-cluster':
+      return 1.04;
+    case 'honeysuckle-scroll':
+      return 1.06;
+    case 'lotus-waterline':
+      return 1.03;
+    case 'samara-spray':
+      return 1.07;
+    case 'willow-catkin':
+      return 1.06;
+    case 'rowan-spray':
+      return 1.05;
+    case 'columbine-bell':
+      return 1.03;
+    case 'primrose-stem':
+      return 1.02;
+    case 'dog-rose-branch':
+      return 1.07;
+    case 'cedar-cone-spray':
+      return 1.06;
+    case 'reed-bundle':
+      return 0.99;
+    case 'moresque-knot':
+      return 1.02;
+    case 'tudor-rose-standard':
+      return 1;
     case 'open-state-crown':
       return 1;
   }

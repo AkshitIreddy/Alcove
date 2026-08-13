@@ -442,14 +442,17 @@ function settleStaged(
 export function createOffscreenPageCapture(
   options: OffscreenPageCaptureOptions,
 ): (pageId: string) => Promise<ImageBitmap | null> {
-  const pixelRatio =
-    options.pixelRatio ??
-    snapshotPixelRatio(
-      window.devicePixelRatio || 1,
-      (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
-    );
-
   return async (pageId) => {
+    // A window can cross monitors without this component remounting. Resolve
+    // density at capture admission, not factory construction, so neighbour
+    // textures follow the current monitor instead of the one the book opened
+    // on. PageRasterCache's density epoch rejects an older in-flight result.
+    const pixelRatio =
+      options.pixelRatio ??
+      snapshotPixelRatio(
+        window.devicePixelRatio || 1,
+        (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+      );
     // Eligibility is a lifetime property, not a callback-time property. A
     // slow stage can start while this is a live leaf and finish after the
     // reader turns; such a page was never ours to drain ahead.

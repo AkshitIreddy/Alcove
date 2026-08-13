@@ -24,13 +24,14 @@ import type { PageDoc } from '../../data/types';
 export interface PageSnapshot {
   /** Capture time, ISO-8601. */
   readonly at: string;
+  readonly protected?: boolean;
   readonly doc: PageDoc;
 }
 
-export const MEMORY_CAP = 20;
-export const PERSIST_CAP = 10;
-export const MIN_SNAPSHOT_GAP_MS = 20_000;
-export const PERSIST_MAX_JSON_CHARS = 240_000;
+export const MEMORY_CAP = 1536;
+export const PERSIST_CAP = 1024;
+export const MIN_SNAPSHOT_GAP_MS = 5_000;
+export const PERSIST_MAX_JSON_CHARS = 16_000_000;
 
 export const historyKey = (pageId: string): string => `page_history:${pageId}`;
 
@@ -73,11 +74,46 @@ export function persistedTail(
   cap: number = PERSIST_CAP,
   maxJsonChars: number = PERSIST_MAX_JSON_CHARS,
 ): readonly PageSnapshot[] {
-  let tail = ring.slice(Math.max(0, ring.length - cap));
+  let tail = protectedRecoveryPoints(ring, cap);
   while (tail.length > 1 && JSON.stringify(tail).length > maxJsonChars) {
     tail = tail.slice(1);
   }
   return tail;
+}
+
+/**
+ * Generous but bounded recovery retention. Keep every recent edit, then one
+ * representative per hour/day/month as versions age. The newest snapshot is
+ * invariant: size pressure drops older recovery points first, never "now".
+ */
+export function protectedRecoveryPoints(
+  ring: readonly PageSnapshot[],
+  cap: number = PERSIST_CAP,
+  now: number = Date.now(),
+): readonly PageSnapshot[] {
+  if (ring.length <= cap) return [...ring];
+  const newestFirst = [...ring].sort((a, b) => b.at.localeCompare(a.at));
+  const protectedPoints = newestFirst.filter((snapshot) => snapshot.protected === true);
+  const kept: PageSnapshot[] = [...protectedPoints];
+  const protectedTimes = new Set(protectedPoints.map((snapshot) => snapshot.at));
+  const buckets = new Set<string>();
+  for (let index = 0; index < newestFirst.length; index += 1) {
+    const snapshot = newestFirst[index]!;
+    if (protectedTimes.has(snapshot.at)) continue;
+    const at = new Date(snapshot.at).getTime();
+    const age = Number.isFinite(at) ? Math.max(0, now - at) : 0;
+    let bucket: string;
+    if (index < 384) bucket = `dense:${index}`;
+    else if (age < 30 * 24 * 60 * 60_000) bucket = `hour:${Math.floor(at / 3_600_000)}`;
+    else if (age < 3 * 365 * 24 * 60 * 60_000) bucket = `day:${Math.floor(at / 86_400_000)}`;
+    else if (age < 10 * 365 * 24 * 60 * 60_000) bucket = `week:${Math.floor(at / (7 * 86_400_000))}`;
+    else bucket = `month:${new Date(at).getUTCFullYear()}-${new Date(at).getUTCMonth()}`;
+    if (buckets.has(bucket)) continue;
+    buckets.add(bucket);
+    kept.push(snapshot);
+    if (kept.length >= Math.max(cap, protectedPoints.length)) break;
+  }
+  return kept.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 /** Validate a stored blob back into snapshots (corrupt rows become []). */
@@ -129,8 +165,9 @@ let historyGeneration = 0;
 export function recordSnapshot(
   pageId: string,
   doc: PageDoc,
-  options: { force?: boolean; now?: number } = {},
+  options: { force?: boolean; now?: number; enabled?: boolean } = {},
 ): void {
+  if (options.enabled === false) return;
   const now = options.now ?? Date.now();
   const last = lastRecordedAt.get(pageId) ?? 0;
   if (options.force || now - last >= MIN_SNAPSHOT_GAP_MS) {
@@ -267,6 +304,41 @@ export async function listSnapshots(pageId: string): Promise<PageSnapshot[]> {
   const ready = await ensureHydrated(pageId);
   if (ready && dirty.has(pageId)) requestPersist(pageId);
   return [...(rings.get(pageId) ?? [])].reverse();
+}
+
+/** Wait until the exact current ring is durable; used before destructive restore. */
+export async function waitForPageHistory(pageId: string, timeoutMs = 8_000): Promise<void> {
+  const started = Date.now();
+  requestPersist(pageId);
+  while (dirty.has(pageId) || persistRunners.get(pageId)?.running === true) {
+    if (Date.now() - started > timeoutMs) throw new Error('could not protect the current page before restoring');
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 8));
+    requestPersist(pageId);
+  }
+}
+
+export async function recordSnapshotDurably(
+  pageId: string,
+  doc: PageDoc,
+  options: { now?: number } = {},
+): Promise<void> {
+  recordSnapshot(pageId, doc, { force: true, now: options.now, enabled: true });
+  await waitForPageHistory(pageId);
+}
+
+export async function setPageSnapshotProtected(
+  pageId: string,
+  at: string,
+  protectedValue: boolean,
+): Promise<void> {
+  await ensureHydrated(pageId);
+  const ring = rings.get(pageId) ?? [];
+  rings.set(pageId, ring.map((snapshot) =>
+    snapshot.at === at ? { ...snapshot, protected: protectedValue || undefined } : snapshot,
+  ));
+  dirty.add(pageId);
+  requestPersist(pageId);
+  await waitForPageHistory(pageId);
 }
 
 /** Test seam: drop all in-memory rings and hydration marks. */

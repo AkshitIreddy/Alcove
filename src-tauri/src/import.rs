@@ -70,13 +70,11 @@ fn utf16_lossy(bytes: &[u8], little_endian: bool) -> String {
 pub async fn read_markdown_file(path: String) -> Result<String, String> {
     const MAX_BYTES: u64 = 8 * 1024 * 1024;
     tauri::async_runtime::spawn_blocking(move || {
-        let meta =
-            std::fs::metadata(&path).map_err(|e| format!("could not read file: {e}"))?;
+        let meta = std::fs::metadata(&path).map_err(|e| format!("could not read file: {e}"))?;
         if meta.len() > MAX_BYTES {
             return Err("file is too large to import (8 MB cap)".into());
         }
-        let bytes =
-            std::fs::read(&path).map_err(|e| format!("could not read file: {e}"))?;
+        let bytes = std::fs::read(&path).map_err(|e| format!("could not read file: {e}"))?;
         Ok(decode_text_bytes(&bytes))
     })
     .await

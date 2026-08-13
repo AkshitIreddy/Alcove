@@ -5,6 +5,14 @@ import {
 } from '../src/editor/menu/registry';
 
 describe('page deletion in the editor context menu', () => {
+  it('offers useful copy and download actions for every block type', () => {
+    const entries = buildBlockContextMenu();
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'item', id: 'copy-useful-content', title: 'Copy content' }),
+      expect.objectContaining({ kind: 'item', id: 'download-useful-content', title: 'Download / save…' }),
+    ]));
+  });
+
   it('offers a backward-flow action when a previous page exists', () => {
     const onMoveBlockToPrevious = vi.fn();
     const item = buildBlockContextMenu({ onMoveBlockToPrevious }).find(

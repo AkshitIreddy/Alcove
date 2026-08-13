@@ -358,6 +358,34 @@ export function restorePageSnapshot(page: Page): Promise<Page | null> {
 }
 
 /**
+ * Book-history restore may need to recreate a page the reader deleted. The
+ * exact stable id/ordinal/provenance are recovery authority, not a new page.
+ */
+export async function restoreOrCreatePageSnapshot(page: Page): Promise<Page> {
+  const existing = await getPage(page.id);
+  if (existing !== null) {
+    const restored = await restorePageSnapshot(page);
+    if (restored === null) throw new Error('page history restore failed');
+    return restored;
+  }
+  const db = await getDb();
+  await db.execute(
+    'INSERT INTO pages (id, book_id, ord, doc_json, script_source, source_dirty, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    [
+      page.id,
+      page.bookId,
+      page.ord,
+      JSON.stringify(page.doc),
+      page.scriptSource,
+      page.sourceDirty ? 1 : 0,
+      page.updatedAt,
+    ],
+  );
+  await indexPage(page.id, page.bookId, page.ord, page.doc, page.updatedAt);
+  return page;
+}
+
+/**
  * Delete one page and close its ordinal gap.
  *
  * The caller keeps the book-level invariant that at least one page remains.

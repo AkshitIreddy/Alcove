@@ -1072,6 +1072,100 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button {
   flex: 1 1 auto;
 }
 
+/* AI text veil — a small protective bookplate rather than a generic settings
+   toggle. The shield uses the same flat fill + one ink outline as the rest of
+   Alcove; the limitation stays physically attached so the switch can never
+   be read as pixel-level redaction. */
+.nbs-ai-privacy-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  width: 100%;
+}
+
+.nbs-ai-privacy-control {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-12);
+  border: 1.5px solid var(--ink-line);
+  border-radius: 15px 18px 16px 20px / 18px 15px 20px 16px;
+  background: var(--wash-violet-light);
+}
+
+.nbs-ai-privacy-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--ink-sepia);
+  transform: rotate(-1.5deg);
+}
+
+.nbs-ai-privacy-mark svg {
+  width: 34px;
+  height: 34px;
+  overflow: visible;
+}
+
+.nbs-ai-privacy-mark path:first-child {
+  fill: var(--wash-violet);
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+
+.nbs-ai-privacy-mark path:not(:first-child) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nbs-ai-privacy-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ink-sepia-soft);
+  font-size: var(--text-ui);
+  line-height: 1.35;
+}
+
+.nbs-ai-privacy-copy strong {
+  color: var(--ink-sepia);
+  font-size: 13px;
+}
+
+.nbs-ai-privacy-limit {
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border-left: 3px solid var(--wash-amber-deep);
+  border-radius: 2px 11px 13px 3px;
+  background: var(--wash-amber-light);
+  color: var(--ink-sepia-soft);
+  font-size: var(--text-ui);
+  line-height: 1.4;
+}
+
+.nbs-ai-privacy-limit strong {
+  color: var(--ink-sepia);
+}
+
+@media (max-width: 720px) {
+  .nbs-ai-privacy-control {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .nbs-ai-privacy-control > .nbs-toggle {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+
 /* A row whose control is a long, non-wrapping chip.
    `.nbs-row-control` shrinks (`flex: 0 1 auto` + `min-width: 0`), but a
    `white-space: nowrap` button inside a shrunk control does not shrink with
@@ -1670,6 +1764,256 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button {
   border-color: var(--ink-line-soft);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.nbs-action-btn--danger {
+  color: var(--ink-sepia);
+  background: var(--wash-blush-light);
+  border-color: var(--wash-terracotta-deep);
+}
+
+.nbs-ai-status {
+  margin: 0 var(--space-16) var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--wash-violet-light);
+  border-left: 3px solid var(--wash-violet);
+  border-radius: 4px 12px 10px 5px;
+  font-size: var(--text-ui);
+  line-height: 1.45;
+}
+
+/* The provider key is replaced from a centred paper sheet rather than a
+   browser prompt. It is chrome, not a notebook page, so the sheet may scroll
+   at short viewport heights; no page-content scrollbar is introduced. */
+.nbs-ai-key-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-toasts) + 22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-24);
+  background: var(--lift-ink-strong);
+}
+
+.nbs-ai-key-sheet {
+  width: min(650px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink);
+  border-radius: 21px 27px 19px 25px / 26px 19px 28px 21px;
+  box-shadow: var(--shadow-lg);
+}
+
+.nbs-ai-key-sheet > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-20);
+  background: var(--paper-aged);
+  border-bottom: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-ai-key-sheet h2 {
+  margin: 2px 0 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.nbs-ai-key-kicker {
+  color: var(--wash-violet-deep);
+  font-size: var(--text-ui);
+  font-weight: 800;
+  letter-spacing: var(--tracking-ui);
+  text-transform: uppercase;
+}
+
+.nbs-ai-key-close {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 45% 55% 48% 52% / 55% 46% 54% 45%;
+}
+
+.nbs-ai-key-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nbs-ai-key-intro {
+  margin: 0;
+  padding: var(--space-16) var(--space-20) var(--space-8);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.45;
+}
+
+.nbs-ai-key-field {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-20);
+  font-size: var(--text-ui);
+  font-weight: 800;
+}
+
+.nbs-ai-key-field > div {
+  display: flex;
+  align-items: stretch;
+}
+
+.nbs-ai-key-field input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: var(--space-8) var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-right: 0;
+  border-radius: 11px 0 0 13px / 13px 0 0 10px;
+  outline: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.nbs-ai-key-field button {
+  padding: 0 var(--space-12);
+  color: var(--ink-sepia);
+  background: var(--wash-violet-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 0 12px 11px 0 / 0 10px 13px 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  font-weight: 800;
+}
+
+.nbs-ai-key-storage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+  margin: var(--space-8) var(--space-20) 0;
+  padding: 0;
+  border: 0;
+}
+
+.nbs-ai-key-storage legend {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-4);
+  font-size: var(--text-ui);
+  font-weight: 800;
+}
+
+.nbs-ai-key-storage button {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-8) var(--space-12);
+  text-align: left;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1.4px dashed var(--ink-line-soft);
+  border-radius: 12px 16px 11px 14px / 15px 11px 16px 12px;
+}
+
+.nbs-ai-key-storage button[aria-pressed='true'] {
+  background: var(--wash-violet-light);
+  border-color: var(--ink-line);
+  border-style: solid;
+  transform: rotate(-0.5deg);
+}
+
+.nbs-ai-key-storage strong {
+  font-family: var(--font-accent);
+  font-size: var(--text-chip);
+}
+
+.nbs-ai-key-storage span {
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui);
+}
+
+.nbs-ai-key-warning,
+.nbs-ai-key-feedback {
+  margin: var(--space-12) var(--space-20) 0;
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-ui);
+  line-height: 1.45;
+  border-radius: 5px 13px 11px 6px;
+}
+
+.nbs-protected-history {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.nbs-protected-history > span {
+  color: var(--ink-graphite-soft);
+  line-height: 1.45;
+}
+
+.nbs-history-warning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  background: var(--wash-lemon-light);
+  border-left: 3px solid var(--wash-amber);
+  border-radius: 5px 13px 11px 6px;
+  line-height: 1.45;
+}
+
+.nbs-ai-key-warning {
+  background: var(--wash-lemon-light);
+  border-left: 3px solid var(--wash-amber);
+}
+
+.nbs-ai-key-feedback {
+  background: var(--wash-sky-light);
+  border-left: 3px solid var(--wash-sky);
+}
+
+.nbs-ai-key-sheet > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-top: var(--space-16);
+  padding: var(--space-12) var(--space-20);
+  background: var(--paper-aged);
+  border-top: 1px dashed var(--ink-line-soft);
+}
+
+.nbs-ai-key-sheet > footer > a {
+  color: var(--ink-sepia);
+  font-size: var(--text-ui);
+  font-weight: 800;
+}
+
+@media (max-width: 620px) {
+  .nbs-ai-key-backdrop {
+    padding: var(--space-12);
+  }
+
+  .nbs-ai-key-sheet {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+
+  .nbs-ai-key-storage {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* A cue row in "your sets" carries two chips — choose/replace, and clear —

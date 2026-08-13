@@ -1965,7 +1965,27 @@ export type BroadFocalGlyph =
   | 'tulip'
   | 'pinecone'
   | 'fern-palmette'
-  | 'ginkgo';
+  | 'ginkgo'
+  | 'acanthus-spear'
+  | 'carnation'
+  | 'iris-fan'
+  | 'artichoke'
+  | 'poppy-seedhead'
+  | 'olive-spray'
+  | 'strawberry-sprig'
+  | 'vine-cluster'
+  | 'honeysuckle-scroll'
+  | 'lotus-palmette'
+  | 'maple-samara'
+  | 'willow-catkin'
+  | 'rowan-spray'
+  | 'columbine-bell'
+  | 'primrose-stem'
+  | 'dog-rose'
+  | 'cedar-cone'
+  | 'reed-bundle'
+  | 'moresque-knot'
+  | 'tudor-rose';
 
 /**
  * Six real binding architectures, not six names for the same tall rectangle.
@@ -8369,6 +8389,482 @@ export function drawOpenBinderTool(
         ctx.lineTo(px + side * r * 0.36, py - r * 0.4);
         strike(Math.max(0.95, tool * 0.82));
       }
+      break;
+    }
+    case 'acanthus-spear': {
+      // A tall acanthus blade cut as one strong central silhouette. Alternating
+      // hooked lobes keep it visibly different from the soft fern and laurel.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy - r * 0.86);
+      strike();
+      for (const [y, reach] of [[0.35, 0.55], [0.03, 0.68], [-0.31, 0.54]] as const) {
+        for (const side of [-1, 1] as const) {
+          const rootY = cy + r * y;
+          ctx.beginPath();
+          ctx.moveTo(cx, rootY + r * 0.12);
+          ctx.bezierCurveTo(
+            cx + side * r * reach * 0.35,
+            rootY + r * 0.1,
+            cx + side * r * reach,
+            rootY - r * 0.2,
+            cx + side * r * reach * 0.82,
+            rootY - r * 0.45,
+          );
+          ctx.quadraticCurveTo(
+            cx + side * r * reach * 0.38,
+            rootY - r * 0.2,
+            cx,
+            rootY - r * 0.1,
+          );
+          strike(Math.max(0.9, tool * 0.8));
+        }
+      }
+      leaf(cx, cy - r * 0.75, 0, r * 0.42, r * 0.18);
+      break;
+    }
+    case 'carnation': {
+      // One ruffled flower head on a quiet stem. Five generous scallops read
+      // as a carnation at shelf size without a stippled or dotted centre.
+      const base = cy + r * 0.76;
+      shoulders(base, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy + r * 0.2, cx, cy - r * 0.18);
+      strike();
+      leaf(cx - r * 0.36, cy + r * 0.24, -0.98, r * 0.38, r * 0.15);
+      leaf(cx + r * 0.38, cy + r * 0.1, 0.98, r * 0.38, r * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.28);
+      ctx.quadraticCurveTo(cx - r * 0.66, cy - r * 0.58, cx - r * 0.36, cy - r * 0.56);
+      ctx.quadraticCurveTo(cx - r * 0.3, cy - r * 0.84, cx, cy - r * 0.66);
+      ctx.quadraticCurveTo(cx + r * 0.3, cy - r * 0.84, cx + r * 0.36, cy - r * 0.56);
+      ctx.quadraticCurveTo(cx + r * 0.66, cy - r * 0.58, cx + r * 0.58, cy - r * 0.28);
+      ctx.quadraticCurveTo(cx + r * 0.3, cy, cx, cy - r * 0.18);
+      ctx.quadraticCurveTo(cx - r * 0.3, cy, cx - r * 0.58, cy - r * 0.28);
+      strike();
+      break;
+    }
+    case 'iris-fan': {
+      // Three high standards and two low falls form the unmistakable iris fan.
+      // The divided petals stay open instead of merging into another fleuron.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.55);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.05);
+      strike();
+      leaf(cx, cy - r * 0.35, 0, r * 0.58, r * 0.2);
+      leaf(cx - r * 0.3, cy - r * 0.25, -0.48, r * 0.48, r * 0.2);
+      leaf(cx + r * 0.3, cy - r * 0.25, 0.48, r * 0.48, r * 0.2);
+      leaf(cx - r * 0.47, cy + r * 0.02, -1.08, r * 0.48, r * 0.19);
+      leaf(cx + r * 0.47, cy + r * 0.02, 1.08, r * 0.48, r * 0.19);
+      break;
+    }
+    case 'artichoke': {
+      // A weighty tiled bud on a short architectural foot. Three broad courses
+      // suggest overlapping bracts without the scales turning into texture.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.48);
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.bezierCurveTo(cx - r * 0.62, cy - r * 0.55, cx - r * 0.58, cy + r * 0.24, cx, cy + r * 0.5);
+      ctx.bezierCurveTo(cx + r * 0.58, cy + r * 0.24, cx + r * 0.62, cy - r * 0.55, cx, cy - r * 0.9);
+      strike();
+      for (const [yy, span] of [[-0.35, 0.44], [0.02, 0.5], [0.3, 0.34]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx - r * span, cy + r * yy);
+        ctx.quadraticCurveTo(cx, cy + r * (yy + 0.34), cx + r * span, cy + r * yy);
+        strike(Math.max(0.9, tool * 0.76));
+      }
+      break;
+    }
+    case 'poppy-seedhead': {
+      // A crowned oval capsule with two long leaves. The cap is an interrupted
+      // arc, not a disc or rivet, and the stem owns most of the silhouette.
+      const base = cy + r * 0.76;
+      shoulders(base, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.05);
+      ctx.moveTo(cx, cy - r * 0.77);
+      ctx.bezierCurveTo(cx - r * 0.42, cy - r * 0.6, cx - r * 0.42, cy - r * 0.08, cx, cy + r * 0.04);
+      ctx.bezierCurveTo(cx + r * 0.42, cy - r * 0.08, cx + r * 0.42, cy - r * 0.6, cx, cy - r * 0.77);
+      ctx.moveTo(cx - r * 0.4, cy - r * 0.62);
+      ctx.quadraticCurveTo(cx, cy - r * 0.82, cx + r * 0.4, cy - r * 0.62);
+      strike();
+      leaf(cx - r * 0.37, cy + r * 0.3, -1.04, r * 0.42, r * 0.15);
+      leaf(cx + r * 0.4, cy + r * 0.18, 1.04, r * 0.42, r * 0.15);
+      break;
+    }
+    case 'olive-spray': {
+      // A formal upright olive wand: three opposed leaf pairs and two pendant
+      // fruits. Its symmetry and low fruit make it unlike the turning laurel.
+      const baseY = cy + r * 0.72;
+      shoulders(baseY, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, baseY);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy, cx, cy - r * 0.78);
+      strike();
+      for (const [y, reach] of [[0.3, 0.48], [0, 0.55], [-0.3, 0.46]] as const) {
+        leaf(cx - r * reach, cy + r * y, -1.16, r * 0.4, r * 0.14);
+        leaf(cx + r * reach, cy + r * (y - 0.08), 1.16, r * 0.4, r * 0.14);
+      }
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.1, cy + r * 0.34);
+        ctx.quadraticCurveTo(cx + side * r * 0.22, cy + r * 0.42, cx + side * r * 0.26, cy + r * 0.58);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.08,
+          cy + r * 0.46,
+          cx + side * r * 0.08,
+          cy + r * 0.78,
+          cx + side * r * 0.28,
+          cy + r * 0.84,
+        );
+        ctx.bezierCurveTo(
+          cx + side * r * 0.48,
+          cy + r * 0.78,
+          cx + side * r * 0.48,
+          cy + r * 0.46,
+          cx + side * r * 0.26,
+          cy + r * 0.58,
+        );
+        strike(Math.max(0.9, tool * 0.74));
+      }
+      break;
+    }
+    case 'strawberry-sprig': {
+      // A broad hanging berry takes most of the tool. A high three-leaf cap and
+      // three coarse seed cuts remain readable without becoming surface fill.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.62);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.52);
+      ctx.moveTo(cx - r * 0.58, cy - r * 0.3);
+      ctx.quadraticCurveTo(cx - r * 0.56, cy + r * 0.34, cx, cy + r * 0.64);
+      ctx.quadraticCurveTo(cx + r * 0.56, cy + r * 0.34, cx + r * 0.58, cy - r * 0.3);
+      ctx.quadraticCurveTo(cx, cy - r * 0.04, cx - r * 0.58, cy - r * 0.3);
+      strike();
+      leaf(cx - r * 0.32, cy - r * 0.4, -0.82, r * 0.36, r * 0.17);
+      leaf(cx + r * 0.32, cy - r * 0.4, 0.82, r * 0.36, r * 0.17);
+      leaf(cx, cy - r * 0.42, 0, r * 0.38, r * 0.17);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.24, cy + r * 0.02);
+      ctx.lineTo(cx - r * 0.14, cy + r * 0.18);
+      ctx.moveTo(cx + r * 0.24, cy + r * 0.02);
+      ctx.lineTo(cx + r * 0.14, cy + r * 0.18);
+      ctx.moveTo(cx, cy + r * 0.3);
+      ctx.lineTo(cx, cy + r * 0.45);
+      strike(Math.max(0.86, tool * 0.66));
+      break;
+    }
+    case 'vine-cluster': {
+      // Six coarse open grapes form a literal triangular bunch. The top leaf
+      // and hook are held clear so the fruit cannot collapse into an insect.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.62);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.08, cy, cx, cy - r * 0.58);
+      ctx.quadraticCurveTo(cx + r * 0.34, cy - r * 0.9, cx + r * 0.62, cy - r * 0.68);
+      strike();
+      leaf(cx - r * 0.44, cy - r * 0.58, -1.05, r * 0.46, r * 0.24);
+      for (const [x, y] of [
+        [-0.2, -0.2], [0.2, -0.2],
+        [-0.34, 0.13], [0, 0.13], [0.34, 0.13],
+        [0, 0.46],
+      ] as const) {
+        ctx.beginPath();
+        ctx.arc(cx + r * x, cy + r * y, r * 0.19, 0, Math.PI * 2);
+        strike(Math.max(0.9, tool * 0.72));
+      }
+      break;
+    }
+    case 'honeysuckle-scroll': {
+      // Paired trumpet blooms turn away from one S-stem. Long open throats and
+      // flared rims survive where a cluster of tiny petals would disappear.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.bezierCurveTo(cx - r * 0.2, cy + r * 0.28, cx + r * 0.2, cy - r * 0.15, cx, cy - r * 0.72);
+      strike();
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * r * 0.02, cy - r * 0.12);
+        ctx.quadraticCurveTo(cx + side * r * 0.38, cy - r * 0.25, cx + side * r * 0.7, cy - r * 0.55);
+        ctx.moveTo(cx + side * r * 0.16, cy - r * 0.02);
+        ctx.quadraticCurveTo(cx + side * r * 0.46, cy - r * 0.12, cx + side * r * 0.78, cy - r * 0.42);
+        ctx.quadraticCurveTo(cx + side * r * 0.94, cy - r * 0.48, cx + side * r * 0.7, cy - r * 0.55);
+        strike();
+      }
+      leaf(cx - r * 0.38, cy + r * 0.24, -1.02, r * 0.38, r * 0.17);
+      leaf(cx + r * 0.38, cy + r * 0.12, 1.02, r * 0.38, r * 0.17);
+      break;
+    }
+    case 'lotus-palmette': {
+      // A broad seated lotus: three rising petals, two low sepals and twin
+      // water fillets. The low horizontal architecture prevents crown reading.
+      const water = cy + r * 0.55;
+      shoulders(water, 0.78, 1.18);
+      leaf(cx, cy - r * 0.14, 0, r * 0.7, r * 0.23);
+      leaf(cx - r * 0.34, cy - r * 0.04, -0.58, r * 0.54, r * 0.22);
+      leaf(cx + r * 0.34, cy - r * 0.04, 0.58, r * 0.54, r * 0.22);
+      leaf(cx - r * 0.5, cy + r * 0.24, -1.2, r * 0.42, r * 0.16);
+      leaf(cx + r * 0.5, cy + r * 0.24, 1.2, r * 0.42, r * 0.16);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.62, water + r * 0.16);
+      ctx.lineTo(cx + r * 0.62, water + r * 0.16);
+      strike(Math.max(0.9, tool * 0.72));
+      break;
+    }
+    case 'maple-samara': {
+      // One broad paired samara rises as a V from a ruled stem. The wings are
+      // long open teardrops, with a visible split rather than a bow-tie.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.54);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.18);
+      strike();
+      leaf(cx - r * 0.34, cy - r * 0.28, -0.58, r * 0.68, r * 0.2);
+      leaf(cx + r * 0.34, cy - r * 0.28, 0.58, r * 0.68, r * 0.2);
+      lozenge(cx - r * 0.08, cy + r * 0.08, r * 0.13);
+      lozenge(cx + r * 0.08, cy + r * 0.08, r * 0.13);
+      break;
+    }
+    case 'willow-catkin': {
+      // A bowed wand carries three pendant outlined catkins. Their long oval
+      // bodies—not diagonal leaf ticks—own the shelf-scale silhouette.
+      const base = cy + r * 0.7;
+      shoulders(base, 0.58);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.42, base);
+      ctx.bezierCurveTo(cx - r * 0.12, cy + r * 0.1, cx + r * 0.3, cy - r * 0.18, cx + r * 0.42, cy - r * 0.78);
+      strike();
+      for (const [x, y] of [[-0.2, 0.12], [0.14, -0.13], [0.38, -0.43]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * x, cy + r * (y - 0.12));
+        ctx.lineTo(cx + r * x, cy + r * y);
+        ctx.bezierCurveTo(
+          cx + r * (x - 0.16),
+          cy + r * (y + 0.08),
+          cx + r * (x - 0.16),
+          cy + r * (y + 0.52),
+          cx + r * x,
+          cy + r * (y + 0.58),
+        );
+        ctx.bezierCurveTo(
+          cx + r * (x + 0.16),
+          cy + r * (y + 0.52),
+          cx + r * (x + 0.16),
+          cy + r * (y + 0.08),
+          cx + r * x,
+          cy + r * y,
+        );
+        strike(Math.max(0.9, tool * 0.74));
+      }
+      leaf(cx - r * 0.52, cy + r * 0.34, -1.12, r * 0.4, r * 0.12);
+      break;
+    }
+    case 'rowan-spray': {
+      // A vertical pinnate rowan carries a three-berry crown. Large opposed
+      // leaflets and high fruit distinguish it from the hanging grape cluster.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy - r * 0.48);
+      strike();
+      for (const y of [0.32, 0.02, -0.27] as const) {
+        leaf(cx - r * 0.34, cy + r * y, -1.08, r * 0.34, r * 0.13);
+        leaf(cx + r * 0.34, cy + r * (y - 0.07), 1.08, r * 0.34, r * 0.13);
+      }
+      for (const [x, y] of [[-0.24, -0.58], [0, -0.74], [0.24, -0.58]] as const) {
+        ctx.beginPath();
+        ctx.arc(cx + r * x, cy + r * y, r * 0.17, 0, Math.PI * 2);
+        strike(Math.max(0.9, tool * 0.7));
+      }
+      break;
+    }
+    case 'columbine-bell': {
+      // A centred nodding bell hangs from an arched stem; three long spurs fall
+      // below its skirt. The broad pendant shape survives narrow reduction.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.28, base);
+      ctx.quadraticCurveTo(cx - r * 0.18, cy - r * 0.62, cx, cy - r * 0.62);
+      ctx.lineTo(cx, cy - r * 0.38);
+      strike();
+      leaf(cx - r * 0.46, cy + r * 0.24, -1.04, r * 0.4, r * 0.16);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.5, cy - r * 0.36);
+      ctx.quadraticCurveTo(cx - r * 0.42, cy + r * 0.02, cx, cy + r * 0.2);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy + r * 0.02, cx + r * 0.5, cy - r * 0.36);
+      ctx.quadraticCurveTo(cx, cy - r * 0.18, cx - r * 0.5, cy - r * 0.36);
+      strike();
+      for (const dx of [-0.28, 0, 0.28] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * dx, cy + r * 0.02);
+        ctx.lineTo(cx + r * dx * 1.25, cy + r * 0.48);
+        strike(Math.max(0.88, tool * 0.68));
+      }
+      break;
+    }
+    case 'primrose-stem': {
+      // One high five-lobed primrose grows on a straight, two-leaf stem. A
+      // single scalloped outline stays floral where five tiny petals merged.
+      const base = cy + r * 0.74;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy - r * 0.22);
+      strike();
+      leaf(cx - r * 0.42, cy + r * 0.28, -1.02, r * 0.42, r * 0.18);
+      leaf(cx + r * 0.42, cy + r * 0.14, 1.02, r * 0.42, r * 0.18);
+      const flowerY = cy - r * 0.46;
+      ctx.beginPath();
+      for (let i = 0; i <= 10; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 10;
+        const radius = r * (i % 2 === 0 ? 0.56 : 0.36);
+        const x = cx + Math.cos(a) * radius;
+        const y = flowerY + Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      strike();
+      lozenge(cx, flowerY, r * 0.12);
+      break;
+    }
+    case 'dog-rose': {
+      // A horizontal branch carries one large open rose at its left terminal
+      // and three leaves to the right: an unmistakable asymmetrical cutting.
+      const base = cy + r * 0.68;
+      shoulders(base, 0.78);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.68, cy + r * 0.28);
+      ctx.quadraticCurveTo(cx, cy + r * 0.06, cx + r * 0.72, cy - r * 0.36);
+      strike();
+      leaf(cx + r * 0.12, cy + r * 0.06, -1.05, r * 0.42, r * 0.18);
+      leaf(cx + r * 0.55, cy - r * 0.28, 1.02, r * 0.42, r * 0.18);
+      const flowerX = cx - r * 0.46;
+      const flowerY = cy - r * 0.12;
+      for (let i = 0; i < 5; i += 1) {
+        const a = (i * Math.PI * 2) / 5;
+        ctx.save();
+        ctx.translate(
+          flowerX + Math.cos(a) * r * 0.22,
+          flowerY + Math.sin(a) * r * 0.22,
+        );
+        ctx.rotate(a + Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(-r * 0.21, -r * 0.1, -r * 0.22, -r * 0.42, 0, -r * 0.54);
+        ctx.bezierCurveTo(r * 0.22, -r * 0.42, r * 0.21, -r * 0.1, 0, 0);
+        strike(Math.max(0.9, tool * 0.78));
+        ctx.restore();
+      }
+      break;
+    }
+    case 'cedar-cone': {
+      // A level cedar bough carries four long needles and one pendant cone.
+      // The strong T-shaped construction cannot collapse into a running animal.
+      const base = cy + r * 0.62;
+      shoulders(base, 0.74);
+      const boughY = cy - r * 0.34;
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.9, boughY);
+      ctx.quadraticCurveTo(cx, cy - r * 0.48, cx + r * 0.9, boughY);
+      strike();
+      for (const [x, angle] of [[-0.68, -0.9], [-0.4, 0.84], [-0.1, -0.88]] as const) {
+        leaf(cx + r * x, boughY, angle, r * 0.45, r * 0.1);
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx + r * 0.42, boughY);
+      ctx.lineTo(cx + r * 0.42, cy - r * 0.08);
+      ctx.bezierCurveTo(cx + r * 0.04, cy + r * 0.1, cx + r * 0.08, cy + r * 0.62, cx + r * 0.42, cy + r * 0.8);
+      ctx.bezierCurveTo(cx + r * 0.76, cy + r * 0.62, cx + r * 0.8, cy + r * 0.1, cx + r * 0.42, cy - r * 0.08);
+      ctx.moveTo(cx + r * 0.14, cy + r * 0.3);
+      ctx.quadraticCurveTo(cx + r * 0.42, cy + r * 0.5, cx + r * 0.7, cy + r * 0.3);
+      strike();
+      break;
+    }
+    case 'reed-bundle': {
+      // Three unequal reeds rise from a tied foot with two long flag leaves.
+      // The vertical skyline is architectural and unmistakable at narrow size.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.58);
+      for (const [x, top] of [[-0.26, -0.54], [0, -0.88], [0.28, -0.68]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * x * 0.45, base);
+        ctx.quadraticCurveTo(cx + r * x, cy, cx + r * x, cy + r * top);
+        strike();
+        leaf(cx + r * x, cy + r * (top - 0.08), 0, r * 0.28, r * 0.11);
+      }
+      leaf(cx - r * 0.34, cy + r * 0.2, -1.12, r * 0.48, r * 0.14);
+      leaf(cx + r * 0.35, cy + r * 0.08, 1.12, r * 0.48, r * 0.14);
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.4, cy + r * 0.48);
+      ctx.lineTo(cx + r * 0.4, cy + r * 0.48);
+      strike(Math.max(0.9, tool * 0.74));
+      break;
+    }
+    case 'moresque-knot': {
+      // Four open S-scrolls interlace around a clean central crossing. No ring,
+      // shield or filled ground turns this traditional abstract tool into a badge.
+      shoulders(cy + r * 0.58, 0.72);
+      for (const side of [-1, 1] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r * 0.6);
+        ctx.bezierCurveTo(cx + side * r * 0.18, cy + r * 0.22, cx + side * r * 0.76, cy + r * 0.3, cx + side * r * 0.7, cy - r * 0.12);
+        ctx.quadraticCurveTo(cx + side * r * 0.66, cy - r * 0.44, cx + side * r * 0.38, cy - r * 0.38);
+        ctx.bezierCurveTo(cx + side * r * 0.12, cy - r * 0.34, cx + side * r * 0.2, cy - r * 0.72, cx, cy - r * 0.82);
+        strike();
+      }
+      lozenge(cx, cy - r * 0.03, r * 0.16);
+      break;
+    }
+    case 'tudor-rose': {
+      // A five-lobed heraldic rose grows from a ruled standard. One bold outer
+      // contour and one open inner rose survive better than ten tiny petals.
+      const base = cy + r * 0.72;
+      shoulders(base, 0.56);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(cx, cy + r * 0.02);
+      strike();
+      leaf(cx - r * 0.38, cy + r * 0.26, -0.98, r * 0.36, r * 0.16);
+      leaf(cx + r * 0.38, cy + r * 0.15, 0.98, r * 0.36, r * 0.16);
+      const flowerY = cy - r * 0.38;
+      ctx.beginPath();
+      for (let i = 0; i <= 10; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 10;
+        const radius = r * (i % 2 === 0 ? 0.62 : 0.39);
+        const x = cx + Math.cos(a) * radius;
+        const y = flowerY + Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      strike();
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i += 1) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+        const x = cx + Math.cos(a) * r * 0.25;
+        const y = flowerY + Math.sin(a) * r * 0.25;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      strike(Math.max(0.9, tool * 0.7));
       break;
     }
     default:

@@ -57,9 +57,7 @@ impl LibraryPaths {
         // Choosing a location during an upgrade must never make an existing
         // library appear empty.  Copy, do not move: the old copy is a recovery
         // path until the reader has opened the new one successfully.
-        if selected != default
-            && !selected.join(DB_FILE).exists()
-            && default.join(DB_FILE).exists()
+        if selected != default && !selected.join(DB_FILE).exists() && default.join(DB_FILE).exists()
         {
             copy_existing_library(&default, &selected)?;
         }
@@ -110,7 +108,10 @@ fn default_library_root() -> Result<PathBuf, String> {
     {
         return std::env::var_os("HOME")
             .map(PathBuf::from)
-            .map(|root| root.join("Library/Application Support").join(APP_IDENTIFIER))
+            .map(|root| {
+                root.join("Library/Application Support")
+                    .join(APP_IDENTIFIER)
+            })
             .ok_or_else(|| "HOME is not available".to_string());
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -130,9 +131,8 @@ fn copy_existing_library(source: &Path, target: &Path) -> Result<(), String> {
         let from = source.join(name);
         let to = target.join(name);
         if from.is_file() && !to.exists() {
-            std::fs::copy(&from, &to).map_err(|e| {
-                format!("cannot copy {} to {}: {e}", from.display(), to.display())
-            })?;
+            std::fs::copy(&from, &to)
+                .map_err(|e| format!("cannot copy {} to {}: {e}", from.display(), to.display()))?;
         }
     }
     for name in ["assets", "backups"] {
@@ -147,8 +147,8 @@ fn copy_directory_additive(source: &Path, target: &Path) -> Result<(), String> {
     }
     std::fs::create_dir_all(target)
         .map_err(|e| format!("cannot create {}: {e}", target.display()))?;
-    for entry in std::fs::read_dir(source)
-        .map_err(|e| format!("cannot read {}: {e}", source.display()))?
+    for entry in
+        std::fs::read_dir(source).map_err(|e| format!("cannot read {}: {e}", source.display()))?
     {
         let entry = entry.map_err(|e| e.to_string())?;
         let from = entry.path();
@@ -156,9 +156,8 @@ fn copy_directory_additive(source: &Path, target: &Path) -> Result<(), String> {
         if from.is_dir() {
             copy_directory_additive(&from, &to)?;
         } else if !to.exists() {
-            std::fs::copy(&from, &to).map_err(|e| {
-                format!("cannot copy {} to {}: {e}", from.display(), to.display())
-            })?;
+            std::fs::copy(&from, &to)
+                .map_err(|e| format!("cannot copy {} to {}: {e}", from.display(), to.display()))?;
         }
     }
     Ok(())
@@ -213,7 +212,10 @@ mod tests {
 
     #[test]
     fn asset_paths_are_strictly_relative() {
-        assert_eq!(safe_relative_path("images/cat.png"), Some(PathBuf::from("images/cat.png")));
+        assert_eq!(
+            safe_relative_path("images/cat.png"),
+            Some(PathBuf::from("images/cat.png"))
+        );
         assert_eq!(safe_relative_path("../secret"), None);
         assert_eq!(safe_relative_path("C:/secret"), None);
         assert_eq!(safe_relative_path("images\\cat.png"), None);

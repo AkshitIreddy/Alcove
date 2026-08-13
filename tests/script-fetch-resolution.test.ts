@@ -16,6 +16,8 @@ describe('Notebook Script image fetch resolution', () => {
         thumbUrl: null,
         attribution: 'Example',
         license: 'CC0',
+        sha256: `sha-${query}`,
+        sizeBytes: 4,
       },
     ]);
     const resolved = await resolveScriptFetches(
@@ -73,6 +75,8 @@ describe('Notebook Script image fetch resolution', () => {
         thumbUrl: null,
         attribution: 'Example',
         license: 'CC0',
+        sha256: `sha-${index}`,
+        sizeBytes: 4,
       })),
     );
     const resolved = await resolveScriptFetches(

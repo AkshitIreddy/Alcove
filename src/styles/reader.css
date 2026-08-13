@@ -74,13 +74,10 @@
   padding-bottom: var(--space-4);
 }
 
-.nb-book-view[data-focus-level='page'] .nb-spread-stage {
-  width: min(100%, calc((100vh - 28px) * 1.58), 1860px);
-}
-
 .nb-book-view[data-focus-level='page'] .nb-book-cover,
 .nb-book-view[data-focus-level='leaf'] .nb-book-cover {
-  padding: 0;
+  /* Keep the canonical board inset in layout. Removing it used to make every
+     line wrap again on entering focus mode. Only its paint disappears. */
   background: none;
   border-color: transparent;
   /* The room still dims — the ring simply moves to the thing that is left. */
@@ -114,14 +111,10 @@
    single-page book (`.nb-flip-leaf-left.is-empty`) — same mechanism, so the
    flip surface needs no new idea to lay it out.
    -------------------------------------------------------------------------- */
-.nb-book-view[data-focus-level='leaf'] .nb-spread-stage {
-  width: min(100%, calc((100vh - 28px) * 0.8), 980px);
-}
-
 .nb-book-view[data-focus-level='leaf'][data-solo-leaf='left'] .nb-flip-leaf-right,
 .nb-book-view[data-focus-level='leaf'][data-solo-leaf='right'] .nb-flip-leaf-left {
-  flex: 0 0 0;
-  overflow: hidden;
+  /* Camera-only isolation: preserve both canonical 50% layout boxes so the
+     visible page cannot expand, rewrap or repaginate as its partner hides. */
   opacity: 0;
   pointer-events: none;
 }

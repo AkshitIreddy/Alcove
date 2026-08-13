@@ -66,6 +66,7 @@ function mathNodeView(display: boolean) {
     const dom: HTMLElement = document.createElement(display ? 'div' : 'span');
     dom.className = display ? 'nb-math nb-math-block' : 'nb-math nb-math-inline';
     dom.setAttribute('data-type', display ? 'math' : 'mathInline');
+    if (display) dom.setAttribute('data-nb-block-flow', 'feature');
 
     let field: HTMLElement | null = null;
     let fitFrame = 0;
@@ -84,7 +85,10 @@ function mathNodeView(display: boolean) {
       rendered.style.fontSize = '';
       rendered.removeAttribute('data-fit-scale');
       const available = dom.clientWidth;
-      const needed = rendered.getBoundingClientRect().width;
+      // Both values are layout pixels. getBoundingClientRect() includes the
+      // outer book camera transform, which made the same equation fit
+      // differently after a window/monitor move or focus zoom.
+      const needed = Math.max(rendered.scrollWidth, rendered.offsetWidth);
       if (available <= 0 || needed <= available) return;
       const scale = Math.max(0.62, (available - 2) / needed);
       rendered.style.fontSize = `${(1.25 * scale).toFixed(3)}em`;
@@ -134,6 +138,25 @@ function mathNodeView(display: boolean) {
       input.textContent = latexOf(node);
       input.dataset.hint = display ? '\\frac{a}{b}' : 'x^2';
       input.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (
+          event.key === 'Backspace' &&
+          display &&
+          window.getSelection()?.isCollapsed === true &&
+          window.getSelection()?.anchorOffset === 0
+        ) {
+          const pos = typeof getPos === 'function' ? getPos() : null;
+          if (typeof pos === 'number') {
+            const crossPage = new CustomEvent('alcove:backspace-block-start', {
+              bubbles: true,
+              cancelable: true,
+              detail: { pos, latex: input.textContent ?? '' },
+            });
+            if (!dom.dispatchEvent(crossPage)) {
+              event.preventDefault();
+              return;
+            }
+          }
+        }
         if (event.key === 'Enter') {
           event.preventDefault();
           close(true);
@@ -159,6 +182,7 @@ function mathNodeView(display: boolean) {
 
     dom.addEventListener('mousedown', (event) => {
       if (!editor.isEditable) return;
+      if (event.button !== 0) return;
       // A click on a formula means "let me fix it" — the alternative is a
       // node selection, which looks identical and does nothing.
       event.preventDefault();
@@ -187,7 +211,7 @@ function mathNodeView(display: boolean) {
       },
       selectNode: () => dom.classList.add('is-selected'),
       deselectNode: () => dom.classList.remove('is-selected'),
-      stopEvent: () => field !== null,
+      stopEvent: (event: Event) => field !== null && event.type !== 'contextmenu',
       ignoreMutation: () => true,
       destroy: () => {
         cancelAnimationFrame(fitFrame);

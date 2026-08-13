@@ -36,6 +36,11 @@ export default function AppScrollbar(props: AppScrollbarProps): JSX.Element {
     const viewport = target.clientHeight;
     const extent = target.scrollHeight;
     const range = Math.max(0, extent - viewport);
+    // A track hidden during the panel's empty state has no measurable height.
+    // Temporarily expose it before measuring so content appended later can
+    // make the same scrollbar visible again; otherwise `hidden` becomes a
+    // one-way latch for live transcripts and settings sections.
+    track.hidden = false;
     const trackHeight = track.clientHeight;
     const shown = range > 1 && trackHeight > 0;
     track.hidden = !shown;

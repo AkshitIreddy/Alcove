@@ -35,6 +35,13 @@ import {
   snapshotStyleProperties,
 } from '../../../flip/rasterCache';
 import { inlineSvgStyles } from '../../../flip/svgSnapshot';
+import type { OffscreenPageSize } from './pageGeometry';
+
+export {
+  measureMountedSheet,
+  measureUntransformedSheet,
+} from './pageGeometry';
+export type { OffscreenPageSize } from './pageGeometry';
 
 /** Export pixel ratio (roadmap: "reuse snapshot pipeline at 2x"). */
 export const EXPORT_PIXEL_RATIO = 2;
@@ -157,12 +164,6 @@ export async function capturePageJpeg(
 // Offscreen page rendering (whole-book export)
 // ---------------------------------------------------------------------------
 
-export interface OffscreenPageSize {
-  /** CSS px, typically measured from a mounted `.nb-sheet-paper`. */
-  width: number;
-  height: number;
-}
-
 /**
  * How faithfully the staged sheet has to impersonate a mounted leaf.
  *
@@ -188,49 +189,6 @@ export interface OffscreenLeafContext {
   paginated?: boolean;
   /** Page id — mounts the same deterministic margin doodles the live page has. */
   pageId?: string;
-}
-
-/**
- * The sheet's untransformed border-box size, retaining fractional CSS pixels.
- * `clientWidth`/`clientHeight` round to integers; staging a 577.656px live leaf
- * at 578px is enough to move a threshold word to another line at the raster →
- * DOM handoff. The global reset pins `box-sizing:border-box`, so computed
- * width/height are both transform-free and the exact box we need. A detached
- * or auto-sized element falls back to the integer client box.
- */
-export function measureUntransformedSheet(element: HTMLElement): OffscreenPageSize {
-  try {
-    const style = getComputedStyle(element);
-    const width = Number.parseFloat(style.width);
-    const height = Number.parseFloat(style.height);
-    if (Number.isFinite(width) && width > 1 && Number.isFinite(height) && height > 1) {
-      return { width, height };
-    }
-  } catch {
-    // Detached test doubles and a tearing-down WebView can have no style.
-  }
-  return { width: element.clientWidth, height: element.clientHeight };
-}
-
-/**
- * Sheet size of the mounted book leaf, or a book-ish default. Scans every
- * mounted sheet (the collapsed left leaf of a single-page spread measures
- * 0×0) and takes the largest laid-out one.
- */
-export function measureMountedSheet(): OffscreenPageSize {
-  let best: OffscreenPageSize = { width: 620, height: 875 };
-  let bestArea = 0;
-  for (const paper of document.querySelectorAll<HTMLElement>(
-    '.nb-sheet-paper:not(.nb-export-sheet)',
-  )) {
-    const { width, height } = measureUntransformedSheet(paper);
-    if (width < 120 || height < 160) continue;
-    if (width * height > bestArea) {
-      bestArea = width * height;
-      best = { width, height };
-    }
-  }
-  return best;
 }
 
 function docPageStyle(doc: PageDoc): PageStyle {

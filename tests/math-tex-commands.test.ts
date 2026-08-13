@@ -43,9 +43,26 @@ describe('Notebook maths structural commands', () => {
     expect(parseMath('\\boxed{x}')[0]).toMatchObject({ kind: 'boxed' });
   });
 
+  it('renders TeX classification commands instead of leaking their source', () => {
+    const compact = mathToHtml('a\\mathrel+b');
+    const grouped = mathToHtml('x\\mathbin{\\star}y');
+
+    expect(parseMath('\\mathrel+')[0]).toMatchObject({
+      kind: 'classed',
+      role: 'rel',
+      body: [{ kind: 'glyph', text: '+' }],
+    });
+    expect(compact).toContain('class="nb-m-rel"');
+    expect(compact).toContain('>+<');
+    expect(grouped).toContain('class="nb-m-bin"');
+    expect(grouped).toContain('>⋆<');
+    expect(compact).not.toContain('\\mathrel');
+    expect(grouped).not.toContain('\\mathbin');
+  });
+
   it('advertises the supported commands to generated documentation', () => {
     expect(KNOWN_MACROS).toEqual(
-      expect.arrayContaining(['bar', 'overline', 'boxed', 'lceil', 'rceil']),
+      expect.arrayContaining(['bar', 'overline', 'boxed', 'mathrel', 'mathbin', 'lceil', 'rceil']),
     );
   });
 

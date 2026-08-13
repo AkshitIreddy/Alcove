@@ -34,6 +34,10 @@ import {
   initialImageWidthForPage,
   safeManualImageResizeWidth,
 } from './initialImageFit';
+import {
+  copyPortableImage,
+  downloadPortableImage,
+} from '../menu/blockPortability';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
 export type ImageAlign = (typeof IMAGE_ALIGNMENTS)[number];
@@ -53,10 +57,26 @@ type ImageToolGlyphKind =
   | 'align-center'
   | 'align-right'
   | 'frame'
-  | 'expand';
+  | 'expand'
+  | 'copy'
+  | 'download';
 
 /** App-drawn image chrome; avoids baseline-dependent platform text glyphs. */
 function ImageToolGlyph(props: { readonly kind: ImageToolGlyphKind }): JSX.Element {
+  if (props.kind === 'copy') {
+    return (
+      <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 8 H18 V18 H8 Z M5 15 H4 V5 H14 V6" />
+      </svg>
+    );
+  }
+  if (props.kind === 'download') {
+    return (
+      <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4 V15 M8 11 L12 15 L16 11 M5 19 H19" />
+      </svg>
+    );
+  }
   if (props.kind === 'frame') {
     return (
       <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
@@ -127,6 +147,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [replacing, setReplacing] = createSignal(false);
   const [draggingOver, setDraggingOver] = createSignal(false);
   const [replacementError, setReplacementError] = createSignal<string | null>(null);
+  const [portableNotice, setPortableNotice] = createSignal<string | null>(null);
   const [viewerOpen, setViewerOpen] = createSignal(false);
   const [viewerZoom, setViewerZoom] = createSignal(100);
   const [viewerPan, setViewerPan] = createSignal<ViewerPan>({ x: 0, y: 0 });
@@ -416,7 +437,11 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     const host = rowHost();
     const container = host?.parentElement ?? wrapperEl?.parentElement;
     if (!container || container.clientWidth === 0) return;
-    const containerWidth = container.clientWidth;
+    /* Pointer deltas arrive in drawn pixels. The book itself may be camera-
+     * scaled to fit a small window, so use the drawn container width too;
+     * the ratio then remains identical on every monitor/viewport. */
+    const containerWidth = container.getBoundingClientRect().width;
+    if (containerWidth === 0) return;
     const startX = event.clientX;
     const measured = host ?? wrapperEl;
     const startPct =
@@ -460,6 +485,18 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     props.updateAttributes({
       frame: frame() === 'polaroid' ? 'plain' : 'polaroid',
     });
+  };
+
+  const runPortableAction = async (kind: 'copy' | 'download'): Promise<void> => {
+    setPortableNotice(kind === 'copy' ? 'copying…' : 'opening save dialog…');
+    try {
+      const message = kind === 'copy'
+        ? await copyPortableImage(props.node.attrs)
+        : await downloadPortableImage(props.node.attrs);
+      setPortableNotice(message);
+    } catch {
+      setPortableNotice(kind === 'copy' ? 'could not copy image' : 'could not save image');
+    }
   };
 
   const commitCaption = (value: string): void => {
@@ -782,6 +819,32 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               <button
                 type="button"
                 class="nb-image-tool"
+                data-tooltip="Copy image"
+                aria-label="Copy image"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void runPortableAction('copy');
+                }}
+              >
+                <ImageToolGlyph kind="copy" />
+              </button>
+              <button
+                type="button"
+                class="nb-image-tool"
+                data-tooltip="Download original image"
+                aria-label="Download original image"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void runPortableAction('download');
+                }}
+              >
+                <ImageToolGlyph kind="download" />
+              </button>
+              <button
+                type="button"
+                class="nb-image-tool"
                 data-tooltip="View larger"
                 aria-label="View image larger"
                 onClick={(event) => {
@@ -794,6 +857,13 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               </button>
             </Show>
           </div>
+          <Show when={portableNotice()} keyed>
+            {(message) => (
+              <span class="nb-image-portability-note font-ui" role="status">
+                {message}
+              </span>
+            )}
+          </Show>
           <Show when={placeholder() === null}>
             <span
               class="nb-image-handle is-sw"
@@ -857,6 +927,8 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   <span class="font-ui">{viewerZoom()}%</span>
                 </div>
                 <div class="nb-image-viewer-actions">
+                  <button type="button" aria-label="Copy image" onClick={() => void runPortableAction('copy')}>Copy</button>
+                  <button type="button" aria-label="Download original image" onClick={() => void runPortableAction('download')}>Save</button>
                   <button type="button" aria-label="Zoom out" onClick={() => changeViewerZoom(-25)}>−</button>
                   <button type="button" aria-label="Reset zoom and position" onClick={resetViewer}>100%</button>
                   <button type="button" aria-label="Zoom in" onClick={() => changeViewerZoom(25)}>+</button>

@@ -207,9 +207,7 @@
  * lands all three on the same axis however differently wide they are — and the
  * shift is computed against that same centre.
  */
-.nb-book-view .nb-spread-header,
-.nb-book-view .nb-book-cover,
-.nb-book-view .nb-thumb-strip {
+.nb-book-view .nb-spread-fit-frame {
   transform: translate3d(var(--nb-spread-shift), 0, 0) scale(var(--nb-spread-fit));
   transform-origin: 50% 50%;
 }
@@ -909,6 +907,32 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+}
+
+.nb-history-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.nb-history-scope button {
+  min-height: 30px;
+  border: var(--stroke-ink-thin);
+  border-radius: 9px 12px 8px 11px;
+  background: var(--paper-cream);
+  color: var(--ink-sepia);
+  cursor: pointer;
+}
+
+.nb-history-scope button[aria-selected='true'] {
+  background: var(--wash-sky-light);
+  box-shadow: 2px 2px 0 var(--ink-sepia-soft);
+}
+
+.nb-history-protect[aria-pressed='true'] {
+  background: var(--wash-lemon-light);
+  border-color: var(--accent-deep);
+  color: var(--ink-sepia);
 }
 
 .nb-history-hint {

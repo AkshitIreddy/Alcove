@@ -262,6 +262,8 @@ export interface Settings {
   autosaveIntervalMs: number;
   backupEnabled: boolean;
   backupIntervalDays: number;
+  /** Keep durable page and whole-book recovery history. Default on. */
+  protectedHistoryEnabled: boolean;
   spellcheck: boolean;
 
   // Input
@@ -351,6 +353,22 @@ export interface Settings {
   perfHud: boolean;
   /** On an app update, replace even an edited Welcome book with the shipped guide. */
   refreshWelcomeBookOnUpdate: boolean;
+
+  // AI agent — preferences only. Provider credentials never enter this blob.
+  /** The one-time, skippable provider setup sheet has been answered. */
+  aiAgentSetupSeen: boolean;
+  /** Reader-declared Cohere key tier; the provider cannot infer it for us. */
+  aiAgentKeyKind: 'trial' | 'production';
+  /** Explicit acknowledgement required before any trial-key provider call. */
+  aiAgentTrialPrivacyAcknowledged: boolean;
+  /** Context offered when a new agent task begins. Every send still shows scope. */
+  aiAgentDefaultContext: 'current-page' | 'nearby-pages' | 'whole-book';
+  /**
+   * Replace recognizable private text with task-stable opaque placeholders
+   * before provider transport. Disabled by default: this is useful defence in
+   * depth, not a promise that text baked into attached pixels can be hidden.
+   */
+  aiAgentObfuscatePrivateText: boolean;
 
   /** Never collected; the type forbids turning it on. */
   readonly telemetry: false;

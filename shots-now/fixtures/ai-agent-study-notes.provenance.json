@@ -1,0 +1,14 @@
+{
+  "kind": "deterministic-demo-fixture",
+  "provider": "Cohere",
+  "model": "command-a-plus-05-2026",
+  "generatedAt": "2026-08-13",
+  "review": [
+    "The owner-supplied 1536x1024 kitten infographic was preserved as the source and a 900x600 review derivative was planned at its native 3:2 ratio.",
+    "The frequencies, merge order, prefix-free explanation, Kraft equality and worked decoding example were checked for beginner-level Huffman coding accuracy.",
+    "The fixture was regenerated as exactly three responsive native pages: visual overview, tree construction, then decoding and recall.",
+    "The first page deliberately budgets most of its area for the attached infographic instead of squeezing it into the prior photosynthesis layout.",
+    "The fixture is frozen demo content; playback never calls a provider or presents it as a live response."
+  ],
+  "source": "shots-now/fixtures/ai-agent-study-notes.md"
+}

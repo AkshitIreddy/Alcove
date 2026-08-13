@@ -340,6 +340,44 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     };
   });
 
+  // Chromium keeps the DOM/CSS layout in CSS pixels when a window crosses to
+  // another monitor, but devicePixelRatio and therefore snapshot sharpness can
+  // change without a component remount. Re-arm the exact-resolution query
+  // after every change; resize is a second signal for platforms that do not
+  // dispatch the media-query event during a drag.
+  onMount(() => {
+    let query: MediaQueryList | null = null;
+    let removeQuery: (() => void) | null = null;
+    const currentIds = (): Array<string | null | undefined> => {
+      const current = ids();
+      return [
+        current.left,
+        current.right,
+        current.nextLeft,
+        current.nextRight,
+        current.prevLeft,
+        current.prevRight,
+      ];
+    };
+    const refresh = (): void => {
+      if (!cache.refreshPixelRatio()) return;
+      cache.ensureAdjacent(currentIds());
+      arm();
+    };
+    const arm = (): void => {
+      removeQuery?.();
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      query.addEventListener('change', refresh, { once: true });
+      removeQuery = () => query?.removeEventListener('change', refresh);
+    };
+    arm();
+    window.addEventListener('resize', refresh);
+    onCleanup(() => {
+      removeQuery?.();
+      window.removeEventListener('resize', refresh);
+    });
+  });
+
   let controller: PageFlipController | undefined;
 
   const api: FlipSurfaceApi = {

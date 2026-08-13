@@ -1,0 +1,500 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { AiGatewayChatRequest } from '../src/data/aiGateway';
+
+const gateway = vi.hoisted(() => ({
+  requests: [] as AiGatewayChatRequest[],
+  serializedImageBytes: [] as number[][],
+  scriptedEvents: [] as unknown[],
+}));
+
+vi.mock('../src/data/aiGateway', () => ({
+  bytesToDataUri: (bytes: readonly number[], mime: string) => {
+    gateway.serializedImageBytes.push([...bytes]);
+    return `data:${mime};base64,AQID`;
+  },
+  cancelAiGatewayRun: vi.fn(async () => true),
+  readAiAttachment: vi.fn(async (id: string) => ({
+    metadata: {
+      id,
+      kind: 'png',
+      mimeType: 'image/png',
+      sizeBytes: 3,
+      sha256: id,
+    },
+    bytes: [1, 2, 3],
+  })),
+  streamAiGatewayChat: vi.fn(
+    async (
+      request: AiGatewayChatRequest,
+      onEvent: (event: unknown) => void,
+    ) => {
+      gateway.requests.push(request);
+      const scripted = gateway.scriptedEvents.splice(0);
+      for (const event of scripted) onEvent(event);
+      if (!scripted.some((event) =>
+        event !== null &&
+        typeof event === 'object' &&
+        (event as { eventType?: unknown }).eventType === 'message-end'
+      )) {
+        onEvent({
+          type: 'providerEvent',
+          runId: request.runId,
+          sequence: 1,
+          eventType: 'message-end',
+          data: { delta: { finish_reason: 'COMPLETE', usage: { tokens: {} } } },
+        });
+      }
+      onEvent({ type: 'completed', runId: request.runId });
+    },
+  ),
+}));
+
+import {
+  CohereTauriAgentProvider,
+  prepareBoundedProviderImage,
+} from '../src/features/aiAgent/cohereProvider';
+
+describe('Cohere AI agent provider', () => {
+  it('accepts two complete sequential tool calls and preserves their identities', async () => {
+    gateway.scriptedEvents.push(
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 1,
+        eventType: 'tool-call-start',
+        data: { delta: { message: { tool_calls: { id: 'call-a', function: { name: 'inspect_notebook', arguments: '{' } } } } },
+      },
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 2,
+        eventType: 'tool-call-delta',
+        data: { delta: { message: { tool_calls: { function: { arguments: '"request":"current"}' } } } } },
+      },
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 3,
+        eventType: 'tool-call-end', data: {},
+      },
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 4,
+        eventType: 'tool-call-start',
+        data: { delta: { message: { tool_calls: { id: 'call-b', function: { name: 'inspect_page', arguments: '{"pageId":"page-1"}' } } } } },
+      },
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 5,
+        eventType: 'tool-call-end', data: {},
+      },
+      {
+        type: 'providerEvent', runId: 'provider-tools', sequence: 6,
+        eventType: 'message-end',
+        data: { delta: { finish_reason: 'TOOL_CALL', usage: { tokens: {} } } },
+      },
+    );
+    const provider = new CohereTauriAgentProvider(() => true);
+    const events = [];
+    for await (const event of provider.streamTurn({
+      requestId: 'provider-tools',
+      runId: 'run-tools',
+      threadId: 'thread-tools',
+      systemPrompt: 'system',
+      tools: [],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal })) events.push(event);
+
+    expect(events.filter((event) => event.type === 'tool_call')).toEqual([
+      {
+        type: 'tool_call',
+        id: 'call-a',
+        name: 'inspect_notebook',
+        arguments: { request: 'current' },
+      },
+      {
+        type: 'tool_call',
+        id: 'call-b',
+        name: 'inspect_page',
+        arguments: { pageId: 'page-1' },
+      },
+    ]);
+    expect(events).toContainEqual({ type: 'finish', reason: 'tool_calls' });
+  });
+
+  it.each([
+    [
+      'an invalid start',
+      [{
+        type: 'providerEvent', runId: 'provider-malformed', sequence: 1,
+        eventType: 'tool-call-start', data: { delta: { message: { tool_calls: {} } } },
+      }],
+    ],
+    [
+      'a truncated call',
+      [{
+        type: 'providerEvent', runId: 'provider-malformed', sequence: 1,
+        eventType: 'tool-call-start',
+        data: { delta: { message: { tool_calls: { id: 'unfinished', function: { name: 'inspect_page', arguments: '{' } } } } },
+      }],
+    ],
+    [
+      'an orphan argument delta',
+      [{
+        type: 'providerEvent', runId: 'provider-malformed', sequence: 1,
+        eventType: 'tool-call-delta',
+        data: { delta: { message: { tool_calls: { function: { arguments: '{}' } } } } },
+      }],
+    ],
+  ])('fails closed on %s instead of executing a partial tool batch', async (_case, events) => {
+    gateway.scriptedEvents.push(...events);
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-malformed',
+      runId: 'run-malformed',
+      threadId: 'thread-malformed',
+      systemPrompt: 'system',
+      tools: [],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal });
+    await expect(async () => {
+      for await (const _event of stream) {
+        // A malformed stream may have yielded earlier public deltas, but it
+        // must never finish successfully or authorize a partial call batch.
+      }
+    }).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('preserves streamed tool plans in the next assistant history message', async () => {
+    gateway.requests.length = 0;
+    gateway.scriptedEvents.push({
+      type: 'providerEvent',
+      runId: 'provider-plan',
+      sequence: 1,
+      eventType: 'tool-plan-delta',
+      data: { delta: { message: { tool_plan: 'Inspect the current notebook.' } } },
+    });
+    const provider = new CohereTauriAgentProvider(() => true);
+    const events = [];
+    for await (const event of provider.streamTurn({
+      requestId: 'provider-plan',
+      runId: 'run-plan',
+      threadId: 'thread-plan',
+      systemPrompt: 'system',
+      tools: [],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal })) events.push(event);
+    expect(events).toContainEqual({
+      type: 'tool_plan_delta',
+      text: 'Inspect the current notebook.',
+    });
+  });
+  it('re-encodes a bounded pixel-only derivative and keeps original bytes out of it', async () => {
+    const close = vi.fn();
+    const drawImage = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ close })));
+    vi.stubGlobal('OffscreenCanvas', class {
+      constructor(readonly width: number, readonly height: number) {}
+      getContext() { return { drawImage }; }
+      async convertToBlob() {
+        return new Blob([new Uint8Array([42, 24])], { type: 'image/webp' });
+      }
+    });
+    try {
+      const derivative = await prepareBoundedProviderImage({
+        type: 'image_ref',
+        image: {
+          resourceId: 'local-original',
+          mimeType: 'image/jpeg',
+          digest: 'digest-original',
+          width: 8_000,
+          height: 4_000,
+        },
+        purpose: 'source_analysis',
+      }, new AbortController().signal, async () => ({
+        metadata: {
+          id: 'local-original',
+          kind: 'jpeg',
+          mimeType: 'image/jpeg',
+          sizeBytes: 6,
+          sha256: 'digest-original',
+        },
+        // Includes a recognizable pretend metadata prefix. It must not be
+        // copied by the canvas encoder.
+        bytes: [69, 88, 73, 70, 1, 2],
+      }));
+      expect(derivative).toMatchObject({
+        bytes: [42, 24],
+        mimeType: 'image/webp',
+        width: 1_600,
+        height: 800,
+      });
+      expect(drawImage).toHaveBeenCalled();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('fails closed before gateway traffic when the configured privacy path is not acknowledged', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => false);
+    const stream = provider.streamTurn(
+      {
+        requestId: 'provider-private',
+        runId: 'run-private',
+        threadId: 'thread-private',
+        systemPrompt: 'system',
+        tools: [],
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'private notes' }] }],
+      },
+      { signal: new AbortController().signal },
+    );
+    await expect(async () => {
+      for await (const _event of stream) {
+        // must never yield
+      }
+    }).rejects.toThrow(/privacy notice/i);
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it('keeps parallel tool results contiguous and sends their rendered images to the next model turn', async () => {
+    gateway.requests.length = 0;
+    gateway.serializedImageBytes.length = 0;
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        // A canvas-produced derivative is injected here so the protocol test
+        // can run in Node. The boundary must serialize these bytes, never the
+        // original [1, 2, 3] returned by readAiAttachment above.
+        prepareImage: async (part) => ({
+          bytes: part.purpose === 'source_analysis' ? [9, 8, 7] : [6, 5, 4],
+          mimeType: 'image/webp',
+          width: Math.min(part.image.width, 1_000),
+          height: Math.min(part.image.height, 1_000),
+        }),
+      },
+    );
+    const stream = provider.streamTurn(
+      {
+        requestId: 'provider-1',
+        runId: 'run-1',
+        threadId: 'thread-1',
+        systemPrompt: 'system',
+        tools: [],
+        toolChoice: 'required',
+        messages: [
+          {
+            role: 'assistant',
+            content: [],
+            toolCalls: [
+              { id: 'call-a', name: 'read_source_range', arguments: {} },
+              { id: 'call-b', name: 'read_draft_preview_pages', arguments: {} },
+            ],
+          },
+          {
+            role: 'tool',
+            toolCallId: 'call-a',
+            content: [
+              { type: 'text', text: '{"source":"a"}' },
+              {
+                type: 'image_ref',
+                image: {
+                  resourceId: 'source-image',
+                  mimeType: 'image/png',
+                  digest: 'source-image',
+                  width: 600,
+                  height: 800,
+                },
+                purpose: 'source_analysis',
+              },
+            ],
+          },
+          {
+            role: 'tool',
+            toolCallId: 'call-b',
+            content: [
+              { type: 'text', text: '{"preview":"b"}' },
+              {
+                type: 'image_ref',
+                image: {
+                  resourceId: 'draft-image',
+                  mimeType: 'image/png',
+                  digest: 'draft-image',
+                  width: 1200,
+                  height: 1700,
+                },
+                purpose: 'draft_visual_review',
+                pageNumber: 1,
+              },
+            ],
+          },
+        ],
+      },
+      { signal: new AbortController().signal },
+    );
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    const sent = gateway.requests[0]?.messages ?? [];
+    // The graph requires a tool transition on every autonomous turn, but
+    // Command A+ 05-2026 rejects the provider's tool_choice control. Alcove
+    // enforces the requirement on the returned turn instead.
+    expect(gateway.requests[0]).toMatchObject({
+      strictTools: true,
+    });
+    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
+    expect(gateway.requests[0]?.citationMode).toBeUndefined();
+    expect(gateway.requests[0]?.safetyMode).toBeUndefined();
+    expect(sent.map((message) => message.role)).toEqual([
+      'system',
+      'assistant',
+      'tool',
+      'tool',
+      'user',
+    ]);
+    const visualTurn = sent[4];
+    expect(visualTurn?.role).toBe('user');
+    if (visualTurn?.role !== 'user' || typeof visualTurn.content === 'string') {
+      throw new Error('expected a multimodal user turn');
+    }
+    expect(
+      visualTurn.content.filter((part) => part.type === 'image_url'),
+    ).toHaveLength(2);
+    expect(gateway.serializedImageBytes).toEqual([[9, 8, 7], [6, 5, 4]]);
+    expect(gateway.serializedImageBytes).not.toContainEqual([1, 2, 3]);
+  });
+
+  it('does not replay historical tool-result pixels after a later model turn', async () => {
+    gateway.requests.length = 0;
+    gateway.serializedImageBytes.length = 0;
+    const preparedResourceIds: string[] = [];
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        prepareImage: async (part) => {
+          preparedResourceIds.push(part.image.resourceId);
+          return {
+            bytes: part.image.resourceId === 'current-render' ? [8, 8, 8] : [1, 1, 1],
+            mimeType: 'image/webp',
+            width: 600,
+            height: 800,
+          };
+        },
+      },
+    );
+    const stream = provider.streamTurn({
+      requestId: 'provider-no-image-replay',
+      runId: 'run-no-image-replay',
+      threadId: 'thread-no-image-replay',
+      systemPrompt: 'system',
+      tools: [],
+      toolChoice: 'required',
+      messages: [
+        {
+          role: 'assistant',
+          content: [],
+          toolCalls: [{ id: 'call-old', name: 'read_draft_preview_pages', arguments: {} }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'call-old',
+          toolName: 'read_draft_preview_pages',
+          content: [
+            { type: 'text', text: '{"generation":"old"}' },
+            {
+              type: 'image_ref',
+              image: {
+                resourceId: 'historical-render',
+                mimeType: 'image/png',
+                digest: 'historical-render-digest',
+                width: 600,
+                height: 800,
+              },
+              purpose: 'draft_visual_review',
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'I inspected that older render.' }],
+          toolCalls: [{ id: 'call-current', name: 'read_draft_preview_pages', arguments: {} }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'call-current',
+          toolName: 'read_draft_preview_pages',
+          content: [
+            { type: 'text', text: '{"generation":"current"}' },
+            {
+              type: 'image_ref',
+              image: {
+                resourceId: 'current-render',
+                mimeType: 'image/png',
+                digest: 'current-render-digest',
+                width: 600,
+                height: 800,
+              },
+              purpose: 'draft_visual_review',
+            },
+          ],
+        },
+      ],
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(preparedResourceIds).toEqual(['current-render']);
+    expect(gateway.serializedImageBytes).toEqual([[8, 8, 8]]);
+    expect(gateway.serializedImageBytes).not.toContainEqual([1, 1, 1]);
+    const sent = gateway.requests[0]?.messages ?? [];
+    const imageParts = sent.flatMap((message) =>
+      message.role === 'user' && Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === 'image_url')
+        : [],
+    );
+    expect(imageParts).toHaveLength(1);
+  });
+
+  it('rejects an oversized derivative instead of falling back to original image bytes', async () => {
+    gateway.requests.length = 0;
+    gateway.serializedImageBytes.length = 0;
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        prepareImage: async () => ({
+          bytes: [7],
+          mimeType: 'image/webp',
+          width: 9_000,
+          height: 9_000,
+        }),
+      },
+    );
+    const stream = provider.streamTurn({
+      requestId: 'provider-image-boundary',
+      runId: 'run-image-boundary',
+      threadId: 'thread-image-boundary',
+      systemPrompt: 'system',
+      tools: [],
+      toolChoice: 'auto',
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'image_ref',
+          image: {
+            resourceId: 'source-image',
+            mimeType: 'image/png',
+            digest: 'source-image',
+            width: 9_000,
+            height: 9_000,
+          },
+          purpose: 'source_analysis',
+        }],
+      }],
+    }, { signal: new AbortController().signal });
+    await expect(async () => {
+      for await (const _event of stream) {
+        // must never reach the gateway
+      }
+    }).rejects.toThrow(/transport boundary/i);
+    expect(gateway.requests).toHaveLength(0);
+    expect(gateway.serializedImageBytes).toHaveLength(0);
+  });
+});

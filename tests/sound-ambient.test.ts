@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@pixi/sound', () => ({ sound: {} }));
 
 import {
+  SOUND_MANIFEST,
   getEngineState,
   resetEngineForTests,
   setAppHiddenInTray,
@@ -21,6 +22,19 @@ import {
   type PixiSoundLike,
   type PixiSoundOptions,
 } from '../src/sound/engine';
+
+describe('shipped concrete cue compatibility', () => {
+  it('keeps retired page-turn takes describable without preloading or rotating them', () => {
+    expect(SOUND_MANIFEST['page-flip-1']).toEqual({
+      category: 'pages',
+      loop: false,
+    });
+    expect(SOUND_MANIFEST['page-flip-2']).toEqual({
+      category: 'pages',
+      loop: false,
+    });
+  });
+});
 
 interface Deferred<T> {
   readonly promise: Promise<T>;

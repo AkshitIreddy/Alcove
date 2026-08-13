@@ -98,6 +98,9 @@ const PRIMARY_KEYS: Record<string, string> = {
   pages: 'id',
   settings: 'key',
   assets: 'id',
+  ai_agent_reviewed_drafts: 'generation_id',
+  ai_agent_patch_journal: 'idempotency_key',
+  ai_agent_task_tombstones: 'id',
 };
 
 /** ON DELETE CASCADE relationships mirrored from the SQLite schema. */
@@ -309,15 +312,15 @@ export class MemoryDb implements Db {
     const sql = query.trim();
 
     const insert =
-      /^INSERT\s+(OR\s+REPLACE\s+)?INTO\s+(\w+)\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)\s*;?\s*$/i.exec(
+      /^INSERT\s+(OR\s+(REPLACE|IGNORE)\s+)?INTO\s+(\w+)\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)\s*;?\s*$/i.exec(
         sql,
       );
     if (insert) {
-      const orReplace = Boolean(insert[1]);
-      const table = insert[2];
-      const cols = insert[3].split(',').map((c) => c.trim());
+      const conflictMode = insert[2]?.toUpperCase();
+      const table = insert[3];
+      const cols = insert[4].split(',').map((c) => c.trim());
       const cursor: BindCursor = { next: 0 };
-      const values = insert[4]
+      const values = insert[5]
         .split(',')
         .map((v) => resolveValueToken(v.trim(), binds, cursor));
       const row: SqlRow = {};
@@ -328,7 +331,7 @@ export class MemoryDb implements Db {
       const pk = PRIMARY_KEYS[table] ?? 'id';
       const existing = rows.findIndex((r) => r[pk] === row[pk]);
       if (existing >= 0) {
-        if (!orReplace) return { rowsAffected: 0 }; // PK conflict: no-op in dev
+        if (conflictMode !== 'REPLACE') return { rowsAffected: 0 }; // PK conflict / OR IGNORE
         rows[existing] = row;
         this.persist();
         return { rowsAffected: 1 };

@@ -329,7 +329,7 @@ export function appendBlocksToDoc(
    here, DOM-free, so tests/spread.test.ts can walk real window sizes.
    -------------------------------------------------------------------------- */
 
-/** A horizontal span in viewport px. Nothing in this fit is vertical. */
+/** A horizontal span in viewport px. */
 export interface Span {
   readonly left: number;
   readonly right: number;
@@ -345,6 +345,16 @@ export interface SpreadFit {
 
 /** Nothing open, nothing to do — and the identity the CSS defaults restate. */
 export const SPREAD_FIT_REST: SpreadFit = { shift: 0, scale: 1 };
+
+/**
+ * A page's first settled capacity is its pagination contract for the lifetime
+ * of the open book. Window and panel resizes may redraw that page at another
+ * scale, but must never move authored blocks into neighbouring documents.
+ */
+export function retainInitialPageCapacity(current: number, measured: number): number {
+  if (Number.isFinite(current) && current > 0) return current;
+  return Number.isFinite(measured) && measured > 120 ? Math.floor(measured) : current;
+}
 
 /**
  * How small the book may be drawn before we stop shrinking it and let it
@@ -388,6 +398,7 @@ export function fitSpreadToRoom(
   room: Span,
   panelEdge: number,
   gap: number,
+  scaleCeiling = 1,
 ): SpreadFit {
   const width = stage.right - stage.left;
   const finite =
@@ -395,7 +406,8 @@ export function fitSpreadToRoom(
     Number.isFinite(room.left) &&
     Number.isFinite(room.right) &&
     Number.isFinite(panelEdge) &&
-    Number.isFinite(gap);
+    Number.isFinite(gap) &&
+    Number.isFinite(scaleCeiling);
   // A stage that has not been laid out yet (a book mounting, a hidden view)
   // measures 0 and must not be "fitted" into anything.
   if (!finite || width <= 0) return SPREAD_FIT_REST;
@@ -408,7 +420,10 @@ export function fitSpreadToRoom(
   if (lane <= 0) return { shift: 0, scale: MIN_SPREAD_SCALE };
 
   const scale = roundScale(
-    Math.max(MIN_SPREAD_SCALE, Math.min(1, lane / width)),
+    Math.max(
+      MIN_SPREAD_SCALE,
+      Math.min(1, lane / width, Math.max(0, scaleCeiling)),
+    ),
   );
   const shift = roundShift(
     (laneLeft + laneRight) / 2 - (stage.left + stage.right) / 2,

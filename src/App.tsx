@@ -117,8 +117,22 @@ function preloadBookView(): () => void {
  * screen reader gets "opening the book" once, not a description of a rectangle.
  */
 function BookOpening(): JSX.Element {
+  const fit = (): number => {
+    if (typeof window === "undefined") return 1;
+    return Math.min(1, (window.innerWidth - 108) / 1334, (window.innerHeight - 20) / 920);
+  };
+  const [scale, setScale] = createSignal(Math.max(0.3, fit()));
+  onMount(() => {
+    const resize = (): void => setScale(Math.max(0.3, fit()));
+    window.addEventListener("resize", resize);
+    onCleanup(() => window.removeEventListener("resize", resize));
+  });
   return (
     <div class="nb-book-opening" role="status" aria-live="polite">
+      <div
+        class="nb-opening-fit-frame"
+        style={{ '--nb-opening-fit': String(scale()) }}
+      >
       <div class="nb-opening-stage">
         <div class="nb-opening-header">
           <p class="nb-opening-plate">
@@ -141,6 +155,7 @@ function BookOpening(): JSX.Element {
             <div class="nb-opening-gutter" />
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
@@ -170,6 +185,10 @@ export default function App(): JSX.Element {
     setSettingsWanted(true);
     setSettingsOpen((open) => !open);
   };
+  const showSettings = (): void => {
+    setSettingsWanted(true);
+    setSettingsOpen(true);
+  };
   onMount(() => {
     // Hydrate persisted settings, then keep the world in sync: subscribe fires
     // immediately with the current snapshot and again after load()/every save().
@@ -180,6 +199,16 @@ export default function App(): JSX.Element {
     onCleanup(initSystemFeatures());
     // One delegated listener gives every button in the app its soft click.
     onCleanup(installUiClickSounds());
+
+    // Feature panels cannot import the app shell merely to reveal Settings.
+    // A named DOM event keeps that dependency pointing upward; unlike the gear
+    // button this path is idempotent, so an agent's "connection settings"
+    // action never closes an already-open sheet by accident.
+    const onOpenSettings = (): void => showSettings();
+    window.addEventListener('alcove:open-settings', onOpenSettings);
+    onCleanup(() =>
+      window.removeEventListener('alcove:open-settings', onOpenSettings),
+    );
 
     // First run opens the guided tour; it no-ops once completed.
     void maybeAutoStartTutorial();
@@ -300,7 +329,19 @@ export default function App(): JSX.Element {
           compositor-driven transform and opacity.
         */}
         <Suspense fallback={<BookOpening />}>
-          <BookView />
+          {/*
+            The quick switcher can open another book without returning to the
+            shelf, so `viewState()` remains "book" while `openBookId()`
+            changes. BookView owns book-scoped editors, pagination queues and
+            the AI Agent runtime/source capability set; carrying any of those
+            across that identity change would let the visible book and the
+            mounted book disagree. A keyed boundary makes the book id a real
+            lifecycle boundary: cleanup for the old book finishes before a
+            fresh BookView is mounted for the new one.
+          */}
+          <Show when={appState.openBookId()} keyed>
+            {(_bookId) => <BookView />}
+          </Show>
         </Suspense>
       </Show>
       <QuickSwitcher />

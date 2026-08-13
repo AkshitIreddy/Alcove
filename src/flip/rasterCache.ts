@@ -547,7 +547,8 @@ export class PageRasterCache {
   private readonly inflight = new Map<string, Promise<RasterEntry | null>>();
   private readonly debounceTimers = new Map<string, number>();
   private readonly idleHandles = new Set<IdleHandle>();
-  private readonly pixelRatio: number;
+  private pixelRatio: number;
+  private densityEpoch = 0;
   private readonly sourceTokens = new WeakMap<HTMLElement, number>();
   private nextSourceToken = 1;
   private disposed = false;
@@ -566,6 +567,21 @@ export class PageRasterCache {
   /** Current edit version of a page (0 until first invalidation). */
   version(pageId: string): number {
     return this.versions.get(pageId) ?? 0;
+  }
+
+  /**
+   * Rebind raster density after a monitor/DPI transition without touching CSS
+   * page geometry. Existing bitmaps are no longer authoritative; in-flight
+   * work is rejected by `densityEpoch` at publication.
+   */
+  refreshPixelRatio(): boolean {
+    if (this.options.pixelRatio !== undefined || this.disposed) return false;
+    const next = defaultPixelRatio();
+    if (Math.abs(next - this.pixelRatio) < 0.001) return false;
+    this.pixelRatio = next;
+    this.densityEpoch += 1;
+    this.entries.clear();
+    return true;
   }
 
   /** Cached bitmap, if any (marks it most-recently-used). May be stale. */
@@ -602,7 +618,8 @@ export class PageRasterCache {
     if (
       entry === undefined ||
       entry.version !== this.version(pageId) ||
-      entry.tone !== paperToneTag()
+      entry.tone !== paperToneTag() ||
+      Math.abs(entry.pixelRatio - this.pixelRatio) >= 0.001
     ) {
       return false;
     }
@@ -832,6 +849,8 @@ export class PageRasterCache {
   }
 
   private async capture(pageId: string): Promise<RasterEntry | null> {
+    const densityAtStart = this.densityEpoch;
+    const pixelRatioAtStart = this.pixelRatio;
     /*
      * A MOUNTED PAGE IS ITS PRESENTATION, NOT MERELY ITS SAVED DOCUMENT.
      *
@@ -917,7 +936,7 @@ export class PageRasterCache {
     let canvas: HTMLCanvasElement | null = null;
     try {
       canvas = await toCanvas(clone, {
-        pixelRatio: this.pixelRatio,
+        pixelRatio: pixelRatioAtStart,
         backgroundColor: background,
         fontEmbedCSS,
         imagePlaceholder: TRANSPARENT_PX,
@@ -952,7 +971,8 @@ export class PageRasterCache {
       this.mountedElement(pageId) !== element ||
       this.sourceToken(element) !== sourceToken ||
       this.version(pageId) !== versionAtStart ||
-      paperToneTag() !== toneAtStart
+      paperToneTag() !== toneAtStart ||
+      this.densityEpoch !== densityAtStart
     ) {
       bitmap.close();
       return null;
@@ -963,7 +983,7 @@ export class PageRasterCache {
       tone: toneAtStart,
       width: canvas.width,
       height: canvas.height,
-      pixelRatio: this.pixelRatio,
+      pixelRatio: pixelRatioAtStart,
       source: {
         kind: 'mounted',
         sourceToken,
@@ -984,6 +1004,8 @@ export class PageRasterCache {
     const captureOffscreen = this.options.captureOffscreen;
     if (captureOffscreen === undefined) return null;
     const versionAtStart = this.version(pageId);
+    const densityAtStart = this.densityEpoch;
+    const pixelRatioAtStart = this.pixelRatio;
     refreshPaperTone();
     const toneAtStart = paperToneTag();
     let bitmap: ImageBitmap | null;
@@ -1009,7 +1031,11 @@ export class PageRasterCache {
       bitmap.close();
       return this.capture(pageId);
     }
-    if (this.version(pageId) !== versionAtStart || paperToneTag() !== toneAtStart) {
+    if (
+      this.version(pageId) !== versionAtStart ||
+      paperToneTag() !== toneAtStart ||
+      this.densityEpoch !== densityAtStart
+    ) {
       bitmap.close();
       return null;
     }
@@ -1019,7 +1045,7 @@ export class PageRasterCache {
       tone: toneAtStart,
       width: bitmap.width,
       height: bitmap.height,
-      pixelRatio: this.pixelRatio,
+      pixelRatio: pixelRatioAtStart,
       source: { kind: 'offscreen' },
     };
     this.entries.set(pageId, entry);

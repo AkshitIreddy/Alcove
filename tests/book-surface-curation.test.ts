@@ -5,6 +5,8 @@ import {
   normalizeCharmKind,
 } from '../src/art/charms';
 import {
+  ACTIVE_COVER_EMBLEM_INDICES,
+  ACTIVE_COVER_EMBLEMS,
   ACTIVE_COVER_FRAME_INDICES,
   ACTIVE_COVER_FRAMES,
   normalizeCoverFrameIndex,
@@ -37,6 +39,8 @@ import {
 const APPROVED_ORNAMENTS = [
   0, 1, 2, 5, 12, 13, 14, 20,
   23, 26, 28, 29, 30, 31, 43, 56,
+  66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+  76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
 ] as const;
 
 const APPROVED_FRAMES = [
@@ -47,7 +51,31 @@ describe('book-surface apocalypse catalogue', () => {
   it('has one exact active emblem catalogue and retires moon/compass pictograms', () => {
     expect(ACTIVE_ORNAMENT_INDICES).toEqual(APPROVED_ORNAMENTS);
     expect(ACTIVE_ORNAMENTS.map(({ index }) => index)).toEqual(APPROVED_ORNAMENTS);
+    expect(ACTIVE_COVER_EMBLEM_INDICES).toBe(ACTIVE_ORNAMENT_INDICES);
+    expect(ACTIVE_COVER_EMBLEMS).toBe(ACTIVE_ORNAMENTS);
     expect(ORNAMENT_LABELS[43]).toBe('Five-leaf anthemion');
+    expect(ORNAMENT_LABELS.slice(66)).toEqual([
+      'Acanthus spear',
+      'Carnation bloom',
+      'Iris fan',
+      'Artichoke finial',
+      'Poppy seedhead',
+      'Olive spray',
+      'Strawberry sprig',
+      'Vine cluster',
+      'Honeysuckle scroll',
+      'Lotus palmette',
+      'Maple samara spray',
+      'Willow catkin',
+      'Rowan spray',
+      'Columbine bell',
+      'Primrose stem',
+      'Dog-rose branch',
+      'Cedar cone spray',
+      'Reed bundle',
+      'Moresque knot',
+      'Tudor rose standard',
+    ]);
 
     for (let index = 0; index < ORNAMENT_COUNT; index += 1) {
       const normalized = normalizeOrnamentIndex(index);

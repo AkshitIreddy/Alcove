@@ -111,7 +111,8 @@ export const KNOWN_MACROS: readonly string[] = [
   ...Object.keys(BIG_OPERATORS),
   ...FUNCTIONS,
   'frac', 'dfrac', 'tfrac', 'sqrt', 'text', 'mathrm', 'mathbf', 'mathit',
-  'bar', 'overline', 'boxed', 'left', 'right', 'quad', 'qquad',
+  'bar', 'overline', 'boxed', 'mathbin', 'mathrel', 'mathord', 'mathop',
+  'left', 'right', 'quad', 'qquad',
 ];
 
 // ---------------------------------------------------------------------------
@@ -204,6 +205,7 @@ export type Atom =
   | { kind: 'root'; index: Atom[] | null; body: Atom[] }
   | { kind: 'overline'; body: Atom[]; short: boolean }
   | { kind: 'boxed'; body: Atom[] }
+  | { kind: 'classed'; body: Atom[]; role: 'bin' | 'rel' | 'ord' | 'fn' }
   | { kind: 'script'; base: Atom; sup: Atom[] | null; sub: Atom[] | null; limits: boolean }
   | { kind: 'text'; text: string; upright: boolean; bold: boolean }
   | { kind: 'fence'; open: string; close: string; body: Atom[] }
@@ -369,6 +371,17 @@ function macroAtom(cursor: Cursor, name: string): Atom | null {
   }
   if (name === 'boxed') {
     return { kind: 'boxed', body: parseCommandArgument(cursor) };
+  }
+  if (name === 'mathbin' || name === 'mathrel' || name === 'mathord' || name === 'mathop') {
+    const role =
+      name === 'mathbin'
+        ? 'bin'
+        : name === 'mathrel'
+          ? 'rel'
+          : name === 'mathop'
+            ? 'fn'
+            : 'ord';
+    return { kind: 'classed', body: parseCommandArgument(cursor), role };
   }
   if (name === 'text' || name === 'mathrm' || name === 'textrm') {
     return { kind: 'text', text: parseTextArgument(cursor), upright: true, bold: false };
@@ -671,6 +684,8 @@ function renderAtom(atom: Atom, display: boolean, unary = false): string {
       );
     case 'boxed':
       return span('nb-m-boxed', renderRow(atom.body, display));
+    case 'classed':
+      return span(`nb-m-${atom.role}`, renderRow(atom.body, display));
     case 'fence': {
       // Scale the delimiters to the content instead of measuring it: one line
       // of maths is 1, a fraction is 2, and 1.05 of leading looks right.

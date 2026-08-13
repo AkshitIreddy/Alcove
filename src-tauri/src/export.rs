@@ -182,8 +182,16 @@ mod tests {
 
     fn pages2() -> Vec<PdfPageImage> {
         vec![
-            PdfPageImage { jpeg: fake_jpeg(64), width: 1240, height: 1750 },
-            PdfPageImage { jpeg: fake_jpeg(48), width: 1240, height: 1750 },
+            PdfPageImage {
+                jpeg: fake_jpeg(64),
+                width: 1240,
+                height: 1750,
+            },
+            PdfPageImage {
+                jpeg: fake_jpeg(48),
+                width: 1240,
+                height: 1750,
+            },
         ]
     }
 

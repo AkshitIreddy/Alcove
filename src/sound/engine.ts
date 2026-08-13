@@ -363,7 +363,13 @@ interface SoundDef {
   readonly loop: boolean;
 }
 
-/** Build the manifest from the families so a new variant cannot be forgotten. */
+/**
+ * Every concrete shipped take remains directly playable for compatibility,
+ * even when a semantic family has been curated down to one preferred take.
+ * VARIANT_WEIGHTS is a compile-time-exhaustive Record<SoundName, ...>, so it
+ * is the honest manifest authority while SOUND_NAMES below stays the smaller
+ * preload/rotation set.
+ */
 function manifestFor(name: SoundName): SoundDef {
   if (name.startsWith('page-flip') || name.startsWith('typing-tick') || name === 'pencil-scratch') {
     return { category: 'pages', loop: name === 'pencil-scratch' };
@@ -395,7 +401,7 @@ const ALL_SOUND_NAMES: readonly SoundName[] = [
 ];
 
 export const SOUND_MANIFEST: Record<SoundName, SoundDef> = Object.fromEntries(
-  ALL_SOUND_NAMES.map((name) => [name, manifestFor(name)]),
+  (Object.keys(VARIANT_WEIGHTS) as SoundName[]).map((name) => [name, manifestFor(name)]),
 ) as Record<SoundName, SoundDef>;
 
 export const SOUND_NAMES: readonly SoundName[] = ALL_SOUND_NAMES;

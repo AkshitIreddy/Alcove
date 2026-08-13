@@ -1,0 +1,284 @@
+/** Typed WebView boundary for Cohere and managed AI attachments. */
+import { Channel, invoke } from '@tauri-apps/api/core';
+
+export interface AiGatewayError {
+  readonly code: string;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly status?: number;
+}
+
+export type AiGatewayStreamEvent =
+  | {
+      readonly type: 'providerEvent';
+      readonly runId: string;
+      readonly sequence: number;
+      readonly eventType:
+        | 'message-start'
+        | 'content-start'
+        | 'content-delta'
+        | 'content-end'
+        | 'tool-plan-delta'
+        | 'tool-call-start'
+        | 'tool-call-delta'
+        | 'tool-call-end'
+        | 'citation-start'
+        | 'citation-end'
+        | 'message-end'
+        | 'debug';
+      readonly data: Record<string, unknown>;
+    }
+  | { readonly type: 'retry'; readonly runId: string; readonly attempt: number; readonly retryAfterMs: number }
+  | { readonly type: 'completed'; readonly runId: string }
+  | { readonly type: 'cancelled'; readonly runId: string }
+  | { readonly type: 'error'; readonly runId: string; readonly error: AiGatewayError };
+
+export interface AiGatewayToolCall {
+  readonly id: string;
+  readonly type: 'function';
+  readonly function: { readonly name: string; readonly arguments: string };
+}
+
+export type AiGatewayMessage =
+  | { readonly role: 'system'; readonly content: string }
+  | {
+      readonly role: 'user';
+      readonly content:
+        | string
+        | readonly (
+            | { readonly type: 'text'; readonly text: string }
+            | {
+                readonly type: 'image_url';
+                readonly imageUrl: {
+                  readonly url: string;
+                  readonly detail?: 'low' | 'high' | 'auto';
+                };
+              }
+          )[];
+    }
+  | {
+      readonly role: 'assistant';
+      readonly content?: string;
+      readonly toolPlan?: string;
+      readonly toolCalls?: readonly AiGatewayToolCall[];
+    }
+  | {
+      readonly role: 'tool';
+      readonly toolCallId: string;
+      readonly content: string;
+    };
+
+export interface AiGatewayChatRequest {
+  readonly runId: string;
+  readonly model: 'command-a-plus-05-2026';
+  readonly messages: readonly AiGatewayMessage[];
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description?: string;
+    readonly parameters: Readonly<Record<string, unknown>>;
+  }[];
+  readonly maxTokens?: number;
+  readonly temperature?: number;
+  readonly seed?: number;
+  readonly toolChoice?: 'REQUIRED' | 'NONE';
+  readonly thinking?: {
+    readonly type: 'enabled' | 'disabled';
+    readonly tokenBudget?: number;
+  };
+  readonly strictTools?: boolean;
+  readonly citationMode?: 'enabled' | 'disabled' | 'fast' | 'accurate';
+  readonly safetyMode?: 'CONTEXTUAL' | 'STRICT';
+}
+
+export async function streamAiGatewayChat(
+  request: AiGatewayChatRequest,
+  onEvent: (event: AiGatewayStreamEvent) => void,
+): Promise<void> {
+  const channel = new Channel<AiGatewayStreamEvent>();
+  channel.onmessage = onEvent;
+  await invoke<void>('ai_chat_stream', { request, onEvent: channel });
+}
+
+export async function cancelAiGatewayRun(runId: string): Promise<boolean> {
+  const result = await invoke<{ runId: string; cancelled: boolean }>('ai_cancel_run', {
+    runId,
+  });
+  return result.cancelled;
+}
+
+export interface AiAttachmentMetadata {
+  readonly id: string;
+  readonly kind: 'pdf' | 'png' | 'jpeg' | 'webp' | 'gif' | 'text' | 'docx' | 'xlsx' | 'pptx';
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+}
+
+export interface AiAttachmentData {
+  readonly metadata: AiAttachmentMetadata;
+  readonly bytes: readonly number[];
+}
+
+export function saveAiAttachment(
+  bytes: Uint8Array,
+  namespace: 'attachment' | 'preview' = 'attachment',
+): Promise<AiAttachmentMetadata> {
+  return invoke<AiAttachmentMetadata>('ai_attachment_save', {
+    request: {
+      bytes: Array.from(bytes),
+      namespace: namespace === 'preview' ? 'preview' : 'att',
+    },
+  });
+}
+
+export function readAiAttachment(attachmentId: string): Promise<AiAttachmentData> {
+  return invoke<AiAttachmentData>('ai_attachment_read', { attachmentId });
+}
+
+export async function deleteAiAttachment(attachmentId: string): Promise<boolean> {
+  const result = await invoke<{ id: string; deleted: boolean }>('ai_attachment_delete', {
+    attachmentId,
+  });
+  return result.deleted;
+}
+
+export interface AiExtractedPdfPage {
+  readonly pageNumber: number;
+  readonly text: string;
+  readonly textBytes: number;
+  readonly truncated: boolean;
+  readonly extractionFailed: boolean;
+  readonly hasEmbeddedImages: boolean;
+  /** Page paints vector/form content that embedded-image extraction cannot expose. */
+  readonly hasVectorGraphics?: boolean;
+  readonly needsOcr: boolean;
+  readonly needsVisualReview: boolean;
+  /**
+   * Whether Alcove has evidence for the full composed page. Embedded XObjects
+   * alone are insufficient; current extraction therefore returns unresolved
+   * until a verified full-page raster pipeline exists.
+   */
+  readonly visualEvidence: 'notNeeded' | 'available' | 'unresolved';
+  readonly unresolvedVisualCount: number;
+  /** Embedded image evidence, not a claimed rasterization of the whole PDF page. */
+  readonly visuals: readonly AiExtractedPdfVisual[];
+}
+
+export interface AiExtractedPdfVisual {
+  readonly attachmentId: string;
+  readonly mimeType: 'image/jpeg';
+  readonly sha256: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface AiExtractedPdfSource {
+  readonly attachmentId: string;
+  readonly sha256: string;
+  readonly pageCount: number;
+  readonly totalTextBytes: number;
+  readonly truncated: boolean;
+  readonly pages: readonly AiExtractedPdfPage[];
+}
+
+export function extractAiPdfSource(attachmentId: string): Promise<AiExtractedPdfSource> {
+  return invoke<AiExtractedPdfSource>('ai_extract_pdf_source', { attachmentId });
+}
+
+export interface AiExtractedDocumentSource {
+  readonly attachmentId: string;
+  readonly sha256: string;
+  readonly mediaType: string;
+  readonly text: string;
+  readonly textBytes: number;
+  readonly truncated: boolean;
+  readonly unitLabels: readonly string[];
+  readonly extractionWarnings: readonly string[];
+}
+
+export function extractAiDocumentSource(
+  attachmentId: string,
+): Promise<AiExtractedDocumentSource> {
+  return invoke<AiExtractedDocumentSource>('ai_extract_document_source', { attachmentId });
+}
+
+export interface AiEmbedResponse {
+  readonly id: string;
+  readonly embeddings: { readonly float?: readonly (readonly number[])[] };
+}
+
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted', 'AbortError');
+}
+
+/**
+ * Run one non-streaming provider request under the same native cancellation
+ * registry as chat. Tauri's `invoke` promise itself is not abortable, so Stop
+ * cancels the Rust HTTP future and this wrapper also rejects any response that
+ * won a very late race with cancellation.
+ */
+async function cancellableProviderInvoke<T>(
+  command: 'ai_embed' | 'ai_rerank',
+  runId: string,
+  request: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) throw abortError();
+  const abort = (): void => {
+    void cancelAiGatewayRun(runId).catch(() => false);
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const result = await invoke<T>(command, { request });
+    if (signal?.aborted) throw abortError();
+    return result;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
+export function embedAiTexts(input: {
+  readonly runId: string;
+  readonly texts: readonly string[];
+  readonly inputType: 'search_document' | 'search_query';
+}, signal?: AbortSignal): Promise<AiEmbedResponse> {
+  return cancellableProviderInvoke<AiEmbedResponse>('ai_embed', input.runId, {
+    runId: input.runId,
+    model: 'embed-v4.0',
+    inputType: input.inputType,
+    inputs: input.texts.map((text) => ({ content: [{ type: 'text', text }] })),
+    outputDimension: 512,
+    embeddingTypes: ['float'],
+    truncate: 'END',
+  }, signal);
+}
+
+export interface AiRerankResponse {
+  readonly id?: string;
+  readonly results: readonly { readonly index: number; readonly relevanceScore: number }[];
+}
+
+export function rerankAiTexts(input: {
+  readonly runId: string;
+  readonly query: string;
+  readonly documents: readonly string[];
+  readonly limit: number;
+  readonly quality: 'fast' | 'pro';
+}, signal?: AbortSignal): Promise<AiRerankResponse> {
+  return cancellableProviderInvoke<AiRerankResponse>('ai_rerank', input.runId, {
+    runId: input.runId,
+    model: input.quality === 'pro' ? 'rerank-v4.0-pro' : 'rerank-v4.0-fast',
+    query: input.query,
+    documents: input.documents,
+    topN: input.limit,
+  }, signal);
+}
+
+export function bytesToDataUri(bytes: readonly number[], mimeType: string): string {
+  const chunk = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.slice(offset, offset + chunk));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}

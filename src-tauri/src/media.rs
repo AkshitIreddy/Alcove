@@ -9,8 +9,9 @@
 //!   5 s timeout, and hard byte caps.
 
 use serde::Serialize;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::path::{Component, PathBuf};
 use std::time::Duration;
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -65,6 +66,17 @@ pub struct FetchedImage {
     pub thumb_url: Option<String>,
     pub attribution: String,
     pub license: String,
+    /// Cryptographic identity of the exact locally staged bytes.
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedImageAsset {
+    pub rel_path: String,
+    pub sha256: String,
+    pub size_bytes: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +148,9 @@ fn check_url(raw: &str) -> Result<reqwest::Url, String> {
     if url.scheme() != "https" {
         return Err("only https URLs can be fetched".to_string());
     }
-    let host = url.host_str().ok_or_else(|| "URL has no host".to_string())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
     if is_blocked_host(host) {
         return Err("URL points at a local or private address".to_string());
     }
@@ -146,12 +160,15 @@ fn check_url(raw: &str) -> Result<reqwest::Url, String> {
 /// DNS-resolve the host and reject if any resolved address is private.
 /// (Best-effort: reqwest re-resolves, but a plain hostname pointing at
 /// 127.0.0.1 is caught here.)
-async fn resolve_guard(url: &reqwest::Url) -> Result<(), String> {
+async fn resolve_guard(url: &reqwest::Url) -> Result<SocketAddr, String> {
     let host = url.host_str().unwrap_or_default().to_string();
-    if host.parse::<IpAddr>().is_ok() {
-        return Ok(()); // literal already vetted by check_url
-    }
     let port = url.port_or_known_default().unwrap_or(443);
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_private_ip(&ip) {
+            return Err("host resolves to a private address".to_string());
+        }
+        return Ok(SocketAddr::new(ip, port));
+    }
     let addrs = tauri::async_runtime::spawn_blocking(move || {
         (host.as_str(), port)
             .to_socket_addrs()
@@ -166,34 +183,22 @@ async fn resolve_guard(url: &reqwest::Url) -> Result<(), String> {
     if addrs.iter().any(is_private_ip) {
         return Err("host resolves to a private address".to_string());
     }
-    Ok(())
+    Ok(SocketAddr::new(addrs[0], port))
 }
 
 // ---------------------------------------------------------------------------
 // HTTP client + capped download
 // ---------------------------------------------------------------------------
 
-fn http_client() -> Result<reqwest::Client, String> {
+fn http_client(host: &str, address: SocketAddr) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .connect_timeout(FETCH_TIMEOUT)
         .user_agent(USER_AGENT)
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() > MAX_REDIRECTS {
-                return attempt.error("too many redirects");
-            }
-            let safe = attempt.url().scheme() == "https"
-                && attempt
-                    .url()
-                    .host_str()
-                    .map(|h| !is_blocked_host(h))
-                    .unwrap_or(false);
-            if safe {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }))
+        // Redirects are followed manually by `download_capped`, where every
+        // hop is revalidated and DNS-pinned before the request is made.
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve(host, address)
         .build()
         .map_err(|e| e.to_string())
 }
@@ -205,17 +210,40 @@ struct Downloaded {
 
 /// GET `url` enforcing the byte `cap` while streaming (content-length header
 /// is checked first, then the body is re-checked chunk by chunk).
-async fn download_capped(
-    client: &reqwest::Client,
-    url: reqwest::Url,
-    cap: usize,
-) -> Result<Downloaded, String> {
-    resolve_guard(&url).await?;
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("request failed: {e}"))?;
+async fn download_capped(url: reqwest::Url, cap: usize) -> Result<Downloaded, String> {
+    let mut current = check_url(url.as_str())?;
+    let mut final_response = None;
+    for hop in 0..=MAX_REDIRECTS {
+        let host = current
+            .host_str()
+            .ok_or_else(|| "URL has no host".to_string())?
+            .to_string();
+        let address = resolve_guard(&current).await?;
+        let client = http_client(&host, address)?;
+        let response = client
+            .get(current.clone())
+            .send()
+            .await
+            .map_err(|e| format!("request failed: {e}"))?;
+        if response.status().is_redirection() {
+            if hop == MAX_REDIRECTS {
+                return Err("too many redirects".to_string());
+            }
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| "redirect has no valid Location".to_string())?;
+            let next = current
+                .join(location)
+                .map_err(|_| "redirect Location is invalid".to_string())?;
+            current = check_url(next.as_str())?;
+            continue;
+        }
+        final_response = Some(response);
+        break;
+    }
+    let resp = final_response.ok_or_else(|| "redirect chain did not resolve".to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
@@ -231,7 +259,11 @@ async fn download_capped(
         .map(|s| s.split(';').next().unwrap_or("").trim().to_string());
     let mut bytes: Vec<u8> = Vec::new();
     let mut resp = resp;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("read failed: {e}"))? {
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("read failed: {e}"))?
+    {
         if bytes.len() + chunk.len() > cap {
             return Err(format!("response exceeded cap of {cap} bytes"));
         }
@@ -269,7 +301,8 @@ fn sniff_extension(bytes: &[u8]) -> Option<&'static str> {
     }
     // SVG: text starting with an XML/svg tag (allow BOM + whitespace).
     let head = &bytes[..bytes.len().min(256)];
-    if let Ok(text) = std::str::from_utf8(head.strip_prefix(&[0xef, 0xbb, 0xbf][..]).unwrap_or(head))
+    if let Ok(text) =
+        std::str::from_utf8(head.strip_prefix(&[0xef, 0xbb, 0xbf][..]).unwrap_or(head))
     {
         let t = text.trim_start();
         if t.starts_with("<svg") || t.starts_with("<?xml") {
@@ -321,8 +354,7 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-const BASE64_TABLE: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 fn base64_encode(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
@@ -462,7 +494,9 @@ fn extract_page_meta(html: &str, base: &reqwest::Url) -> PageMeta {
     .map(|u| u.to_string());
 
     let favicon_url = doc
-        .select(&sel("link[rel~=\"icon\"], link[rel=\"shortcut icon\"], link[rel=\"apple-touch-icon\"]"))
+        .select(&sel(
+            "link[rel~=\"icon\"], link[rel=\"shortcut icon\"], link[rel=\"apple-touch-icon\"]",
+        ))
         .find_map(|el| el.value().attr("href"))
         .and_then(|href| base.join(href.trim()).ok())
         .map(|u| u.to_string())
@@ -494,6 +528,51 @@ pub async fn save_image_asset(
         .map_err(|e| e.to_string())?
 }
 
+fn verified_image_asset(
+    app: &tauri::AppHandle,
+    rel_path: &str,
+) -> Result<VerifiedImageAsset, String> {
+    let relative = std::path::Path::new(rel_path);
+    let mut components = relative.components();
+    if components.next() != Some(Component::Normal(std::ffi::OsStr::new("images")))
+        || components.clone().count() != 1
+        || !matches!(components.next(), Some(Component::Normal(_)))
+    {
+        return Err("asset path is outside the managed image store".to_string());
+    }
+    let root = assets_images_dir(app)?;
+    let file_name = relative
+        .file_name()
+        .ok_or_else(|| "asset path has no file name".to_string())?;
+    let path = root.join(file_name);
+    let canonical_root = std::fs::canonicalize(&root)
+        .map_err(|e| format!("cannot resolve managed image store: {e}"))?;
+    let canonical_path = std::fs::canonicalize(&path)
+        .map_err(|e| format!("reviewed image bytes are missing: {e}"))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("asset path escaped the managed image store".to_string());
+    }
+    let bytes = std::fs::read(&canonical_path)
+        .map_err(|e| format!("cannot read reviewed image bytes: {e}"))?;
+    Ok(VerifiedImageAsset {
+        rel_path: rel_path.to_string(),
+        sha256: format!("{:x}", Sha256::digest(&bytes)),
+        size_bytes: bytes.len() as u64,
+    })
+}
+
+/// Re-open and cryptographically identify staged image bytes immediately
+/// before an approved reviewed-generation makes them visible in the asset DB.
+#[tauri::command]
+pub async fn verify_image_asset(
+    app: tauri::AppHandle,
+    rel_path: String,
+) -> Result<VerifiedImageAsset, String> {
+    tauri::async_runtime::spawn_blocking(move || verified_image_asset(&app, &rel_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Fetch og:/twitter:/title metadata for a URL. Never an IPC error on fetch
 /// failure — returns a `LinkPreview` with `error` set so the UI can fall
 /// back to a plain link card.
@@ -511,9 +590,7 @@ pub async fn fetch_link_preview(url: String) -> LinkPreview {
 
 async fn fetch_link_preview_inner(raw_url: &str) -> Result<LinkPreview, String> {
     let url = check_url(raw_url)?;
-    let client = http_client()?;
-
-    let page = download_capped(&client, url.clone(), PAGE_CAP).await?;
+    let page = download_capped(url.clone(), PAGE_CAP).await?;
     if let Some(ct) = &page.content_type {
         if !ct.contains("html") && !ct.contains("xml") {
             return Err(format!("not an HTML page ({ct})"));
@@ -525,7 +602,7 @@ async fn fetch_link_preview_inner(raw_url: &str) -> Result<LinkPreview, String> 
     let mut image_data_uri = None;
     if let Some(img) = &meta.image_url {
         if let Ok(img_url) = check_url(img) {
-            if let Ok(dl) = download_capped(&client, img_url, OG_IMAGE_CAP).await {
+            if let Ok(dl) = download_capped(img_url, OG_IMAGE_CAP).await {
                 if !dl.bytes.is_empty() {
                     image_data_uri = Some(data_uri(&dl.bytes, dl.content_type.as_deref()));
                 }
@@ -536,7 +613,7 @@ async fn fetch_link_preview_inner(raw_url: &str) -> Result<LinkPreview, String> 
     let mut favicon_data_uri = None;
     if let Some(fav) = &meta.favicon_url {
         if let Ok(fav_url) = check_url(fav) {
-            if let Ok(dl) = download_capped(&client, fav_url, FAVICON_CAP).await {
+            if let Ok(dl) = download_capped(fav_url, FAVICON_CAP).await {
                 if !dl.bytes.is_empty() {
                     favicon_data_uri = Some(data_uri(&dl.bytes, dl.content_type.as_deref()));
                 }
@@ -589,8 +666,7 @@ pub async fn fetch_images(
     )
     .map_err(|e| e.to_string())?;
 
-    let client = http_client()?;
-    let body = download_capped(&client, api_url, PAGE_CAP).await?;
+    let body = download_capped(api_url, PAGE_CAP).await?;
     let json: serde_json::Value =
         serde_json::from_slice(&body.bytes).map_err(|e| format!("bad Openverse response: {e}"))?;
     let results = json
@@ -609,9 +685,11 @@ pub async fn fetch_images(
         let Ok(img_url) = check_url(remote_url) else {
             continue;
         };
-        let Ok(dl) = download_capped(&client, img_url, FETCHED_IMAGE_CAP).await else {
+        let Ok(dl) = download_capped(img_url, FETCHED_IMAGE_CAP).await else {
             continue; // one bad image must not sink the whole fetch
         };
+        let sha256 = format!("{:x}", Sha256::digest(&dl.bytes));
+        let size_bytes = dl.bytes.len() as u64;
         let ext_hint = remote_url.rsplit('.').next().unwrap_or("jpg");
         let app_handle = app.clone();
         let hint = ext_hint.to_string();
@@ -631,7 +709,10 @@ pub async fn fetch_images(
                     .get("creator")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("image");
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("image");
                 format!("\"{title}\" by {creator} (via Openverse)")
             });
         let license = {
@@ -652,6 +733,8 @@ pub async fn fetch_images(
                 .map(str::to_string),
             attribution,
             license,
+            sha256,
+            size_bytes,
         });
     }
     Ok(fetched)
@@ -696,7 +779,10 @@ mod tests {
     fn extension_sniffing_recognizes_magic_bytes() {
         let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0];
         assert_eq!(sniff_extension(&png), Some("png"));
-        assert_eq!(sniff_extension(&[0xff, 0xd8, 0xff, 0xe0, 0x00]), Some("jpg"));
+        assert_eq!(
+            sniff_extension(&[0xff, 0xd8, 0xff, 0xe0, 0x00]),
+            Some("jpg")
+        );
         assert_eq!(sniff_extension(b"GIF89a-------"), Some("gif"));
         let mut webp = b"RIFF\x00\x00\x00\x00WEBPVP8 ".to_vec();
         assert_eq!(sniff_extension(&webp), Some("webp"));

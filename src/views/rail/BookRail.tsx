@@ -16,7 +16,7 @@
  * `views/bookmarks.ts` already knows which book is on screen, and everything
  * it edits is that module's vocabulary.
  *
- * ## Ten buttons, not fourteen
+ * ## Eleven buttons, not fourteen
  *
  * Insert script, export script, copy AI spec and start-from-a-template were
  * four separate icons down here. They are four rows on the "In and out" sheet
@@ -87,6 +87,7 @@ import { Capped } from './DesignStrip';
 import RailPanel from './RailPanel';
 import {
   AddPageIcon,
+  AgentIcon,
   BrushIcon,
   FilmstripIcon,
   FocusIcon,
@@ -102,6 +103,7 @@ export type RailPanelId =
   | 'customize'
   | 'page-style'
   | 'catalogue'
+  | 'ai-agent'
   | 'toc'
   | 'history'
   /**
@@ -201,6 +203,12 @@ const TOOLS: readonly RailTool[] = [
     keyFor: 'catalogue',
   },
   {
+    id: 'ai-agent',
+    label: 'AI agent — plan, build and review pages with you',
+    icon: AgentIcon,
+    panel: 'ai-agent',
+  },
+  {
     id: 'toc',
     label: 'Table of contents',
     icon: TocIcon,
@@ -215,8 +223,8 @@ const TOOLS: readonly RailTool[] = [
     // FOUR icons used to sit below the divider doing pieces of this — insert
     // script, export script, copy AI spec, start from a template — plus this
     // one for the exports. They are all rows on the sheet now (SharePanel.tsx),
-    // which is what the reader asked for and what took the rail from fourteen
-    // buttons to ten.
+    // which is what the reader asked for. The AI agent later added one
+    // first-class notebook tool without reopening those four old seams.
     //
     // No `keyFor`: there is no combination that opens this sheet, and the one
     // it used to borrow (`export-pdf`) opens the PDF chooser straight past it.

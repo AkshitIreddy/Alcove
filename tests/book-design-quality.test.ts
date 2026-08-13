@@ -258,7 +258,7 @@ describe('book binding quality vocabulary', () => {
   });
 
   it('keeps stable ornament indices while giving active slots honest binder-tool labels', () => {
-    expect(ORNAMENT_COUNT).toBe(66);
+    expect(ORNAMENT_COUNT).toBe(86);
     expect(ORNAMENT_LABELS).toHaveLength(ORNAMENT_COUNT);
     expect(ORNAMENT_TAGS).toHaveLength(ORNAMENT_COUNT);
     expect(ORNAMENT_LABELS.slice(0, 4)).toEqual([
@@ -282,6 +282,26 @@ describe('book binding quality vocabulary', () => {
       'Balance scales',
       'Castle',
       'Lamp of learning',
+      'Acanthus spear',
+      'Carnation bloom',
+      'Iris fan',
+      'Artichoke finial',
+      'Poppy seedhead',
+      'Olive spray',
+      'Strawberry sprig',
+      'Vine cluster',
+      'Honeysuckle scroll',
+      'Lotus palmette',
+      'Maple samara spray',
+      'Willow catkin',
+      'Rowan spray',
+      'Columbine bell',
+      'Primrose stem',
+      'Dog-rose branch',
+      'Cedar cone spray',
+      'Reed bundle',
+      'Moresque knot',
+      'Tudor rose standard',
     ]);
   });
 

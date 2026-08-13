@@ -178,10 +178,7 @@ fn default_backup_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 /// The folder backups go to / are listed from.
-fn resolve_target_dir(
-    app: &tauri::AppHandle,
-    target: Option<String>,
-) -> Result<PathBuf, String> {
+fn resolve_target_dir(app: &tauri::AppHandle, target: Option<String>) -> Result<PathBuf, String> {
     match target {
         Some(t) if !t.trim().is_empty() => Ok(PathBuf::from(t.trim())),
         _ => default_backup_dir(app),
@@ -227,8 +224,7 @@ fn add_dir_recursive<W: Write + Seek>(
     entry_prefix: &str,
 ) -> Result<u32, String> {
     let mut added = 0u32;
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("read dir {}: {e}", dir.display()))?;
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("read dir {}: {e}", dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -245,17 +241,11 @@ fn add_dir_recursive<W: Write + Seek>(
 }
 
 /// Zip the current db + assets into `dest`. Returns the archive size.
-fn write_backup_archive(
-    db_root: &Path,
-    assets_root: &Path,
-    dest: &Path,
-) -> Result<u64, String> {
+fn write_backup_archive(db_root: &Path, assets_root: &Path, dest: &Path) -> Result<u64, String> {
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot create backup folder: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create backup folder: {e}"))?;
     }
-    let file =
-        File::create(dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
+    let file = File::create(dest).map_err(|e| format!("cannot create {}: {e}", dest.display()))?;
     let mut zip = ZipWriter::new(file);
 
     let db_path = db_root.join(DB_FILE);
@@ -283,13 +273,9 @@ fn write_backup_archive(
 // ---------------------------------------------------------------------------
 
 /// Extract a backup archive over the live files (entries pre-validated).
-fn extract_archive(
-    archive_path: &Path,
-    db_root: &Path,
-    assets_root: &Path,
-) -> Result<u32, String> {
-    let file = File::open(archive_path)
-        .map_err(|e| format!("open {}: {e}", archive_path.display()))?;
+fn extract_archive(archive_path: &Path, db_root: &Path, assets_root: &Path) -> Result<u32, String> {
+    let file =
+        File::open(archive_path).map_err(|e| format!("open {}: {e}", archive_path.display()))?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("not a zip archive: {e}"))?;
 
     // A restore should not leave a stale WAL pairing a replaced db: remove
@@ -313,8 +299,7 @@ fn extract_archive(
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
         }
-        let mut out =
-            File::create(&dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+        let mut out = File::create(&dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
         std::io::copy(&mut entry, &mut out)
             .map_err(|e| format!("extract {}: {e}", dest.display()))?;
         restored += 1;
@@ -394,10 +379,7 @@ pub async fn list_backups(
 /// of the current state. The caller must close the sql-plugin connection
 /// first and restart the app afterwards.
 #[tauri::command]
-pub async fn restore_backup(
-    app: tauri::AppHandle,
-    path: String,
-) -> Result<RestoreResult, String> {
+pub async fn restore_backup(app: tauri::AppHandle, path: String) -> Result<RestoreResult, String> {
     let db_root = db_dir(&app)?;
     let assets_root = data_dir(&app)?;
     let safety_dir = default_backup_dir(&app)?;
@@ -450,7 +432,10 @@ mod tests {
 
     #[test]
     fn classify_entry_is_zip_slip_safe() {
-        assert_eq!(classify_entry("notebook.db"), Some(RestoreTarget::Db("notebook.db")));
+        assert_eq!(
+            classify_entry("notebook.db"),
+            Some(RestoreTarget::Db("notebook.db"))
+        );
         assert_eq!(
             classify_entry("notebook.db-wal"),
             Some(RestoreTarget::Db("notebook.db-wal"))
@@ -497,7 +482,10 @@ mod tests {
         std::fs::remove_dir_all(data_root.join("assets")).unwrap();
         let restored = extract_archive(&dest, &db_root, &data_root).unwrap();
         assert_eq!(restored, 2);
-        assert_eq!(std::fs::read(db_root.join(DB_FILE)).unwrap(), b"sqlite-bytes");
+        assert_eq!(
+            std::fs::read(db_root.join(DB_FILE)).unwrap(),
+            b"sqlite-bytes"
+        );
         assert_eq!(
             std::fs::read(data_root.join("assets/images/pic.png")).unwrap(),
             b"png-bytes"

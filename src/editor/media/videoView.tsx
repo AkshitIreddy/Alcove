@@ -35,12 +35,14 @@ function VideoView(props: SolidNodeViewProps): JSX.Element {
     event.stopPropagation();
     const parent = wrapper?.parentElement;
     if (parent === null || parent === undefined || parent.clientWidth === 0) return;
+    const drawnParentWidth = parent.getBoundingClientRect().width;
+    if (drawnParentWidth === 0) return;
     const startX = event.clientX;
     const start = effectiveWidth() ??
       ((wrapper?.clientWidth ?? parent.clientWidth) / parent.clientWidth) * 100;
     const move = (next: PointerEvent): void => {
       setLiveWidth(clampWidthPct(
-        start + ((next.clientX - startX) * direction * 100) / parent.clientWidth,
+        start + ((next.clientX - startX) * direction * 100) / drawnParentWidth,
       ));
     };
     const end = (): void => {

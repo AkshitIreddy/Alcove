@@ -1,6 +1,7 @@
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod ai;
 mod backup;
 mod export;
 mod import;
@@ -16,11 +17,12 @@ mod tray;
 /// and this migration have to agree on it, or a library ends up split across
 /// two cases with one of them invisible.
 fn migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "initial_schema",
-        kind: MigrationKind::Up,
-        sql: r#"
+    vec![
+        Migration {
+            version: 1,
+            description: "initial_schema",
+            kind: MigrationKind::Up,
+            sql: r#"
             CREATE TABLE IF NOT EXISTS books (
                 id         TEXT PRIMARY KEY,
                 title      TEXT NOT NULL,
@@ -58,24 +60,24 @@ fn migrations() -> Vec<Migration> {
             CREATE INDEX IF NOT EXISTS idx_pages_book_ord ON pages (book_id, ord);
             CREATE INDEX IF NOT EXISTS idx_books_floor_slot ON books (floor, slot);
         "#,
-    },
-    // A library is a COLLECTION of bookcases, and every book stands in one of
-    // them. This is the migration that must never lose a library, so the
-    // assignment is done by SQLite itself rather than by a sweep the frontend
-    // has to remember to run: `NOT NULL DEFAULT` back-fills every existing row
-    // in the same statement that adds the column, atomically, inside the
-    // migrator's transaction. There is no window in which a book has no case.
-    //
-    // sqlx records applied versions, so this runs exactly once; `ADD COLUMN`
-    // has no IF NOT EXISTS, which is fine — a second run would abort the whole
-    // transaction and change nothing. The frontend
-    // (`src/data/bookcases.ts::ensureBookcases`) re-checks the same invariants
-    // on every start anyway, because the browser-dev stub has no DDL at all.
-    Migration {
-        version: 2,
-        description: "bookcases",
-        kind: MigrationKind::Up,
-        sql: r#"
+        },
+        // A library is a COLLECTION of bookcases, and every book stands in one of
+        // them. This is the migration that must never lose a library, so the
+        // assignment is done by SQLite itself rather than by a sweep the frontend
+        // has to remember to run: `NOT NULL DEFAULT` back-fills every existing row
+        // in the same statement that adds the column, atomically, inside the
+        // migrator's transaction. There is no window in which a book has no case.
+        //
+        // sqlx records applied versions, so this runs exactly once; `ADD COLUMN`
+        // has no IF NOT EXISTS, which is fine — a second run would abort the whole
+        // transaction and change nothing. The frontend
+        // (`src/data/bookcases.ts::ensureBookcases`) re-checks the same invariants
+        // on every start anyway, because the browser-dev stub has no DDL at all.
+        Migration {
+            version: 2,
+            description: "bookcases",
+            kind: MigrationKind::Up,
+            sql: r#"
             CREATE TABLE IF NOT EXISTS bookcases (
                 id         TEXT PRIMARY KEY,
                 name       TEXT NOT NULL,
@@ -105,19 +107,34 @@ fn migrations() -> Vec<Migration> {
             CREATE INDEX IF NOT EXISTS idx_books_case_floor_slot
                 ON books (bookcase_id, floor, slot);
         "#,
-    }]
+        },
+    ]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let library_paths = library::LibraryPaths::resolve()
-        .expect("could not resolve Alcove's library folder");
+    let library_paths =
+        library::LibraryPaths::resolve().expect("could not resolve Alcove's library folder");
     let db_url = library_paths.db_url().to_string();
     let setup_paths = library_paths.clone();
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            ai::ai_credential_status,
+            ai::ai_credential_save,
+            ai::ai_credential_delete,
+            ai::ai_credential_test,
+            ai::ai_chat_stream,
+            ai::ai_embed,
+            ai::ai_rerank,
+            ai::ai_cancel_run,
+            ai::ai_attachment_save,
+            ai::ai_attachment_read,
+            ai::ai_attachment_delete,
+            ai::ai_extract_pdf_source,
+            ai::ai_extract_document_source,
             media::save_image_asset,
+            media::verify_image_asset,
             media::fetch_link_preview,
             media::fetch_images,
             backup::run_backup,
@@ -154,6 +171,7 @@ pub fn run() {
             app.asset_protocol_scope()
                 .allow_directory(setup_paths.assets_root(), true)?;
             app.manage(setup_paths.clone());
+            app.manage(ai::AiState::new()?);
             Ok(())
         })
         .on_window_event(|window, event| {

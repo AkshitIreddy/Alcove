@@ -676,7 +676,18 @@ function patchShelfMeta(
  */
 export async function deleteBook(id: string): Promise<boolean> {
   const db = await getDb();
+  const pageRows = await db.select<Array<{ id: string }>>(
+    'SELECT id FROM pages WHERE book_id = $1',
+    [id],
+  );
+  for (const page of pageRows) {
+    await db.execute(
+      'DELETE FROM settings WHERE key = $1 OR key = $2',
+      [`page_history:${page.id}`, `page_flow_start:${page.id}`],
+    );
+  }
   await db.execute('DELETE FROM pages WHERE book_id = $1', [id]);
+  await db.execute('DELETE FROM settings WHERE key = $1', [`book_history:${id}`]);
   const result = await db.execute('DELETE FROM books WHERE id = $1', [id]);
   return result.rowsAffected > 0;
 }

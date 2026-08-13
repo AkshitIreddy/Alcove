@@ -94,6 +94,26 @@ const EXPECTED_PROGRAMMES = new Map<number, CoverEmblemProgramme>([
   [31, 'open-tulip'],
   [43, 'anthemion-fan'],
   [56, 'fern-palmette'],
+  [66, 'acanthus-spearhead'],
+  [67, 'carnation-standard'],
+  [68, 'iris-triptych'],
+  [69, 'artichoke-finial'],
+  [70, 'poppy-capsule'],
+  [71, 'olive-cutting'],
+  [72, 'strawberry-sprig'],
+  [73, 'vine-cluster'],
+  [74, 'honeysuckle-scroll'],
+  [75, 'lotus-waterline'],
+  [76, 'samara-spray'],
+  [77, 'willow-catkin'],
+  [78, 'rowan-spray'],
+  [79, 'columbine-bell'],
+  [80, 'primrose-stem'],
+  [81, 'dog-rose-branch'],
+  [82, 'cedar-cone-spray'],
+  [83, 'reed-bundle'],
+  [84, 'moresque-knot'],
+  [85, 'tudor-rose-standard'],
 ]);
 
 const WELCOME_COVER: CoverParams = {
@@ -168,11 +188,17 @@ describe('authored cover emblem programmes', () => {
         ).toBe(0);
 
         // Richness has to exist in the pixels, not just in a programme name.
-        expect(count(operations, 'quadraticCurveTo') - count(quiet, 'quadraticCurveTo'), at)
-          .toBeGreaterThanOrEqual(4);
-        expect(count(operations, 'fill') - count(quiet, 'fill'), at)
-          .toBeGreaterThanOrEqual(1);
-        expect(count(operations, 'stroke') - count(quiet, 'stroke'), at)
+        const addedCurves =
+          count(operations, 'quadraticCurveTo') - count(quiet, 'quadraticCurveTo') +
+          count(operations, 'bezierCurveTo') - count(quiet, 'bezierCurveTo');
+        expect(addedCurves, at).toBeGreaterThanOrEqual(4);
+        const addedFills = count(operations, 'fill') - count(quiet, 'fill');
+        const addedStrokes = count(operations, 'stroke') - count(quiet, 'stroke');
+        // The append-only botanical tools are deliberately pure open strikes;
+        // earlier centre blocks may retain a few solid cut leaves. Either way,
+        // authored mass must come from several real marks rather than one fill.
+        expect(addedFills + addedStrokes, at).toBeGreaterThanOrEqual(4);
+        expect(addedStrokes, at)
           .toBeGreaterThanOrEqual(3);
 
         const title = operations

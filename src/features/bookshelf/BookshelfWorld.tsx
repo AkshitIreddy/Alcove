@@ -895,8 +895,9 @@ export default function BookshelfWorld(): JSX.Element {
     void touchBookOpened(state.book.id);
     // This is the cover-to-pages handoff, not the earlier shelf pull. One
     // restrained real page rustle gives that second physical action its own
-    // cue; the concrete clean take avoids rotating into a heavy shelf sound.
-    void play('page-flip-1', { volume: 0.72, noJitter: true });
+    // cue. Use the semantic role so the selected sound set and the dedicated
+    // measured/predecoded page-turn lane remain authoritative.
+    void play('page-flip', { volume: 0.72, noJitter: true });
     // Hand over to the book view; this unmounts the shelf (camera is
     // preserved in the module-level session snapshot).
     appState.openBook(state.book.id);

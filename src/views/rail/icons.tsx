@@ -86,6 +86,40 @@ export function AiSpecIcon(): JSX.Element {
   );
 }
 
+/**
+ * Bowed open page + a live writing stroke — the in-book AI agent.
+ *
+ * It is deliberately neither a robot nor a magic wand.  The agent belongs to
+ * the same act as the rest of Alcove: opening a page and writing in it.  The
+ * four-point mark is where the stroke is still becoming something, drawn with
+ * the same current-colour ink as every rail icon (no glow or second outline).
+ */
+export function AgentIcon(): JSX.Element {
+  return frame(
+    <>
+      <path
+        d="M 3.5 6.1 C 6.1 5.2 8.6 5.3 11.6 6.6 C 14.4 5.2 17.2 5.2 20.4 6.2 C 20.1 10.4 20.1 14.5 20.4 18.5 C 17.3 17.7 14.5 17.8 11.7 19.1 C 8.8 17.8 6.2 17.7 3.5 18.5 C 3.8 14.3 3.8 10.2 3.5 6.1 Z"
+        {...S}
+      />
+      <path
+        d="M 11.7 6.7 C 11.5 10.7 11.5 14.8 11.7 19 M 6.2 9.2 C 7.6 8.9 8.9 9 10.1 9.5 M 6.1 12 C 7.4 11.7 8.6 11.8 9.6 12.2"
+        {...S}
+        stroke-width="1.35"
+      />
+      <path
+        d="M 14.1 14.6 C 15.1 13.5 16.2 12.7 17.3 12.1 C 17.5 11.2 17.9 10.5 18.5 9.9"
+        {...S}
+        stroke-width="1.45"
+      />
+      <path
+        d="M 18.7 7.5 C 18.9 8.6 19.5 9.2 20.7 9.4 C 19.5 9.7 18.9 10.3 18.6 11.4 C 18.4 10.3 17.8 9.7 16.7 9.4 C 17.8 9.2 18.4 8.6 18.7 7.5 Z"
+        {...S}
+        stroke-width="1.2"
+      />
+    </>,
+  );
+}
+
 /** The AI guide arriving as a file — download the Notebook Script spec. */
 export function DownloadSpecIcon(): JSX.Element {
   return frame(

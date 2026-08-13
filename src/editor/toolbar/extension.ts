@@ -1,6 +1,6 @@
 /**
- * Selection toolbar — the six inline marks, on a card that follows the
- * selection.
+ * Selection toolbar — inline marks plus an AI rewrite handoff, on a card that
+ * follows the selection.
  *
  * IT IS A PLUGIN VIEW, NOT A NODE VIEW, AND THAT IS THE WHOLE DESIGN.
  *
@@ -22,7 +22,7 @@
  * VISIBILITY is deliberately narrow: an editable editor, a non-empty text
  * selection, focus in the editor or in the toolbar's own link field, no
  * in-flight pointer drag, no IME composition, and not inside a code block
- * (where five of the six marks would be a lie).
+ * (where formatting marks and prose rewrites would be a lie).
  */
 import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
@@ -31,7 +31,17 @@ import { computePosition, flip, offset, shift } from '@floating-ui/dom';
 import { createComponent } from 'solid-js';
 import { createStore, type SetStoreFunction } from 'solid-js/store';
 import { render } from 'solid-js/web';
+import { editorState } from '../state';
+import { settings } from '../../data/settings';
+import { pageIdOfEditor } from '../instances';
+import { webCryptoAgentHash } from '../../features/aiAgent/adapters';
+import { getAiAgentController } from '../../features/aiAgent/controller';
+import { notify } from '../script/exporters/toast';
 import SelectionToolbar from './SelectionToolbar';
+import {
+  handoffSelectionRewrite,
+  openAiAgentPanel,
+} from './aiRewrite';
 import {
   NO_ACTIVE_MARKS,
   applySelectionFace,
@@ -67,6 +77,9 @@ interface ToolbarState {
   href: string;
   hasLink: boolean;
   linkError: boolean;
+  aiPrompt: string;
+  aiError: string;
+  aiBusy: boolean;
 }
 
 /**
@@ -134,6 +147,9 @@ class SelectionToolbarView {
       href: '',
       hasLink: false,
       linkError: false,
+      aiPrompt: '',
+      aiError: '',
+      aiBusy: false,
     });
     this.state = state;
     this.setState = setState;
@@ -173,6 +189,15 @@ class SelectionToolbarView {
           get linkError() {
             return state.linkError;
           },
+          get aiPrompt() {
+            return state.aiPrompt;
+          },
+          get aiError() {
+            return state.aiError;
+          },
+          get aiBusy() {
+            return state.aiBusy;
+          },
           onPress: this.onPress,
           onFace: this.onFace,
           onClearFace: this.onClearFace,
@@ -183,6 +208,9 @@ class SelectionToolbarView {
           onHrefInput: this.onHrefInput,
           onApplyLink: this.onApplyLink,
           onRemoveLink: this.onRemoveLink,
+          onOpenAi: this.onOpenAi,
+          onAiPrompt: this.onAiPrompt,
+          onSubmitAi: this.onSubmitAi,
           onDismiss: this.onDismiss,
         }),
       this.host,
@@ -309,10 +337,99 @@ class SelectionToolbarView {
     this.setState({ tray: null, href: '', hasLink: false, linkError: false });
   };
 
+  private readonly onOpenAi = (): void => {
+    this.setTray(this.state.tray === 'ai' ? null : 'ai');
+  };
+
+  private readonly onAiPrompt = (value: string): void => {
+    this.setState({ aiPrompt: value, aiError: '' });
+  };
+
+  private readonly onSubmitAi = (): void => {
+    if (this.state.aiBusy) return;
+    void this.submitSelectionRewrite();
+  };
+
   private readonly onDismiss = (): void => {
-    this.setState({ tray: null, linkError: false });
+    this.setState({ tray: null, linkError: false, aiError: '' });
     this.view.focus();
   };
+
+  /**
+   * Capture before the first await. Focus moves from prose to the prompt, but
+   * the range and page revision handed to the agent must remain the exact text
+   * the reader chose, even if some other surface updates while SHA-256 runs.
+   */
+  private async submitSelectionRewrite(): Promise<void> {
+    const selection = this.view.state.selection;
+    if (!(selection instanceof TextSelection) || selection.empty) {
+      this.setState('aiError', 'Select some text first.');
+      return;
+    }
+    const bookId = editorState.openBookId();
+    const pageId =
+      pageIdOfEditor(this.editor) ??
+      this.view.dom.closest<HTMLElement>('[data-page-id]')?.dataset.pageId ??
+      null;
+    if (bookId === null || pageId === null) {
+      this.setState('aiError', 'This selection is not attached to an open book page.');
+      return;
+    }
+
+    const from = selection.from;
+    const to = selection.to;
+    const selectedText = this.view.state.doc.textBetween(from, to, '\n', '\n');
+    const pageDocument = this.editor.getJSON();
+    const prompt = this.state.aiPrompt;
+    this.setState({ aiBusy: true, aiError: '' });
+
+    try {
+      const pageRevision = await webCryptoAgentHash.digestJson(pageDocument);
+      const controller = getAiAgentController();
+      if (controller === null) {
+        openAiAgentPanel({ source: 'selection-toolbar', pageId, focus: 'active-task' });
+        this.setState({
+          aiBusy: false,
+          aiError: 'Finish AI Agent setup in the side panel, then send this again.',
+        });
+        return;
+      }
+
+      // The rail becomes the task's sole owner from here: it shows progress,
+      // the agent's reviewed native-page preview, and the final approval. The
+      // toolbar deliberately never writes a replacement transaction itself.
+      const run = handoffSelectionRewrite(
+        controller,
+        {
+          bookId,
+          pageId,
+          from,
+          to,
+          pageRevision,
+          selectedText,
+          obfuscatePrivateText: settings.aiAgentObfuscatePrivateText,
+        },
+        prompt,
+      );
+      this.setState({
+        tray: null,
+        aiPrompt: '',
+        aiError: '',
+        aiBusy: false,
+      });
+      this.hide();
+      void run.catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : 'the task could not start';
+        notify(`AI Agent could not rewrite that selection — ${detail}`);
+      });
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : 'the task could not start';
+      this.setState({ aiBusy: false, aiError: detail });
+      requestAnimationFrame(() => {
+        if (!this.destroyed && this.up) this.place();
+      });
+    }
+  }
 
   // -- state ----------------------------------------------------------------
 
@@ -321,7 +438,7 @@ class SelectionToolbarView {
       const href = selectionHref(this.editor);
       this.setState({ tray, href, hasLink: href !== '', linkError: false });
     } else {
-      this.setState({ tray, linkError: false });
+      this.setState({ tray, linkError: false, aiError: '' });
     }
     // A tray makes the card taller; re-anchor so it does not grow off-screen.
     requestAnimationFrame(() => {
@@ -389,7 +506,9 @@ class SelectionToolbarView {
     // it survives while the card is up (so picking three hands in a row does
     // not collapse the list under the hand) and goes away with the card.
     if (this.state.facesAll) this.setState('facesAll', false);
-    if (this.state.tray !== null) this.setState({ tray: null, linkError: false });
+    if (this.state.tray !== null) {
+      this.setState({ tray: null, linkError: false, aiError: '', aiBusy: false });
+    }
   }
 
   private place(): void {

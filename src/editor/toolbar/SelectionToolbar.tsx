@@ -30,6 +30,7 @@ import {
   type FaceGroup,
 } from '../marks/face';
 import type { HandSpec } from '../../features/settings/appearance';
+import { AgentIcon } from '../../views/rail/icons';
 
 // The tray's row names come from the same table the right-click menu reads
 // (`editor/highlightStyles.ts`); a second copy here is how one surface ended
@@ -140,6 +141,10 @@ export interface SelectionToolbarProps {
   readonly hasLink: boolean;
   /** Set while the typed link cannot be turned into an href. */
   readonly linkError: boolean;
+  /** Ephemeral selection-rewrite prompt; drafts and approvals live in the rail. */
+  readonly aiPrompt: string;
+  readonly aiError: string;
+  readonly aiBusy: boolean;
   onPress(action: SelectionAction): void;
   onFace(hand: string): void;
   onClearFace(): void;
@@ -150,8 +155,50 @@ export interface SelectionToolbarProps {
   onHrefInput(value: string): void;
   onApplyLink(): void;
   onRemoveLink(): void;
+  onOpenAi(): void;
+  onAiPrompt(value: string): void;
+  onSubmitAi(): void;
   /** Escape out of a tray (back to the row), or off the toolbar entirely. */
   onDismiss(): void;
+}
+
+/**
+ * Compact rewrite prompt, focused only after its tray has entered the DOM.
+ * Enter hands the selection to the agent; Shift+Enter remains available for a
+ * second instruction line.
+ */
+function AiRewriteField(props: {
+  readonly value: string;
+  readonly busy: boolean;
+  onInput(value: string): void;
+  onSubmit(): void;
+  onDismiss(): void;
+}): JSX.Element {
+  let field: HTMLTextAreaElement | undefined;
+  onMount(() => field?.focus());
+  return (
+    <textarea
+      class="nb-seltool-ai-field font-ui"
+      rows={2}
+      maxlength={800}
+      spellcheck={true}
+      placeholder="Make this clearer, warmer, shorter…"
+      aria-label="Ask the AI agent to change the selected text"
+      value={props.value}
+      disabled={props.busy}
+      ref={field}
+      onInput={(event) => props.onInput(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          props.onSubmit();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          props.onDismiss();
+        }
+      }}
+    />
+  );
 }
 
 /**
@@ -278,6 +325,24 @@ export default function SelectionToolbar(props: SelectionToolbarProps): JSX.Elem
             </>
           )}
         </For>
+        <span class="nb-seltool-gap" aria-hidden="true" />
+        <button
+          type="button"
+          class="nb-seltool-btn nb-seltool-ai-btn"
+          classList={{ 'is-open': props.tray === 'ai' }}
+          style={{ '--nb-seltool-tilt': '1deg' }}
+          aria-label="Ask the AI agent"
+          aria-expanded={props.tray === 'ai'}
+          data-action="ai"
+          data-tooltip="Ask the AI agent"
+          data-tooltip-side="top"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            props.onOpenAi();
+          }}
+        >
+          <AgentIcon />
+        </button>
       </div>
 
       <Show when={props.tray === 'faces'}>
@@ -460,6 +525,47 @@ export default function SelectionToolbar(props: SelectionToolbarProps): JSX.Elem
           <Show when={props.linkError}>
             <p class="nb-seltool-note font-ui">
               that is not a web address — try alcove.app, or a full https:// link
+            </p>
+          </Show>
+        </div>
+      </Show>
+
+      <Show when={props.tray === 'ai'}>
+        <div class="nb-seltool-tray nb-seltool-ai-tray">
+          <label class="nb-seltool-ai-label font-ui">
+            What should the agent change?
+          </label>
+          <div class="nb-seltool-ai-row">
+            <AiRewriteField
+              value={props.aiPrompt}
+              busy={props.aiBusy}
+              onInput={props.onAiPrompt}
+              onSubmit={props.onSubmitAi}
+              onDismiss={props.onDismiss}
+            />
+            <button
+              type="button"
+              class="nb-seltool-ai-send"
+              aria-label="Send selection to AI agent"
+              data-tooltip="Review with AI agent"
+              data-tooltip-side="top"
+              disabled={props.aiBusy || props.aiPrompt.trim() === ''}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                props.onSubmitAi();
+              }}
+            >
+              <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <Show when={props.aiError !== ''}>
+            <p class="nb-seltool-ai-note is-error font-ui" role="alert">
+              {props.aiError}
+            </p>
+          </Show>
+          <Show when={props.aiError === ''}>
+            <p class="nb-seltool-ai-note font-ui">
+              You’ll review the replacement in its exact rendered page before anything changes.
             </p>
           </Show>
         </div>

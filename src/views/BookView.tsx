@@ -57,9 +57,26 @@ import {
   setPageFlowStart,
   setPageScript,
 } from '../data/pages';
+import {
+  beginAiPatchUndo,
+  claimAiPatchApplication,
+  completeAiPatchApplication,
+  completeAiPatchUndo,
+  forgetAiPatchApplication,
+  latestAppliedAiPatch,
+  readAiPatchApplication,
+  recoverIncompleteAiPatchApplications,
+  releaseAiPatchApplication,
+  type AiPatchBookSnapshot,
+} from '../data/aiAgentApply';
+import { countAiAgentAttachmentReferences } from '../data/aiAgent';
 import { seedIfEmpty } from '../data/seed';
 import { loadDesignPrefs } from '../data/designPrefs';
-import { save as saveSettings, settings } from '../data/settings';
+import {
+  save as saveSettings,
+  settings,
+  subscribe as subscribeSettings,
+} from '../data/settings';
 import { registerCommands, runCommand } from '../data/keybindings';
 import type { Book, Page, PageDoc, PageStyle } from '../data/types';
 import {
@@ -77,15 +94,22 @@ import {
 import InsertScriptDialog from '../editor/insert/InsertScriptDialog';
 import { activeEditor } from '../editor/insert/activeEditor';
 import {
-  recordSnapshot,
+  recordSnapshotDurably,
   type PageSnapshot,
 } from '../editor/history/pageHistory';
+import {
+  recordBookCheckpoint,
+  restoreBookCheckpoint,
+  type BookRecoverySnapshot,
+} from '../editor/history/bookHistory';
 import { getPageEditor } from '../editor/instances';
 import { topLevelBlockAt } from '../editor/menu/blockOps';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
 import { docToScript } from '../editor/script/fromTiptap';
+import { parseNotebookScriptPages } from '../editor/script/pageBoundaries';
+import { scriptDocToTiptap } from '../editor/script/toTiptap';
 import { exportActivePagePng } from '../editor/script/exporters/exportPage';
 import { downloadNotebookScriptSpec } from '../editor/script/exporters/saveFile';
 import { openExportPdfDialog } from '../features/templates/ExportPdfDialog';
@@ -117,6 +141,22 @@ import CustomizePanel from './rail/CustomizePanel';
 import HistoryPanel from './rail/HistoryPanel';
 import PageStylePanel from './rail/PageStylePanel';
 import CataloguePanel from './rail/CataloguePanel';
+import AiAgentPanel, {
+  type AiAgentAttachmentView,
+  type AiAgentConnectionView,
+  type AiAgentContextView,
+  type AiAgentController as AiAgentPanelController,
+  type AiAgentKeySubmission,
+  type AiAgentThreadView,
+} from './rail/AiAgentPanel';
+import {
+  createAiAgentPanelController,
+  type AiAgentPlacementOption,
+} from './rail/aiAgentControllerAdapter';
+import {
+  agentSourceAttachmentMediaType,
+  agentSourceMediaType,
+} from '../features/aiAgent/attachmentIntake';
 import SharePanel from './rail/SharePanel';
 import TocPanel from './rail/TocPanel';
 import FocusRail from './rail/FocusRail';
@@ -148,6 +188,7 @@ import {
 import { panelEdge } from './rail/panelPush';
 import {
   SPREAD_FIT_REST,
+  retainInitialPageCapacity,
   appendBlocksToDoc,
   canFlipSpread,
   docHasContent,
@@ -166,6 +207,59 @@ import '../styles/editor.css';
 import '../styles/insert.css';
 import '../styles/spread.css';
 import '../styles/rail.css';
+import '../styles/ai-agent.css';
+import {
+  TOUR_LAYER_SELECTOR,
+  TOUR_STEP_ATTR,
+  stepWatchVerdict,
+} from '../features/tutorial';
+import type {
+  AgentContextPolicy,
+  AiAgentController as CoreAiAgentController,
+  NotebookInsertionTarget,
+  NotebookPatchProposal,
+  SourceAttachmentRef,
+} from '../features/aiAgent';
+import {
+  AgentRuntime,
+  CohereTauriAgentProvider,
+  createAiAgentController,
+  installAiAgentController,
+  randomAgentIds,
+  systemAgentClock,
+  webCryptoAgentHash,
+} from '../features/aiAgent';
+import {
+  computeNotebookRevision,
+  createProductionNotebookReadAdapter,
+} from '../features/aiAgent/productionNotebook';
+import { computeNotebookSelectionDigest } from '../features/aiAgent/selectionDigest';
+import { createProductionSourceAdapters } from '../features/aiAgent/productionSources';
+import { createProductionDraftSandbox } from '../features/aiAgent/draftSandbox';
+import {
+  prepareAiProposalApplication,
+  rollbackPreparedAiProposalAssets,
+  verifyPreparedAiProposalDocuments,
+  type PreparedAiProposalApplication,
+  type PreparedAiProposalPage,
+} from '../features/aiAgent/prepareProposal';
+import {
+  pendingManagedAiAttachmentsInState,
+  SqliteAgentPersistence,
+  type AgentTaskSummary,
+} from '../data/aiAgentPersistence';
+import {
+  aiCredentialStatus,
+  saveAiCredential,
+  testAiCredential,
+} from '../data/aiCredentials';
+import {
+  deleteAiAttachment,
+  readAiAttachment,
+  saveAiAttachment,
+  type AiAttachmentMetadata,
+} from '../data/aiGateway';
+import { OPEN_AI_AGENT_PANEL_EVENT } from '../editor/toolbar/aiRewrite';
 // Last on purpose: the reader's own controls (the focus range, free-placed
 // stickers, the merged ribbon plate) extend rules spread.css states first.
 import '../styles/reader.css';
@@ -215,6 +309,10 @@ async function loadSession(source: {
   }
   if (!book) return null;
 
+  // An approved AI patch is a whole-book operation. If the app was stopped
+  // between its durable claim and completion, restore the exact pre-apply
+  // snapshot before a single affected page is mounted or indexed.
+  await recoverIncompleteAiPatchApplications(book.id);
   const storedPages = await listPages(book.id);
   if (storedPages.length === 0) {
     storedPages.push(await createPage({ bookId: book.id }));
@@ -316,6 +414,30 @@ export default function BookView(): JSX.Element {
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('qa') === 'no-pagination';
 
+  /* Device-pixel density is presentation state, never document geometry.
+   * Re-bake the fixed open-cover board when a window crosses monitors while
+   * leaving the canonical 1334×920 layout untouched. */
+  const dprBucket = (): number =>
+    typeof window === 'undefined'
+      ? 1
+      : Math.min(2, Math.max(1, Math.round((window.devicePixelRatio || 1) * 2) / 2));
+  const [displayDpr, setDisplayDpr] = createSignal(dprBucket());
+  onMount(() => {
+    let query: MediaQueryList | null = null;
+    const refresh = (): void => {
+      setDisplayDpr(dprBucket());
+      query?.removeEventListener('change', refresh);
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      query.addEventListener('change', refresh);
+    };
+    refresh();
+    window.addEventListener('resize', refresh);
+    onCleanup(() => {
+      window.removeEventListener('resize', refresh);
+      query?.removeEventListener('change', refresh);
+    });
+  });
+
   // Source is an object so a null bookId still triggers the fetcher
   // (createResource skips falsy sources).
   const [session] = createResource(
@@ -329,6 +451,7 @@ export default function BookView(): JSX.Element {
   const [pages, setPages] = createSignal<Page[]>([]);
   const [spreadIndex, setSpreadIndex] = createSignal(0);
   const [focusedSide, setFocusedSide] = createSignal<LeafSide>('left');
+  const [scriptInsertionSettling, setScriptInsertionSettling] = createSignal(false);
   let scriptInsertionViewLock:
     | { readonly spread: number; readonly side: LeafSide }
     | null = null;
@@ -344,38 +467,51 @@ export default function BookView(): JSX.Element {
   }
   let scriptInsertionBefore: ScriptInsertionUndoCheckpoint | null = null;
   let scriptInsertionUndo: ScriptInsertionUndoCheckpoint | null = null;
+  let scriptInsertionUndoKey: string | null = null;
   let restoringScriptInsertion = false;
+  // The browser-only documentation film edits one inserted paragraph before
+  // restoring its exact checkpoint. Keep that deliberate edit from consuming
+  // the same one-shot Undo receipt the fixture needs for cleanup.
+  let aiDemoInsertionActive = false;
+  const [aiPatchApplying, setAiPatchApplying] = createSignal(false);
 
   const clonePage = (page: Page): Page =>
     JSON.parse(JSON.stringify(page)) as Page;
 
+  const captureScriptInsertionCheckpoint = async (
+    bookId: string,
+  ): Promise<ScriptInsertionUndoCheckpoint> => {
+    const snapshot = pages().map((page) => {
+      const live = getPageEditor(page.id);
+      return clonePage({
+        ...page,
+        doc: live === null ? page.doc : (live.getJSON() as PageDoc),
+      });
+    });
+    const flowStarts = await Promise.all(
+      snapshot.map((page) => isPageFlowStart(page.id)),
+    );
+    return {
+      bookId,
+      pages: snapshot.map((page, index) => ({
+        page,
+        flowStart: flowStarts[index] ?? false,
+      })),
+      spread: spreadIndex(),
+      side: focusedSide(),
+    };
+  };
+
   const setScriptInsertionActivity = async (active: boolean): Promise<void> => {
     if (active) {
+      setScriptInsertionSettling(false);
       scriptInsertionViewLock ??= {
         spread: spreadIndex(),
         side: focusedSide(),
       };
       const bookId = session()?.book.id;
-      if (bookId !== undefined) {
-        const snapshot = pages().map((page) => {
-          const live = getPageEditor(page.id);
-          return clonePage({
-            ...page,
-            doc: live === null ? page.doc : (live.getJSON() as PageDoc),
-          });
-        });
-        const flowStarts = await Promise.all(
-          snapshot.map((page) => isPageFlowStart(page.id)),
-        );
-        scriptInsertionBefore = {
-          bookId,
-          pages: snapshot.map((page, index) => ({
-            page,
-            flowStart: flowStarts[index] ?? false,
-          })),
-          spread: spreadIndex(),
-          side: focusedSide(),
-        };
+      if (bookId !== undefined && scriptInsertionBefore === null) {
+        scriptInsertionBefore = await captureScriptInsertionCheckpoint(bookId);
       }
       return;
     }
@@ -409,7 +545,12 @@ export default function BookView(): JSX.Element {
         )
         .join('|');
     flipApi?.suspendSnapshots();
+    setScriptInsertionSettling(true);
     try {
+      // Give Solid one committed paint before visiting offscreen spreads. The
+      // verification sweep is deliberately real, but its temporary navigation
+      // belongs to the insertion transaction—not to the reader.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       for (let sweep = 0; sweep < 4; sweep += 1) {
         await carryChain;
         const before = pageSignature();
@@ -437,10 +578,15 @@ export default function BookView(): JSX.Element {
       // view returns home. The home-spread effect immediately warms its real
       // neighbours after the index is restored below.
       flipApi?.resumeSnapshots(true);
+      scriptInsertionViewLock = null;
+      setSpreadIndex(home.spread);
+      setFocusedSide(home.side);
+      // Let the restored live leaves commit before uncovering them. Without
+      // this paint boundary the reader can glimpse the final internal
+      // verification spread even though navigation never belonged to them.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      setScriptInsertionSettling(false);
     }
-    scriptInsertionViewLock = null;
-    setSpreadIndex(home.spread);
-    setFocusedSide(home.side);
   };
 
   const armScriptInsertionUndo = (): void => {
@@ -448,18 +594,48 @@ export default function BookView(): JSX.Element {
     scriptInsertionBefore = null;
   };
 
-  const restoreScriptInsertion = async (): Promise<void> => {
+  /** A later authored/structural edit makes the one-shot AI rollback stale. */
+  const clearScriptInsertionUndo = (): void => {
+    scriptInsertionUndo = null;
+    const key = scriptInsertionUndoKey;
+    scriptInsertionUndoKey = null;
+    if (key !== null) void forgetAiPatchApplication(key);
+  };
+
+  const restoreScriptInsertion = async (silent = false): Promise<boolean> => {
     const checkpoint = scriptInsertionUndo;
-    if (checkpoint === null || restoringScriptInsertion) return;
+    if (checkpoint === null || restoringScriptInsertion) return false;
     if (session()?.book.id !== checkpoint.bookId) {
-      scriptInsertionUndo = null;
-      return;
+      clearScriptInsertionUndo();
+      return false;
     }
     scriptInsertionUndo = null;
     restoringScriptInsertion = true;
+    // Freeze live editors and structural commands synchronously. Otherwise a
+    // user edit could invalidate the applied receipt in the await before its
+    // durable `undoing` transition.
+    setAiPatchApplying(true);
+    const journalKey = scriptInsertionUndoKey;
+    let journalMode: 'none' | 'apply_rollback' | 'undo' = 'none';
     try {
       await appendLane;
       await carryChain;
+      if (journalKey !== null) {
+        const durable = await readAiPatchApplication(journalKey);
+        if (durable?.status === 'applying') {
+          // A failed proposal apply already wrote its rollback authority before
+          // mutating. Restore it without pretending this is a reader Undo.
+          journalMode = 'apply_rollback';
+        } else {
+          // Ctrl+Z becomes durable before its very first page mutation. A stop
+          // anywhere below leaves an `undoing` row that startup replays.
+          const undo = await beginAiPatchUndo(journalKey);
+          if (undo.bookId !== checkpoint.bookId) {
+            throw new Error('The AI Undo receipt belongs to another notebook');
+          }
+          journalMode = 'undo';
+        }
+      }
       const keep = new Set(checkpoint.pages.map(({ page }) => page.id));
       const current = await listPages(checkpoint.bookId);
       for (const page of current) {
@@ -482,9 +658,29 @@ export default function BookView(): JSX.Element {
       );
       setFocusedSide(checkpoint.side);
       flipApi?.invalidateSnapshots();
-      notify('script insertion undone');
+      if (journalKey !== null) {
+        if (journalMode === 'apply_rollback') {
+          await releaseAiPatchApplication(journalKey);
+        } else if (journalMode === 'undo') {
+          await completeAiPatchUndo(journalKey);
+        }
+      }
+      scriptInsertionUndoKey = null;
+      if (!silent) notify('script insertion undone');
+      return true;
+    } catch (error) {
+      // Keep the exact checkpoint and durable receipt available for another
+      // Ctrl+Z or restart rather than turning a recoverable storage failure
+      // into a lost Undo action.
+      scriptInsertionUndo = checkpoint;
+      notify(
+        error instanceof Error ? error.message : 'Could not restore the notebook yet',
+        'error',
+      );
+      return false;
     } finally {
       restoringScriptInsertion = false;
+      setAiPatchApplying(false);
     }
   };
 
@@ -535,9 +731,46 @@ export default function BookView(): JSX.Element {
         delete canonicalCover.seed;
         setCoverOverrides(canonicalCover);
         setPageDefaults(readPageDefaults(loaded.book));
+
+        // A completed AI insertion keeps one durable whole-book Ctrl+Z
+        // receipt. Rehydrate it only while the notebook still exactly equals
+        // the recorded post-apply revision; any later edit invalidates it.
+        void (async () => {
+          const applied = await latestAppliedAiPatch(loaded.book.id);
+          if (applied === null || session()?.book.id !== loaded.book.id) return;
+          const revision = await computeNotebookRevision(loaded.pages);
+          if (
+            applied.resultRevision === null ||
+            applied.resultRevision !== revision
+          ) {
+            await forgetAiPatchApplication(applied.idempotencyKey);
+            return;
+          }
+          scriptInsertionUndo = {
+            bookId: applied.before.bookId,
+            pages: applied.before.pages,
+            spread: 0,
+            side: 'left',
+          };
+          scriptInsertionUndoKey = applied.idempotencyKey;
+        })();
       }
     }),
   );
+
+  // Whole-book history is deliberately independent of page autosaves. The
+  // recorder deep-copies immediately, deduplicates, throttles and serializes
+  // its durable writes; this reactive seam therefore also catches structural
+  // page insert/delete/reorder changes, not only prose transactions.
+  createEffect(() => {
+    const loaded = session();
+    const current = pages();
+    if (loaded != null && current.length > 0) {
+      void recordBookCheckpoint(loaded.book.id, current, {
+        enabled: settings.protectedHistoryEnabled,
+      }).catch(() => undefined);
+    }
+  });
 
   const bookPageStyle = (): PageStyle =>
     pageDefaults()?.pageStyle ?? settings.pageStyleDefault;
@@ -566,8 +799,13 @@ export default function BookView(): JSX.Element {
 
   /** A later authored edit supersedes the one-shot whole-import checkpoint. */
   const handlePageDocChange = (pageId: string, doc: PageDoc): void => {
-    if (!restoringScriptInsertion && scriptInsertionViewLock === null) {
-      scriptInsertionUndo = null;
+    if (
+      !aiPatchApplying() &&
+      !restoringScriptInsertion &&
+      !aiDemoInsertionActive &&
+      scriptInsertionViewLock === null
+    ) {
+      clearScriptInsertionUndo();
     }
     updatePageDoc(pageId, doc);
   };
@@ -619,6 +857,7 @@ export default function BookView(): JSX.Element {
   };
 
   const canFlip = (direction: FlipDirection): boolean => {
+    if (aiPatchApplying()) return false;
     if (
       !canFlipSpread(
         pages().length,
@@ -685,11 +924,12 @@ export default function BookView(): JSX.Element {
     additions: readonly {
       source: string;
       doc: PageDoc;
-      protectedStart: true;
+      protectedStart: boolean;
     }[],
-  ): Promise<void> => {
+  ): Promise<readonly string[]> => {
     const pending = appendLane.then(async () => {
       let after = anchorId;
+      const insertedIds: string[] = [];
       const reusedMountedPages: { id: string; doc: PageDoc }[] = [];
       for (const addition of additions) {
         const bookId = session()?.book.id;
@@ -719,6 +959,7 @@ export default function BookView(): JSX.Element {
         if (destination === null) break;
         await setPageFlowStart(destination.id, addition.protectedStart);
         after = destination.id;
+        insertedIds.push(destination.id);
       }
       const bookId = session()?.book.id;
       if (bookId) setPages(await listPages(bookId));
@@ -739,6 +980,40 @@ export default function BookView(): JSX.Element {
           },
         );
       }
+      return insertedIds;
+    });
+    appendLane = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  };
+
+  /**
+   * Insert an authored run directly before one page while preserving its
+   * order. Each INSERT lands immediately before the same anchor, so walking
+   * forward yields A, B, C, anchor.
+   */
+  const insertPagesBefore = (
+    anchorId: string,
+    additions: readonly PreparedAiProposalPage[],
+  ): Promise<readonly string[]> => {
+    const pending = appendLane.then(async () => {
+      const insertedIds: string[] = [];
+      for (const addition of additions) {
+        const destination = await insertPageBefore(anchorId, {
+          doc: addition.doc,
+          scriptSource: addition.source,
+        });
+        if (destination === null) {
+          throw new Error('The insertion page no longer exists');
+        }
+        await setPageFlowStart(destination.id, addition.protectedStart);
+        insertedIds.push(destination.id);
+      }
+      const bookId = session()?.book.id;
+      if (bookId !== undefined) setPages(await listPages(bookId));
+      return insertedIds;
     });
     appendLane = pending.then(
       () => undefined,
@@ -750,6 +1025,8 @@ export default function BookView(): JSX.Element {
   let flipApi: FlipSurfaceApi | undefined;
 
   const addPage = async (): Promise<void> => {
+    if (aiPatchApplying()) return;
+    clearScriptInsertionUndo();
     const slotOfNew = pages().length;
     const created = await appendPage();
     if (!created) return;
@@ -776,6 +1053,8 @@ export default function BookView(): JSX.Element {
     anchorId: string,
     side: 'before' | 'after',
   ): Promise<void> => {
+    if (aiPatchApplying()) return;
+    clearScriptInsertionUndo();
     const bookId = session()?.book.id;
     if (!bookId) return;
     const doc = newPageDoc(bookPageStyle(), bookLineHeight());
@@ -820,6 +1099,8 @@ export default function BookView(): JSX.Element {
     editor: Editor,
     pos: number,
   ): void => {
+    if (aiPatchApplying()) return;
+    clearScriptInsertionUndo();
     const slot = pages().findIndex((page) => page.id === pageId);
     if (slot <= 0) return;
     const block = topLevelBlockAt(editor, pos);
@@ -989,7 +1270,13 @@ export default function BookView(): JSX.Element {
       paper.clientHeight -
       (Number.parseFloat(styles.paddingTop) || 0) -
       (Number.parseFloat(styles.paddingBottom) || 0);
-    if (laidOut > 120) setPageCapacity(Math.floor(laidOut));
+    // The first settled paper box owns pagination for this open session.
+    // Resizing the window changes the responsive leaf box, but that is a
+    // camera/layout concern, not an edit. Updating this signal on every
+    // ResizeObserver delivery used to invoke PageEditor's forward-only drain
+    // and permanently push blocks onto later pages; enlarging the window had
+    // no inverse operation with which to repair them.
+    setPageCapacity((current) => retainInitialPageCapacity(current, laidOut));
   };
 
   /*
@@ -1091,8 +1378,13 @@ export default function BookView(): JSX.Element {
    * window it no longer has, so it is wired to the observer that already
    * existed rather than to a list of things I think can move.
    */
-  let roomCache: { room: { left: number; right: number }; width: number; gap: number } | null =
-    null;
+  let roomCache: {
+    room: { left: number; right: number };
+    width: number;
+    height: number;
+    availableHeight: number;
+    gap: number;
+  } | null = null;
   const invalidateRoom = (): void => {
     roomCache = null;
   };
@@ -1115,12 +1407,17 @@ export default function BookView(): JSX.Element {
           right: box.right - (Number.parseFloat(styles.paddingRight) || 0),
         },
         width: stage.offsetWidth,
+        height: stage.offsetHeight,
+        availableHeight:
+          box.height -
+          (Number.parseFloat(styles.paddingTop) || 0) -
+          (Number.parseFloat(styles.paddingBottom) || 0),
         // One source for the gutter between sheet and book: the same token the
         // back arrow and the settings seal clear the sheet by.
         gap: Number.parseFloat(styles.getPropertyValue('--space-16')) || 16,
       };
     }
-    const { room, width } = roomCache;
+    const { room, width, height, availableHeight } = roomCache;
     const centre = (room.left + room.right) / 2;
     // panelPush's own reader: the INLINE property, not a cascade resolution.
     // This line runs on every frame of the panel tween, and asking
@@ -1135,6 +1432,7 @@ export default function BookView(): JSX.Element {
       room,
       edge,
       gap,
+      height > 0 ? availableHeight / height : 1,
     );
     if (next.shift === lastFit.shift && next.scale === lastFit.scale) return;
     lastFit = next;
@@ -1548,6 +1846,7 @@ export default function BookView(): JSX.Element {
   });
 
   const applyDefaultsToPages = (defaults: BookPageDefaults): void => {
+    if (aiPatchApplying()) return;
     const style = defaults.pageStyle;
     const line = defaults.lineHeightPx;
     if (style === undefined && line === undefined) return;
@@ -1566,6 +1865,7 @@ export default function BookView(): JSX.Element {
   };
 
   const changePageDefaults = (next: BookPageDefaults | null): void => {
+    if (aiPatchApplying()) return;
     setPageDefaults(next);
     const loaded = session();
     if (loaded) void savePageDefaults(loaded.book.id, next);
@@ -2091,6 +2391,1165 @@ export default function BookView(): JSX.Element {
       : (leftPage() ?? rightPage()),
   );
 
+  const [aiPanelController, setAiPanelController] =
+    createSignal<AiAgentPanelController | undefined>();
+  const [aiDemoPanelController, setAiDemoPanelController] =
+    createSignal<AiAgentPanelController | undefined>();
+  const [aiTutorialPreview, setAiTutorialPreview] = createSignal(false);
+  const notebookForAiApply = createProductionNotebookReadAdapter();
+  let aiCoreController: CoreAiAgentController | null = null;
+  const [aiConnection, setAiConnection] = createSignal<AiAgentConnectionView>({
+    status: 'unconfigured',
+    provider: 'Cohere',
+    firstUse: !settings.aiAgentSetupSeen,
+    keyKind: settings.aiAgentKeyKind,
+  });
+  const [aiAttachments, setAiAttachments] =
+    createSignal<readonly AiAgentAttachmentView[]>([]);
+  const [aiSourceAttachments, setAiSourceAttachments] =
+    createSignal<readonly SourceAttachmentRef[]>([]);
+  const [aiThreads, setAiThreads] = createSignal<readonly AiAgentThreadView[]>([]);
+  let aiAttachmentUploadEpoch = 0;
+  let aiAttachmentUploadsSettled: Promise<void> = Promise.resolve();
+  const [aiContextPolicy, setAiContextPolicy] = createSignal<AgentContextPolicy>(
+    settings.aiAgentDefaultContext === 'whole-book'
+      ? 'whole_book'
+      : settings.aiAgentDefaultContext === 'nearby-pages'
+        ? 'nearby_pages'
+        : 'current_page',
+  );
+
+  // Let the guided tour show the real Agent panel without consuming or
+  // triggering first-use key setup. The tour owns this one opening in both
+  // directions; a panel the reader opened themselves remains theirs.
+  onMount(() => {
+    const stepId = 'meet-the-agent';
+    let openedByTour = false;
+    let openedForStep = false;
+    const timer = window.setInterval(() => {
+      const layer = document.querySelector(TOUR_LAYER_SELECTOR);
+      const here = layer?.getAttribute(TOUR_STEP_ATTR) ?? '';
+      const open = untrack(activePanel) === 'ai-agent';
+      const verdict = stepWatchVerdict({
+        here,
+        stepId,
+        open,
+        mine: openedByTour,
+        settled: false,
+        openedForStep,
+      });
+      // Preview mode belongs only to the tour-owned opening. If the reader
+      // closes it themselves, or the tour leaves this step after it was
+      // already closed, do not suppress first-use setup on their next real
+      // Agent visit. Compute the verdict first so a still-open tour-owned
+      // panel retains its `mine` authority long enough to close cleanly.
+      if (here !== stepId) {
+        openedForStep = false;
+        setAiTutorialPreview(false);
+      } else if (openedByTour && !open) {
+        openedByTour = false;
+        setAiTutorialPreview(false);
+      }
+      if (verdict === 'open') {
+        openedForStep = true;
+        openedByTour = true;
+        setAiTutorialPreview(true);
+        setActivePanel('ai-agent');
+      } else if (verdict === 'close') {
+        openedByTour = false;
+        setAiTutorialPreview(false);
+        setActivePanel(null);
+      } else if (here !== stepId && !open) {
+        openedByTour = false;
+      }
+    }, 300);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  const aiContextViews = (): readonly AiAgentContextView[] => [
+    {
+      id: 'current-page',
+      label: 'Current page',
+      detail: 'Read the page you are working on.',
+      selected: aiContextPolicy() === 'current_page',
+    },
+    {
+      id: 'nearby-pages',
+      label: 'Nearby pages',
+      detail: 'Read this page and its neighbours for continuity.',
+      selected: aiContextPolicy() === 'nearby_pages',
+    },
+    {
+      id: 'whole-book',
+      label: 'Whole book',
+      detail: 'Let the agent inspect every page when the task needs it.',
+      selected: aiContextPolicy() === 'whole_book',
+    },
+  ];
+
+  const configureAiKey = async (input: AiAgentKeySubmission): Promise<void> => {
+    if (input.kind === 'trial' && !input.trialPrivacyAcknowledged) {
+      throw new Error('Acknowledge the trial-key privacy notice before connecting');
+    }
+    setAiConnection((current) => ({ ...current, status: 'testing', message: undefined }));
+    try {
+      const tested = await testAiCredential(input.key);
+      if (!tested.valid) throw new Error('Cohere did not accept that API key');
+      const status = await saveAiCredential(
+        input.key,
+        input.persistence === 'secure-vault' ? 'secure' : 'session',
+      );
+      await saveSettings({
+        aiAgentSetupSeen: true,
+        aiAgentKeyKind: input.kind,
+        aiAgentTrialPrivacyAcknowledged:
+          input.kind === 'trial' ? input.trialPrivacyAcknowledged : false,
+      });
+      setAiConnection({
+        status: 'connected',
+        provider: 'Cohere',
+        firstUse: false,
+        keyKind: input.kind,
+        label: status.persistent ? 'saved in the system vault' : 'kept for this session',
+      });
+    } catch (error) {
+      setAiConnection({
+        status: 'error',
+        provider: 'Cohere',
+        firstUse: !settings.aiAgentSetupSeen,
+        keyKind: input.kind,
+        message: error instanceof Error ? error.message : 'Could not connect to Cohere',
+      });
+      throw error;
+    }
+  };
+
+  const skipAiSetup = async (): Promise<void> => {
+    await saveSettings({ aiAgentSetupSeen: true });
+    setAiConnection((current) => ({ ...current, firstUse: false }));
+  };
+
+  const humanFileSize = (bytes: number): string =>
+    bytes < 1024
+      ? `${bytes} B`
+      : bytes < 1024 * 1024
+        ? `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`
+        : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  const aiTaskTimeLabel = (iso: string): string => {
+    const value = new Date(iso);
+    if (!Number.isFinite(value.getTime())) return '';
+    const today = new Date();
+    return value.toDateString() === today.toDateString()
+      ? value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      : value.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const aiThreadView = (task: AgentTaskSummary): AiAgentThreadView => ({
+    id: task.id,
+    title: task.title,
+    updatedLabel: aiTaskTimeLabel(task.updatedAt),
+    status: task.status,
+  });
+
+  const clearAiAttachmentViews = (): void => {
+    for (const attachment of aiAttachments()) {
+      if (attachment.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+    }
+    setAiAttachments([]);
+    setAiSourceAttachments([]);
+  };
+
+  /**
+   * Drop composer-only uploads which never entered a durable task manifest.
+   * Registered sources retain a reference row and are intentionally kept for
+   * task history; a file queued during an in-flight turn has no such owner and
+   * must not become a private orphan when the composer is cleared or closed.
+   */
+  const clearAiAttachmentViewsAndOrphans = async (): Promise<void> => {
+    aiAttachmentUploadEpoch += 1;
+    await aiAttachmentUploadsSettled.catch(() => undefined);
+    // Also cancel an upload that started while this async cleanup was waiting.
+    aiAttachmentUploadEpoch += 1;
+    const managedIds = aiSourceAttachments().flatMap((attachment) =>
+      attachment.kind === 'managed_asset' ? [attachment.assetId] : [],
+    );
+    clearAiAttachmentViews();
+    await Promise.all(managedIds.map(async (attachmentId) => {
+      if (await countAiAgentAttachmentReferences(attachmentId) > 0) return;
+      await deleteAiAttachment(attachmentId).catch(() => false);
+    }));
+  };
+
+  const addAiFiles = async (files: readonly File[]): Promise<void> => {
+    const uploadEpoch = aiAttachmentUploadEpoch;
+    if (aiCoreController?.getSnapshot().interrupt !== null) {
+      notify('answer or revise the current agent decision before adding sources', 'error');
+      return;
+    }
+    const accepted = files.filter((file) => agentSourceMediaType(file) !== null);
+    if (accepted.length !== files.length) {
+      notify('That source type is not supported yet', 'error');
+    }
+    const upload = (async (): Promise<void> => {
+      const saved: Array<{
+        metadata: AiAttachmentMetadata;
+        view: AiAgentAttachmentView;
+        ref: SourceAttachmentRef;
+      }> = [];
+      const deleteUnregisteredSaved = async (): Promise<void> => {
+        await Promise.all(saved.map(async ({ metadata, view }) => {
+          if (view.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(view.previewUrl);
+          if (await countAiAgentAttachmentReferences(metadata.id) === 0) {
+            await deleteAiAttachment(metadata.id).catch(() => false);
+          }
+        }));
+      };
+      for (const file of accepted) {
+        const sourceMediaType = agentSourceMediaType(file);
+        if (sourceMediaType === null) continue;
+        const temporaryId = `reading:${file.name}:${file.lastModified}`;
+        const previewUrl = sourceMediaType.startsWith('image/')
+          ? URL.createObjectURL(file)
+          : undefined;
+        setAiAttachments((current) => [
+          ...current,
+          {
+            id: temporaryId,
+            name: file.name,
+            kind: sourceMediaType === 'application/pdf'
+              ? 'pdf'
+              : sourceMediaType.startsWith('image/')
+                ? 'image'
+                : 'document',
+            sizeLabel: humanFileSize(file.size),
+            previewUrl,
+            status: 'reading',
+          },
+        ]);
+        try {
+          const metadata = await saveAiAttachment(new Uint8Array(await file.arrayBuffer()));
+          if (uploadEpoch !== aiAttachmentUploadEpoch) {
+            if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
+            if (await countAiAgentAttachmentReferences(metadata.id) === 0) {
+              await deleteAiAttachment(metadata.id).catch(() => false);
+            }
+            await deleteUnregisteredSaved();
+            return;
+          }
+          const view: AiAgentAttachmentView = {
+            id: metadata.id,
+            name: file.name,
+            kind: metadata.kind === 'pdf'
+              ? 'pdf'
+              : metadata.mimeType.startsWith('image/')
+                ? 'image'
+                : 'document',
+            sizeLabel: humanFileSize(metadata.sizeBytes),
+            previewUrl,
+            status: 'ready',
+          };
+          const semanticMediaType = agentSourceAttachmentMediaType(file, metadata);
+          saved.push({
+            metadata,
+            view,
+            ref: {
+              kind: 'managed_asset',
+              assetId: metadata.id,
+              title: file.name,
+              mediaType: semanticMediaType,
+              digest: metadata.sha256,
+            },
+          });
+          setAiAttachments((current) => [
+            ...current.filter((item) => item.id !== temporaryId && item.id !== view.id),
+            view,
+          ]);
+        } catch (error) {
+          if (uploadEpoch !== aiAttachmentUploadEpoch) {
+            if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
+            await deleteUnregisteredSaved();
+            return;
+          }
+          setAiAttachments((current) => current.map((item) =>
+            item.id === temporaryId
+              ? {
+                  ...item,
+                  status: 'error',
+                  detail: error instanceof Error ? error.message : 'Could not attach this file',
+                }
+              : item,
+          ));
+        }
+      }
+      if (uploadEpoch !== aiAttachmentUploadEpoch) {
+        await deleteUnregisteredSaved();
+        return;
+      }
+      if (saved.length === 0) return;
+      const refs = [...aiSourceAttachments(), ...saved.map((item) => item.ref)];
+      const uniqueRefs = new Map<string, SourceAttachmentRef>();
+      for (const ref of refs) {
+        const key = ref.kind === 'managed_asset'
+          ? `${ref.assetId}\u0000${ref.mediaType}`
+          : JSON.stringify(ref);
+        uniqueRefs.set(key, ref);
+      }
+      setAiSourceAttachments([...uniqueRefs.values()]);
+      // The panel adapter registers the complete queued set immediately before
+      // the next provider turn. This gives files added during a busy run one
+      // deterministic owner and keeps the chip removable until registration.
+    })();
+    aiAttachmentUploadsSettled = Promise.allSettled([
+      aiAttachmentUploadsSettled,
+      upload,
+    ]).then(() => undefined);
+    await upload;
+  };
+
+  const removeAiAttachment = async (attachmentId: string): Promise<void> => {
+    const references = attachmentId.startsWith('reading:')
+      ? 0
+      : await countAiAgentAttachmentReferences(attachmentId);
+    if (aiCoreController?.getSnapshot().state !== null && references > 0) {
+      notify('start a new AI task before removing a source already in its ledger', 'error');
+      return;
+    }
+    const existing = aiAttachments().find((item) => item.id === attachmentId);
+    if (existing?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(existing.previewUrl);
+    setAiAttachments((current) => current.filter((item) => item.id !== attachmentId));
+    setAiSourceAttachments((current) => current.filter(
+      (item) => item.kind !== 'managed_asset' || item.assetId !== attachmentId,
+    ));
+    if (
+      !attachmentId.startsWith('reading:') &&
+      references === 0
+    ) {
+      try {
+        await deleteAiAttachment(attachmentId);
+      } catch {
+        notify('the source was removed here, but its cached file could not be cleared', 'error');
+      }
+    }
+  };
+
+  const currentBookRevision = async (bookId: string): Promise<string> => {
+    const ordered = (await listPages(bookId)).map((page) => {
+      const live = getPageEditor(page.id);
+      return {
+        ...page,
+        doc: live === null ? page.doc : (live.getJSON() as PageDoc),
+      };
+    });
+    return computeNotebookRevision(ordered);
+  };
+
+  const appendPreparedAfter = (
+    anchorId: string,
+    additions: readonly PreparedAiProposalPage[],
+  ): Promise<readonly string[]> => insertPagesAfter(anchorId, additions);
+
+  /**
+   * The only production mutation seam the AI agent is allowed to reach.
+   *
+   * The provider and LangGraph runtime can inspect, draft, render and review,
+   * but they cannot import a page mutation adapter.  The reader's explicit
+   * approval supplies an immutable proposal here; this function rechecks the
+   * exact live notebook revision, claims the idempotency key, applies within
+   * the existing whole-book import checkpoint, and rolls the entire operation
+   * back on any failure.
+   */
+  const applyApprovedAiProposal = async (
+    proposal: NotebookPatchProposal,
+  ): Promise<void> => {
+    const loaded = session();
+    if (loaded == null || proposal.preview.bookId !== loaded.book.id) {
+      throw new Error('This preview belongs to a different notebook');
+    }
+    const bookId = loaded.book.id;
+    if (
+      proposal.status !== 'approved_pending_apply' &&
+      proposal.status !== 'apply_failed' &&
+      proposal.status !== 'approved'
+    ) {
+      throw new Error('The AI draft still needs your approval');
+    }
+    if (aiPatchApplying()) {
+      throw new Error('Another reviewed draft is already being inserted');
+    }
+    const durableApply = await readAiPatchApplication(proposal.idempotencyKey);
+    if (
+      durableApply?.status === 'applied' &&
+      durableApply.patchId === proposal.patchId &&
+      durableApply.bookId === bookId
+    ) {
+      notify('that reviewed draft was already inserted');
+      return;
+    }
+    // Acquire the mutation lane synchronously. The two live page editors
+    // become read-only and structural page actions also consult this signal,
+    // so the revision proof below cannot race a reader edit.
+    setAiPatchApplying(true);
+
+    const assertFresh = async (): Promise<void> => {
+      const revision = await currentBookRevision(bookId);
+      if (revision !== proposal.expectedBookRevision) {
+        throw new Error(
+          'The notebook changed after this preview was reviewed. Ask the agent to refresh it before inserting.',
+        );
+      }
+    };
+
+    const assertTargetBelongsToBook = async (): Promise<void> => {
+      const target = proposal.insertionTarget;
+      const pageId = target.kind === 'caret' ||
+        target.kind === 'replace_selection' ||
+        target.kind === 'before_page' ||
+        target.kind === 'after_page'
+        ? target.pageId
+        : target.kind === 'new_pages'
+          ? target.afterPageId
+          : undefined;
+      if (pageId === undefined) return;
+      const currentIds = new Set((await listPages(bookId)).map((page) => page.id));
+      if (!currentIds.has(pageId)) {
+        throw new Error('The reviewed placement does not belong to this notebook');
+      }
+    };
+
+    const previousUndo = scriptInsertionUndo;
+    const previousUndoKey = scriptInsertionUndoKey;
+    let claimed = false;
+    let checkpointOpen = false;
+    let preparedApplication: PreparedAiProposalApplication | null = null;
+    try {
+      // Drain all earlier page producers before proving freshness. From this
+      // point until finally, no reader-authored mutation can enter the view.
+      await appendLane;
+      await carryChain;
+      await assertFresh();
+      await assertTargetBelongsToBook();
+      const application = await prepareAiProposalApplication(proposal);
+      preparedApplication = application;
+      const prepared = application.pages;
+      if (
+        (await webCryptoAgentHash.digestJson(application.plan.insertionTarget)) !==
+          (await webCryptoAgentHash.digestJson(proposal.insertionTarget))
+      ) {
+        throw new Error('The reviewed application plan no longer matches this placement');
+      }
+      // Receipt verification and exact-asset promotion can await native I/O.
+      // Recheck immediately before the durable rollback snapshot and claim.
+      await assertFresh();
+      await assertTargetBelongsToBook();
+      const before = await captureScriptInsertionCheckpoint(bookId);
+      const durableBefore: AiPatchBookSnapshot = {
+        bookId,
+        pages: before.pages,
+      };
+      claimed = await claimAiPatchApplication({
+        idempotencyKey: proposal.idempotencyKey,
+        patchId: proposal.patchId,
+        bookId,
+        before: durableBefore,
+      });
+      if (!claimed) {
+        await rollbackPreparedAiProposalAssets(application);
+        preparedApplication = null;
+        const existing = await readAiPatchApplication(proposal.idempotencyKey);
+        if (
+          existing?.status === 'applied' &&
+          existing.patchId === proposal.patchId &&
+          existing.bookId === bookId
+        ) {
+          notify('that reviewed draft was already inserted');
+          return;
+        }
+        throw new Error(
+          'This reviewed draft has another unfinished apply. Reopen the notebook so Alcove can recover it before retrying.',
+        );
+      }
+
+      // Keep the previous durable Ctrl+Z receipt until this proposal is fully
+      // committed. A duplicate or failed apply must not consume valid Undo.
+      scriptInsertionUndo = null;
+      scriptInsertionUndoKey = proposal.idempotencyKey;
+      // Reuse the exact durable authority captured before the claim rather
+      // than taking a second, potentially different live-editor snapshot.
+      scriptInsertionBefore = before;
+      await setScriptInsertionActivity(true);
+      checkpointOpen = true;
+      const target = proposal.insertionTarget;
+      let reviewedPageIds: readonly string[] = [];
+      if (target.kind === 'caret' || target.kind === 'replace_selection') {
+        if (
+          application.plan.kind !== 'integrated_target' ||
+          application.plan.targetPageId !== target.pageId
+        ) {
+          throw new Error('The reviewed preview does not contain this target page');
+        }
+        const belongs = pages().some((page) => page.id === target.pageId);
+        if (!belongs) throw new Error('The target page no longer exists');
+        const page = await notebookForAiApply.inspectPage(
+          target.pageId,
+          new AbortController().signal,
+        );
+        if (
+          page.revision !== application.plan.expectedTargetRevision ||
+          page.documentDigest !== application.plan.expectedTargetDocumentDigest
+        ) {
+          throw new Error(
+            'The target page changed after its integrated preview was reviewed.',
+          );
+        }
+        if (target.kind === 'replace_selection') {
+          const anchorDigest = await computeNotebookSelectionDigest({
+            pageId: target.pageId,
+            from: target.from,
+            to: target.to,
+            documentDigest: page.documentDigest,
+          }, webCryptoAgentHash);
+          if (anchorDigest !== target.selectionDigest) {
+            throw new Error('The selected text changed after the AI task began');
+          }
+        }
+        const first = prepared[0]!;
+        const following = prepared.slice(1);
+        if (
+          first.protectedStart ||
+          (await webCryptoAgentHash.digestJson(first.doc)) !==
+            application.plan.reviewedTargetDocumentDigest
+        ) {
+          throw new Error('The reviewed target-page document failed its receipt check');
+        }
+        // Install every explicit page boundary before the live editor emits
+        // an overflow. Otherwise a tall first fragment can create anonymous
+        // spill pages ahead of the reviewed continuation and disturb the
+        // agent's inspected order.
+        const continuationIds = following.length > 0
+          ? await appendPreparedAfter(target.pageId, following)
+          : [];
+        // Install the exact target document whose pixels were approved. There
+        // is no second caret/selection merge here: doing that after approval
+        // could repaginate differently and create unreviewed pages.
+        if ((await savePageDoc(target.pageId, first.doc)) === null) {
+          throw new Error('The target page disappeared while applying the reviewed draft');
+        }
+        getPageEditor(target.pageId)?.commands.setContent(
+          first.doc as unknown as JSONContent,
+          { emitUpdate: false },
+        );
+        reviewedPageIds = [target.pageId, ...continuationIds];
+      } else if (target.kind === 'before_page') {
+        if (application.plan.kind !== 'structural_pages') {
+          throw new Error('The reviewed application plan is not a structural insertion');
+        }
+        reviewedPageIds = await insertPagesBefore(target.pageId, prepared);
+      } else if (target.kind === 'after_page') {
+        if (application.plan.kind !== 'structural_pages') {
+          throw new Error('The reviewed application plan is not a structural insertion');
+        }
+        reviewedPageIds = await appendPreparedAfter(target.pageId, prepared);
+      } else if (target.kind === 'book_start') {
+        if (application.plan.kind !== 'structural_pages') {
+          throw new Error('The reviewed application plan is not a structural insertion');
+        }
+        const ordered = await listPages(bookId);
+        const first = ordered[0];
+        if (first === undefined) {
+          throw new Error('The notebook has no page to anchor the insertion');
+        }
+        if (!docHasContent(first.doc) && first.scriptSource === null) {
+          await setPageScript(first.id, prepared[0]!.source, prepared[0]!.doc);
+          await setPageFlowStart(first.id, true);
+          reviewedPageIds = [first.id];
+          if (prepared.length > 1) {
+            reviewedPageIds = [
+              first.id,
+              ...await appendPreparedAfter(first.id, prepared.slice(1)),
+            ];
+          }
+          getPageEditor(first.id)?.commands.setContent(
+            prepared[0]!.doc as unknown as JSONContent,
+            { emitUpdate: false },
+          );
+        } else {
+          reviewedPageIds = await insertPagesBefore(first.id, prepared);
+        }
+      } else {
+        if (application.plan.kind !== 'structural_pages') {
+          throw new Error('The reviewed application plan is not a structural insertion');
+        }
+        const ordered = await listPages(bookId);
+        const explicitAnchor =
+          target.kind === 'new_pages' ? target.afterPageId : undefined;
+        const anchor = explicitAnchor === undefined
+          ? ([...ordered].reverse().find((page) => docHasContent(page.doc)) ?? ordered[0])
+          : ordered.find((page) => page.id === explicitAnchor);
+        if (anchor === undefined) {
+          throw new Error('The notebook has no page to anchor the insertion');
+        }
+        if (
+          !docHasContent(anchor.doc) &&
+          anchor.scriptSource === null &&
+          ordered.every((page) => !docHasContent(page.doc))
+        ) {
+          await setPageScript(anchor.id, prepared[0]!.source, prepared[0]!.doc);
+          await setPageFlowStart(anchor.id, true);
+          reviewedPageIds = [anchor.id];
+          if (prepared.length > 1) {
+            reviewedPageIds = [
+              anchor.id,
+              ...await appendPreparedAfter(anchor.id, prepared.slice(1)),
+            ];
+          }
+          getPageEditor(anchor.id)?.commands.setContent(
+            prepared[0]!.doc as unknown as JSONContent,
+            { emitUpdate: false },
+          );
+        } else {
+          reviewedPageIds = await appendPreparedAfter(anchor.id, prepared);
+        }
+      }
+
+      setPages(await listPages(bookId));
+      await setScriptInsertionActivity(false);
+      checkpointOpen = false;
+      // Let every queued editor/pagination producer settle after snapshots
+      // resume, then compare all structural and integrated destinations to the
+      // exact receipt. Only these reviewed bytes may become the committed book.
+      await appendLane;
+      await carryChain;
+      const settledById = new Map((await listPages(bookId)).map((page) => [page.id, page]));
+      await verifyPreparedAiProposalDocuments({
+        pageIds: reviewedPageIds,
+        pages: prepared,
+        hash: webCryptoAgentHash,
+        readPageDoc: (pageId) => {
+          const stored = settledById.get(pageId);
+          if (stored === undefined) return null;
+          const live = getPageEditor(pageId);
+          return live === null ? stored.doc : (live.getJSON() as PageDoc);
+        },
+      });
+      const resulting = await listPages(bookId);
+      if (
+        resulting.length === 0 ||
+        resulting.some((page, index) => page.ord !== index) ||
+        new Set(resulting.map((page) => page.id)).size !== resulting.length
+      ) {
+        throw new Error('The reviewed draft did not settle into a valid page order');
+      }
+      const resultRevision = await currentBookRevision(bookId);
+      await completeAiPatchApplication(
+        proposal.idempotencyKey,
+        resultRevision,
+      );
+      if (
+        previousUndoKey !== null &&
+        previousUndoKey !== proposal.idempotencyKey
+      ) {
+        await forgetAiPatchApplication(previousUndoKey);
+      }
+      scriptInsertionUndoKey = proposal.idempotencyKey;
+      armScriptInsertionUndo();
+      flipApi?.invalidateSnapshots();
+      notify(
+        prepared.length === 1
+          ? 'reviewed AI draft inserted — Ctrl+Z undoes it'
+          : `reviewed AI draft inserted across ${prepared.length} pages — Ctrl+Z undoes it`,
+      );
+    } catch (error) {
+      if (checkpointOpen) {
+        try {
+          await setScriptInsertionActivity(false);
+        } catch {
+          // The exact pre-apply checkpoint below is still the authority.
+        }
+      }
+      if (claimed) {
+        // Roll back through the newly claimed journal. If that succeeds, put
+        // the older one-shot Undo back exactly as it was. If it fails, retain
+        // this new checkpoint/key for Ctrl+Z or startup recovery.
+        scriptInsertionUndoKey = proposal.idempotencyKey;
+        armScriptInsertionUndo();
+        const restored = await restoreScriptInsertion();
+        if (restored) {
+          scriptInsertionUndo = previousUndo;
+          scriptInsertionUndoKey = previousUndoKey;
+        }
+      }
+      if (preparedApplication !== null) {
+        await rollbackPreparedAiProposalAssets(preparedApplication).catch(() => undefined);
+      }
+      throw error;
+    } finally {
+      setAiPatchApplying(false);
+    }
+  };
+
+  const aiDefaultInsertionTarget = (): NotebookInsertionTarget => {
+    const page = activePage();
+    return page === null ? { kind: 'book_end' } : { kind: 'after_page', pageId: page.id };
+  };
+
+  const aiPlacementOptions = (): readonly AiAgentPlacementOption[] => {
+    const lockedTarget = aiCoreController?.getSnapshot().state?.insertionTarget;
+    if (lockedTarget?.kind === 'replace_selection') {
+      return [{
+        id: 'replace-selection',
+        label: 'Replace selected text',
+        detail: 'Keep this reviewed rewrite anchored to the original selection.',
+        target: lockedTarget,
+      }];
+    }
+    const page = activePage();
+    const pageNumber = page === null
+      ? undefined
+      : pages().findIndex((candidate) => candidate.id === page.id) + 1;
+    const local: AiAgentPlacementOption[] = page === null
+      ? []
+      : [
+          {
+            id: 'after-current-page',
+            label: `After page ${pageNumber}`,
+            detail: 'Start on fresh pages immediately after the page you are reading.',
+            target: { kind: 'after_page', pageId: page.id },
+          },
+          {
+            id: 'before-current-page',
+            label: `Before page ${pageNumber}`,
+            detail: 'Place the reviewed pages immediately before this page.',
+            target: { kind: 'before_page', pageId: page.id },
+          },
+        ];
+    return [
+      ...local,
+      {
+        id: 'book-start',
+        label: 'At the beginning',
+        detail: 'Make the reviewed draft the opening pages of this notebook.',
+        target: { kind: 'book_start' },
+      },
+      {
+        id: 'book-end',
+        label: 'At the end',
+        detail: 'Append the reviewed draft after the notebook’s last written page.',
+        target: { kind: 'book_end' },
+      },
+    ];
+  };
+
+  onMount(() => {
+    let disposed = false;
+    const mountedBookId = session()?.book.id ?? editorState.openBookId() ?? '';
+    const notebook = createProductionNotebookReadAdapter();
+    const providerPrivacyReady = (): boolean =>
+      settings.aiAgentKeyKind === 'production' ||
+      settings.aiAgentTrialPrivacyAcknowledged;
+    const sourceAdapters = createProductionSourceAdapters({
+      notebook,
+      providerPrivacyReady,
+    });
+    const previewSandbox = createProductionDraftSandbox();
+    const persistence = new SqliteAgentPersistence();
+    const runtime = new AgentRuntime(
+      new CohereTauriAgentProvider(providerPrivacyReady),
+      {
+        notebook,
+        ...sourceAdapters,
+        sandbox: previewSandbox.adapter,
+        clock: systemAgentClock,
+        ids: randomAgentIds,
+        hash: webCryptoAgentHash,
+      },
+      persistence,
+    );
+    const core = createAiAgentController(runtime);
+    aiCoreController = core;
+    const uninstall = installAiAgentController(core);
+
+    const refreshAiThreads = async (): Promise<void> => {
+      const tasks = await persistence.listTasksForBook(mountedBookId);
+      if (!disposed) setAiThreads(tasks.map(aiThreadView));
+    };
+    const restoreTaskAttachments = async (taskId: string): Promise<void> => {
+      const [resources, persisted] = await Promise.all([
+        sourceAdapters.listManagedResources(
+          taskId,
+          new AbortController().signal,
+        ),
+        persistence.loadTask(taskId),
+      ]);
+      // A failed/cancelled first ingestion has no source rows yet. Its queued
+      // managed refs are nevertheless durable product state and must return as
+      // visible chips after restart so Retry and Delete act on the same bytes.
+      const ownedResources = new Map<string, {
+        readonly attachmentId: string;
+        readonly title: string;
+        readonly mediaType: string;
+        readonly digest: string;
+      }>();
+      for (const attachment of pendingManagedAiAttachmentsInState(persisted?.state)) {
+        ownedResources.set(attachment.assetId, {
+          attachmentId: attachment.assetId,
+          title: attachment.title,
+          mediaType: attachment.mediaType,
+          digest: attachment.digest,
+        });
+      }
+      // A committed source ledger is the richer/newer description when an id
+      // appears in both ledgers during the hand-off at the end of ingestion.
+      for (const resource of resources) ownedResources.set(resource.attachmentId, resource);
+      const views: AiAgentAttachmentView[] = [];
+      const refs: SourceAttachmentRef[] = [];
+      for (const resource of ownedResources.values()) {
+        refs.push({
+          kind: 'managed_asset',
+          assetId: resource.attachmentId,
+          title: resource.title,
+          mediaType: resource.mediaType,
+          digest: resource.digest,
+        });
+        let previewUrl: string | undefined;
+        let sizeLabel = resource.mediaType === 'application/pdf'
+          ? 'PDF'
+          : resource.mediaType.startsWith('image/')
+            ? 'image'
+            : resource.mediaType;
+        let status: AiAgentAttachmentView['status'] = 'ready';
+        let detail: string | undefined;
+        if (resource.mediaType.startsWith('image/')) {
+          try {
+            const stored = await readAiAttachment(resource.attachmentId);
+            previewUrl = URL.createObjectURL(new Blob(
+              [new Uint8Array(stored.bytes)],
+              { type: stored.metadata.mimeType },
+            ));
+            sizeLabel = humanFileSize(stored.metadata.sizeBytes);
+          } catch {
+            status = 'error';
+            detail = 'This task still references the image, but its cached bytes are unavailable.';
+          }
+        }
+        views.push({
+          id: resource.attachmentId,
+          name: resource.title,
+          kind: resource.mediaType === 'application/pdf'
+            ? 'pdf'
+            : resource.mediaType.startsWith('image/')
+              ? 'image'
+              : 'document',
+          sizeLabel,
+          previewUrl,
+          status,
+          detail,
+        });
+      }
+      if (disposed) {
+        for (const view of views) {
+          if (view.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(view.previewUrl);
+        }
+        return;
+      }
+      await clearAiAttachmentViewsAndOrphans();
+      setAiAttachments(views);
+      setAiSourceAttachments(refs);
+    };
+
+    const panel = createAiAgentPanelController(core, {
+      bookId: mountedBookId,
+      bookTitle: session()?.book.title,
+      connection: aiConnection,
+      attachments: aiAttachments,
+      sourceAttachments: aiSourceAttachments,
+      context: aiContextViews,
+      threads: aiThreads,
+      activeThreadTitle: () => {
+        const activeTaskId = core.getSnapshot().state?.identity.taskId;
+        return aiThreads().find((thread) => thread.id === activeTaskId)?.title;
+      },
+      placements: aiPlacementOptions,
+      defaultContextPolicy: aiContextPolicy,
+      // The model may escalate this to a complete sweep after reading the
+      // manifest; policy also treats retrievalPlan.requiresCompleteCoverage
+      // as binding. Explicit “keep every fact” wording is recognized here so
+      // the guarantee is present before the first provider turn too.
+      preserveAllSourceInformation: () => false,
+      obfuscatePrivateText: () => settings.aiAgentObfuscatePrivateText,
+      insertionTarget: aiDefaultInsertionTarget,
+      renderUrlFor: previewSandbox.renderUrlFor,
+      configureKey: configureAiKey,
+      skipKeySetup: skipAiSetup,
+      openIntegrationSettings: () => {
+        window.dispatchEvent(new CustomEvent('alcove:open-settings'));
+      },
+      attachFiles: addAiFiles,
+      removeAttachment: (id) => void removeAiAttachment(id),
+      toggleContext: (contextId, selected) => {
+        if (!selected) return;
+        const next: AgentContextPolicy = contextId === 'whole-book'
+          ? 'whole_book'
+          : contextId === 'nearby-pages'
+            ? 'nearby_pages'
+            : 'current_page';
+        setAiContextPolicy(next);
+        void saveSettings({
+          aiAgentDefaultContext: next === 'whole_book'
+            ? 'whole-book'
+            : next === 'nearby_pages'
+              ? 'nearby-pages'
+              : 'current-page',
+        });
+      },
+      onApprovedProposal: applyApprovedAiProposal,
+      onStartNewTask: clearAiAttachmentViewsAndOrphans,
+      onSelectThread: async (taskId) => {
+        const restored = await core.restore(taskId);
+        const generationId = restored.state?.patchProposal?.preview.generationId;
+        if (generationId !== undefined) {
+          const hydrated = await previewSandbox.adapter.getGeneration(
+            generationId,
+            new AbortController().signal,
+          );
+          if (hydrated === null) {
+            notify(
+              'that task’s exact preview has expired — ask the agent to render it again',
+              'error',
+            );
+          } else {
+            // getGeneration hydrates process-local image URLs. Republish the
+            // same durable state so Solid resolves those URLs immediately.
+            await core.restore(taskId);
+          }
+        }
+        await restoreTaskAttachments(taskId);
+        await refreshAiThreads();
+      },
+      onRenameThread: async (taskId, title) => {
+        await persistence.renameTask(taskId, title);
+        await refreshAiThreads();
+      },
+      onDeleteThread: async (taskId) => {
+        const wasActive = core.getSnapshot().state?.identity.taskId === taskId;
+        const persisted = await persistence.loadTask(taskId);
+        const resources = await sourceAdapters.listManagedResources(
+          taskId,
+          new AbortController().signal,
+        );
+        const pendingAttachmentIds = pendingManagedAiAttachmentsInState(
+          persisted?.state,
+        ).map((attachment) => attachment.assetId);
+        const ownedAttachmentIds = [...new Set([
+          ...resources.map((resource) => resource.attachmentId),
+          ...pendingAttachmentIds,
+        ])];
+        // Core owns and disposes every masked/final generation in the task;
+        // keeping a second one-id cleanup here leaked the sibling generation.
+        await core.deleteTask(taskId);
+        await Promise.all(ownedAttachmentIds.map(async (attachmentId) => {
+          if (await countAiAgentAttachmentReferences(attachmentId) > 0) return;
+          await deleteAiAttachment(attachmentId).catch(() => false);
+        }));
+        if (wasActive) await clearAiAttachmentViewsAndOrphans();
+        await refreshAiThreads();
+      },
+      onError: (error) => notify(
+        error instanceof Error ? error.message : 'The AI agent could not finish that action',
+        'error',
+      ),
+    });
+    setAiPanelController(panel);
+
+    const unsubscribeTaskHistory = core.subscribe(() => {
+      void refreshAiThreads();
+    });
+    void refreshAiThreads();
+
+    let privacyWasReady = providerPrivacyReady();
+    const refreshAiConnection = (): void => {
+      const privacyNowReady = providerPrivacyReady();
+      if (privacyWasReady && !privacyNowReady && core.getSnapshot().busy) {
+        void core.stop('AI privacy permission or credential was withdrawn');
+      }
+      privacyWasReady = privacyNowReady;
+      void aiCredentialStatus().then((status) => {
+        if (disposed) return;
+        const privacyReady = settings.aiAgentKeyKind === 'production' ||
+          settings.aiAgentTrialPrivacyAcknowledged;
+        setAiConnection({
+          status: status.configured && privacyReady ? 'connected' : 'unconfigured',
+          provider: 'Cohere',
+          firstUse: !settings.aiAgentSetupSeen,
+          keyKind: settings.aiAgentKeyKind,
+          message: status.configured && !privacyReady
+            ? 'Acknowledge the trial privacy notice in Settings before the agent can send anything.'
+            : undefined,
+          label: status.configured && privacyReady
+            ? status.persistent
+              ? 'saved in the system vault'
+              : 'available for this session'
+            : undefined,
+        });
+      }).catch((error) => {
+        if (disposed) return;
+        setAiConnection({
+          status: 'error',
+          provider: 'Cohere',
+          firstUse: !settings.aiAgentSetupSeen,
+          keyKind: settings.aiAgentKeyKind,
+          message: error instanceof Error ? error.message : 'Could not read the AI connection',
+        });
+      });
+    };
+    // Settings can connect, replace or revoke a key while this notebook stays
+    // mounted. Keep the rail's gate synchronized instead of requiring reopen.
+    const unsubscribeAiSettings = subscribeSettings(refreshAiConnection);
+
+    const openFromSelection = (): void => {
+      setActivePanel('ai-agent');
+    };
+    window.addEventListener(OPEN_AI_AGENT_PANEL_EVENT, openFromSelection);
+    onCleanup(() => {
+      disposed = true;
+      window.removeEventListener(OPEN_AI_AGENT_PANEL_EVENT, openFromSelection);
+      setAiPanelController(undefined);
+      aiCoreController = null;
+      panel.dispose();
+      unsubscribeTaskHistory();
+      unsubscribeAiSettings();
+      uninstall();
+      // Abort provider/source work synchronously before disposing its native
+      // render resources. A closed notebook must never leave an invisible
+      // task writing checkpoints or recreating preview assets behind it.
+      // Orphan cleanup must run after Stop's durable persistence barrier. In
+      // particular, a close during first ingestion cannot observe zero source
+      // rows and delete an upload before pendingSourceAttachments is counted.
+      void (async () => {
+        if (core.getSnapshot().busy) {
+          await core.stop('Notebook closed').catch(() => undefined);
+        }
+        previewSandbox.releaseUrls();
+        await clearAiAttachmentViewsAndOrphans();
+      })();
+    });
+  });
+
+  /*
+   * README/demo automation gets the real Agent panel and native page renderer,
+   * but never a provider, credential or persisted Agent task. In browser-only
+   * `?fx=force` playback its Insert button intentionally sends the frozen,
+   * reviewed Script through this view's real parser/page insertion seam. Reset
+   * restores the exact pre-demo checkpoint before the film continues. The
+   * Tauri guard prevents that reversible documentation fixture from ever
+   * touching a reader's desktop library.
+   */
+  onMount(() => {
+    if (new URLSearchParams(window.location.search).get('fx') !== 'force') return;
+    let cancelled = false;
+    let publicBridge: Window['__aiAgentDemo'];
+    let disposeBridge: (() => Promise<void>) | undefined;
+
+    void import('./rail/aiAgentDemoBridge').then(async ({ createAiAgentDemoBridge }) => {
+      if (cancelled) return;
+      const bridge = createAiAgentDemoBridge({
+        bookTitle: session()?.book.title ?? 'this notebook',
+        openPanel: () => setActivePanel('ai-agent'),
+        closePanel: () => {
+          if (untrack(activePanel) === 'ai-agent') setActivePanel(null);
+        },
+        insertReviewedPages: async (source) => {
+          if ('__TAURI_INTERNALS__' in window) {
+            throw new Error('The reversible documentation insertion is browser-only.');
+          }
+          const anchor = activePage();
+          if (anchor === null) throw new Error('The demo needs an open page to insert after.');
+          const beforePages = pages();
+          const anchorIndex = beforePages.findIndex((page) => page.id === anchor.id);
+          const originalSuccessorId = beforePages[anchorIndex + 1]?.id;
+          const parsed = parseNotebookScriptPages(source);
+          if (parsed.pages.length !== 3) {
+            throw new Error(`The frozen fixture contains ${parsed.pages.length} pages, expected 3.`);
+          }
+          const schemaEditor = getPageEditor(anchor.id);
+          const additions = parsed.pages.map((page) => ({
+            source: page.source,
+            doc: scriptDocToTiptap(page.doc, {
+              hasNode: (name) => schemaEditor?.schema.nodes[name] !== undefined,
+            }) as PageDoc,
+            protectedStart: true as const,
+          }));
+          await setScriptInsertionActivity(true);
+          try {
+            const inserted = await insertPagesAfter(anchor.id, additions);
+            if (inserted.length !== additions.length) {
+              throw new Error(`Only ${inserted.length} of ${additions.length} demo pages were inserted.`);
+            }
+            const settledIds = pages().map((page) => page.id);
+            const settledAnchor = settledIds.indexOf(anchor.id);
+            const expectedRun = [anchor.id, ...inserted, ...(originalSuccessorId === undefined ? [] : [originalSuccessorId])];
+            const actualRun = settledIds.slice(settledAnchor, settledAnchor + expectedRun.length);
+            if (settledAnchor < 0 || actualRun.join('\u0000') !== expectedRun.join('\u0000')) {
+              throw new Error('The live demo pagination did not settle to the exact three reviewed pages.');
+            }
+            armScriptInsertionUndo();
+            aiDemoInsertionActive = true;
+            const firstSlot = pages().findIndex((page) => page.id === inserted[0]);
+            if (firstSlot >= 0) {
+              setSpreadIndex(spreadOfSlot(firstSlot));
+              setFocusedSide(firstSlot % 2 === 0 ? 'left' : 'right');
+            }
+            // Keep the opaque settling card over the live spread until the
+            // final page order *and* destination spread have painted.  Taking
+            // it down immediately after the DB inserts exposed Solid's three
+            // intermediate page-list updates as a burst of apparent page
+            // turns beside the Agent panel.
+            await new Promise<void>((resolve) => {
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+            });
+            await setScriptInsertionActivity(false);
+            return inserted;
+          } catch (error) {
+            aiDemoInsertionActive = false;
+            await setScriptInsertionActivity(false);
+            armScriptInsertionUndo();
+            await restoreScriptInsertion(true);
+            throw error;
+          }
+        },
+        restoreInsertedPages: async () => {
+          const restored = await restoreScriptInsertion(true);
+          aiDemoInsertionActive = false;
+          return restored;
+        },
+      });
+      disposeBridge = () => bridge.dispose();
+      if (cancelled) {
+        await bridge.dispose();
+        return;
+      }
+      setAiDemoPanelController(bridge.controller);
+      publicBridge = Object.freeze({
+        state: bridge.state,
+        open: bridge.open,
+        advance: bridge.advance,
+        reset: bridge.reset,
+      });
+      window.__aiAgentDemo = publicBridge;
+    }).catch((error) => {
+      if (!cancelled) console.error('[ai-agent-demo] bridge unavailable', error);
+    });
+
+    onCleanup(() => {
+      cancelled = true;
+      if (window.__aiAgentDemo === publicBridge) delete window.__aiAgentDemo;
+      setAiDemoPanelController(undefined);
+      if (disposeBridge !== undefined) void disposeBridge();
+    });
+  });
+
   const copyText = async (text: string, doneMessage: string): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
@@ -2149,14 +3608,11 @@ export default function BookView(): JSX.Element {
     const target = spreadOfSlot(slot);
     const current = spreadIndex();
     if (target === current) return;
-    if (target === current + 1) {
-      flipApi?.flipNext(); // adjacent — arrive with the flip animation
-      return;
-    }
-    if (target === current - 1) {
-      flipApi?.flipPrev();
-      return;
-    }
+    // TOC rows, thumbnails and ribbons name a destination. Even when that
+    // destination happens to be adjacent, routing it through the page-edge
+    // curl makes a direct-navigation control wait on snapshot warmth and can
+    // expose a stale pre-insertion face. Reserve the physical curl for the
+    // physical page edge; named navigation lands directly and predictably.
     setSpreadIndex(target);
     void play('page-flip');
   };
@@ -2174,13 +3630,42 @@ export default function BookView(): JSX.Element {
   ): Promise<void> => {
     const page = pages().find((entry) => entry.id === pageId);
     if (!page) return;
-    recordSnapshot(pageId, page.doc, { force: true });
+    // A restore is destructive even when automatic history is disabled.
+    // Protect the state being left and await its durable write before the page
+    // changes, so an app stop cannot strand the reader between both versions.
+    await recordSnapshotDurably(pageId, page.doc);
     updatePageDoc(pageId, snapshot.doc);
     bumpDocVersion(pageId);
     await savePageDoc(pageId, snapshot.doc);
     notifySaved();
     setHistoryRefresh((n) => n + 1);
     notify('the page turned back in time');
+  };
+
+  const restoreWholeBookSnapshot = async (
+    snapshot: BookRecoverySnapshot,
+  ): Promise<void> => {
+    const loaded = session();
+    if (loaded == null || aiPatchApplying()) return;
+    setAiPatchApplying(true);
+    try {
+      await recordBookCheckpoint(loaded.book.id, pages(), {
+        force: true,
+        enabled: true,
+      });
+      const restored = await restoreBookCheckpoint(loaded.book.id, snapshot);
+      setPages(restored);
+      for (const page of restored) bumpDocVersion(page.id);
+      setSpreadIndex(0);
+      setFocusedSide('left');
+      flipApi?.invalidateSnapshots();
+      setHistoryRefresh((n) => n + 1);
+      notify('the whole book returned to that checkpoint');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'could not restore the book yet', 'error');
+    } finally {
+      setAiPatchApplying(false);
+    }
   };
 
   // -------------------------------------------------------------------------
@@ -2268,6 +3753,8 @@ export default function BookView(): JSX.Element {
 
   /** Delete the right-clicked leaf, then land on its nearest survivor. */
   const deletePageAt = async (pageId: string): Promise<void> => {
+    if (aiPatchApplying()) return;
+    clearScriptInsertionUndo();
     const before = pages();
     if (before.length <= 1) {
       notify('a book keeps at least one page', 'error');
@@ -2407,6 +3894,7 @@ export default function BookView(): JSX.Element {
    * straight to the caret, and never appends a second sheet.
    */
   const writeOnBlankLeaf = async (side: LeafSide): Promise<void> => {
+    if (aiPatchApplying()) return;
     const slot = leftSlot(spreadIndex()) + (side === 'right' ? 1 : 0);
     while (pages().length <= slot) {
       if (!(await appendPage())) return;
@@ -2437,6 +3925,7 @@ export default function BookView(): JSX.Element {
     side: LeafSide,
     at: { x: number; y: number },
   ): Promise<void> => {
+    if (aiPatchApplying()) return;
     const mark = armedMark();
     if (mark === null) return;
     disarmMark();
@@ -2546,6 +4035,7 @@ export default function BookView(): JSX.Element {
             <PaginatedPageEditor
               pageId={current.id}
               initialDoc={current.doc}
+              readOnly={aiPatchApplying()}
               onInsertPageBefore={() =>
                 void insertBlankPageBeside(current.id, 'before')
               }
@@ -2699,8 +4189,8 @@ export default function BookView(): JSX.Element {
         {(loaded) => {
           const backdropUrl = createMemo(() =>
             openCoverDataUrl(
-              720,
-              500,
+              Math.round(1334 * displayDpr()),
+              Math.round(872 * displayDpr()),
               deriveCoverParams(loaded.book.spineSeed, coverOverrides()),
             ),
           );
@@ -2726,17 +4216,20 @@ export default function BookView(): JSX.Element {
             <>
               <div
                 class="nb-spread-stage"
-                classList={{ 'is-book-closing': closing() }}
-                ref={attachStage}
+                classList={{
+                  'is-book-closing': closing(),
+                  'is-insertion-settling': scriptInsertionSettling(),
+                }}
                 data-spread-index={spreadIndex()}
                 data-book-ink={pageDefaults()?.ink ?? 'inherit'}
               >
+              <div class="nb-spread-fit-frame" ref={attachStage}>
               <header class="nb-spread-header">
                 <h1 class="nb-book-title-plate">{loaded.book.title}</h1>
               </header>
 
-              <div
-                class="nb-book-cover"
+                <div
+                  class="nb-book-cover"
                 style={{
                   // At the "pages" and "one page" rungs the boards come off,
                   // and the cover art has to go with them — an inline
@@ -2747,6 +4240,13 @@ export default function BookView(): JSX.Element {
                     : `url("${backdropUrl()}")`,
                 }}
               >
+                <Show when={scriptInsertionSettling()}>
+                  <div class="nb-insertion-settling" role="status" aria-live="polite">
+                    <span class="nb-insertion-settling-dots" aria-hidden="true"><i /><i /><i /></span>
+                    <strong>Letting the pages settle…</strong>
+                    <span class="font-ui">Checking every fixed page before the book turns to the result.</span>
+                  </div>
+                </Show>
                 {/* Ribbon bookmarks peeking over the top edge (roadmap #19). */}
                 {/* A ribbon belongs to the page it marks. Rendering the whole
                     book's set on every spread made a page-local bookmark look
@@ -2821,6 +4321,7 @@ export default function BookView(): JSX.Element {
                   onJump={jumpToSlot}
                 />
               </Show>
+              </div>
 
               <RailPanel
                 open={activePanel() === 'customize'}
@@ -2856,6 +4357,21 @@ export default function BookView(): JSX.Element {
                 onClose={() => setActivePanel(null)}
               >
                 <CataloguePanel />
+              </RailPanel>
+
+              <RailPanel
+                open={activePanel() === 'ai-agent'}
+                title="AI agent"
+                panelClass="is-ai-agent"
+                onClose={() => setActivePanel(null)}
+              >
+                <AiAgentPanel
+                  bookTitle={loaded.book.title}
+                  controller={aiDemoPanelController() ?? aiPanelController()}
+                  onNotify={notify}
+                  tourPreview={aiTutorialPreview()}
+                  panelOpen={activePanel() === 'ai-agent'}
+                />
               </RailPanel>
 
               <RailPanel
@@ -2907,10 +4423,12 @@ export default function BookView(): JSX.Element {
                   {(pageId) => (
                     <HistoryPanel
                       pageId={pageId}
+                      bookId={session()!.book.id}
                       refreshKey={historyRefresh()}
                       onRestore={(snapshot) =>
                         void restoreSnapshot(pageId, snapshot)
                       }
+                      onRestoreBook={(snapshot) => void restoreWholeBookSnapshot(snapshot)}
                     />
                   )}
                 </Show>
@@ -2924,7 +4442,9 @@ export default function BookView(): JSX.Element {
                       onNotify={notify}
                       onInsertionActivity={setScriptInsertionActivity}
                       onInsertComplete={armScriptInsertionUndo}
-                      onInsertFollowingPages={insertPagesAfter}
+                      onInsertFollowingPages={async (afterPageId, additions) => {
+                        await insertPagesAfter(afterPageId, additions);
+                      }}
                     />
                   )}
                 </Show>

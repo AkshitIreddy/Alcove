@@ -16,12 +16,28 @@ import type {
   ImageBlock,
   ScriptDoc,
 } from '../../script';
-import { fetchImages, type FetchedImageResult } from '../media/assets';
+import {
+  fetchImages,
+  fetchedImageAssetReceipt,
+  type FetchedImageAssetReceipt,
+  type FetchedImageResult,
+} from '../media/assets';
 
 export type ScriptImageFetcher = (
   query: string,
   count: number,
 ) => Promise<readonly FetchedImageResult[]>;
+
+export interface ResolvedScriptFetches {
+  readonly doc: ScriptDoc;
+  /** Exact content-addressed downloads used while resolving this document. */
+  readonly fetchedAssets: readonly FetchedImageAssetReceipt[];
+}
+
+interface ResolvedBlocks {
+  readonly blocks: readonly Block[];
+  readonly fetchedAssets: readonly FetchedImageAssetReceipt[];
+}
 
 function requestedCount(block: FetchDirectiveBlock, inImageRow: boolean): number {
   if (inImageRow) return 1;
@@ -83,7 +99,7 @@ async function resolveFetch(
   block: FetchDirectiveBlock,
   inImageRow: boolean,
   fetcher: ScriptImageFetcher,
-): Promise<Block[]> {
+): Promise<ResolvedBlocks> {
   const count = requestedCount(block, inImageRow);
   let results: readonly FetchedImageResult[] = [];
   try {
@@ -94,36 +110,53 @@ async function resolveFetch(
   }
   const usable = results.slice(0, count).filter((result) => result.relPath !== '');
   return usable.length > 0
-    ? usable.map((result) => fetchedImage(block, result))
-    : [uploadFallback(block)];
+    ? {
+        blocks: usable.map((result) => fetchedImage(block, result)),
+        fetchedAssets: usable.map((result) =>
+          fetchedImageAssetReceipt(result, block.query),
+        ),
+      }
+    : { blocks: [uploadFallback(block)], fetchedAssets: [] };
 }
 
 async function resolveBlock(
   block: Block,
   fetcher: ScriptImageFetcher,
   inImageRow: boolean,
-): Promise<Block[]> {
+): Promise<ResolvedBlocks> {
   if (block.kind === 'fetchDirective') {
     return resolveFetch(block, inImageRow, fetcher);
   }
-  if (block.kind !== 'container') return [block];
+  if (block.kind !== 'container') return { blocks: [block], fetchedAssets: [] };
   const container = block as ContainerBlock;
-  const children = (
-    await Promise.all(
-      container.children.map((child) =>
-        resolveBlock(child, fetcher, container.name === 'image-row'),
-      ),
-    )
-  ).flat();
-  return [{ ...container, children }];
+  const resolved = await Promise.all(
+    container.children.map((child) =>
+      resolveBlock(child, fetcher, container.name === 'image-row'),
+    ),
+  );
+  return {
+    blocks: [{ ...container, children: resolved.flatMap((entry) => entry.blocks) }],
+    fetchedAssets: resolved.flatMap((entry) => entry.fetchedAssets),
+  };
+}
+
+/** Resolve with an immutable asset manifest for preview/apply handoff. */
+export async function resolveScriptFetchesWithManifest(
+  doc: ScriptDoc,
+  fetcher: ScriptImageFetcher = fetchImages,
+): Promise<ResolvedScriptFetches> {
+  const resolved = await Promise.all(
+    doc.blocks.map((block) => resolveBlock(block, fetcher, false)),
+  );
+  return {
+    doc: { ...doc, blocks: resolved.flatMap((entry) => entry.blocks) },
+    fetchedAssets: resolved.flatMap((entry) => entry.fetchedAssets),
+  };
 }
 
 export async function resolveScriptFetches(
   doc: ScriptDoc,
   fetcher: ScriptImageFetcher = fetchImages,
 ): Promise<ScriptDoc> {
-  const blocks = (
-    await Promise.all(doc.blocks.map((block) => resolveBlock(block, fetcher, false)))
-  ).flat();
-  return { ...doc, blocks };
+  return (await resolveScriptFetchesWithManifest(doc, fetcher)).doc;
 }

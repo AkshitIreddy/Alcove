@@ -27,6 +27,7 @@ import {
   useContext,
   type JSX,
 } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import { gsap } from 'gsap';
 import {
   bindingActionLabel,
@@ -43,6 +44,13 @@ import {
 import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
 import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
+import {
+  aiCredentialStatus,
+  deleteAiCredential,
+  saveAiCredential,
+  testAiCredential,
+  type AiCredentialPersistence,
+} from '../../data/aiCredentials';
 import { usePanelKeys } from '../../state/panelKeys';
 import { tween } from '../../styles/motion';
 import AppScrollbar from '../../views/AppScrollbar';
@@ -1254,6 +1262,7 @@ type SettingsChapterId =
   | 'sound'
   | 'writing'
   | 'code'
+  | 'integrations'
   | 'system'
   | 'files'
   | 'help';
@@ -1268,12 +1277,13 @@ const SETTINGS_CHAPTERS: readonly {
   { id: 'sound', label: 'Sound' },
   { id: 'writing', label: 'Writing' },
   { id: 'code', label: 'Code blocks' },
+  { id: 'integrations', label: 'AI & integrations' },
   { id: 'system', label: 'System' },
   { id: 'files', label: 'Library files' },
   { id: 'help', label: 'Help' },
 ];
 
-/** Nine small pre-wobbled marks, one for each settings chapter. */
+/** Ten small pre-wobbled marks, one for each settings chapter. */
 function SettingsChapterIcon(props: { id: SettingsChapterId }): JSX.Element {
   const stroke = {
     fill: 'none',
@@ -1296,6 +1306,8 @@ function SettingsChapterIcon(props: { id: SettingsChapterId }): JSX.Element {
         return <><path d="M6.2 18.1 C9.4 14.2 12.7 10.2 17.2 5.3 C18 4.5 20.1 6.3 19.3 7.2 C15.1 12 11.6 15.7 7.5 19.4 L4.4 20.1 Z" {...stroke} /><path d="M15.5 7.3 L17.7 9.3 M5.3 18.6 L7 19.5" {...stroke} /></>;
       case 'code':
         return <><path d="M9.3 7.2 L4.8 12 L9.4 16.7 M14.7 7.2 L19.2 12 L14.6 16.7 M13 5.5 L10.9 18.6" {...stroke} /></>;
+      case 'integrations':
+        return <><path d="M12 3.9 L13.4 8.1 L17.8 6.8 L15.1 10.4 L18.8 12.9 L14.4 13.1 L14.1 17.6 L11.5 14 L7.9 16.7 L9.2 12.5 L4.9 11.2 L9.1 9.8 Z" {...stroke} /><path d="M18.7 17.2 C19.8 17.5 20.5 18.5 20.3 19.6 C20.1 20.8 19.1 21.5 18 21.3 C16.9 21.1 16.2 20.1 16.4 19 C16.6 17.9 17.6 17.1 18.7 17.2 Z" {...stroke} stroke-width="1.25" /></>;
       case 'system':
         return <><path d="M4.7 6.1 C9.5 5.7 14.4 5.8 19.2 6.2 L18.9 16.2 C14.2 16.6 9.5 16.5 4.9 16.1 Z" {...stroke} /><path d="M9.2 19.5 C11.2 19.2 13.1 19.2 15 19.5 M12 16.5 L12 19.2 M7.4 9.2 L16.5 9.2" {...stroke} /></>;
       case 'files':
@@ -1588,6 +1600,7 @@ export default function SettingsPanel(props: {
   let closeRef: HTMLButtonElement | undefined;
   let lastFocused: HTMLElement | null = null;
   const [activeChapter, setActiveChapter] = createSignal<SettingsChapterId>('appearance');
+  const [historyDisableConfirm, setHistoryDisableConfirm] = createSignal(false);
 
   const jumpToChapter = (id: SettingsChapterId): void => {
     const section = sheetRef?.querySelector<HTMLElement>(`#nbs-section-${id}`);
@@ -1650,6 +1663,111 @@ export default function SettingsPanel(props: {
   });
 
   const inTauri = isTauri();
+
+  /* --------------------------- AI integration ----------------------------
+   * The key itself belongs to Rust / the operating-system vault. Settings
+   * receives only a status receipt and immediately clears replacement key
+   * material after crossing the IPC boundary. The first-use explanation lives
+   * in the book rail; this is the quiet, durable place to test, replace or
+   * forget an already-understood connection.
+   */
+  const [aiCredentialProbe, { refetch: refetchAiCredential }] = createResource(
+    async () => aiCredentialStatus(),
+  );
+  const [aiKeySheetOpen, setAiKeySheetOpen] = createSignal(false);
+  const [aiKeyDraft, setAiKeyDraft] = createSignal('');
+  const [aiKeyVisible, setAiKeyVisible] = createSignal(false);
+  const [aiKeyPersistence, setAiKeyPersistence] =
+    createSignal<AiCredentialPersistence>('secure');
+  const [aiTrialAcknowledged, setAiTrialAcknowledged] = createSignal(
+    settings.aiAgentTrialPrivacyAcknowledged,
+  );
+  const [aiKeyBusy, setAiKeyBusy] = createSignal(false);
+  const [aiKeyFeedback, setAiKeyFeedback] = createSignal('');
+  const [aiDisconnectConfirm, setAiDisconnectConfirm] = createSignal(false);
+
+  const testConfiguredAi = async (): Promise<void> => {
+    if (!inTauri || aiKeyBusy() || !aiCredentialProbe()?.configured) return;
+    setAiKeyBusy(true);
+    setAiKeyFeedback('Testing the configured key…');
+    try {
+      const result = await testAiCredential();
+      setAiKeyFeedback(
+        result.valid
+          ? 'Connection confirmed.'
+          : 'Cohere did not accept this key. Replace it to reconnect.',
+      );
+    } catch (error) {
+      setAiKeyFeedback(
+        error instanceof Error ? error.message : 'The connection test failed.',
+      );
+    } finally {
+      setAiKeyBusy(false);
+    }
+  };
+
+  const saveReplacementAiKey = async (): Promise<void> => {
+    if (!inTauri || aiKeyBusy() || aiKeyDraft().trim() === '') return;
+    if (settings.aiAgentKeyKind === 'trial' && !aiTrialAcknowledged()) {
+      setAiKeyFeedback('Acknowledge the trial privacy notice before connecting.');
+      return;
+    }
+    const key = aiKeyDraft();
+    // Clear the Solid signal before awaiting the provider boundary. The local
+    // variable survives only for this call frame and is never persisted.
+    setAiKeyDraft('');
+    setAiKeyBusy(true);
+    setAiKeyFeedback('Testing and saving the connection…');
+    try {
+      const test = await testAiCredential(key);
+      if (!test.valid) {
+        throw new Error('Cohere did not accept this key. Nothing was saved.');
+      }
+      const status = await saveAiCredential(key, aiKeyPersistence());
+      if (!status.configured) throw new Error('The key could not be saved.');
+      await save({
+        aiAgentSetupSeen: true,
+        aiAgentTrialPrivacyAcknowledged:
+          settings.aiAgentKeyKind === 'trial' ? aiTrialAcknowledged() : false,
+      });
+      await refetchAiCredential();
+      setAiKeySheetOpen(false);
+      setAiKeyFeedback(
+        status.persistent
+          ? 'Connected and protected by the operating-system vault.'
+          : 'Connected for this session. The secure vault was unavailable.',
+      );
+    } catch (error) {
+      setAiKeyFeedback(
+        error instanceof Error ? error.message : 'The key could not be connected.',
+      );
+    } finally {
+      setAiKeyBusy(false);
+    }
+  };
+
+  const forgetConfiguredAi = async (): Promise<void> => {
+    if (!inTauri || aiKeyBusy()) return;
+    setAiKeyBusy(true);
+    setAiKeyFeedback('Removing the connection…');
+    try {
+      await deleteAiCredential();
+      // Credential bytes live outside Settings, but open BookViews subscribe
+      // to this revision as their cross-surface refresh signal. Publish an
+      // unchanged settings snapshot so every mounted Agent panel immediately
+      // reflects the now-unconfigured native boundary.
+      await save({});
+      await refetchAiCredential();
+      setAiDisconnectConfirm(false);
+      setAiKeyFeedback('Cohere disconnected. Agent history remains on this device.');
+    } catch (error) {
+      setAiKeyFeedback(
+        error instanceof Error ? error.message : 'The key could not be removed.',
+      );
+    } finally {
+      setAiKeyBusy(false);
+    }
+  };
 
   // Sync the persisted flag with the OS truth once per panel lifetime.
   const [autostartProbe] = createResource(async () => {
@@ -3399,6 +3517,198 @@ export default function SettingsPanel(props: {
           </Row>
         </Section>
 
+        {/* --------------------------- AI & integrations --------------------
+            The notebook rail explains the agent on first use. This chapter is
+            deliberately operational: connection health, provider account
+            kind, default context, replacement and deletion. The secret never
+            appears here after it has crossed into Rust. */}
+        <Section
+          id="integrations"
+          title="AI & integrations"
+          accent="violet"
+          words="agent cohere provider api key privacy connection model context"
+        >
+          <Row
+            label="Cohere connection"
+            hint={
+              !inTauri
+                ? 'available in the desktop app'
+                : aiCredentialProbe.loading
+                  ? 'checking the protected app boundary…'
+                  : aiCredentialProbe()?.configured
+                    ? aiCredentialProbe()?.persistent
+                      ? 'connected · protected by the operating-system vault'
+                      : 'connected for this session only'
+                    : 'not connected — the agent remains asleep'
+            }
+            words="status connected disconnected credential vault session"
+            holdControl
+          >
+            <div class="nbs-btn-pair">
+              <Show when={aiCredentialProbe()?.configured}>
+                <button
+                  type="button"
+                  class="nbs-action-btn"
+                  disabled={!inTauri || aiKeyBusy()}
+                  onClick={() => void testConfiguredAi()}
+                >
+                  {aiKeyBusy() ? 'working…' : 'test'}
+                </button>
+              </Show>
+              <button
+                type="button"
+                class="nbs-action-btn"
+                disabled={!inTauri || aiKeyBusy()}
+                onClick={() => {
+                  setAiKeyFeedback('');
+                  setAiKeyDraft('');
+                  setAiKeySheetOpen(true);
+                }}
+              >
+                {aiCredentialProbe()?.configured ? 'replace…' : 'connect…'}
+              </button>
+            </div>
+          </Row>
+          <Row
+            label="account kind"
+            hint="a label for the privacy guidance — Alcove never tries to infer it"
+            words="trial evaluation production enterprise privacy"
+            wide
+          >
+            <Seg
+              label="Cohere account kind"
+              options={[
+                { value: 'trial', label: 'trial / evaluation' },
+                { value: 'production', label: 'production / enterprise' },
+              ]}
+              value={settings.aiAgentKeyKind}
+              onSelect={(value) =>
+                put({ aiAgentKeyKind: value as Settings['aiAgentKeyKind'] })
+              }
+            />
+          </Row>
+          <Row
+            label="default notebook context"
+            hint="the agent can widen this itself when the task requires it"
+            words="current page nearby whole book scope retrieval rag"
+            wide
+          >
+            <Seg
+              label="default AI notebook context"
+              options={[
+                { value: 'current-page', label: 'current page' },
+                { value: 'nearby-pages', label: 'nearby pages' },
+                { value: 'whole-book', label: 'whole book' },
+              ]}
+              value={settings.aiAgentDefaultContext}
+              onSelect={(value) =>
+                put({
+                  aiAgentDefaultContext:
+                    value as Settings['aiAgentDefaultContext'],
+                })
+              }
+            />
+          </Row>
+          <Row
+            label="mask private text"
+            hint="before a new task sends text to Cohere, replace recognizable details with stable opaque placeholders; restore them only inside Alcove"
+            words="obfuscate mask redact private personal email phone address name date identifier placeholder"
+            wide
+          >
+            <div class="nbs-ai-privacy-stack">
+              <div class="nbs-ai-privacy-control">
+                <div class="nbs-ai-privacy-mark" aria-hidden="true">
+                  <svg viewBox="0 0 34 34">
+                    <path d="M 17 3.7 C 21.3 6.2 25.1 6.6 28.1 6.9 L 27.2 18.2 C 26.7 24.0 22.9 28.1 17 30.7 C 11.2 28.0 7.5 23.9 6.9 18.2 L 5.9 6.8 C 9.8 6.5 13.1 5.8 17 3.7 Z" />
+                    <path d="M 11.1 17.1 C 13.0 14.7 15.0 13.6 17.1 13.6 C 19.4 13.6 21.4 14.7 23.1 17.1 C 21.4 19.5 19.4 20.6 17.1 20.6 C 15.0 20.6 13.0 19.5 11.1 17.1 Z" />
+                    <path d="M 10.2 23.4 L 23.9 10.1" />
+                  </svg>
+                </div>
+                <div class="nbs-ai-privacy-copy font-ui">
+                  <strong>{settings.aiAgentObfuscatePrivateText ? 'Text veil on' : 'Text veil off'}</strong>
+                  <span>
+                    {settings.aiAgentObfuscatePrivateText
+                      ? 'New agent tasks use local, task-stable substitutions through the model’s masked visual review, then restore the exact text for your final Alcove preview.'
+                      : 'Cohere receives notebook and attachment text normally, subject to the account and privacy notice above.'}
+                  </span>
+                </div>
+                <Toggle
+                  label="mask private text before AI transport"
+                  checked={settings.aiAgentObfuscatePrivateText}
+                  onChange={(value) => put({ aiAgentObfuscatePrivateText: value })}
+                />
+              </div>
+              <div class="nbs-ai-privacy-limit font-ui" role="note">
+                <strong>Risk reduction, not anonymization.</strong> Recognition can miss unusual or
+                context-dependent details. Alcove can only mask text it can read. Names or numbers
+                baked into attached image pixels — including scanned PDF pages — can still be visible to
+                Cohere when the agent inspects those pixels. Because the model sees opaque dates and
+                identifiers, it may also be worse at comparing or calculating with them. Redact the file
+                itself when pixel privacy matters.
+              </div>
+            </div>
+          </Row>
+          <Row
+            label="trial privacy"
+            hint="Cohere says trial data may be used for R&D, trial environments should not contain personal information, and its Products are not intended for personal or household use"
+            words="warning personal sensitive research development data policy"
+            wide
+          >
+            <a
+              class="nbs-action-btn"
+              href="https://cohere.com/privacy"
+              target="_blank"
+              rel="noreferrer"
+            >
+              read policy ↗
+            </a>
+          </Row>
+          <Show when={aiKeyFeedback().length > 0}>
+            <p class="nbs-ai-status font-ui" role="status">{aiKeyFeedback()}</p>
+          </Show>
+          <Show when={aiCredentialProbe()?.configured}>
+            <Row
+              label="disconnect Cohere"
+              hint="forgets the key; local agent tasks and previews stay on this device"
+              words="remove delete forget api key sign out"
+              holdControl
+            >
+              <Show
+                when={aiDisconnectConfirm()}
+                fallback={
+                  <button
+                    type="button"
+                    class="nbs-action-btn"
+                    disabled={aiKeyBusy()}
+                    onClick={() => setAiDisconnectConfirm(true)}
+                  >
+                    disconnect…
+                  </button>
+                }
+              >
+                <div class="nbs-btn-pair">
+                  <button
+                    type="button"
+                    class="nbs-action-btn"
+                    disabled={aiKeyBusy()}
+                    onClick={() => setAiDisconnectConfirm(false)}
+                  >
+                    keep it
+                  </button>
+                  <button
+                    type="button"
+                    class="nbs-action-btn nbs-action-btn--danger"
+                    disabled={aiKeyBusy()}
+                    onClick={() => void forgetConfiguredAi()}
+                  >
+                    {aiKeyBusy() ? 'removing…' : 'forget key'}
+                  </button>
+                </div>
+              </Show>
+            </Row>
+          </Show>
+        </Section>
+
         {/* ------------------------------- System ------------------------------ */}
         <Section
           id="system"
@@ -3443,6 +3753,50 @@ export default function SettingsPanel(props: {
               checked={settings.backupEnabled}
               onChange={(v) => put({ backupEnabled: v })}
             />
+          </Row>
+          <Row
+            label="protected history"
+            hint="generous page autosaves and whole-book recovery points"
+            words="history recovery restore rollback checkpoints versions pages book safety"
+            wide
+          >
+            <div class="nbs-protected-history">
+              <Toggle
+                label="protected page and book history"
+                checked={settings.protectedHistoryEnabled}
+                onChange={(value) => {
+                  if (value) {
+                    setHistoryDisableConfirm(false);
+                    put({ protectedHistoryEnabled: true });
+                  } else {
+                    setHistoryDisableConfirm(true);
+                  }
+                }}
+              />
+              <span class="font-ui">
+                Dense recent versions are kept with progressively spaced older
+                checkpoints. Restoring never consumes the state you leave.
+              </span>
+              <Show when={historyDisableConfirm()}>
+                <div class="nbs-history-warning font-ui" role="alert">
+                  <strong>Stop creating recovery points?</strong>
+                  <span>
+                    Existing history stays intact, but new edits will not gain
+                    page or whole-book checkpoints until you turn this back on.
+                  </span>
+                  <div class="nbs-btn-pair">
+                    <button type="button" class="nbs-action-btn" onClick={() => setHistoryDisableConfirm(false)}>keep protection</button>
+                    <button type="button" class="nbs-action-btn is-danger" onClick={() => { put({ protectedHistoryEnabled: false }); setHistoryDisableConfirm(false); }}>turn off</button>
+                  </div>
+                </div>
+              </Show>
+              <Show when={!settings.protectedHistoryEnabled && !historyDisableConfirm()}>
+                <div class="nbs-history-warning font-ui" role="note">
+                  Protected history is off. Existing checkpoints are retained;
+                  new edits are not being added.
+                </div>
+              </Show>
+            </div>
           </Row>
           <Show when={settings.backupEnabled}>
             <Row
@@ -3808,6 +4162,131 @@ export default function SettingsPanel(props: {
         class={`nbs-settings-scrollbar ${props.open ? 'is-open' : ''}`}
       />
       </FindCtx.Provider>
+      <Show when={aiKeySheetOpen()}>
+        <Portal>
+          <div
+            class="nbs-ai-key-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !aiKeyBusy()) {
+                setAiKeySheetOpen(false);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || aiKeyBusy()) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setAiKeySheetOpen(false);
+            }}
+          >
+            <section
+              class="nbs-ai-key-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="nbs-ai-key-title"
+            >
+              <header>
+                <div>
+                  <span class="nbs-ai-key-kicker font-ui">Cohere · protected connection</span>
+                  <h2 id="nbs-ai-key-title">
+                    {aiCredentialProbe()?.configured ? 'Replace the agent key' : 'Connect the AI Agent'}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  class="nbs-ai-key-close"
+                  aria-label="Close Cohere connection sheet"
+                  disabled={aiKeyBusy()}
+                  onClick={() => setAiKeySheetOpen(false)}
+                >
+                  <CloseIcon />
+                </button>
+              </header>
+              <p class="nbs-ai-key-intro">
+                Alcove tests the key through its protected desktop boundary. It is
+                never written into a notebook, an agent task, diagnostics, or this
+                settings sheet.
+              </p>
+              <label class="nbs-ai-key-field font-ui">
+                <span>Cohere API key</span>
+                <div>
+                  <input
+                    type={aiKeyVisible() ? 'text' : 'password'}
+                    autocomplete="off"
+                    spellcheck={false}
+                    value={aiKeyDraft()}
+                    placeholder="Paste a trial or production key"
+                    onInput={(event) => setAiKeyDraft(event.currentTarget.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAiKeyVisible((visible) => !visible)}
+                  >
+                    {aiKeyVisible() ? 'hide' : 'show'}
+                  </button>
+                </div>
+              </label>
+              <fieldset class="nbs-ai-key-storage">
+                <legend class="font-ui">Keep it for…</legend>
+                <button
+                  type="button"
+                  aria-pressed={aiKeyPersistence() === 'session'}
+                  onClick={() => setAiKeyPersistence('session')}
+                >
+                  <strong>this session</strong>
+                  <span class="font-ui">forgotten when Alcove closes</span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={aiKeyPersistence() === 'secure'}
+                  onClick={() => setAiKeyPersistence('secure')}
+                >
+                  <strong>secure vault</strong>
+                  <span class="font-ui">protected by the operating system</span>
+                </button>
+              </fieldset>
+              <Show when={settings.aiAgentKeyKind === 'trial'}>
+                <label class="nbs-ai-key-warning font-ui">
+                  <input
+                    type="checkbox"
+                    checked={aiTrialAcknowledged()}
+                    onChange={(event) => setAiTrialAcknowledged(event.currentTarget.checked)}
+                  />
+                  <span><strong>Trial-key reminder.</strong> Cohere says trial inputs and
+                    outputs may be used for research and development, trial environments
+                    should not contain personal information, and its Products are not
+                    intended for personal or household use. I will evaluate with
+                    non-personal material.</span>
+                </label>
+              </Show>
+              <Show when={aiKeyFeedback().length > 0}>
+                <p class="nbs-ai-key-feedback font-ui" role="status">{aiKeyFeedback()}</p>
+              </Show>
+              <footer>
+                <a
+                  class="font-ui"
+                  href="https://dashboard.cohere.com/api-keys"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Cohere API keys ↗
+                </a>
+                <button
+                  type="button"
+                  class="nbs-action-btn"
+                  disabled={
+                    aiKeyBusy() ||
+                    aiKeyDraft().trim().length < 16 ||
+                    (settings.aiAgentKeyKind === 'trial' && !aiTrialAcknowledged())
+                  }
+                  onClick={() => void saveReplacementAiKey()}
+                >
+                  {aiKeyBusy() ? 'testing safely…' : 'test & connect'}
+                </button>
+              </footer>
+            </section>
+          </div>
+        </Portal>
+      </Show>
     </div>
   );
 }

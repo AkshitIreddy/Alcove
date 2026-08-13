@@ -360,7 +360,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: 'the-rail',
     title: 'The tools live on the left',
-    body: 'Nothing sits across the top of a page. Every tool for this book is an icon on the left edge — point at one and its name appears beside it. The upper group opens a panel; below the little divider, the rest act the moment you press them.',
+    body: 'Nothing sits across the top of a page. Every tool for this book is an icon on the left edge — point at one and its name appears beside it. The upper group opens a panel; below the little divider, the rest act the moment you press them. AI Agent lives in that upper group too. It uses your own Cohere key; connecting tests only the credential, and notebook content is sent only after you start a task.',
     hint: 'point at an icon for its name',
     task: {
       ask: 'Point at any icon on the rail.',
@@ -368,6 +368,19 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
       done: 'That is every book tool there is.',
     },
     targets: [{ selector: '.nb-rail', pad: 8 }],
+    side: 'right',
+    scene: 'book',
+    short: true,
+  },
+  {
+    id: 'meet-the-agent',
+    title: 'A collaborator in the same rail',
+    body: 'AI Agent can talk something through, read a source with you, or build and privately review real notebook pages before showing you one final preview. This tour opens the panel only as a look around: it will not ask for a key, connect to Cohere, or send anything. When you open it yourself later, the optional first-use setup will still be waiting.',
+    hint: 'nothing is sent during this preview',
+    targets: [
+      { selector: '.nb-rail-panel.is-ai-agent[aria-hidden="false"]', pad: 6 },
+      { selector: '.nb-rail-button[data-tool="ai-agent"]', pad: 10 },
+    ],
     side: 'right',
     scene: 'book',
     short: true,

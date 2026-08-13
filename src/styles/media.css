@@ -381,6 +381,22 @@
   background: var(--paper-aged);
 }
 
+.nb-image-portability-note {
+  position: absolute;
+  z-index: 2;
+  top: 39px;
+  left: 7px;
+  max-width: calc(100% - 14px);
+  padding: 3px 7px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 5px 7px 6px 8px;
+  box-shadow: var(--shadow-xs);
+  font-size: 11px;
+  pointer-events: none;
+}
+
 /* Large, inspectable image viewer. The page keeps the compact composition;
    this flat paper panel gives diagrams and photographs room to be studied. */
 .nb-image-viewer-backdrop {

@@ -63,6 +63,8 @@ export interface OpenContextMenuOptions {
   readonly pos: number;
   readonly notify?: (message: string) => void;
   readonly pageActions?: PageContextMenuActions;
+  /** Keep a reader's cross-block text selection when they right-click it. */
+  readonly preserveSelection?: boolean;
 }
 
 export function openBlockContextMenu(options: OpenContextMenuOptions): void {
@@ -71,8 +73,12 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
   const { editor, pos } = options;
   if (editor.isDestroyed) return;
 
-  // Select the block under the cursor first.
-  selectBlock(editor, pos);
+  // A plain right-click acts on one block and selects it first. When the
+  // reader deliberately highlighted across several blocks, collapsing that
+  // selection during the contextmenu event can make Chromium cancel the menu
+  // dispatch altogether. Keep the range; block-specific commands still use
+  // the explicit `pos` under the pointer.
+  if (options.preserveSelection !== true) selectBlock(editor, pos);
 
   const entries = buildBlockContextMenu(options.pageActions);
   const candidates = selectableIndexes(entries);
@@ -80,6 +86,13 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
     editor,
     pos,
     notify: options.notify,
+    selectionRange:
+      options.preserveSelection === true
+        ? {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to,
+          }
+        : undefined,
   };
 
   interface SelectionState {
@@ -116,6 +129,11 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
 
   const runItem = (item: ContextMenuItem): void => {
     close();
+    /* Commands that are inherently one-block-only make that scope visible
+     * before they run. Selection-aware commands consume the retained range. */
+    if (context.selectionRange !== undefined && item.selectionAware !== true) {
+      selectBlock(editor, pos);
+    }
     item.run(context);
   };
 
@@ -259,6 +277,23 @@ export function handleEditorContextMenu(
   pageActions?: PageContextMenuActions,
 ): boolean {
   const view = editor.view;
+  /* Atom/custom node views own DOM that `posAtCoords` cannot always map back
+   * to their ProseMirror position. Resolve the real event path first so math,
+   * diagrams, media, tables and cards all share the same right-click seam. */
+  const eventHost = event.composedPath().find(
+    (entry): entry is HTMLElement =>
+      entry instanceof HTMLElement &&
+      (entry.matches('.nb-node-view[data-node-view-root]') ||
+        entry.matches('[data-type="math"]')),
+  );
+  let block = null;
+  if (eventHost !== undefined && view.dom.contains(eventHost)) {
+    try {
+      block = topLevelBlockAt(editor, view.posAtDOM(eventHost, 0));
+    } catch {
+      block = null;
+    }
+  }
   /*
    * A standalone image's ProseMirror node-view host owns the full writing
    * row, while its visible `.nb-image` child may be only 10–90% wide and
@@ -284,8 +319,7 @@ export function handleEditorContextMenu(
     }
   });
 
-  let block = null;
-  if (imageLane !== undefined) {
+  if (block === null && imageLane !== undefined) {
     try {
       block = topLevelBlockAt(editor, view.posAtDOM(imageLane, 0));
     } catch {
@@ -297,7 +331,7 @@ export function handleEditorContextMenu(
     left: event.clientX,
     top: event.clientY,
   });
-  const probe = found ? found.pos : view.state.selection.head;
+  const probe = found ? found.pos : block?.pos ?? view.state.selection.head;
   block ??= topLevelBlockAt(editor, probe);
   if (!block) return false;
   event.preventDefault();
@@ -308,6 +342,10 @@ export function handleEditorContextMenu(
     pos: block.pos,
     notify,
     pageActions,
+    preserveSelection:
+      !view.state.selection.empty &&
+      probe >= view.state.selection.from &&
+      probe <= view.state.selection.to,
   });
   return true;
 }

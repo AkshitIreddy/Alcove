@@ -62,11 +62,20 @@
   padding: var(--space-8) var(--space-20) var(--space-12) 88px;
 }
 
-/* .nb-spread-stage — same width formula, so the book is the same size. */
+/* Canonical live-book canvas, camera-fitted by BookOpening without relayout. */
+.nb-opening-fit-frame {
+  flex: 0 0 920px;
+  width: 1334px;
+  height: 920px;
+  min-width: 1334px;
+  min-height: 920px;
+  transform: scale(var(--nb-opening-fit, 1));
+  transform-origin: 50% 50%;
+}
+
 .nb-opening-stage {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: min(100%, calc((100vh - 96px) * 1.58), 1760px);
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;

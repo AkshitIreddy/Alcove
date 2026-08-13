@@ -32,6 +32,11 @@ import {
   pickMediaFiles,
   readClipboardImageFile,
 } from '../media/insert';
+import {
+  copyUsefulBlock,
+  copyUsefulSelection,
+  downloadUsefulBlock,
+} from './blockPortability';
 
 export interface ContextMenuContext {
   readonly editor: Editor;
@@ -39,6 +44,8 @@ export interface ContextMenuContext {
   readonly pos: number;
   /** Toast/notify hook (clipboard feedback); optional. */
   readonly notify?: (message: string) => void;
+  /** Exact cross-block reader selection retained through right click. */
+  readonly selectionRange?: { readonly from: number; readonly to: number };
 }
 
 export interface ContextMenuItem {
@@ -50,6 +57,8 @@ export interface ContextMenuItem {
   /** CSS color (token) — renders a round swatch instead of a glyph. */
   readonly swatch?: string;
   readonly danger?: boolean;
+  /** The command intentionally consumes `selectionRange` when present. */
+  readonly selectionAware?: boolean;
   run(context: ContextMenuContext): void;
 }
 
@@ -159,10 +168,24 @@ export const HIGHLIGHT_WASHES = [
 
 export type HighlightWash = (typeof HIGHLIGHT_WASHES)[number];
 
-function applyInk(editor: Editor, pos: number, ink: InkColor | null): void {
+function contextualRange(
+  editor: Editor,
+  pos: number,
+  selectionRange?: { readonly from: number; readonly to: number },
+): { from: number; to: number } | null {
+  if (selectionRange !== undefined) return selectionRange;
   const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
-  if (!block) return;
-  const range = blockTextRange(block);
+  return block ? blockTextRange(block) : null;
+}
+
+function applyInk(
+  editor: Editor,
+  pos: number,
+  ink: InkColor | null,
+  selectionRange?: { readonly from: number; readonly to: number },
+): void {
+  const range = contextualRange(editor, pos, selectionRange);
+  if (range === null) return;
   const chain = editor.chain().setTextSelection(range);
   if (ink === null) chain.unsetColor();
   else chain.setColor(INK_COLOR_TOKENS[ink]);
@@ -170,10 +193,14 @@ function applyInk(editor: Editor, pos: number, ink: InkColor | null): void {
 }
 
 /** Write the whole block in `hand`, or give it back to the page's own. */
-function applyFace(editor: Editor, pos: number, hand: string | null): void {
-  const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
-  if (!block) return;
-  const range = blockTextRange(block);
+function applyFace(
+  editor: Editor,
+  pos: number,
+  hand: string | null,
+  selectionRange?: { readonly from: number; readonly to: number },
+): void {
+  const range = contextualRange(editor, pos, selectionRange);
+  if (range === null) return;
   const chain = editor.chain().setTextSelection(range);
   if (hand === null) chain.unsetFace();
   else chain.setFace(hand);
@@ -185,10 +212,10 @@ function applyHighlight(
   pos: number,
   wash: HighlightWash | null,
   style: HighlightStyle = 'marker',
+  selectionRange?: { readonly from: number; readonly to: number },
 ): void {
-  const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
-  if (!block) return;
-  const range = blockTextRange(block);
+  const range = contextualRange(editor, pos, selectionRange);
+  if (range === null) return;
   const chain = editor.chain().setTextSelection(range);
   if (wash === null) chain.unsetHighlight();
   else chain.setHighlight(highlightAttrs(wash, style));
@@ -217,7 +244,8 @@ const COLOR_ITEMS: readonly ContextMenuItem[] = [
       id: `ink-${ink}`,
       title: INK_LABELS[ink],
       swatch: INK_COLOR_TOKENS[ink],
-      run: ({ editor, pos }) => applyInk(editor, pos, ink),
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) => applyInk(editor, pos, ink, selectionRange),
     }),
   ),
   {
@@ -225,7 +253,8 @@ const COLOR_ITEMS: readonly ContextMenuItem[] = [
     id: 'ink-default',
     title: 'Default ink',
     glyph: '↺',
-    run: ({ editor, pos }) => applyInk(editor, pos, null),
+    selectionAware: true,
+    run: ({ editor, pos, selectionRange }) => applyInk(editor, pos, null, selectionRange),
   },
 ];
 
@@ -241,7 +270,8 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
       id: `highlight-${wash}`,
       title: `${wash.charAt(0).toUpperCase()}${wash.slice(1)} wash`,
       swatch: `var(--wash-${wash})`,
-      run: ({ editor, pos }) => applyHighlight(editor, pos, wash),
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) => applyHighlight(editor, pos, wash, 'marker', selectionRange),
     }),
   ),
   // Style rows re-apply the block's current wash (amber when none) in the
@@ -252,8 +282,9 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
       id: `highlight-style-${style}`,
       title: HIGHLIGHT_STYLE_LABELS[style].title,
       glyph: HIGHLIGHT_STYLE_LABELS[style].glyph,
-      run: ({ editor, pos }) =>
-        applyHighlight(editor, pos, currentWash(editor), style),
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) =>
+        applyHighlight(editor, pos, currentWash(editor), style, selectionRange),
     }),
   ),
   {
@@ -261,7 +292,8 @@ const HIGHLIGHT_ITEMS: readonly ContextMenuItem[] = [
     id: 'highlight-none',
     title: 'No highlight',
     glyph: '↺',
-    run: ({ editor, pos }) => applyHighlight(editor, pos, null),
+    selectionAware: true,
+    run: ({ editor, pos, selectionRange }) => applyHighlight(editor, pos, null, 'marker', selectionRange),
   },
 ];
 
@@ -288,7 +320,8 @@ const LETTERING_ITEMS: readonly ContextMenuItem[] = [
       id: `face-${spec.id}`,
       title: spec.label,
       glyph: 'Aa',
-      run: ({ editor, pos }) => applyFace(editor, pos, spec.id),
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) => applyFace(editor, pos, spec.id, selectionRange),
     }),
   ),
   {
@@ -296,7 +329,8 @@ const LETTERING_ITEMS: readonly ContextMenuItem[] = [
     id: 'face-default',
     title: 'The page’s own hand',
     glyph: '↺',
-    run: ({ editor, pos }) => applyFace(editor, pos, null),
+    selectionAware: true,
+    run: ({ editor, pos, selectionRange }) => applyFace(editor, pos, null, selectionRange),
   },
 ];
 
@@ -551,10 +585,46 @@ export function buildBlockContextMenu(
     {
       kind: 'item',
       id: 'duplicate',
-      title: 'Duplicate',
+      title: 'Duplicate selection / block',
       glyph: '⧉',
-      run: ({ editor, pos }) => {
-        duplicateBlock(editor, pos);
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) => {
+        if (selectionRange === undefined) {
+          duplicateBlock(editor, pos);
+          return;
+        }
+        const slice = editor.state.doc.slice(selectionRange.from, selectionRange.to);
+        const transaction = editor.state.tr.replaceRange(
+          selectionRange.to,
+          selectionRange.to,
+          slice,
+        );
+        editor.view.dispatch(transaction.scrollIntoView());
+      },
+    },
+    {
+      kind: 'item',
+      id: 'copy-useful-content',
+      title: 'Copy content',
+      glyph: '⧉',
+      selectionAware: true,
+      run: ({ editor, pos, notify, selectionRange }) => {
+        void (selectionRange === undefined
+          ? copyUsefulBlock(editor, pos)
+          : copyUsefulSelection(editor, selectionRange))
+          .then((message) => notify?.(message))
+          .catch(() => notify?.('could not copy this block'));
+      },
+    },
+    {
+      kind: 'item',
+      id: 'download-useful-content',
+      title: 'Download / save…',
+      glyph: '⇩',
+      run: ({ editor, pos, notify }) => {
+        void downloadUsefulBlock(editor, pos)
+          .then((message) => notify?.(message))
+          .catch(() => notify?.('could not save this block'));
       },
     },
     {
@@ -592,11 +662,13 @@ export function buildBlockContextMenu(
     {
       kind: 'item',
       id: 'delete',
-      title: 'Delete block',
+      title: 'Delete selection / block',
       glyph: '✕',
       danger: true,
-      run: ({ editor, pos }) => {
-        deleteBlock(editor, pos);
+      selectionAware: true,
+      run: ({ editor, pos, selectionRange }) => {
+        if (selectionRange === undefined) deleteBlock(editor, pos);
+        else editor.chain().focus().setTextSelection(selectionRange).deleteSelection().run();
       },
     },
   ];

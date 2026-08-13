@@ -34,7 +34,7 @@ export type SelectionActionId =
   | 'link';
 
 /** A tray is a second row the button opens instead of toggling straight away. */
-export type SelectionTray = 'faces' | 'washes' | 'link';
+export type SelectionTray = 'faces' | 'washes' | 'link' | 'ai';
 
 export interface SelectionAction {
   readonly id: SelectionActionId;

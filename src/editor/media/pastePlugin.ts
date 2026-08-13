@@ -12,7 +12,7 @@
  * The decision logic lives in classify.ts (pure, unit-tested); the orchestrator
  * wires this plugin into the editor via `editorProps`/`addProseMirrorPlugins`.
  */
-import type { Node as PMNode } from '@tiptap/pm/model';
+import { Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { isTauri } from '../../data/db';
@@ -21,6 +21,7 @@ import { insertMediaFiles, mediaFilesFrom } from './insert';
 import type { LinkCardStatus } from './linkCard';
 import { checkFetchableUrl } from './urlGuard';
 import { notify } from '../script/exporters/toast';
+import { structuredPasteContent } from '../smartPaste';
 
 export const mediaPastePluginKey = new PluginKey('nb-media-paste');
 
@@ -176,7 +177,43 @@ export function createMediaPastePlugin(): Plugin {
             event.preventDefault();
             return insertLinkCard(view, action.url);
           default:
-            return false;
+            break;
+        }
+        // Inside source code, paste bytes literally into the existing block.
+        // Structural upgrades would split/lift the selection into new blocks.
+        if (inCodeBlock(view)) return false;
+        // Rich clipboard HTML already carries its table/list semantics and is
+        // better handled by ProseMirror's DOM parser.  Upgrade only a
+        // plain-text payload whose structure would otherwise be flattened.
+        const html = event.clipboardData?.getData('text/html') ?? '';
+        const semanticHtml = /<(?:table|thead|tbody|tr|ul|ol|li|blockquote|h[1-6])\b/i.test(html);
+        if (semanticHtml) return false;
+        const structured = structuredPasteContent(
+          text,
+          (name) => view.state.schema.nodes[name] !== undefined,
+        );
+        if (structured === null || structured.content.length === 0) return false;
+        try {
+          const documentNode = view.state.schema.nodeFromJSON({
+            type: 'doc',
+            content: structured.content,
+          });
+          event.preventDefault();
+          view.dispatch(
+            view.state.tr
+              .replaceSelection(new Slice(documentNode.content, 0, 0))
+              .scrollIntoView(),
+          );
+          notify(
+            structured.kind === 'table' || structured.kind === 'json-table'
+              ? 'Pasted data shaped into a table'
+              : structured.kind === 'code'
+                ? 'Pasted code kept as a code block'
+                : 'Pasted structure kept as Alcove blocks',
+          );
+          return true;
+        } catch {
+          return false;
         }
       },
 

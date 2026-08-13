@@ -418,8 +418,10 @@
   font-weight: 600;
 }
 
-/* Placeholder — a soft pencil whisper */
-.nb-prose .is-empty::before {
+/* Placeholder — a soft pencil whisper on a genuinely empty page only.
+   Spacer paragraphs between authored blocks are breathing room, not a
+   permanent repeated command hint. */
+.nb-prose.ProseMirror-focused .is-editor-empty::before {
   content: attr(data-placeholder);
   float: left;
   height: 0;
@@ -2232,7 +2234,14 @@ html[data-nb-col-resizing='true'] {
    -------------------------------------------------------------------------- */
 .nb-node-view[data-node-view-root='sticker'] {
   display: inline-block;
-  vertical-align: text-bottom;
+  /*
+   * A sticker is a small drawing, not a Patrick Hand descender.  Aligning its
+   * 28px box to `text-bottom` put the lower half directly on the ruled-paper
+   * stroke (most visibly on the Welcome headings).  Lift the node-view host,
+   * not the SVG: the hover rotation can still own the inner transform and the
+   * box remains inside the existing line height, so pagination is unchanged.
+   */
+  vertical-align: 0.24em;
   line-height: 0;
 }
 
@@ -2567,6 +2576,48 @@ html[data-nb-col-resizing='true'] {
   padding: var(--space-4);
 }
 
+/* A 620px-tall supported window must still expose Delete/page actions. Keep
+   fly-out submenus unclipped; compact the root rhythm instead of making its
+   containing box a scroller that would cut those fly-outs off. */
+@media (max-height: 720px) {
+  .nb-ctx-menu {
+    width: min(460px, calc(100vw - 24px));
+    padding: 2px;
+  }
+
+  .nb-ctx-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 4px;
+    padding: 2px;
+  }
+
+  .nb-ctx-divider {
+    grid-column: 1 / -1;
+  }
+
+  .nb-ctx-item {
+    gap: 5px;
+    min-height: 24px;
+    padding: 1px 5px;
+  }
+
+  .nb-ctx-glyph {
+    width: 19px;
+    height: 19px;
+    font-size: 12px;
+  }
+
+  .nb-ctx-title {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .nb-ctx-divider {
+    margin: 2px 5px;
+  }
+}
+
 .nb-ctx-item {
   display: flex;
   width: 100%;
@@ -2693,8 +2744,8 @@ html[data-nb-col-resizing='true'] {
 }
 
 /* ----------------------------------------------------------------------------
-   Selection toolbar (src/editor/toolbar) — the six inline marks on a card
-   that follows the selection.
+   Selection toolbar (src/editor/toolbar) — inline marks and AI handoff on a
+   card that follows the selection.
 
    The card is on <body> in a fixed-position portal, so nothing here may
    depend on the page's stacking or clipping: the portal is the positioned
@@ -3061,6 +3112,110 @@ html[data-nb-col-resizing='true'] {
   padding: 0 2px;
   font-size: var(--text-ui-xs);
   line-height: 1.35;
+  color: var(--wash-terracotta-deep);
+}
+
+/* --- AI selection rewrite -------------------------------------------------
+   The prompt remains part of the selection card, so Floating UI continues to
+   anchor the whole interaction to the selected words. It only hands a request
+   to the agent; preview, revision and approval stay in the book rail. */
+.nb-seltool-ai-btn .nb-rail-icon {
+  width: 21px;
+  height: 21px;
+  color: inherit;
+}
+
+.nb-seltool-ai-tray {
+  width: 272px;
+  gap: 5px;
+}
+
+.nb-seltool-ai-label {
+  color: var(--ink-sepia);
+  font-size: var(--text-ui);
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+}
+
+.nb-seltool-ai-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.nb-seltool-ai-field {
+  flex: 1 1 auto;
+  width: 0;
+  min-height: 49px;
+  max-height: 92px;
+  padding: 6px var(--space-8);
+  resize: none;
+  overflow-y: auto;
+  background: var(--paper-cream);
+  border: var(--stroke-ink-thin);
+  border-radius: 8px 11px 9px 12px / 10px 8px 12px 9px;
+  color: var(--ink-graphite);
+  font-size: var(--text-ui);
+  line-height: 1.35;
+  caret-color: var(--ink-accent);
+}
+
+.nb-seltool-ai-field::placeholder {
+  color: var(--ink-graphite-soft);
+}
+
+.nb-seltool-ai-field:focus {
+  outline: none;
+  border-color: var(--ink-sepia);
+  background: color-mix(in srgb, var(--paper-cream) 82%, var(--wash-sky-light));
+}
+
+.nb-seltool-ai-field:disabled {
+  opacity: 0.72;
+}
+
+.nb-seltool-ai-send {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 33px;
+  display: grid;
+  place-items: center;
+  background: var(--wash-sky-light);
+  border: var(--stroke-ink-thin);
+  border-radius: 8px 11px 9px 12px;
+  color: var(--ink-sepia);
+  cursor: pointer;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-seltool-ai-send > span {
+  font-family: var(--font-accent);
+  font-size: 20px;
+  line-height: 1;
+  transform: translate(-1px, 1px) rotate(-2deg);
+}
+
+.nb-seltool-ai-send:hover:not(:disabled) {
+  background: var(--wash-amber);
+  color: var(--on-gilt);
+  transform: translateY(-1px);
+}
+
+.nb-seltool-ai-send:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nb-seltool-ai-note {
+  margin: 0;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui-xs);
+  line-height: 1.35;
+}
+
+.nb-seltool-ai-note.is-error {
   color: var(--wash-terracotta-deep);
 }
 

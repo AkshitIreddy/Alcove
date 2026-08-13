@@ -538,6 +538,26 @@ export const ORNAMENT_LABELS: readonly string[] = [
   'Balance scales',
   'Castle',
   'Lamp of learning',
+  'Acanthus spear',
+  'Carnation bloom',
+  'Iris fan',
+  'Artichoke finial',
+  'Poppy seedhead',
+  'Olive spray',
+  'Strawberry sprig',
+  'Vine cluster',
+  'Honeysuckle scroll',
+  'Lotus palmette',
+  'Maple samara spray',
+  'Willow catkin',
+  'Rowan spray',
+  'Columbine bell',
+  'Primrose stem',
+  'Dog-rose branch',
+  'Cedar cone spray',
+  'Reed bundle',
+  'Moresque knot',
+  'Tudor rose standard',
 ];
 
 /** Number of ornament stamps (a book may also have none). */
@@ -559,10 +579,12 @@ export const ORNAMENT_COUNT = ORNAMENT_LABELS.length;
 export const ACTIVE_ORNAMENT_INDICES = [
   0, 1, 2, 5, 12, 13, 14, 20,
   23, 26, 28, 29, 30, 31, 43, 56,
+  66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+  76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
 ] as const;
 
 export interface ActiveOrnamentOption {
-  readonly index: number;
+  readonly index: (typeof ACTIVE_ORNAMENT_INDICES)[number];
   readonly label: string;
 }
 
@@ -593,6 +615,26 @@ const ACTIVE_ORNAMENT_GLYPHS: Readonly<Record<(typeof ACTIVE_ORNAMENT_INDICES)[n
   31: 'tulip',
   43: 'palmette',
   56: 'fern-palmette',
+  66: 'acanthus-spear',
+  67: 'carnation',
+  68: 'iris-fan',
+  69: 'artichoke',
+  70: 'poppy-seedhead',
+  71: 'olive-spray',
+  72: 'strawberry-sprig',
+  73: 'vine-cluster',
+  74: 'honeysuckle-scroll',
+  75: 'lotus-palmette',
+  76: 'maple-samara',
+  77: 'willow-catkin',
+  78: 'rowan-spray',
+  79: 'columbine-bell',
+  80: 'primrose-stem',
+  81: 'dog-rose',
+  82: 'cedar-cone',
+  83: 'reed-bundle',
+  84: 'moresque-knot',
+  85: 'tudor-rose',
 };
 
 /** Total semantic lookup for the active catalogue; retired values normalise first. */
@@ -743,6 +785,26 @@ export const ORNAMENT_TAGS: readonly (readonly SpineTag[])[] = [
   ['formal', 'scholarly', 'severe'], // 63 balance scales
   ['heraldic', 'antique', 'heavy'], // 64 castle
   ['scholarly', 'cosy', 'antique'], // 65 lamp of learning
+  ['botanical', 'ornate', 'antique'], // 66 acanthus spear
+  ['botanical', 'romantic', 'refined'], // 67 carnation bloom
+  ['botanical', 'formal', 'airy'], // 68 iris fan
+  ['botanical', 'heavy', 'antique'], // 69 artichoke finial
+  ['botanical', 'scholarly', 'severe'], // 70 poppy seedhead
+  ['botanical', 'refined', 'formal'], // 71 olive spray
+  ['botanical', 'cosy', 'romantic'], // 72 strawberry sprig
+  ['botanical', 'warm', 'ornate'], // 73 vine cluster
+  ['botanical', 'romantic', 'airy'], // 74 honeysuckle scroll
+  ['botanical', 'formal', 'refined'], // 75 lotus palmette
+  ['botanical', 'natural', 'airy'], // 76 maple samara spray
+  ['botanical', 'natural', 'muted'], // 77 willow catkin
+  ['botanical', 'bright', 'rustic'], // 78 rowan spray
+  ['botanical', 'romantic', 'whimsical'], // 79 columbine bell
+  ['botanical', 'bright', 'plain'], // 80 primrose stem
+  ['botanical', 'romantic', 'antique'], // 81 dog-rose branch
+  ['botanical', 'natural', 'heavy'], // 82 cedar cone spray
+  ['botanical', 'scholarly', 'severe'], // 83 reed bundle
+  ['ornate', 'formal', 'antique'], // 84 moresque knot
+  ['botanical', 'heraldic', 'formal'], // 85 Tudor rose standard
 ];
 
 /* ----------------------- front-cover title metadata ---------------------- */

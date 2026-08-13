@@ -44,11 +44,14 @@ export {
 
 export {
   fetchImages,
+  stageFetchedImages,
+  promoteFetchedImageAssets,
   recordAssetRow,
   storeImageBytes,
   storeImageFile,
   storeVideoFile,
   type FetchedImageResult,
+  type FetchedImageAssetReceipt,
   type StoredAsset,
   type StoredImage,
 } from './assets';
@@ -64,6 +67,13 @@ export {
   createMediaPastePlugin,
   mediaPastePluginKey,
 } from './pastePlugin';
+
+export {
+  classifyStructuredPaste,
+  structuredPasteContent,
+  type StructuredPaste,
+  type StructuredPasteKind,
+} from '../smartPaste';
 
 export {
   insertMediaFiles,

@@ -357,14 +357,23 @@ thinking with an 8,000-token budget and the normal output allowance. This
 optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
 durable state still expose no reasoning channel.
 
-Every non-empty Agent catalogue is sent with Cohere `tool_choice: REQUIRED` as
-well as `strict_tools: true`. The first control requires a call; the second
-constrains its arguments to the advertised schema. Alcove still treats the
-provider stream as untrusted. If a well-formed empty completion or malformed
-tool stream occurs in one of the four singleton, argument-free phases above,
-the graph records that provider attempt and safely routes the only locally
-authorized transition. Any judgment-bearing or multi-tool phase still pauses
-after its single corrective turn rather than guessing the model's intent.
+Notebook mutation and current-source grounding catalogues are sent with Cohere
+`tool_choice: REQUIRED` and `strict_tools: true`. The first control requires a
+call; the second constrains its arguments to the advertised schema. An ordinary
+source-free conversation instead uses automatic tool choice without the
+experimental strict-schema switch, so Command A+ may answer naturally and
+Alcove wraps a complete prose `STOP` into the local `finish_conversation`
+boundary. If that optional-tool envelope itself is unusable, the graph counts
+it and makes one bounded tool-free prose request; a second failure pauses.
+
+Alcove still treats every provider stream as untrusted. If a well-formed empty
+completion or malformed tool stream occurs in one of the four singleton,
+argument-free phases above, the graph records that provider attempt and safely
+routes the only locally authorized transition. Any other judgment-bearing or
+multi-tool work phase still pauses rather than guessing the model's intent.
+The panel represents a final failure once: the persistent recovery card owns
+the detail and Retry action, while `run.failed` remains diagnostic history and
+does not become a duplicate transcript activity.
 
 Images are observations for one turn, not durable repeated history. The adapter
 reattaches pixels only from the trailing unanswered tool-result group, after the

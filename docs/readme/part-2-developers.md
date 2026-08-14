@@ -1139,14 +1139,22 @@ events are separate streams: prose becomes the reader-visible conversation;
 goals, plan steps, tool summaries, coverage, diagnostics and observed visual
 findings become the audit timeline. Neither contract has a raw reasoning field.
 
-The Cohere request pairs `tool_choice: REQUIRED` with `strict_tools: true` when
-the Agent catalogue is non-empty. They solve different problems: REQUIRED
-prevents a prose-only completion, while strict tools constrain the chosen call
-to its schema. Alcove still validates the stream and call locally. A provider
-that returns an empty completion or a malformed call in one of the four
-singleton argument-free routing phases is counted and replaced by that sole
-locally authorized transition; a judgment-bearing or multi-tool phase is never
-guessed this way.
+For notebook mutation and current-source grounding, the Cohere request pairs
+`tool_choice: REQUIRED` with `strict_tools: true`. They solve different
+problems: REQUIRED prevents a prose-only completion, while strict tools
+constrain the chosen call to its schema. An ordinary source-free conversation
+uses automatic choice without strict-schema mode. A complete direct prose
+answer is wrapped locally into `finish_conversation`; if the optional-tool
+envelope is rejected or malformed, Alcove counts it and makes one bounded
+tool-free prose request before pausing.
+
+Alcove still validates every stream and call locally. An empty completion or a
+malformed call in one of the four singleton argument-free routing phases is
+counted and replaced by that sole locally authorized transition; other
+judgment-bearing or multi-tool work is never guessed this way. A terminal
+failure appears once in the panel's persistent recovery card—the diagnostic
+`run.failed` event is retained for copied logs but not duplicated in the visible
+transcript.
 
 The Cohere adapter also spends reasoning budget according to the advertised
 surface. When exactly one deterministic routing tool is available—validation,

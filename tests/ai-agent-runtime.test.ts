@@ -311,6 +311,9 @@ describe('Alcove autonomous notebook agent runtime', () => {
       runId: 'run-local-greeting',
       bookId: 'book-1',
       goal: 'hi',
+      // Every real panel supplies a default placement even for conversation.
+      // That context must not turn a greeting into notebook work.
+      insertionTarget: { kind: 'book_end' },
     });
 
     expect(provider.requests).toHaveLength(0);
@@ -1013,13 +1016,32 @@ describe('Alcove autonomous notebook agent runtime', () => {
           message.toolCalls?.some((call) => call.id === 'call-1') === true,
       ),
     ).toBe(true);
-    expect(provider.requests[0]?.tools.map((tool) => tool.name)).toEqual(
+    const firstToolNames = provider.requests[0]?.tools.map((tool) => tool.name) ?? [];
+    expect(firstToolNames).toEqual(
       expect.arrayContaining([
+        'inspect_notebook',
         'read_full_source',
         'search_source_index',
+      ]),
+    );
+    expect(firstToolNames).not.toEqual(
+      expect.arrayContaining([
         'render_draft_preview',
         'read_draft_preview_pages',
         'record_visual_review',
+        'propose_notebook_patch',
+        'submit_notebook_patch',
+      ]),
+    );
+    const advertisedAcrossWorkflow = provider.requests.flatMap((request) =>
+      request.tools.map((tool) => tool.name),
+    );
+    expect(advertisedAcrossWorkflow).toEqual(
+      expect.arrayContaining([
+        'render_draft_preview',
+        'read_draft_preview_pages',
+        'record_visual_review',
+        'propose_notebook_patch',
         'submit_notebook_patch',
       ]),
     );

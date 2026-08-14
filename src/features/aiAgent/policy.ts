@@ -9,6 +9,7 @@ import {
 } from './coverage';
 import { imagePromptHandoffMatchesDraft } from './imageHandoff';
 import { explicitImageRequest } from './imageIntent';
+import { readerRequestsNotebookMutation } from './intent';
 
 export interface PolicyDecision {
   readonly allowed: boolean;
@@ -56,6 +57,13 @@ export function canCompleteConversation(
 ): PolicyDecision {
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
+  }
+  if (readerRequestsNotebookMutation(state)) {
+    return {
+      allowed: false,
+      code: 'incomplete',
+      reason: 'the reader asked to change the notebook; complete the reviewed notebook workflow instead',
+    };
   }
   const coverage = state.sourceCoverage;
   if (

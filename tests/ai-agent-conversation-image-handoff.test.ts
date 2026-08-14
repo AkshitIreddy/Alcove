@@ -510,6 +510,24 @@ describe('portable generated-image handoff', () => {
 });
 
 describe('answer-only agent completion', () => {
+  it('cannot finish conversationally when the latest reader turn asks for a notebook change', () => {
+    const initial = baseState();
+    const state: AgentState = {
+      ...initial,
+      conversation: [{
+        id: 'reader-insert',
+        role: 'user',
+        text: 'Add this answer into my book',
+        createdAt: NOW,
+      }],
+    };
+    expect(canCompleteConversation(state, [])).toMatchObject({
+      allowed: false,
+      code: 'incomplete',
+      reason: expect.stringMatching(/asked to change the notebook/i),
+    });
+  });
+
   it('blocks a same-assistant-batch read/finish bypass until a later model turn', () => {
     const sourceManifest = manifest();
     const state: AgentState = {
@@ -636,6 +654,7 @@ describe('answer-only agent completion', () => {
       runId: 'prose-only-run',
       bookId: 'book-1',
       goal: 'What is math?',
+      insertionTarget: { kind: 'book_end' },
     });
 
     expect(result.state.lifecycle).toBe('completed');
@@ -644,6 +663,7 @@ describe('answer-only agent completion', () => {
   });
 
   it('does not reinterpret prose-only output as completion for a notebook edit', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
     const provider: AgentProvider = {
       id: 'prose-only-edit-test',
       capabilities: async (): Promise<AgentProviderCapabilities> => ({
@@ -656,7 +676,8 @@ describe('answer-only agent completion', () => {
         maxOutputTokens: 2_000,
         supportsParallelToolCalls: false,
       }),
-      async *streamTurn(): AsyncIterable<AgentProviderStreamEvent> {
+      async *streamTurn(request): AsyncIterable<AgentProviderStreamEvent> {
+        requests.push(request);
         yield { type: 'public_text_delta', text: 'I can help with that.' };
         yield { type: 'finish', reason: 'stop' };
       },
@@ -677,6 +698,37 @@ describe('answer-only agent completion', () => {
     expect(result.state.lifecycle).toBe('failed');
     expect(result.state.lastError?.message).toMatch(/without choosing a completion or work tool/i);
     expect(result.state.conversation).toHaveLength(1);
+    expect(requests[0]?.tools.map((tool) => tool.name)).not.toContain('finish_conversation');
+  });
+
+  it('keeps notebook intent after a sensible-defaults follow-up', () => {
+    const initial = baseState();
+    const state = {
+      ...initial,
+      taskBrief: {
+        ...initial.taskBrief,
+        goal: 'Insert this content into my book',
+      },
+      conversation: [
+        {
+          id: 'reader-original-insert',
+          role: 'user' as const,
+          text: 'Insert this content into my book',
+          createdAt: NOW,
+        },
+        {
+          id: 'reader-defaults',
+          role: 'user' as const,
+          text: 'Use sensible defaults.',
+          createdAt: NOW,
+        },
+      ],
+    };
+
+    expect(canCompleteConversation(state, [])).toMatchObject({
+      allowed: false,
+      reason: expect.stringMatching(/asked to change the notebook/i),
+    });
   });
 
   it('finishes a conversational answer without a draft, preview or mutation', async () => {

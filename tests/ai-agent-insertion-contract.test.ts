@@ -24,6 +24,7 @@ import {
   recordVisualInspection,
   recordSourceCitations,
   canSubmitNotebookPatch,
+  availableAgentToolNames,
 } from '../src/features/aiAgent';
 import { createAiAgentPanelController } from '../src/views/rail/aiAgentControllerAdapter';
 
@@ -242,6 +243,60 @@ function citationReadyState() {
 }
 
 describe('AI insertion target boundaries', () => {
+  it('advertises only workflow-valid notebook tools at each durable checkpoint', () => {
+    const ready = citationReadyState();
+    const mutation = {
+      ...ready,
+      taskBrief: { ...ready.taskBrief, goal: 'Add these notes into my book' },
+      conversation: [{
+        id: 'reader-mutation',
+        role: 'user' as const,
+        text: 'Add these notes into my book',
+        createdAt: NOW,
+      }],
+    };
+    const beforeDraft = {
+      ...mutation,
+      draft: undefined,
+      validation: undefined,
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const beforeDraftTools = availableAgentToolNames(beforeDraft);
+    expect(beforeDraftTools.has('submit_notebook_script')).toBe(true);
+    expect(beforeDraftTools.has('propose_insertion')).toBe(false);
+    expect(beforeDraftTools.has('propose_notebook_patch')).toBe(false);
+    expect(beforeDraftTools.has('finish_conversation')).toBe(false);
+
+    const beforeValidation = {
+      ...mutation,
+      validation: undefined,
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const validationTools = availableAgentToolNames(beforeValidation);
+    expect(validationTools.has('validate_notebook_script')).toBe(true);
+    expect(validationTools.has('submit_notebook_script')).toBe(false);
+    expect(validationTools.has('propose_insertion')).toBe(false);
+    expect(validationTools.has('propose_notebook_patch')).toBe(false);
+
+    const reviewedTools = availableAgentToolNames(mutation);
+    expect(reviewedTools.has('propose_notebook_patch')).toBe(true);
+    expect(reviewedTools.has('submit_notebook_script')).toBe(false);
+    expect(reviewedTools.has('record_visual_review')).toBe(false);
+
+    const unreadPreview = {
+      ...mutation,
+      visualReview: createVisualReviewLedger(mutation.previewGeneration, NOW),
+      patchProposal: undefined,
+    };
+    const unreadPreviewTools = availableAgentToolNames(unreadPreview);
+    expect(unreadPreviewTools.has('read_draft_preview_pages')).toBe(true);
+    expect(unreadPreviewTools.has('record_visual_review')).toBe(false);
+  });
+
   it.each([
     { kind: 'before_page', pageId: 'foreign-page' },
     { kind: 'after_page', pageId: 'foreign-page' },
@@ -1407,6 +1462,39 @@ describe('AI task cancellation settlement', () => {
 });
 
 describe('AI source citation provenance', () => {
+  it('treats an identical repaired draft as an idempotent no-op', async () => {
+    const state = citationReadyState();
+    const persistence = new InMemoryAgentPersistence();
+    const events = new AgentEventBus(state.identity, persistence, () => NOW);
+    const adapters = toolAdapters();
+    const tools = new AgentToolCatalog({
+      ...adapters,
+      hash: {
+        ...adapters.hash,
+        digestText: async (text) =>
+          text === state.draft.script
+            ? state.draft.draftHash
+            : adapters.hash.digestText(text),
+      },
+    }, events);
+    const result = await tools.execute(state, {
+      id: 'call-identical-repair',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: state.sourceCoverage.citedUnitIds,
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+
+    expect(result.result).toMatchObject({ unchanged: true });
+    expect(result.state.draft).toEqual(state.draft);
+    expect(result.state.validation).toEqual(state.validation);
+    expect(result.state.previewGeneration).toEqual(state.previewGeneration);
+    expect(result.state.visualReview).toEqual(state.visualReview);
+    expect(result.state.usage.repairPasses).toBe(state.usage.repairPasses);
+  });
+
   it('requires a current read and citation from noncanonical task sources', () => {
     const ready = citationReadyState();
     const withoutReaderEvidence = {

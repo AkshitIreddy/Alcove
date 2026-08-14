@@ -19,6 +19,10 @@ import {
 } from './provider';
 import { buildAgentSystemPrompt } from './prompts';
 import {
+  latestReaderText,
+  readerRequestsNotebookMutation,
+} from './intent';
+import {
   assertPrivatePlaceholdersRestorable,
   obfuscateProviderMessages,
   obfuscateProviderRequest,
@@ -119,24 +123,16 @@ function discardInterruptSiblings(
  * notebook authority. Explicit book-editing language still fails closed so a
  * provider cannot silently replace requested pages with a chat response.
  */
-const NOTEBOOK_MUTATION_REQUEST = new RegExp(
-  String.raw`\b(?:add|append|insert|create|make|build|write|draft|format|polish|organ(?:i[sz]e|ized?)|lay\s*out|turn|convert|rewrite|replace|edit|change|update|revise|design|put|move|delete|remove)\b[\s\S]{0,64}\b(?:notebook|book|page|pages|notes?|study\s+guide|summary|cheat\s*sheet|selection|highlighted|pasted|document|pdf|file|material|content)\b|\b(?:notebook|book|page|pages|notes?|selection|highlighted)\b[\s\S]{0,64}\b(?:add|append|insert|create|make|build|write|draft|format|polish|organ(?:i[sz]e|ized?)|lay\s*out|turn|convert|rewrite|replace|edit|change|update|revise|design|put|move|delete|remove)\b`,
-  'iu',
-);
-
 const SIMPLE_GREETING = /^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))[\s!,.?]*$/iu;
 
 function localGreetingCompletion(state: AgentState): AgentModelToolCall | undefined {
   if (
     state.draft !== undefined ||
-    state.insertionTarget !== undefined ||
     state.previewGeneration !== undefined ||
     (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
   ) return undefined;
-  const latestReaderText = [...state.conversation]
-    .reverse()
-    .find((message) => message.role === 'user')?.text.trim() ?? '';
-  if (!SIMPLE_GREETING.test(latestReaderText)) return undefined;
+  const readerText = latestReaderText(state).trim();
+  if (!SIMPLE_GREETING.test(readerText)) return undefined;
   return {
     id: `conversation-greeting-${state.identity.runId}-${state.checkpointStep + 1}`,
     name: 'finish_conversation',
@@ -155,16 +151,12 @@ function proseOnlyConversationFallback(
   if (answer === '' || turn.finishReason !== 'stop') return undefined;
   if (
     state.draft !== undefined ||
-    state.insertionTarget !== undefined ||
     state.previewGeneration !== undefined ||
     (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
   ) {
     return undefined;
   }
-  const latestReaderText = [...state.conversation]
-    .reverse()
-    .find((message) => message.role === 'user')?.text ?? state.taskBrief.goal;
-  if (NOTEBOOK_MUTATION_REQUEST.test(latestReaderText)) return undefined;
+  if (readerRequestsNotebookMutation(state)) return undefined;
   return {
     id: `conversation-fallback-${state.identity.runId}-${state.usage.providerCalls + 1}`,
     name: 'finish_conversation',
@@ -376,7 +368,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         .filter(Boolean)
         .join('\n\n'),
       messages: providerMessages,
-      tools: tools.descriptors(),
+      tools: tools.descriptorsForState(providerState),
       toolChoice: 'required',
     };
     if (providerState.textPrivacy !== undefined) {

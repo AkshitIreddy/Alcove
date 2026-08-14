@@ -10,6 +10,7 @@ import {
   recordVisualImageExposures,
   recordVisualInspection,
   sourceUnitsUnobservedBeforeProviderCall,
+  visualImageExposurePageIds,
 } from './coverage';
 import type { AgentEventBus } from './events';
 import {
@@ -21,6 +22,7 @@ import {
   extractPortableImageSlots,
 } from './imageHandoff';
 import { assertPortableImagesRequested } from './imageIntent';
+import { readerRequestsNotebookMutation } from './intent';
 import type { AgentToolDescriptor } from './provider';
 import {
   buildPatchProposal,
@@ -1202,15 +1204,35 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
       schema: submitScriptSchema,
       async execute(state, args, context) {
         const isRepair = state.draft !== undefined;
-        if (isRepair && state.usage.repairPasses >= state.budget.maxRepairPasses) {
-          throw new Error(`repair budget exhausted (${state.budget.maxRepairPasses})`);
-        }
         const portableImageSlots = extractPortableImageSlots(args.script);
         if (portableImageSlots.length > 0) assertPortableImagesRequested(state);
         const draftHash = await context.adapters.hash.digestText(args.script);
         const changedDraft = state.draft?.draftHash !== draftHash;
         const sourceContextChanged =
           state.draft?.sourceManifestDigest !== state.sourceManifest?.digest;
+        const priorCitations = [...(state.sourceCoverage?.citedUnitIds ?? [])].sort();
+        const nextCitations = [...new Set(args.citedUnitIds)].sort();
+        const citationsChanged = JSON.stringify(priorCitations) !== JSON.stringify(nextCitations);
+        if (isRepair && !changedDraft && !sourceContextChanged && !citationsChanged) {
+          return {
+            state: touch(state, context, {}),
+            result: json({
+              draftVersion: state.draft!.version,
+              draftHash,
+              portableImageSlots,
+              mutationPerformed: false,
+              unchanged: true,
+            }),
+            summary: 'kept the already-current draft',
+          };
+        }
+        if (
+          isRepair &&
+          changedDraft &&
+          state.usage.repairPasses >= state.budget.maxRepairPasses
+        ) {
+          throw new Error(`repair budget exhausted (${state.budget.maxRepairPasses})`);
+        }
         if (changedDraft || sourceContextChanged) {
           const staleGenerationIds = changedDraft
             ? generationIdsOwnedByState(state)
@@ -1277,17 +1299,23 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             draft,
             imagePromptHandoff: changedDraft ? undefined : state.imagePromptHandoff,
             sourceCoverage: ledger,
-            validation: undefined,
+            validation:
+              changedDraft || sourceContextChanged ? undefined : state.validation,
             previewGeneration: changedDraft ? undefined : state.previewGeneration,
             visualReview: changedDraft ? undefined : state.visualReview,
             patchProposal:
-              changedDraft || sourceContextChanged ? undefined : state.patchProposal,
+              changedDraft || sourceContextChanged || citationsChanged
+                ? undefined
+                : state.patchProposal,
             localRestoredFinal:
-              changedDraft || sourceContextChanged ? undefined : state.localRestoredFinal,
+              changedDraft || sourceContextChanged || citationsChanged
+                ? undefined
+                : state.localRestoredFinal,
             phase: isRepair ? 'repairing' : 'checking_script',
             usage: {
               ...state.usage,
-              repairPasses: state.usage.repairPasses + (isRepair ? 1 : 0),
+              repairPasses:
+                state.usage.repairPasses + (isRepair && changedDraft ? 1 : 0),
             },
           }),
           result: json({
@@ -1928,6 +1956,114 @@ export interface ToolCallResult {
   readonly interrupt?: AgentInterrupt;
 }
 
+const ALWAYS_AVAILABLE_TOOLS = new Set([
+  'inspect_notebook',
+  'list_source_manifest',
+  'set_plan',
+  'ask_user',
+]);
+
+/**
+ * Cohere cannot be forced to choose a tool, so the catalogue itself is the
+ * workflow rail. Advertising impossible later-stage tools caused expensive
+ * guess/error loops (proposal before draft, repeated drafts before validation,
+ * and placement changes after review). Only expose actions valid for the
+ * current durable checkpoint; execute() remains the final authority.
+ */
+export function availableAgentToolNames(state: AgentState): ReadonlySet<string> {
+  const available = new Set(ALWAYS_AVAILABLE_TOOLS);
+  if (state.sourceManifest !== undefined) {
+    available.add('plan_source_retrieval');
+    available.add('read_source_range');
+    available.add('read_full_source');
+    available.add('search_source_index');
+    available.add('rerank_source_hits');
+    available.add('inspect_source_coverage');
+  }
+  const notebookWork = readerRequestsNotebookMutation(state) ||
+    state.draft !== undefined ||
+    state.patchProposal !== undefined;
+
+  if (!notebookWork) {
+    available.add('finish_conversation');
+    return available;
+  }
+
+  if (state.notebookSnapshot !== undefined) {
+    available.add('inspect_page');
+    available.add('inspect_page_range');
+    available.add('inspect_selection');
+  }
+
+  // Placement is authored before the first draft. Once rendering begins, the
+  // reviewed location is immutable unless the reader changes it through the
+  // dedicated UI, which invalidates and rebuilds safely outside this tool.
+  if (
+    state.notebookSnapshot !== undefined &&
+    state.draft === undefined &&
+    state.insertionTarget === undefined
+  ) {
+    available.add('propose_insertion');
+  }
+
+  const draft = state.draft;
+  const validationCurrent = draft !== undefined &&
+    state.validation?.draftHash === draft.draftHash;
+  const validationPassed = validationCurrent && state.validation?.valid === true;
+  const previewCurrent = validationPassed &&
+    state.previewGeneration?.draftHash === draft?.draftHash &&
+    state.previewGeneration.stale !== true;
+  const blockingReview = state.visualReview?.findings.some(
+    (finding) => finding.severity === 'blocking' && !finding.resolved,
+  ) === true;
+  const sourceContextChanged = draft !== undefined &&
+    draft.sourceManifestDigest !== state.sourceManifest?.digest;
+
+  if (
+    state.notebookSnapshot !== undefined &&
+    state.insertionTarget !== undefined &&
+    (draft === undefined || sourceContextChanged ||
+      (validationCurrent && state.validation?.valid === false) || blockingReview)
+  ) {
+    available.add('submit_notebook_script');
+  }
+
+  if (draft !== undefined) {
+    available.add('parse_notebook_script');
+    if (extractPortableImageSlots(draft.script).length > 0) {
+      available.add('prepare_image_generation_prompts');
+    }
+    if (
+      !validationCurrent &&
+      state.notebookSnapshot !== undefined &&
+      state.insertionTarget !== undefined
+    ) {
+      available.add('validate_notebook_script');
+    }
+  }
+  if (validationPassed && !previewCurrent) available.add('render_draft_preview');
+  if (previewCurrent && !blockingReview) {
+    available.add('get_draft_preview_manifest');
+    available.add('read_draft_preview_pages');
+    if (
+      state.visualReview !== undefined &&
+      state.previewGeneration !== undefined &&
+      visualImageExposurePageIds(
+        state.visualReview,
+        state.previewGeneration,
+      ).length > 0 &&
+      !(state.visualReview.complete && state.visualReview.passed)
+    ) {
+      available.add('record_visual_review');
+    }
+  }
+  if (canSubmitNotebookPatch(state).allowed) available.add('propose_notebook_patch');
+  if (state.patchProposal?.status === 'waiting_for_approval') {
+    available.add('submit_notebook_patch');
+  }
+  return available;
+}
+
 export class AgentToolCatalog {
   private readonly definitions = new Map<string, ToolDefinition<unknown>>();
 
@@ -1942,6 +2078,13 @@ export class AgentToolCatalog {
 
   descriptors(): readonly AgentToolDescriptor[] {
     return [...this.definitions.values()].map((item) => item.descriptor);
+  }
+
+  descriptorsForState(state: AgentState): readonly AgentToolDescriptor[] {
+    const available = availableAgentToolNames(state);
+    return [...this.definitions.values()]
+      .filter((item) => available.has(item.descriptor.name))
+      .map((item) => item.descriptor);
   }
 
   async execute(

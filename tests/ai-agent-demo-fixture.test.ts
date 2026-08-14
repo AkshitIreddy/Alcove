@@ -83,7 +83,7 @@ describe('AI Agent documentation fixture', () => {
       "new URLSearchParams(window.location.search).get('fx') === 'force'",
     );
     expect(bookView).toContain(
-      "new URLSearchParams(window.location.search).get('fx') !== 'force'",
+      "query.get('fx') !== 'force'",
     );
     expect(bridge).toContain('await prior.disposeAll()');
     expect(bridge).toContain('prior.releaseUrls()');

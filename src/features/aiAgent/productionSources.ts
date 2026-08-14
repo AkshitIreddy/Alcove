@@ -601,9 +601,12 @@ async function manifestForTask(
     .map(sourceMeta)
     .filter((meta): meta is ProductionSourceMeta => meta !== null)
     .map((meta) => meta.descriptor)
+    // The canonical Notebook Script document remains stored as local
+    // authoring authority, but it is not an attachment and is never exposed
+    // through the provider-facing source manifest/capability.
+    .filter((descriptor) => descriptor.kind !== 'notebook_script_spec')
     .sort((left, right) => {
-      const canonical = Number(right.kind === 'notebook_script_spec') - Number(left.kind === 'notebook_script_spec');
-      return canonical || left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+      return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
     });
   const digest = await deps.hash.digestJson(
     sources.map((source) => ({ id: source.id, digest: source.digest, units: source.units.map((unit) => unit.digest) })),

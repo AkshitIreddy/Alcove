@@ -9,6 +9,7 @@ import {
   recordSourceReads,
   recordVisualImageExposures,
   recordVisualInspection,
+  readerEvidenceUnitIds,
   sourceUnitsUnobservedBeforeProviderCall,
   visualImageExposurePageIds,
 } from './coverage';
@@ -24,8 +25,12 @@ import {
 import {
   buildImagePromptHandoff,
   extractPortableImageSlots,
+  imagePromptHandoffMatchesDraft,
 } from './imageHandoff';
-import { assertPortableImagesRequested } from './imageIntent';
+import {
+  assertPortableImagesRequested,
+  explicitImageRequest,
+} from './imageIntent';
 import {
   latestReaderText,
   readerRequestsNotebookMutation,
@@ -58,7 +63,9 @@ import type {
   AgentResumeValue,
   AgentState,
   AgentToolBudget,
+  DraftPreviewGeneration,
   DraftVisualFinding,
+  DraftVisualReviewLedger,
   NotebookInsertionTarget,
   NotebookScriptDiagnostic,
   RetrievalHit,
@@ -67,6 +74,16 @@ import type {
 } from './types';
 
 const MAX_PROVIDER_IMAGES_PER_TURN = 20;
+const UNCHANGED_DRAFT_SUBMISSION_ERROR =
+  'this Notebook Script is identical to the current draft; do not repeat it—make a material change that addresses the current diagnostics, visual finding or reader feedback first';
+const NOTEBOOK_CONTENT_STALE_ERROR =
+  'The notebook changed after it was inspected. Inspect it again, then rerender and review the draft.';
+const NOTEBOOK_ORDER_STALE_ERROR =
+  'The notebook page order changed after it was inspected. Inspect it again, then rerender and review the draft.';
+const SOURCE_INPUT_STALE_ERROR =
+  'A live notebook source changed after it was read. List the source manifest again and repeat the required reads.';
+const PRIVATE_RESTORE_REPAIR_PREFIX =
+  'The local private-text preview could not be prepared safely: ';
 
 function trailingToolImageCount(state: AgentState): number {
   let count = 0;
@@ -311,14 +328,45 @@ function currentCoverage(state: AgentState, now: string) {
  * of clocks, usage counters, plan versions and lifecycle phases prevents
  * plan-only loops from manufacturing their own “progress”.
  */
-function materialWorkFingerprint(state: AgentState): string {
+function compactObservationDigest(value: unknown): string {
+  const text = JSON.stringify(value);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${(hash >>> 0).toString(16).padStart(8, '0')}:${text.length}`;
+}
+
+const MATERIAL_OBSERVATION_TOOLS = new Set([
+  'inspect_notebook',
+  'inspect_page',
+  'inspect_page_range',
+  'inspect_selection',
+  'list_source_manifest',
+  'plan_source_retrieval',
+  'read_source_range',
+  'read_full_source',
+  'search_source_index',
+  'rerank_source_hits',
+  'inspect_source_coverage',
+]);
+
+export function materialWorkFingerprint(state: AgentState): string {
   const latestConversationMessage = state.conversation[state.conversation.length - 1];
+  const distinctObservations = [...new Set(currentReaderModelTurns(state).flatMap(
+    (turn) => turn.role === 'tool' && !turn.isError &&
+        MATERIAL_OBSERVATION_TOOLS.has(turn.toolName)
+      ? [compactObservationDigest({ toolName: turn.toolName, content: turn.content })]
+      : [],
+  ))].sort();
   return JSON.stringify({
     latestConversationMessageId: latestConversationMessage?.id ?? null,
     notebookRevision: state.notebookSnapshot?.bookRevision ?? null,
     sourceManifestDigest: state.sourceManifest?.digest ?? null,
     readUnitIds: state.sourceCoverage?.readUnitIds ?? [],
     citedUnitIds: state.sourceCoverage?.citedUnitIds ?? [],
+    distinctObservations,
     draftHash: state.draft?.draftHash ?? null,
     draftVersion: state.draft?.version ?? null,
     insertionTarget: state.insertionTarget ?? null,
@@ -327,6 +375,14 @@ function materialWorkFingerprint(state: AgentState): string {
       : { draftHash: state.validation.draftHash, valid: state.validation.valid },
     previewGenerationId: state.previewGeneration?.generationId ?? null,
     previewStale: state.previewGeneration?.stale ?? null,
+    previewImageExposures: (state.visualReview?.imageExposures ?? [])
+      .map((exposure) => ({
+        generationId: exposure.generationId,
+        pageId: exposure.pageId,
+        imageDigest: exposure.imageDigest,
+        layoutDigest: exposure.layoutDigest,
+      }))
+      .sort((left, right) => left.pageId.localeCompare(right.pageId)),
     inspectedPreviewPageIds: state.visualReview?.inspectedPageIds ?? [],
     visualReviewPassed: state.visualReview?.passed ?? null,
     patch: state.patchProposal === undefined
@@ -468,27 +524,26 @@ async function assertSubmissionInputsFresh(
   if (state.notebookSnapshot === undefined || state.sourceManifest === undefined) {
     throw new Error('inspect the current notebook and source manifest first');
   }
+  const sourceAuthorityUsed =
+    readerRequiresSourceEvidence(state) ||
+    (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0;
   const [notebook, manifest] = await Promise.all([
     context.adapters.notebook.inspectNotebook(state.identity.bookId, context.signal),
-    context.adapters.sources.getManifest(state.identity.taskId, context.signal),
+    sourceAuthorityUsed
+      ? context.adapters.sources.getManifest(state.identity.taskId, context.signal)
+      : Promise.resolve(state.sourceManifest),
   ]);
   if (notebook.snapshot.bookRevision !== state.notebookSnapshot.bookRevision) {
-    throw new Error(
-      'The notebook changed after it was inspected. Inspect it again, then rerender and review the draft.',
-    );
+    throw new Error(NOTEBOOK_CONTENT_STALE_ERROR);
   }
   if (!notebookPageOrderExtendsSnapshot(
     state.notebookSnapshot.pageIds,
     notebook.snapshot.pageIds,
   )) {
-    throw new Error(
-      'The notebook page order changed after it was inspected. Inspect it again, then rerender and review the draft.',
-    );
+    throw new Error(NOTEBOOK_ORDER_STALE_ERROR);
   }
-  if (manifest.digest !== state.sourceManifest.digest) {
-    throw new Error(
-      'A live notebook source changed after it was read. List the source manifest again and repeat the required reads.',
-    );
+  if (sourceAuthorityUsed && manifest.digest !== state.sourceManifest.digest) {
+    throw new Error(SOURCE_INPUT_STALE_ERROR);
   }
 }
 
@@ -509,6 +564,39 @@ function parserDiagnostics(source: string): {
       column: diagnostic.column,
     })),
   };
+}
+
+function visualReviewLedgerIsDerivedConsistently(
+  ledger: DraftVisualReviewLedger,
+  generation: DraftPreviewGeneration,
+): boolean {
+  if (
+    ledger.generationId !== generation.generationId ||
+    ledger.draftHash !== generation.draftHash
+  ) return false;
+  const expectedPageIds = [...new Set(
+    generation.pages.map((page) => page.pageId),
+  )].sort();
+  const requiredPageIds = [...new Set(ledger.requiredPageIds)].sort();
+  if (
+    expectedPageIds.length !== generation.pages.length ||
+    requiredPageIds.length !== ledger.requiredPageIds.length ||
+    JSON.stringify(requiredPageIds) !== JSON.stringify(expectedPageIds)
+  ) return false;
+  const expected = new Set(expectedPageIds);
+  if (ledger.inspectedPageIds.some((pageId) => !expected.has(pageId))) return false;
+  if (ledger.findings.some(
+    (finding) =>
+      finding.generationId !== generation.generationId ||
+      !expected.has(finding.pageId),
+  )) return false;
+  const inspected = new Set(ledger.inspectedPageIds);
+  const complete = ledger.requiredPageIds.every((pageId) => inspected.has(pageId));
+  const blocking = ledger.findings.some(
+    (finding) => finding.severity === 'blocking' && !finding.resolved,
+  );
+  const passed = complete && generation.layoutValid && !blocking;
+  return ledger.complete === complete && ledger.passed === passed;
 }
 
 // Cohere strict tool schemas require at least one required parameter. A
@@ -870,12 +958,28 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           state.identity.bookId,
           context.signal,
         );
+        // The full revision map is durable local authority and belongs only in
+        // state. Repeating snapshot.pageIds plus pageRevisions in the provider
+        // result made a 48-page inspection several thousand tokens larger
+        // without giving the model any additional routing information.
+        const providerManifest = {
+          title: notebook.title,
+          pageCount: notebook.pages.length,
+          bookRevision: notebook.snapshot.bookRevision,
+          capturedAt: notebook.snapshot.capturedAt,
+          pages: notebook.pages.map((page) => ({
+            pageId: page.pageId,
+            ordinal: page.ordinal,
+            ...(page.title === undefined ? {} : { title: page.title }),
+            estimatedTokens: page.estimatedTokens,
+          })),
+        };
         return {
           state: touch(state, context, {
             notebookSnapshot: notebook.snapshot,
             phase: 'reading_sources',
           }),
-          result: json(notebook),
+          result: json(providerManifest),
           summary: `inspected ${notebook.pages.length} notebook pages`,
         };
       },
@@ -1319,6 +1423,23 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead',
           );
         }
+        if (!availableAgentToolNames(state).has('submit_notebook_script')) {
+          if (state.lastError?.message === UNCHANGED_DRAFT_SUBMISSION_ERROR) {
+            throw new Error(UNCHANGED_DRAFT_SUBMISSION_ERROR);
+          }
+          const validationCurrent = state.draft !== undefined &&
+            state.validation?.draftHash === state.draft.draftHash;
+          const previewCurrent = validationCurrent && state.validation?.valid === true &&
+            state.previewGeneration?.draftHash === state.draft?.draftHash &&
+            state.previewGeneration.stale !== true;
+          throw new Error(
+            !validationCurrent
+              ? 'the current draft is already stored; validate it instead of submitting it again'
+              : !previewCurrent
+                ? 'the current draft already passed validation; render it instead of submitting it again'
+                : 'the current preview must be inspected, reviewed or proposed; do not resubmit the unchanged draft',
+          );
+        }
         const normalizedSubmission = normalizeNotebookScriptSubmission(args.script);
         const submittedScript = normalizedSubmission.script;
         const isRepair = state.draft !== undefined;
@@ -1331,19 +1452,29 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         const priorCitations = [...(state.sourceCoverage?.citedUnitIds ?? [])].sort();
         const nextCitations = [...new Set(args.citedUnitIds)].sort();
         const citationsChanged = JSON.stringify(priorCitations) !== JSON.stringify(nextCitations);
-        if (isRepair && !changedDraft && !sourceContextChanged && !citationsChanged) {
-          return {
-            state: touch(state, context, {}),
-            result: json({
-              draftVersion: state.draft!.version,
-              draftHash,
-              portableImageSlots,
-              outerDocumentFenceRemoved: normalizedSubmission.outerDocumentFenceRemoved,
-              mutationPerformed: false,
-              unchanged: true,
-            }),
-            summary: 'kept the already-current draft',
-          };
+        const readerUnitIds = new Set(
+          state.sourceManifest === undefined
+            ? []
+            : readerEvidenceUnitIds(state.sourceManifest),
+        );
+        const sourceReadUnitIds = [...new Set(
+          (state.sourceCoverage?.readUnitIds ?? []).filter(
+            (unitId) => readerUnitIds.has(unitId),
+          ),
+        )].sort();
+        const priorSourceReadUnitIds = [...(state.draft?.sourceReadUnitIds ?? [])].sort();
+        const sourceReadsChanged =
+          JSON.stringify(sourceReadUnitIds) !== JSON.stringify(priorSourceReadUnitIds);
+        if (sourceReadsChanged && !changedDraft && !citationsChanged) {
+          throw new Error(
+            'source evidence advanced after this draft; revise the script or cite newly read units before reaffirming it',
+          );
+        }
+        if (
+          isRepair && !changedDraft && !sourceContextChanged &&
+          !citationsChanged && !sourceReadsChanged
+        ) {
+          throw new Error(UNCHANGED_DRAFT_SUBMISSION_ERROR);
         }
         if (
           isRepair &&
@@ -1367,6 +1498,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           script: submittedScript,
           draftHash,
           sourceManifestDigest: state.sourceManifest?.digest,
+          sourceReadUnitIds,
           createdAt: now,
         };
         let ledger = currentCoverage(state, now);
@@ -1416,6 +1548,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         return {
           state: touch(state, context, {
             draft,
+            lastError: undefined,
             imagePromptHandoff: changedDraft ? undefined : state.imagePromptHandoff,
             sourceCoverage: ledger,
             validation:
@@ -1423,9 +1556,13 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             previewGeneration: changedDraft ? undefined : state.previewGeneration,
             visualReview: changedDraft ? undefined : state.visualReview,
             patchProposal:
-              changedDraft || sourceContextChanged || citationsChanged
+              changedDraft || sourceContextChanged || citationsChanged || sourceReadsChanged
                 ? undefined
                 : state.patchProposal,
+            // A private restored render failed because local values changed
+            // the exact page bytes/layout. Citations and source receipts do
+            // not repair those bytes, so only changed script clears the phase.
+            proposalRecovery: changedDraft ? undefined : state.proposalRecovery,
             localRestoredFinal:
               changedDraft || sourceContextChanged || citationsChanged
                 ? undefined
@@ -1615,7 +1752,11 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           state.previewGeneration?.generationId === generation.generationId &&
           state.previewGeneration.draftHash === generation.draftHash &&
           state.previewGeneration.layoutHash === generation.layoutHash;
-        const visualReview = sameGeneration && state.visualReview !== undefined
+        const reusableVisualReview =
+          sameGeneration &&
+          state.visualReview !== undefined &&
+          visualReviewLedgerIsDerivedConsistently(state.visualReview, generation);
+        const visualReview = reusableVisualReview && state.visualReview !== undefined
           ? state.visualReview
           : createVisualReviewLedger(generation, context.adapters.clock.now());
         await context.events.emit({ type: 'preview.ready', generation });
@@ -1860,15 +2001,16 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
       effect: 'propose',
       schema: finishConversationSchema,
       async execute(state, args, context) {
-        if (state.sourceManifest !== undefined) {
+        if (
+          state.sourceManifest !== undefined &&
+          (readerRequiresSourceEvidence(state) || args.citedUnitIds.length > 0)
+        ) {
           const currentManifest = await context.adapters.sources.getManifest(
             state.identity.taskId,
             context.signal,
           );
           if (currentManifest.digest !== state.sourceManifest.digest) {
-            throw new Error(
-              'a source changed after it was read; list the source manifest and read current evidence before answering',
-            );
+            throw new Error(SOURCE_INPUT_STALE_ERROR);
           }
         }
         const currentCall = context.call;
@@ -1985,7 +2127,16 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         await assertSubmissionInputsFresh(state, context);
         const decision = canSubmitNotebookPatch(state);
         if (!decision.allowed) throw new Error(decision.reason ?? 'proposal blocked');
-        const localRestoredFinal = await buildLocalRestoredFinal(state, context);
+        let localRestoredFinal: AgentState['localRestoredFinal'];
+        try {
+          localRestoredFinal = await buildLocalRestoredFinal(state, context);
+        } catch (error) {
+          throw new Error(
+            `${PRIVATE_RESTORE_REPAIR_PREFIX}${
+              error instanceof Error ? error.message : 'the restored page failed its safety gate'
+            }`,
+          );
+        }
         const ownsNewRestoredGeneration =
           localRestoredFinal !== undefined &&
           localRestoredFinal.previewGeneration.generationId !==
@@ -2018,6 +2169,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           return {
             state: touch(state, context, {
               patchProposal: proposal,
+              proposalRecovery: undefined,
               localRestoredFinal,
               phase: 'building_preview',
             }),
@@ -2030,7 +2182,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             summary: `prepared a ${preview.expectedPageCount}-page final preview`,
           };
         } catch (error) {
-          if (ownsNewRestoredGeneration) {
+          if (ownsNewRestoredGeneration && localRestoredFinal !== undefined) {
             await context.adapters.sandbox.dispose(
               localRestoredFinal.previewGeneration.generationId,
             ).catch(() => undefined);
@@ -2102,92 +2254,375 @@ function hitsToReads(hits: readonly RetrievalHit[], state: AgentState): SourceRe
 export interface ToolCallResult {
   readonly state: AgentState;
   readonly result: AgentJsonValue;
+  /**
+   * Graph-private receipt used by the no-progress watchdog. It is deliberately
+   * kept out of the tool's public/provider result contract until the graph
+   * checkpoints the turn, so callers still receive the stable documented
+   * `{ error, retryable, ... }` shape.
+   */
+  readonly watchdogMaterialFingerprint?: string;
   readonly imageRefs?: readonly AgentImageRef[];
   readonly imagePurpose?: 'source_analysis' | 'draft_visual_review';
   readonly interrupt?: AgentInterrupt;
 }
 
-const ALWAYS_AVAILABLE_TOOLS = new Set([
-  'inspect_notebook',
-]);
+const ALWAYS_AVAILABLE_TOOLS = new Set<string>();
 
 /**
- * The catalogue describes capabilities, not a hidden wizard. The model owns
- * strategy and may draft before placement or inspect placement before drafting;
- * tool execution remains the deterministic authority for prerequisites. Only
- * capabilities that need a concrete resource (a draft/render/proposal) wait for
- * that resource, and irreversible apply authority never appears here at all.
+ * Final-preview feedback is the one intentional escape hatch from the normal
+ * phase gate. Once the model has submitted a replacement draft, the feedback
+ * has been consumed; keeping `submit_notebook_script` advertised after that
+ * point is exactly how an unchanged full draft can be submitted forever.
+ */
+function explicitReaderFeedbackPending(state: AgentState): boolean {
+  for (let index = state.modelHistory.length - 1; index >= 0; index -= 1) {
+    const turn = state.modelHistory[index];
+    if (
+      turn?.role === 'tool' &&
+      turn.toolName === 'submit_notebook_script'
+    ) {
+      return false;
+    }
+    if (
+      turn?.role === 'tool' &&
+      turn.toolName === 'submit_notebook_patch' &&
+      turn.content !== null &&
+      typeof turn.content === 'object' &&
+      !Array.isArray(turn.content) &&
+      (turn.content as Readonly<Record<string, AgentJsonValue>>).decision === 'feedback'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The catalogue is a deterministic phase gate. The model retains editorial
+ * judgment inside the current phase, while impossible, opposite-intent and
+ * no-progress transitions stay out of Cohere's strict tool surface entirely.
+ * Irreversible apply authority never appears here at all.
  */
 export function availableAgentToolNames(state: AgentState): ReadonlySet<string> {
   const available = new Set(ALWAYS_AVAILABLE_TOOLS);
-  if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+  const notebookMutation = readerRequestsNotebookMutation(state);
   const sourceEvidenceRequired = readerRequiresSourceEvidence(state);
-  if (sourceEvidenceRequired) available.add('list_source_manifest');
-  if (sourceEvidenceRequired && state.sourceManifest !== undefined) {
+  const sourceAuthorityRequired = sourceEvidenceRequired ||
+    (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0;
+  const completeSourceBeforeDraft =
+    readerRequiresCompleteSourceCoverage(state) ||
+    state.retrievalPlan?.requiresCompleteCoverage === true;
+  const legacyCanonicalManifest = state.sourceManifest?.sources.some(
+    (source) => source.kind === 'notebook_script_spec',
+  ) === true;
+  // A pre-boundary checkpoint can still carry the local Notebook Script
+  // authoring specification as if it were reader evidence. Refresh that
+  // manifest before exposing *any* other tool: otherwise the same provider
+  // turn can select an obsolete read/search path (or start drafting) against
+  // authority that must never leave Alcove's local prompt boundary.
+  if (legacyCanonicalManifest) {
+    available.add('list_source_manifest');
+    return available;
+  }
+  const sourceManifestNeedsRefresh = state.sourceManifest === undefined ||
+    (state.sourceCoverage?.staleSourceIds.length ?? 0) > 0;
+  if (sourceAuthorityRequired && sourceManifestNeedsRefresh) {
+    available.add('list_source_manifest');
+    if (
+      completeSourceBeforeDraft ||
+      (state.sourceCoverage?.staleSourceIds.length ?? 0) > 0
+    ) return available;
+  }
+  const sourceWorkIncomplete = state.sourceCoverage === undefined ||
+    state.sourceCoverage.readUnitIds.length === 0 ||
+    !state.sourceCoverage.complete;
+  const attemptedSourceUnits = new Set(
+    state.sourceCoverage?.attemptedUnitIds ?? [],
+  );
+  const exhaustedUnresolvedCompleteCoverage =
+    completeSourceBeforeDraft &&
+    state.sourceCoverage !== undefined &&
+    !state.sourceCoverage.complete &&
+    state.sourceCoverage.omittedUnitIds.length > 0 &&
+    state.sourceCoverage.omittedUnitIds.every((unitId) =>
+      attemptedSourceUnits.has(unitId)
+    );
+  if (sourceEvidenceRequired && exhaustedUnresolvedCompleteCoverage) {
+    // A composed PDF page can be extractable as text yet impossible to certify
+    // visually without a full-page raster/OCR path. Re-reading the same bytes
+    // cannot satisfy Preserve All, so pause once for the reader to disable that
+    // toggle or cancel rather than spending the provider budget in a loop.
+    available.add('ask_user');
+    return available;
+  }
+  if (
+    sourceEvidenceRequired &&
+    state.sourceManifest !== undefined &&
+    !sourceManifestNeedsRefresh &&
+    sourceWorkIncomplete
+  ) {
     available.add('plan_source_retrieval');
     available.add('read_source_range');
     available.add('read_full_source');
     available.add('search_source_index');
     available.add('rerank_source_hits');
     available.add('inspect_source_coverage');
+    if (completeSourceBeforeDraft) return available;
   }
-  // Conversation and notebook authoring are capabilities, not hidden modes.
-  // The model chooses between them from the reader's current turn. Execution
-  // and proposal policies remain the authority: finish_conversation rejects a
-  // write request, while submit_notebook_script rejects an answer-only turn.
-  available.add('finish_conversation');
-  available.add('submit_notebook_script');
+  // Intent is already derived from the current reader turn. Do not advertise
+  // the opposite terminal path and ask the model to rediscover that fact on
+  // every provider call. Ambiguous requests deliberately resolve to a helpful
+  // conversational answer, as described by the system prompt.
+  if (!notebookMutation) {
+    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    available.add('finish_conversation');
+    return available;
+  }
 
-  const workFingerprint = materialWorkFingerprint(state);
-  if (state.plan?.workFingerprint !== workFingerprint) available.add('set_plan');
+  if (
+    state.notebookSnapshot === undefined &&
+    (
+      state.lastError?.message === NOTEBOOK_CONTENT_STALE_ERROR ||
+      state.lastError?.message === NOTEBOOK_ORDER_STALE_ERROR
+    )
+  ) {
+    available.add('inspect_notebook');
+    return available;
+  }
 
-  if (state.notebookSnapshot !== undefined) {
+  // Planning is an optional intake aid, not a workflow action that should
+  // compete with drafting and validation. Keep it through the initial inspect
+  // + placement batch (parallel siblings were authored against that surface),
+  // then retire it as soon as placement is concrete.
+  if (state.insertionTarget === undefined && state.plan === undefined) {
+    available.add('set_plan');
+  }
+
+  if (state.notebookSnapshot === undefined) {
+    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    available.add('inspect_notebook');
+    return available;
+  }
+
+  const feedbackPending = explicitReaderFeedbackPending(state);
+  if (state.insertionTarget === undefined) {
     available.add('inspect_page');
     available.add('inspect_page_range');
     available.add('inspect_selection');
     available.add('propose_insertion');
+    return available;
   }
 
   const draft = state.draft;
+  if (draft === undefined) {
+    available.add('submit_notebook_script');
+    return available;
+  }
+
   const validationCurrent = draft !== undefined &&
     state.validation?.draftHash === draft.draftHash;
   const validationPassed = validationCurrent && state.validation?.valid === true;
   const previewCurrent = validationPassed &&
     state.previewGeneration?.draftHash === draft?.draftHash &&
     state.previewGeneration.stale !== true;
-  const blockingReview = state.visualReview?.findings.some(
-    (finding) => finding.severity === 'blocking' && !finding.resolved,
+  const reviewCurrent = draft !== undefined &&
+    state.previewGeneration?.draftHash === draft.draftHash &&
+    state.previewGeneration.stale !== true &&
+    state.visualReview?.draftHash === draft.draftHash &&
+    state.visualReview.generationId === state.previewGeneration.generationId;
+  const blockingReview = reviewCurrent &&
+    state.visualReview.findings.some(
+      (finding) => finding.severity === 'blocking' && !finding.resolved,
+    ) === true;
+  const failedCompleteReview = reviewCurrent &&
+    state.visualReview.complete &&
+    (
+      !state.visualReview.passed ||
+      state.previewGeneration?.parserValid === false ||
+      state.previewGeneration?.layoutValid === false
+    );
+  const reviewRepairRequired = blockingReview || failedCompleteReview;
+  const sourceContextChanged = draft !== undefined &&
+    draft.sourceManifestDigest !== state.sourceManifest?.digest;
+  const readerUnitIds = new Set(
+    state.sourceManifest === undefined
+      ? []
+      : readerEvidenceUnitIds(state.sourceManifest),
+  );
+  const readerEvidenceRead = state.sourceCoverage?.readUnitIds.some(
+    (unitId) => readerUnitIds.has(unitId),
   ) === true;
-  if (draft !== undefined) {
-    available.add('parse_notebook_script');
-    if (extractPortableImageSlots(draft.script).length > 0) {
-      available.add('prepare_image_generation_prompts');
-    }
-    if (state.notebookSnapshot !== undefined && state.insertionTarget !== undefined) {
-      available.add('validate_notebook_script');
-    }
+  const readerEvidenceCited = state.sourceCoverage?.citedUnitIds.some(
+    (unitId) => readerUnitIds.has(unitId),
+  ) === true;
+  const sourceCitationUpdateRequired =
+    sourceEvidenceRequired &&
+    readerUnitIds.size > 0 &&
+    readerEvidenceRead &&
+    !readerEvidenceCited;
+  const currentReaderReadUnitIds = [...new Set(
+    (state.sourceCoverage?.readUnitIds ?? []).filter(
+      (unitId) => readerUnitIds.has(unitId),
+    ),
+  )].sort();
+  const draftedReaderReadUnitIds = [...(draft.sourceReadUnitIds ?? [])].sort();
+  const sourceReadSetUpdateRequired =
+    JSON.stringify(currentReaderReadUnitIds) !==
+    JSON.stringify(draftedReaderReadUnitIds);
+  const portableImageSlots = extractPortableImageSlots(draft.script);
+  const imagePermissionRevoked =
+    portableImageSlots.length > 0 && !explicitImageRequest(state).requested;
+  const privateRestoreRepairRequired =
+    state.proposalRecovery?.kind === 'private_restore' &&
+    state.proposalRecovery.draftHash === draft.draftHash;
+  const draftSubmissionUseful =
+    sourceContextChanged ||
+    sourceCitationUpdateRequired ||
+    sourceReadSetUpdateRequired ||
+    imagePermissionRevoked ||
+    privateRestoreRepairRequired ||
+    (validationCurrent && state.validation?.valid === false) ||
+    reviewRepairRequired ||
+    feedbackPending;
+  if (draftSubmissionUseful) {
+    // The tool stays available because it is also the only path for a
+    // materially changed repair. Its executor deterministically rejects the
+    // current exact script with a non-retryable doNotRepeat receipt; the graph
+    // watchdog then stops an identical-signature provider loop.
+    available.add('submit_notebook_script');
+    return available;
   }
-  if (validationPassed && !previewCurrent) available.add('render_draft_preview');
-  if (previewCurrent && !blockingReview) {
-    available.add('get_draft_preview_manifest');
-    available.add('read_draft_preview_pages');
-    if (
-      state.visualReview !== undefined &&
-      state.previewGeneration !== undefined &&
-      visualImageExposurePageIds(
+
+  if (
+    previewCurrent &&
+    (
+      state.visualReview === undefined ||
+      !visualReviewLedgerIsDerivedConsistently(
         state.visualReview,
-        state.previewGeneration,
-      ).length > 0 &&
-      !(state.visualReview.complete && state.visualReview.passed)
-    ) {
+        state.previewGeneration!,
+      )
+    )
+  ) {
+    // Missing/impossible derived review fields are a legacy/corrupt receipt,
+    // not model-authored visual feedback. Rerender resets the ledger against
+    // the exact current page ids before any image/review tool is exposed.
+    available.add('render_draft_preview');
+    return available;
+  }
+
+  if (!validationCurrent) {
+    available.add('validate_notebook_script');
+    return available;
+  }
+
+  if (validationPassed && !previewCurrent) {
+    available.add('render_draft_preview');
+    return available;
+  }
+
+  if (previewCurrent && !reviewRepairRequired) {
+    if (state.patchProposal?.status === 'waiting_for_approval') {
+      available.add('submit_notebook_patch');
+      return available;
+    }
+
+    const exposedPageIds = state.visualReview !== undefined &&
+        state.previewGeneration !== undefined
+      ? visualImageExposurePageIds(state.visualReview, state.previewGeneration)
+      : [];
+    const exposed = new Set(exposedPageIds);
+    const inspected = new Set(state.visualReview?.inspectedPageIds ?? []);
+    const unexposedPageIds = state.previewGeneration?.pages
+      .map((page) => page.pageId)
+      .filter((pageId) => !exposed.has(pageId)) ?? [];
+    const exposedUninspectedPageIds = exposedPageIds.filter(
+      (pageId) => !inspected.has(pageId),
+    );
+
+    if (unexposedPageIds.length > 0) {
+      available.add('read_draft_preview_pages');
+      if (exposedUninspectedPageIds.length > 0) {
+        available.add('record_visual_review');
+      }
+      return available;
+    }
+    if (exposedUninspectedPageIds.length > 0) {
       available.add('record_visual_review');
+      return available;
+    }
+
+    if (
+      portableImageSlots.length > 0 &&
+      explicitImageRequest(state).requested &&
+      !imagePromptHandoffMatchesDraft(
+        state.imagePromptHandoff,
+        draft.draftHash,
+        draft.script,
+      )
+    ) {
+      // Image prompts are themselves a prerequisite of patch submission.
+      // Advertising them only after canSubmitNotebookPatch() succeeds creates
+      // an impossible circular phase: the policy waits for the handoff while
+      // the catalogue withholds its only authoring tool. Keep this transition
+      // singular so the model cannot skip ahead or redraft an already passed
+      // native preview.
+      available.add('prepare_image_generation_prompts');
+      return available;
+    }
+
+    if (canSubmitNotebookPatch(state).allowed) {
+      available.add('propose_notebook_patch');
+      return available;
     }
   }
-  if (canSubmitNotebookPatch(state).allowed) available.add('propose_notebook_patch');
-  if (state.patchProposal?.status === 'waiting_for_approval') {
-    available.add('submit_notebook_patch');
+
+  // Defensive fallback for a legacy checkpoint whose derived ledgers do not
+  // match any current phase. A current preview with an inconsistent review
+  // receipt is rerendered; render resets that receipt before pixels are exposed
+  // again. Revalidation remains the fallback before any current preview exists.
+  if (validationPassed && previewCurrent) {
+    available.add('render_draft_preview');
+    return available;
+  }
+  if (!validationCurrent) {
+    available.add('validate_notebook_script');
   }
   return available;
+}
+
+function unavailableToolMessage(
+  state: AgentState,
+  toolName: string,
+  available: ReadonlySet<string>,
+): string {
+  if (toolName === 'finish_conversation' && readerRequestsNotebookMutation(state)) {
+    return 'the current reader turn requests a notebook change; continue the notebook workflow instead of finishing in conversation';
+  }
+  if (toolName === 'submit_notebook_script') {
+    if (!readerRequestsNotebookMutation(state)) {
+      return 'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead';
+    }
+    if (state.notebookSnapshot === undefined) return 'inspect the notebook before drafting';
+    if (state.insertionTarget === undefined) return 'propose an insertion target before drafting';
+    const validationCurrent = state.draft !== undefined &&
+      state.validation?.draftHash === state.draft.draftHash;
+    const previewCurrent = validationCurrent && state.validation?.valid === true &&
+      state.previewGeneration?.draftHash === state.draft?.draftHash &&
+      state.previewGeneration.stale !== true;
+    return !validationCurrent
+      ? 'the current draft is already stored; validate it instead of submitting it again'
+      : !previewCurrent
+        ? 'the current draft already passed validation; render it instead of submitting it again'
+        : 'the current preview must be inspected, reviewed or proposed; do not resubmit the unchanged draft';
+  }
+  if (toolName === 'ask_user' && state.draft !== undefined) {
+    return 'ask_user is not available after concrete notebook work has begun; advance the current draft workflow instead';
+  }
+  const next = [...available].filter((name) =>
+    name !== 'set_plan' && name !== 'ask_user');
+  return next.length === 0
+    ? `${toolName} is not available in the current agent phase`
+    : `${toolName} is not available in the current agent phase; use ${next.join(' or ')} instead`;
 }
 
 export class AgentToolCatalog {
@@ -2224,6 +2659,14 @@ export class AgentToolCatalog {
     }
     const tool = this.definitions.get(call.name);
     if (tool === undefined) return this.failure(state, call, `unknown tool ${call.name}`);
+    const available = availableAgentToolNames(state);
+    if (!available.has(call.name)) {
+      return this.failure(
+        state,
+        call,
+        unavailableToolMessage(state, call.name, available),
+      );
+    }
     // Older durable checkpoints and deterministic test providers may carry
     // `{}` for an action that historically had no parameters. Cohere sees the
     // required literal in the strict JSON schema; locally upgrade the legacy
@@ -2282,6 +2725,7 @@ export class AgentToolCatalog {
       return {
         state: nextState,
         result: executed.result,
+        watchdogMaterialFingerprint: materialWorkFingerprint(state),
         imageRefs: executed.imageRefs,
         imagePurpose: executed.imagePurpose,
         interrupt: executed.interrupt,
@@ -2364,13 +2808,15 @@ export class AgentToolCatalog {
             events: this.events,
             signal,
           });
+          const sourceAuthorityUsed =
+            readerRequiresSourceEvidence(state) ||
+            (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0;
           if (
+            sourceAuthorityUsed &&
             proposal.preview.sourceCoverage.manifestDigest !==
               state.sourceManifest?.digest
           ) {
-            throw new Error(
-              'Sources changed after this preview was prepared. Read the new evidence and prepare a fresh preview.',
-            );
+            throw new Error(SOURCE_INPUT_STALE_ERROR);
           }
           const ready = canSubmitNotebookPatch(state);
           if (!ready.allowed) {
@@ -2472,6 +2918,86 @@ export class AgentToolCatalog {
     call: AgentModelToolCall,
     message: string,
   ): Promise<ToolCallResult> {
+    const doNotRepeat = message === UNCHANGED_DRAFT_SUBMISSION_ERROR;
+    const notebookFreshnessFailure =
+      message === NOTEBOOK_CONTENT_STALE_ERROR ||
+      message === NOTEBOOK_ORDER_STALE_ERROR;
+    const sourceFreshnessFailure = message === SOURCE_INPUT_STALE_ERROR;
+    const privateRestoreFailure = message.startsWith(PRIVATE_RESTORE_REPAIR_PREFIX);
+    const retryable = !doNotRepeat;
+    const now = this.adapters.clock.now();
+    let recoveredState = state;
+    if (notebookFreshnessFailure || sourceFreshnessFailure || privateRestoreFailure) {
+      for (const generationId of generationIdsOwnedByState(state)) {
+        await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
+      }
+    }
+    if (notebookFreshnessFailure) {
+      // The live inspection that detected drift is authority only for rejecting
+      // this terminal action. Re-enter through the ordinary inspect tool so its
+      // compact provider receipt and exact snapshot are checkpointed together.
+      recoveredState = {
+        ...state,
+        lifecycle: 'running',
+        phase: 'intake',
+        notebookSnapshot: undefined,
+        insertionTarget: undefined,
+        validation: undefined,
+        previewGeneration: undefined,
+        visualReview: undefined,
+        patchProposal: undefined,
+        localRestoredFinal: undefined,
+      };
+    } else if (sourceFreshnessFailure) {
+      const manifest = state.sourceManifest;
+      const mode = state.sourceCoverage?.mode ??
+        (state.taskBrief.preserveAllSourceInformation ? 'complete' : 'relevant');
+      const baseCoverage = manifest === undefined
+        ? undefined
+        : state.sourceCoverage ?? createSourceCoverageLedger(manifest, mode, now);
+      const staleSourceIds = manifest?.sources
+        .filter((source) => source.kind !== 'notebook_script_spec')
+        .map((source) => source.id) ?? [];
+      recoveredState = {
+        ...state,
+        lifecycle: 'running',
+        phase: 'reading_sources',
+        sourceCoverage: baseCoverage === undefined
+          ? undefined
+          : {
+              ...baseCoverage,
+              staleSourceIds: [...new Set([
+                ...baseCoverage.staleSourceIds,
+                ...staleSourceIds,
+              ])].sort(),
+              complete: false,
+              updatedAt: now,
+            },
+        retrievalPlan: undefined,
+        validation: undefined,
+        previewGeneration: undefined,
+        visualReview: undefined,
+        patchProposal: undefined,
+        localRestoredFinal: undefined,
+      };
+    } else if (privateRestoreFailure) {
+      recoveredState = {
+        ...state,
+        lifecycle: 'running',
+        phase: 'repairing',
+        validation: undefined,
+        previewGeneration: undefined,
+        visualReview: undefined,
+        patchProposal: undefined,
+        localRestoredFinal: undefined,
+        proposalRecovery: {
+          kind: 'private_restore',
+          draftHash: state.draft?.draftHash ?? '',
+          message,
+          createdAt: now,
+        },
+      };
+    }
     await this.events.emit(
       {
         type: 'tool.failed',
@@ -2483,13 +3009,43 @@ export class AgentToolCatalog {
     );
     return {
       state: {
-        ...state,
-        lastError: { code: 'tool_error', message, retryable: true },
-        usage: { ...state.usage, toolCalls: state.usage.toolCalls + 1 },
-        checkpointStep: state.checkpointStep + 1,
-        updatedAt: this.adapters.clock.now(),
+        ...recoveredState,
+        lastError: { code: 'tool_error', message, retryable },
+        usage: { ...recoveredState.usage, toolCalls: recoveredState.usage.toolCalls + 1 },
+        checkpointStep: recoveredState.checkpointStep + 1,
+        updatedAt: now,
       },
-      result: json({ error: message, retryable: true }),
+      result: json({
+        error: message,
+        retryable,
+        ...(notebookFreshnessFailure
+          ? {
+              recovered: true,
+              nextAction:
+                'Inspect the current notebook, choose a current placement, then validate, render and review again.',
+            }
+          : sourceFreshnessFailure
+            ? {
+                recovered: true,
+                nextAction:
+                  'List the current source manifest and repeat the required source reads before continuing.',
+              }
+            : privateRestoreFailure
+              ? {
+                  recovered: true,
+                  nextAction:
+                    'Revise the Notebook Script so restored private text keeps the same safe structure and fixed-page fit, then validate and review it again.',
+                }
+            : {}),
+        ...(doNotRepeat
+          ? {
+              doNotRepeat: true,
+              nextAction:
+                'Revise the Notebook Script materially from the current draft before submitting again.',
+            }
+          : {}),
+      }),
+      watchdogMaterialFingerprint: materialWorkFingerprint(state),
     };
   }
 }

@@ -31,6 +31,7 @@ import {
 import {
   buildAiAgentDiagnosticLog,
   createAiAgentPanelController,
+  currentActivityTimeline,
   friendlyWorkingNote,
   latestTurnTimeline,
 } from '../src/views/rail/aiAgentControllerAdapter';
@@ -244,7 +245,11 @@ function citationReadyState() {
     ...base,
     sourceManifest: manifest,
     sourceCoverage: coverage,
-    draft: { ...base.draft, sourceManifestDigest: manifest.digest },
+    draft: {
+      ...base.draft,
+      sourceManifestDigest: manifest.digest,
+      sourceReadUnitIds: ['trusted-unit-1'],
+    },
     visualReview: reviewed,
   };
 }
@@ -309,7 +314,99 @@ function panelApplyFixture() {
 }
 
 describe('AI insertion target boundaries', () => {
-  it('advertises notebook capabilities broadly while retaining hard preview gates', () => {
+  it('keeps a 48-page notebook snapshot local and sends one compact provider manifest', async () => {
+    const pageIds = Array.from({ length: 48 }, (_, index) =>
+      `page-${String(index + 1).padStart(2, '0')}-stable-id`);
+    const pageRevisions = Object.fromEntries(pageIds.map((pageId, index) => [
+      pageId,
+      `revision-${index + 1}-${'r'.repeat(48)}`,
+    ]));
+    const inspection = {
+      title: 'Forty-eight page notebook',
+      snapshot: {
+        bookId: 'current-book',
+        bookRevision: 'book-revision-48',
+        pageIds,
+        pageRevisions,
+        capturedAt: NOW,
+      },
+      pages: pageIds.map((pageId, ordinal) => ({
+        pageId,
+        ordinal,
+        revision: pageRevisions[pageId]!,
+        title: `Chapter ${ordinal + 1}`,
+        estimatedTokens: 120 + ordinal,
+      })),
+    };
+    const baseAdapters = toolAdapters();
+    const identity = {
+      taskId: 'task-compact-notebook-inspection',
+      threadId: 'thread-compact-notebook-inspection',
+      runId: 'run-compact-notebook-inspection',
+      bookId: 'current-book',
+    };
+    const state = createInitialAgentState({
+      identity,
+      goal: 'Add a topic to my book',
+      now: NOW,
+      userMessageId: 'reader-compact-notebook-inspection',
+    });
+    const catalog = new AgentToolCatalog(
+      {
+        ...baseAdapters,
+        notebook: {
+          ...baseAdapters.notebook,
+          inspectNotebook: async () => inspection,
+        },
+      },
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+
+    const inspected = await catalog.execute(state, {
+      id: 'inspect-48-pages',
+      name: 'inspect_notebook',
+      arguments: {},
+    }, new AbortController().signal);
+    const providerJson = JSON.stringify(inspected.result);
+    const formerDuplicatedJson = JSON.stringify(inspection);
+
+    expect(inspected.state.notebookSnapshot).toEqual(inspection.snapshot);
+    expect(inspected.result).toMatchObject({
+      title: inspection.title,
+      pageCount: 48,
+      bookRevision: inspection.snapshot.bookRevision,
+      capturedAt: NOW,
+    });
+    const providerPages = (inspected.result as unknown as {
+      readonly pages: readonly Record<string, unknown>[];
+    }).pages;
+    expect(providerPages).toHaveLength(48);
+    expect(providerPages[0]).toMatchObject({
+      pageId: pageIds[0],
+      ordinal: 0,
+      title: 'Chapter 1',
+      estimatedTokens: 120,
+    });
+    expect(providerJson).not.toContain('"snapshot"');
+    expect(providerJson).not.toContain('"pageRevisions"');
+    expect(providerJson).not.toContain('"revision"');
+    expect(providerJson.length).toBeLessThan(7_500);
+    expect(providerJson.length).toBeLessThan(formerDuplicatedJson.length / 2);
+  });
+
+  it('advertises only the next useful notebook-authoring gate', () => {
+    const sourceTools = new Set([
+      'list_source_manifest',
+      'plan_source_retrieval',
+      'read_source_range',
+      'read_full_source',
+      'search_source_index',
+      'rerank_source_hits',
+      'inspect_source_coverage',
+    ]);
+    const workflowTools = (tools: ReadonlySet<string>) => [...tools]
+      .filter((name) => !sourceTools.has(name))
+      .sort();
     const ready = citationReadyState();
     const mutation = {
       ...ready,
@@ -331,9 +428,9 @@ describe('AI insertion target boundaries', () => {
     };
     const beforeDraftTools = availableAgentToolNames(beforeDraft);
     expect(beforeDraftTools.has('submit_notebook_script')).toBe(true);
-    expect(beforeDraftTools.has('propose_insertion')).toBe(true);
+    expect(beforeDraftTools.has('propose_insertion')).toBe(false);
     expect(beforeDraftTools.has('propose_notebook_patch')).toBe(false);
-    expect(beforeDraftTools.has('finish_conversation')).toBe(true);
+    expect(beforeDraftTools.has('finish_conversation')).toBe(false);
 
     const beforeValidation = {
       ...mutation,
@@ -344,14 +441,33 @@ describe('AI insertion target boundaries', () => {
     };
     const validationTools = availableAgentToolNames(beforeValidation);
     expect(validationTools.has('validate_notebook_script')).toBe(true);
-    expect(validationTools.has('submit_notebook_script')).toBe(true);
-    expect(validationTools.has('propose_insertion')).toBe(true);
+    expect(validationTools.has('submit_notebook_script')).toBe(false);
+    expect(validationTools.has('propose_insertion')).toBe(false);
     expect(validationTools.has('propose_notebook_patch')).toBe(false);
+
+    const readyToRender = {
+      ...mutation,
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const renderTools = availableAgentToolNames(readyToRender);
+    expect(renderTools.has('render_draft_preview')).toBe(true);
+    expect(renderTools.has('validate_notebook_script')).toBe(false);
+    expect(renderTools.has('submit_notebook_script')).toBe(false);
+    expect(renderTools.has('propose_insertion')).toBe(false);
+    expect(workflowTools(renderTools)).toEqual(['render_draft_preview']);
 
     const reviewedTools = availableAgentToolNames(mutation);
     expect(reviewedTools.has('propose_notebook_patch')).toBe(true);
-    expect(reviewedTools.has('submit_notebook_script')).toBe(true);
+    expect(reviewedTools.has('submit_notebook_script')).toBe(false);
     expect(reviewedTools.has('record_visual_review')).toBe(false);
+
+    expect(workflowTools(availableAgentToolNames({
+      ...mutation,
+      visualReview: undefined,
+      patchProposal: undefined,
+    }))).toEqual(['render_draft_preview']);
 
     const unreadPreview = {
       ...mutation,
@@ -361,9 +477,428 @@ describe('AI insertion target boundaries', () => {
     const unreadPreviewTools = availableAgentToolNames(unreadPreview);
     expect(unreadPreviewTools.has('read_draft_preview_pages')).toBe(true);
     expect(unreadPreviewTools.has('record_visual_review')).toBe(false);
+    expect(unreadPreviewTools.has('get_draft_preview_manifest')).toBe(false);
+    expect(unreadPreviewTools.has('propose_insertion')).toBe(false);
+    expect(unreadPreviewTools.has('submit_notebook_script')).toBe(false);
+
+    const exposedReview = recordVisualImageExposures(
+      unreadPreview.visualReview,
+      unreadPreview.previewGeneration,
+      unreadPreview.previewGeneration.pages,
+      { now: NOW, providerCallCount: 2 },
+    );
+    const exposedPreviewTools = availableAgentToolNames({
+      ...unreadPreview,
+      visualReview: exposedReview,
+    });
+    expect(exposedPreviewTools.has('record_visual_review')).toBe(true);
+    expect(exposedPreviewTools.has('read_draft_preview_pages')).toBe(false);
+    expect(exposedPreviewTools.has('get_draft_preview_manifest')).toBe(false);
+    expect(exposedPreviewTools.has('propose_insertion')).toBe(false);
+    expect(exposedPreviewTools.has('submit_notebook_script')).toBe(false);
+    expect(workflowTools(exposedPreviewTools)).toEqual(['record_visual_review']);
+
+    const invalidLayoutGeneration = {
+      ...mutation.previewGeneration,
+      layoutValid: false,
+    };
+    const invalidLayoutExposed = recordVisualImageExposures(
+      createVisualReviewLedger(invalidLayoutGeneration, NOW),
+      invalidLayoutGeneration,
+      invalidLayoutGeneration.pages,
+      { now: NOW, providerCallCount: 2 },
+    );
+    const invalidLayoutReviewed = recordVisualInspection(
+      invalidLayoutExposed,
+      invalidLayoutGeneration,
+      {
+        pageIds: invalidLayoutGeneration.pages.map((page) => page.pageId),
+        findings: [],
+        providerCallCount: 3,
+        now: NOW,
+      },
+    );
+    expect(invalidLayoutReviewed).toMatchObject({ complete: true, passed: false });
+    expect(workflowTools(availableAgentToolNames({
+      ...mutation,
+      previewGeneration: invalidLayoutGeneration,
+      visualReview: invalidLayoutReviewed,
+      patchProposal: undefined,
+    }))).toEqual(['submit_notebook_script']);
+
+    const invalidParserGeneration = {
+      ...mutation.previewGeneration,
+      parserValid: false,
+      layoutValid: true,
+    };
+    const invalidParserExposed = recordVisualImageExposures(
+      createVisualReviewLedger(invalidParserGeneration, NOW),
+      invalidParserGeneration,
+      invalidParserGeneration.pages,
+      { now: NOW, providerCallCount: 2 },
+    );
+    const invalidParserReviewed = recordVisualInspection(
+      invalidParserExposed,
+      invalidParserGeneration,
+      {
+        pageIds: invalidParserGeneration.pages.map((page) => page.pageId),
+        findings: [],
+        providerCallCount: 3,
+        now: NOW,
+      },
+    );
+    // A visual pass cannot overrule the renderer's parser receipt. The only
+    // useful next phase is a materially changed script repair.
+    expect(invalidParserReviewed).toMatchObject({ complete: true, passed: true });
+    expect(workflowTools(availableAgentToolNames({
+      ...mutation,
+      previewGeneration: invalidParserGeneration,
+      visualReview: invalidParserReviewed,
+      patchProposal: undefined,
+    }))).toEqual(['submit_notebook_script']);
+
+    const inconsistentLegacyReview = {
+      ...mutation.visualReview,
+      // All required pages are present in inspectedPageIds, so this persisted
+      // derived flag is impossible and must never leave the provider tool-less.
+      complete: false,
+      passed: false,
+    };
+    expect(workflowTools(availableAgentToolNames({
+      ...mutation,
+      visualReview: inconsistentLegacyReview,
+      patchProposal: undefined,
+    }))).toEqual(['render_draft_preview']);
+
+    const wrongPageRequirement = {
+      ...mutation.visualReview,
+      requiredPageIds: [],
+      complete: true,
+      passed: true,
+    };
+    const wrongPageState = {
+      ...mutation,
+      visualReview: wrongPageRequirement,
+      patchProposal: undefined,
+    };
+    expect(canSubmitNotebookPatch(wrongPageState)).toMatchObject({
+      allowed: false,
+      code: 'stale',
+    });
+    expect(workflowTools(availableAgentToolNames(wrongPageState)))
+      .toEqual(['render_draft_preview']);
   });
 
-  it('lets the model see both outcomes but rejects a notebook draft for an answer-only turn', async () => {
+  it('rerenders and resets an inconsistent legacy visual-review receipt', async () => {
+    const generation = reviewedGeneration('legacy-review-generation', 'legacy-review-draft');
+    const base = reviewReadyState(generation);
+    const exposed = recordVisualImageExposures(
+      createVisualReviewLedger(generation, NOW),
+      generation,
+      generation.pages,
+      { now: NOW, providerCallCount: 1 },
+    );
+    const reviewed = recordVisualInspection(exposed, generation, {
+      pageIds: generation.pages.map((page) => page.pageId),
+      findings: [],
+      providerCallCount: 2,
+      now: NOW,
+    });
+    const state = {
+      ...base,
+      taskBrief: { ...base.taskBrief, goal: 'Add a reviewed page to my book' },
+      conversation: [{
+        id: 'reader-legacy-review-recovery',
+        role: 'user' as const,
+        text: 'Add a reviewed page to my book',
+        createdAt: NOW,
+      }],
+      visualReview: {
+        ...reviewed,
+        requiredPageIds: [],
+        complete: true,
+        passed: true,
+      },
+    };
+    const baseAdapters = toolAdapters();
+    const catalog = new AgentToolCatalog({
+      ...baseAdapters,
+      sandbox: {
+        ...baseAdapters.sandbox,
+        render: async () => generation,
+      },
+    }, new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW));
+
+    expect([...availableAgentToolNames(state)]).toEqual(['render_draft_preview']);
+    const rerendered = await catalog.execute(state, {
+      id: 'recover-legacy-review',
+      name: 'render_draft_preview',
+      arguments: {},
+    }, new AbortController().signal);
+
+    expect(rerendered.result).not.toMatchObject({ error: expect.anything() });
+    expect(rerendered.state.visualReview).toMatchObject({
+      generationId: generation.generationId,
+      requiredPageIds: generation.pages.map((page) => page.pageId),
+      inspectedPageIds: [],
+      complete: false,
+      passed: false,
+    });
+    expect([...availableAgentToolNames(rerendered.state)])
+      .toEqual(['read_draft_preview_pages']);
+  });
+
+  it('allows a replacement draft only for a concrete repair or reader-feedback reason', () => {
+    const ready = citationReadyState();
+    const mutation = {
+      ...ready,
+      taskBrief: { ...ready.taskBrief, goal: 'Add these notes into my book' },
+      conversation: [{
+        id: 'reader-repair-mutation',
+        role: 'user' as const,
+        text: 'Add these notes into my book',
+        createdAt: NOW,
+      }],
+      patchProposal: undefined,
+    };
+    const invalid = {
+      ...mutation,
+      validation: {
+        ...mutation.validation,
+        valid: false,
+        staticDiagnostics: [{
+          severity: 'error' as const,
+          code: 'craft.semantic-variety-required',
+          message: 'Use a meaning-bearing native structure.',
+        }],
+      },
+      previewGeneration: undefined,
+      visualReview: undefined,
+    };
+    expect(availableAgentToolNames(invalid).has('submit_notebook_script')).toBe(true);
+
+    const page = mutation.previewGeneration.pages[0]!;
+    const blockedReview = recordVisualInspection(mutation.visualReview, mutation.previewGeneration, {
+      pageIds: [page.pageId],
+      findings: [{
+        id: 'reader-repair-blocking',
+        generationId: mutation.previewGeneration.generationId,
+        pageId: page.pageId,
+        severity: 'blocking',
+        category: 'clipping',
+        summary: 'The final card is visibly clipped.',
+        resolved: false,
+      }],
+      providerCallCount: 3,
+      now: NOW,
+    });
+    expect(availableAgentToolNames({
+      ...mutation,
+      visualReview: blockedReview,
+    }).has('submit_notebook_script')).toBe(true);
+
+    expect(availableAgentToolNames({
+      ...mutation,
+      draft: { ...mutation.draft, sourceManifestDigest: 'older-source-context' },
+    }).has('submit_notebook_script')).toBe(true);
+
+    const feedbackState = {
+      ...mutation,
+      modelHistory: [
+        ...mutation.modelHistory,
+        {
+          id: 'feedback-result-turn',
+          role: 'tool' as const,
+          toolCallId: 'feedback-call',
+          toolName: 'submit_notebook_patch',
+          content: { decision: 'feedback', feedback: 'Make the comparison clearer.' },
+          isError: false,
+          createdAt: NOW,
+        },
+      ],
+    };
+    expect(availableAgentToolNames(feedbackState).has('submit_notebook_script')).toBe(true);
+
+    const feedbackConsumed = {
+      ...feedbackState,
+      modelHistory: [
+        ...feedbackState.modelHistory,
+        {
+          id: 'replacement-draft-turn',
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{
+            id: 'replacement-draft-call',
+            name: 'submit_notebook_script',
+            arguments: {
+              script: mutation.draft.script,
+              citedUnitIds: ['trusted-unit-1'],
+              reason: 'reader feedback',
+            },
+          }],
+          createdAt: NOW,
+        },
+        {
+          id: 'replacement-draft-result',
+          role: 'tool' as const,
+          toolCallId: 'replacement-draft-call',
+          toolName: 'submit_notebook_script',
+          content: { draftHash: mutation.draft.draftHash },
+          isError: false,
+          createdAt: NOW,
+        },
+      ],
+    };
+    expect(availableAgentToolNames(feedbackConsumed).has('submit_notebook_script')).toBe(false);
+  });
+
+  it('prevents the logged calls 17-21 unchanged-submit loop after validation passes', async () => {
+    const ready = citationReadyState();
+    const state = {
+      ...ready,
+      taskBrief: { ...ready.taskBrief, goal: 'Add these notes into my book' },
+      conversation: [{
+        id: 'reader-loop-regression',
+        role: 'user' as const,
+        text: 'Add these notes into my book',
+        createdAt: NOW,
+      }],
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const catalog = new AgentToolCatalog(
+      {
+        ...toolAdapters(),
+        hash: {
+          ...toolAdapters().hash,
+          digestText: async () => state.draft.draftHash,
+        },
+      },
+      new AgentEventBus(state.identity, persistence, () => NOW),
+    );
+
+    const advertised = catalog.descriptorsForState(state).map((tool) => tool.name);
+    expect(advertised).toContain('render_draft_preview');
+    expect(advertised).not.toContain('submit_notebook_script');
+
+    const staleCall = await catalog.execute(state, {
+      id: 'logged-call-17',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: state.sourceCoverage.citedUnitIds,
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(staleCall.result).toEqual({
+      error: 'the current draft already passed validation; render it instead of submitting it again',
+      retryable: true,
+    });
+    expect(staleCall.state.draft).toEqual(state.draft);
+    expect(staleCall.state.usage.repairPasses).toBe(state.usage.repairPasses);
+    expect(catalog.descriptorsForState(staleCall.state).map((tool) => tool.name))
+      .not.toContain('submit_notebook_script');
+  });
+
+  it('marks a repeated identical invalid repair as do-not-repeat without spending repair passes', async () => {
+    const ready = citationReadyState();
+    const state = {
+      ...ready,
+      taskBrief: { ...ready.taskBrief, goal: 'Add these notes into my book' },
+      conversation: [{
+        id: 'reader-invalid-repair-loop',
+        role: 'user' as const,
+        text: 'Add these notes into my book',
+        createdAt: NOW,
+      }],
+      validation: {
+        ...ready.validation,
+        valid: false,
+        staticDiagnostics: [{
+          severity: 'error' as const,
+          code: 'craft.semantic-variety-required',
+          message: 'Use a meaning-bearing native structure.',
+        }],
+      },
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const catalog = new AgentToolCatalog(
+      {
+        ...toolAdapters(),
+        hash: {
+          ...toolAdapters().hash,
+          digestText: async (text) => text === state.draft.script
+            ? state.draft.draftHash
+            : 'materially-changed-repair-hash',
+        },
+      },
+      new AgentEventBus(state.identity, persistence, () => NOW),
+    );
+    const repeatedCall = {
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: state.sourceCoverage.citedUnitIds,
+        reason: 'repair',
+      },
+    };
+
+    expect(catalog.descriptorsForState(state).map((tool) => tool.name))
+      .toContain('submit_notebook_script');
+    const first = await catalog.execute(state, {
+      id: 'invalid-repeat-1',
+      ...repeatedCall,
+    }, new AbortController().signal);
+    expect(first.result).toMatchObject({
+      retryable: false,
+      doNotRepeat: true,
+      nextAction: expect.stringContaining('Revise the Notebook Script materially'),
+    });
+    expect(first.result).toMatchObject({
+      error: expect.stringContaining('identical to the current draft'),
+    });
+    expect(first.state.draft).toEqual(state.draft);
+    expect(first.state.usage.repairPasses).toBe(state.usage.repairPasses);
+    expect(catalog.descriptorsForState(first.state).map((tool) => tool.name))
+      .toContain('submit_notebook_script');
+
+    const second = await catalog.execute(first.state, {
+      id: 'invalid-repeat-2',
+      ...repeatedCall,
+    }, new AbortController().signal);
+    expect(second.result).toMatchObject({
+      error: expect.stringContaining('identical to the current draft'),
+      retryable: false,
+      doNotRepeat: true,
+    });
+    expect(second.state.draft).toEqual(state.draft);
+    expect(second.state.draft?.version).toBe(state.draft.version);
+    expect(second.state.usage.repairPasses).toBe(state.usage.repairPasses);
+
+    expect(catalog.descriptorsForState(second.state).map((tool) => tool.name))
+      .toContain('submit_notebook_script');
+    const changed = await catalog.execute(second.state, {
+      id: 'changed-repair-after-repeat',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: `${state.draft.script}\n\n::: callout {variant=tip}\nA concrete repair.\n:::`,
+        citedUnitIds: state.sourceCoverage.citedUnitIds,
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(changed.result).not.toHaveProperty('error');
+    expect(changed.state.draft?.draftHash).toBe('materially-changed-repair-hash');
+    expect(changed.state.draft?.version).toBe(state.draft.version + 1);
+    expect(changed.state.usage.repairPasses).toBe(state.usage.repairPasses + 1);
+    expect(changed.state.lastError).toBeUndefined();
+  });
+
+  it('advertises only conversation completion for an answer-only turn', async () => {
     const identity = {
       taskId: 'task-capability-choice',
       threadId: 'thread-capability-choice',
@@ -382,7 +917,7 @@ describe('AI insertion target boundaries', () => {
     });
 
     expect(availableAgentToolNames(state).has('finish_conversation')).toBe(true);
-    expect(availableAgentToolNames(state).has('submit_notebook_script')).toBe(true);
+    expect(availableAgentToolNames(state).has('submit_notebook_script')).toBe(false);
     const rejected = await tools.execute(state, {
       id: 'wrong-draft-choice',
       name: 'submit_notebook_script',
@@ -436,9 +971,12 @@ describe('AI insertion target boundaries', () => {
 
     expect(first.state.plan?.version).toBe(1);
     expect(repeated.state.plan).toEqual(first.state.plan);
-    expect(repeated.result).toMatchObject({ accepted: false, unchanged: true });
+    expect(repeated.result).toEqual({
+      error: 'set_plan is not available in the current agent phase; use inspect_notebook instead',
+      retryable: true,
+    });
     expect(availableAgentToolNames(first.state).has('set_plan')).toBe(false);
-    expect(availableAgentToolNames(first.state).has('submit_notebook_script')).toBe(true);
+    expect(availableAgentToolNames(first.state).has('inspect_notebook')).toBe(true);
   });
 
   it('keeps notebook intent through a natural clarification answer in a greeting-started task', () => {
@@ -465,8 +1003,8 @@ describe('AI insertion target boundaries', () => {
     };
     const tools = availableAgentToolNames(state);
 
-    expect(tools.has('submit_notebook_script')).toBe(true);
-    expect(tools.has('finish_conversation')).toBe(true);
+    expect(tools.has('inspect_notebook')).toBe(true);
+    expect(tools.has('finish_conversation')).toBe(false);
   });
 
   it('starts a later ordinary question in conversation mode even when an old draft remains', () => {
@@ -490,7 +1028,7 @@ describe('AI insertion target boundaries', () => {
     const tools = availableAgentToolNames(state);
 
     expect(tools.has('finish_conversation')).toBe(true);
-    expect(tools.has('submit_notebook_script')).toBe(true);
+    expect(tools.has('submit_notebook_script')).toBe(false);
   });
 
   it('does not force an unrelated later chat turn through an old attachment index', () => {
@@ -508,6 +1046,10 @@ describe('AI insertion target boundaries', () => {
     const manifest = citationManifest();
     const state = {
       ...initial,
+      taskBrief: {
+        ...initial.taskBrief,
+        preserveAllSourceInformation: true,
+      },
       sourceManifest: manifest,
       sourceCoverage: {
         manifestDigest: 'older-manifest-digest',
@@ -554,6 +1096,43 @@ describe('AI insertion target boundaries', () => {
       'rerank_source_hits',
     ]));
     expect(canCompleteConversation(state, [])).toEqual({ allowed: true });
+  });
+
+  it('treats the Preserve All toggle as a complete evidence gate without magic wording', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-preserve-toggle',
+        threadId: 'thread-preserve-toggle',
+        runId: 'run-preserve-toggle',
+        bookId: 'current-book',
+      },
+      goal: 'Make notebook pages',
+      preserveAllSourceInformation: true,
+      now: NOW,
+      userMessageId: 'reader-preserve-toggle',
+    });
+    const manifest = citationManifest();
+    const state = {
+      ...initial,
+      sourceManifest: manifest,
+      sourceCoverage: {
+        manifestDigest: manifest.digest,
+        mode: 'complete' as const,
+        requiredUnitIds: ['trusted-unit-1'],
+        readUnitIds: [],
+        citedUnitIds: [],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: false,
+        updatedAt: NOW,
+      },
+    };
+    const tools = availableAgentToolNames(state);
+
+    expect(tools.has('read_full_source')).toBe(true);
+    expect(tools.has('inspect_notebook')).toBe(false);
+    expect(tools.has('submit_notebook_script')).toBe(false);
+    expect(tools.has('finish_conversation')).toBe(false);
   });
 
   it('keeps retrieval available and required when the current request names its source', async () => {
@@ -607,7 +1186,6 @@ describe('AI insertion target boundaries', () => {
     );
 
     expect([...availableAgentToolNames(state)]).toEqual(expect.arrayContaining([
-      'list_source_manifest',
       'plan_source_retrieval',
       'read_full_source',
       'read_source_range',
@@ -615,6 +1193,7 @@ describe('AI insertion target boundaries', () => {
       'rerank_source_hits',
       'inspect_source_coverage',
     ]));
+    expect(availableAgentToolNames(state).has('list_source_manifest')).toBe(false);
     expect(canCompleteConversation(state, [])).toMatchObject({
       allowed: false,
       reason: expect.stringMatching(/read and cite the attached source/i),
@@ -1336,6 +1915,37 @@ describe('AI panel queued-source handoff', () => {
     ]);
   });
 
+  it('keeps only the current activity animated and settles every retained bar', () => {
+    const timeline = [
+      { id: 'reader', kind: 'message' as const, role: 'reader' as const, text: 'make notes' },
+      {
+        id: 'status-read',
+        kind: 'activity' as const,
+        label: 'Reading',
+        status: 'running' as const,
+        progress: 0.2,
+      },
+      {
+        id: 'status-render',
+        kind: 'activity' as const,
+        label: 'Rendering',
+        status: 'running' as const,
+        progress: 0.72,
+      },
+    ];
+
+    expect(currentActivityTimeline(timeline, true)).toEqual([
+      timeline[0],
+      expect.objectContaining({ id: 'status-read', status: 'done', progress: undefined }),
+      timeline[2],
+    ]);
+    expect(currentActivityTimeline(timeline, false)).toEqual([
+      timeline[0],
+      expect.objectContaining({ id: 'status-read', status: 'done', progress: undefined }),
+      expect.objectContaining({ id: 'status-render', status: 'done', progress: undefined }),
+    ]);
+  });
+
   it('shows a submitted reader message immediately and hides the internal completion tool', async () => {
     const state = createInitialAgentState({
       identity: {
@@ -1958,11 +2568,20 @@ describe('AI native-page visual review authority', () => {
   it('rejects a model-authored resolved flag instead of trusting it', async () => {
     const generation = reviewedGeneration();
     const state = reviewReadyState(generation);
+    const exposedState = {
+      ...state,
+      visualReview: recordVisualImageExposures(
+        state.visualReview,
+        generation,
+        generation.pages,
+        { now: NOW, providerCallCount: 1 },
+      ),
+    };
     const persistence = new InMemoryAgentPersistence();
     const events = new AgentEventBus(state.identity, persistence, () => NOW);
     const tools = new AgentToolCatalog(toolAdapters(), events);
 
-    const result = await tools.execute(state, {
+    const result = await tools.execute(exposedState, {
       id: 'call-forged-resolution',
       name: 'record_visual_review',
       arguments: {
@@ -2223,7 +2842,7 @@ describe('AI task cancellation settlement', () => {
 });
 
 describe('AI source citation provenance', () => {
-  it('treats an identical repaired draft as an idempotent no-op', async () => {
+  it('rejects an identical repaired draft once the current preview is already reviewed', async () => {
     const state = citationReadyState();
     const persistence = new InMemoryAgentPersistence();
     const events = new AgentEventBus(state.identity, persistence, () => NOW);
@@ -2248,7 +2867,10 @@ describe('AI source citation provenance', () => {
       },
     }, new AbortController().signal);
 
-    expect(result.result).toMatchObject({ unchanged: true });
+    expect(result.result).toEqual({
+      error: 'the current preview must be inspected, reviewed or proposed; do not resubmit the unchanged draft',
+      retryable: true,
+    });
     expect(result.state.draft).toEqual(state.draft);
     expect(result.state.validation).toEqual(state.validation);
     expect(result.state.previewGeneration).toEqual(state.previewGeneration);
@@ -2274,6 +2896,10 @@ describe('AI source citation provenance', () => {
     };
     const withoutReaderEvidence = {
       ...ready,
+      draft: {
+        ...ready.draft,
+        sourceReadUnitIds: [],
+      },
       sourceCoverage: {
         ...ready.sourceCoverage,
         readUnitIds: [],
@@ -2294,6 +2920,169 @@ describe('AI source citation provenance', () => {
       code: 'stale',
       reason: expect.stringMatching(/older source manifest/i),
     });
+  });
+
+  it('reopens draft submission to attach a late grounded citation without rewriting reviewed pages', async () => {
+    const base = citationReadyState();
+    const readerMessageId = 'reader-late-source-citation';
+    const state = {
+      ...base,
+      taskBrief: {
+        ...base.taskBrief,
+        goal: 'Use the attached PDF to make these notebook pages.',
+      },
+      conversation: [{
+        id: readerMessageId,
+        role: 'user' as const,
+        text: 'Use the attached PDF to make these notebook pages.',
+        createdAt: NOW,
+      }],
+      budgetWindow: {
+        ...base.budgetWindow!,
+        readerMessageId,
+      },
+      sourceCoverage: {
+        ...base.sourceCoverage,
+        citedUnitIds: [],
+      },
+    };
+
+    expect([...availableAgentToolNames(state)]).toEqual([
+      'submit_notebook_script',
+    ]);
+    expect(canSubmitNotebookPatch(state)).toMatchObject({
+      allowed: false,
+      reason: expect.stringMatching(/read and cite/i),
+    });
+
+    const adapters = toolAdapters();
+    const persistence = new InMemoryAgentPersistence();
+    const tools = new AgentToolCatalog({
+      ...adapters,
+      hash: {
+        ...adapters.hash,
+        digestText: async (text) =>
+          text === state.draft.script
+            ? state.draft.draftHash
+            : adapters.hash.digestText(text),
+      },
+    }, new AgentEventBus(state.identity, persistence, () => NOW));
+    const result = await tools.execute(state, {
+      id: 'call-late-source-citation',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: ['trusted-unit-1'],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+
+    expect(result.result).not.toHaveProperty('error');
+    expect(result.state.draft?.script).toBe(state.draft.script);
+    expect(result.state.draft?.draftHash).toBe(state.draft.draftHash);
+    expect(result.state.validation).toEqual(state.validation);
+    expect(result.state.previewGeneration).toEqual(state.previewGeneration);
+    expect(result.state.visualReview).toEqual(state.visualReview);
+    expect(result.state.sourceCoverage?.citedUnitIds).toEqual(['trusted-unit-1']);
+    expect(canSubmitNotebookPatch(result.state)).toEqual({ allowed: true });
+  });
+
+  it('cannot propose a preserve-all draft that predates later required source reads', async () => {
+    const base = citationReadyState();
+    const readerMessageId = 'reader-preserve-all-late-read';
+    const state = {
+      ...base,
+      taskBrief: {
+        ...base.taskBrief,
+        goal: 'Add every detail from the attached PDF into my book.',
+        preserveAllSourceInformation: true,
+      },
+      conversation: [{
+        id: readerMessageId,
+        role: 'user' as const,
+        text: 'Add every detail from the attached PDF into my book.',
+        createdAt: NOW,
+      }],
+      budgetWindow: {
+        ...base.budgetWindow!,
+        readerMessageId,
+      },
+      sourceCoverage: {
+        ...base.sourceCoverage,
+        mode: 'complete' as const,
+        requiredUnitIds: ['trusted-unit-1', 'trusted-unit-unread'],
+        readUnitIds: ['trusted-unit-1', 'trusted-unit-unread'],
+        readExposures: [
+          ...(base.sourceCoverage.readExposures ?? []),
+          {
+            unitId: 'trusted-unit-unread',
+            providerCallCount: 1,
+            exposedAt: NOW,
+          },
+        ],
+        omittedUnitIds: [],
+        complete: true,
+      },
+      // The reviewed pixels were authored when only the first unit was known.
+      draft: {
+        ...base.draft,
+        sourceReadUnitIds: ['trusted-unit-1'],
+      },
+    };
+
+    expect(canSubmitNotebookPatch(state)).toMatchObject({
+      allowed: false,
+      code: 'stale',
+      reason: expect.stringMatching(/predates current source reads/i),
+    });
+    expect([...availableAgentToolNames(state)]).toEqual([
+      'submit_notebook_script',
+    ]);
+
+    const adapters = toolAdapters();
+    const tools = new AgentToolCatalog({
+      ...adapters,
+      hash: {
+        ...adapters.hash,
+        digestText: async (text) =>
+          text === state.draft.script
+            ? state.draft.draftHash
+            : adapters.hash.digestText(text),
+      },
+    }, new AgentEventBus(
+      state.identity,
+      new InMemoryAgentPersistence(),
+      () => NOW,
+    ));
+    const blocked = await tools.execute(state, {
+      id: 'call-stamp-complete-source-set',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: ['trusted-unit-1'],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(blocked.result).toMatchObject({
+      error: expect.stringMatching(/revise the script or cite newly read units/i),
+    });
+
+    const affirmed = await tools.execute(blocked.state, {
+      id: 'call-affirm-complete-source-set',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft.script,
+        citedUnitIds: ['trusted-unit-1', 'trusted-unit-unread'],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+
+    expect(affirmed.result).not.toHaveProperty('error');
+    expect(affirmed.state.draft?.sourceReadUnitIds).toEqual([
+      'trusted-unit-1',
+      'trusted-unit-unread',
+    ]);
+    expect(canSubmitNotebookPatch(affirmed.state)).toEqual({ allowed: true });
   });
 
   it.each([
@@ -2336,6 +3125,18 @@ describe('AI source citation provenance', () => {
     const base = citationReadyState();
     const state = {
       ...base,
+      validation: {
+        ...base.validation,
+        valid: false,
+        staticDiagnostics: [{
+          severity: 'error' as const,
+          code: 'craft.semantic-variety-required',
+          message: 'Repair the draft structure.',
+        }],
+      },
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
       sourceCoverage: {
         ...base.sourceCoverage,
         readUnitIds: ['trusted-unit-1', 'trusted-unit-unread'],
@@ -2427,6 +3228,72 @@ describe('AI source citation provenance', () => {
       pageNumber: 7,
       figure: 'Figure 2',
     }]);
+  });
+
+  it('turns late notebook drift into one inspect recovery instead of a proposal loop', async () => {
+    const state = citationReadyState();
+    const disposed: string[] = [];
+    const changedSnapshot = {
+      ...state.notebookSnapshot!,
+      bookRevision: 'book-revision-changed-after-review',
+      capturedAt: '2026-08-12T08:01:00.000Z',
+    };
+    const base = toolAdapters();
+    const adapters: AgentAdapters = {
+      ...base,
+      notebook: {
+        ...base.notebook,
+        inspectNotebook: async () => ({
+          title: 'Current book',
+          snapshot: changedSnapshot,
+          pages: changedSnapshot.pageIds.map((pageId, ordinal) => ({
+            pageId,
+            ordinal,
+            revision: changedSnapshot.pageRevisions[pageId]!,
+            estimatedTokens: 12,
+          })),
+        }),
+      },
+      sources: {
+        ...base.sources,
+        getManifest: async () => state.sourceManifest!,
+      },
+      sandbox: {
+        ...base.sandbox,
+        dispose: async (generationId) => {
+          disposed.push(generationId);
+        },
+      },
+    };
+    const tools = new AgentToolCatalog(
+      adapters,
+      new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const failed = await tools.execute(state, {
+      id: 'proposal-after-notebook-drift',
+      name: 'propose_notebook_patch',
+      arguments: {},
+    }, new AbortController().signal);
+
+    expect(failed.result).toMatchObject({
+      error: expect.stringMatching(/notebook changed after it was inspected/i),
+      recovered: true,
+      nextAction: expect.stringMatching(/inspect the current notebook/i),
+    });
+    expect(failed.state).toMatchObject({
+      lifecycle: 'running',
+      phase: 'intake',
+    });
+    expect(failed.state.notebookSnapshot).toBeUndefined();
+    expect(failed.state.insertionTarget).toBeUndefined();
+    expect(failed.state.validation).toBeUndefined();
+    expect(failed.state.previewGeneration).toBeUndefined();
+    expect(failed.state.visualReview).toBeUndefined();
+    expect(failed.state.patchProposal).toBeUndefined();
+    expect(disposed).toContain(state.previewGeneration!.generationId);
+    expect(tools.descriptorsForState(failed.state).map((tool) => tool.name)).toEqual([
+      'inspect_notebook',
+    ]);
   });
 
   it('uses replacement semantics directly in the deterministic coverage ledger', () => {

@@ -4,6 +4,8 @@ import type {
   UserPreviewContract,
 } from './types';
 import {
+  readerEvidenceSources,
+  readerEvidenceUnitIds,
   sourceUnitsUnobservedBeforeProviderCall,
   visualImageExposurePageIds,
 } from './coverage';
@@ -79,6 +81,32 @@ export function canExecuteTool(state: AgentState): PolicyDecision {
   return { allowed: true };
 }
 
+function readerSourceIds(state: AgentState): ReadonlySet<string> {
+  return new Set(
+    state.sourceManifest === undefined
+      ? []
+      : readerEvidenceSources(state.sourceManifest).map((source) => source.id),
+  );
+}
+
+function canonicalUnitIds(state: AgentState): ReadonlySet<string> {
+  return new Set(
+    state.sourceManifest?.sources
+      .filter((source) => source.kind === 'notebook_script_spec')
+      .flatMap((source) => source.units.map((unit) => unit.id)) ?? [],
+  );
+}
+
+function completeReaderCoverage(state: AgentState): boolean {
+  const coverage = state.sourceCoverage;
+  const manifest = state.sourceManifest;
+  if (coverage === undefined || manifest === undefined) return false;
+  const read = new Set(coverage.readUnitIds);
+  const sources = readerSourceIds(state);
+  return readerEvidenceUnitIds(manifest).every((unitId) => read.has(unitId)) &&
+    !coverage.staleSourceIds.some((sourceId) => sources.has(sourceId));
+}
+
 /**
  * Conversation is a first-class terminal outcome. It deliberately has no
  * notebook-snapshot, draft, render or approval requirements, but source
@@ -120,6 +148,14 @@ export function canCompleteConversation(
   const readerUnitIds = new Set(
     readerSources.flatMap((source) => source.units.map((unit) => unit.id)),
   );
+  const canonicalUnits = canonicalUnitIds(state);
+  if (citedUnitIds.some((unitId) => canonicalUnits.has(unitId))) {
+    return {
+      allowed: false,
+      code: 'incomplete',
+      reason: 'the Notebook Script specification is authoring guidance, not reader evidence',
+    };
+  }
   if (
     sourceEvidenceRequired &&
     readerUnitIds.size > 0 &&
@@ -140,7 +176,7 @@ export function canCompleteConversation(
   }
   if (
     readerRequiresCompleteSourceCoverage(state) &&
-    (coverage === undefined || !coverage.complete)
+    !completeReaderCoverage(state)
   ) {
     return {
       allowed: false,
@@ -148,7 +184,11 @@ export function canCompleteConversation(
       reason: 'complete source coverage is required before answering',
     };
   }
-  if (sourceAuthorityUsed && coverage?.staleSourceIds.length) {
+  const evidenceSourceIds = readerSourceIds(state);
+  if (
+    sourceAuthorityUsed &&
+    coverage?.staleSourceIds.some((sourceId) => evidenceSourceIds.has(sourceId))
+  ) {
     return {
       allowed: false,
       code: 'stale',
@@ -173,7 +213,7 @@ export function canCompleteConversation(
     }
     if (readerRequiresCompleteSourceCoverage(state)) {
       const cited = new Set(citedUnitIds);
-      const uncited = coverage.requiredUnitIds.filter((unitId) => !cited.has(unitId));
+      const uncited = [...readerUnitIds].filter((unitId) => !cited.has(unitId));
       if (uncited.length > 0) {
         return {
           allowed: false,
@@ -185,7 +225,7 @@ export function canCompleteConversation(
     if (
       sourceUnitsUnobservedBeforeProviderCall(
         coverage,
-        coverage.readUnitIds,
+        coverage.readUnitIds.filter((unitId) => readerUnitIds.has(unitId)),
         state.usage.providerCalls,
       ).length > 0
     ) {
@@ -226,6 +266,22 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       code: 'stale',
       reason: 'the draft belongs to an older source manifest',
     };
+  }
+  if (readerRequiresSourceEvidence(state) && state.sourceManifest !== undefined) {
+    const readerUnits = new Set(readerEvidenceUnitIds(state.sourceManifest));
+    const currentReadUnitIds = [...new Set(
+      (state.sourceCoverage?.readUnitIds ?? []).filter(
+        (unitId) => readerUnits.has(unitId),
+      ),
+    )].sort();
+    const draftedReadUnitIds = [...(state.draft.sourceReadUnitIds ?? [])].sort();
+    if (JSON.stringify(currentReadUnitIds) !== JSON.stringify(draftedReadUnitIds)) {
+      return {
+        allowed: false,
+        code: 'stale',
+        reason: 'the draft predates current source reads; reaffirm or revise it after reviewing that evidence',
+      };
+    }
   }
   if (state.validation === undefined || !state.validation.valid) {
     return {
@@ -300,15 +356,44 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       reason: 'visually inspect every page in the current preview generation',
     };
   }
+  const previewPageIds = preview.pages.map((page) => page.pageId);
+  const uniquePreviewPageIds = [...new Set(previewPageIds)].sort();
+  const uniqueRequiredPageIds = [...new Set(visual.requiredPageIds)].sort();
+  if (
+    uniquePreviewPageIds.length !== previewPageIds.length ||
+    uniqueRequiredPageIds.length !== visual.requiredPageIds.length ||
+    JSON.stringify(uniquePreviewPageIds) !== JSON.stringify(uniqueRequiredPageIds)
+  ) {
+    return {
+      allowed: false,
+      code: 'stale',
+      reason: 'visual review page requirements do not match the current preview generation',
+    };
+  }
   const exposedPageIds = new Set(visualImageExposurePageIds(visual, preview));
-  if (!visual.requiredPageIds.every((pageId) => exposedPageIds.has(pageId))) {
+  if (!previewPageIds.every((pageId) => exposedPageIds.has(pageId))) {
     return {
       allowed: false,
       code: 'incomplete',
       reason: 'load every current rendered page with read_draft_preview_pages before recording visual review',
     };
   }
-  if (!visual.complete || !visual.passed) {
+  const inspectedPageIds = new Set(visual.inspectedPageIds);
+  const invalidFinding = visual.findings.some(
+    (finding) =>
+      finding.generationId !== preview.generationId ||
+      !uniquePreviewPageIds.includes(finding.pageId),
+  );
+  const blockingFinding = visual.findings.some(
+    (finding) => finding.severity === 'blocking' && !finding.resolved,
+  );
+  if (
+    !visual.complete ||
+    !visual.passed ||
+    !previewPageIds.every((pageId) => inspectedPageIds.has(pageId)) ||
+    invalidFinding ||
+    blockingFinding
+  ) {
     return {
       allowed: false,
       code: 'incomplete',
@@ -321,7 +406,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
   if (
     (readerRequiresCompleteSourceCoverage(state) ||
       state.retrievalPlan?.requiresCompleteCoverage === true) &&
-    (state.sourceCoverage === undefined || !state.sourceCoverage.complete)
+    !completeReaderCoverage(state)
   ) {
     return {
       allowed: false,
@@ -329,7 +414,11 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       reason: 'complete source coverage is required and still has unread units',
     };
   }
-  if (sourceAuthorityUsed && state.sourceCoverage?.staleSourceIds.length) {
+  const evidenceSourceIds = readerSourceIds(state);
+  if (
+    sourceAuthorityUsed &&
+    state.sourceCoverage?.staleSourceIds.some((sourceId) => evidenceSourceIds.has(sourceId))
+  ) {
     return {
       allowed: false,
       code: 'stale',
@@ -337,10 +426,20 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
     };
   }
   const readerUnitIds = new Set(
-    state.sourceManifest?.sources
-      .filter((source) => source.kind !== 'notebook_script_spec')
-      .flatMap((source) => source.units.map((unit) => unit.id)) ?? [],
+    state.sourceManifest === undefined
+      ? []
+      : readerEvidenceUnitIds(state.sourceManifest),
   );
+  const canonicalUnits = canonicalUnitIds(state);
+  if (
+    state.sourceCoverage?.citedUnitIds.some((unitId) => canonicalUnits.has(unitId))
+  ) {
+    return {
+      allowed: false,
+      code: 'incomplete',
+      reason: 'the Notebook Script specification is authoring guidance, not reader evidence',
+    };
+  }
   if (sourceEvidenceRequired && readerUnitIds.size > 0) {
     const read = state.sourceCoverage?.readUnitIds.some((id) => readerUnitIds.has(id)) === true;
     const cited = state.sourceCoverage?.citedUnitIds.some((id) => readerUnitIds.has(id)) === true;
@@ -357,7 +456,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       ...state.sourceCoverage.requiredUnitIds,
       ...state.sourceCoverage.readUnitIds,
       ...state.sourceCoverage.citedUnitIds,
-    ];
+    ].filter((unitId) => readerUnitIds.has(unitId));
     if (
       sourceUnitsUnobservedBeforeProviderCall(
         state.sourceCoverage,

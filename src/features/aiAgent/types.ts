@@ -360,6 +360,12 @@ export interface SourceCoverageLedger {
   readonly requiredUnitIds: readonly string[];
   readonly readUnitIds: readonly string[];
   /**
+   * Units returned by a source read even when fail-closed visual evidence kept
+   * them out of `readUnitIds`. This lets Preserve All pause once on an
+   * impossible composed-visual requirement instead of re-reading forever.
+   */
+  readonly attemptedUnitIds?: readonly string[];
+  /**
    * Earliest provider turn whose tool result exposed each readable unit. A
    * later provider turn is required before that unit may authorize a citation
    * or final proposal; parallel tools in one assistant batch do not count as
@@ -454,6 +460,8 @@ export interface NotebookDraft {
   readonly script: string;
   readonly draftHash: string;
   readonly sourceManifestDigest?: string;
+  /** Reader-evidence units available to the model when this draft was affirmed. */
+  readonly sourceReadUnitIds?: readonly string[];
   readonly createdAt: IsoTimestamp;
 }
 
@@ -674,6 +682,7 @@ export interface AgentPublicError {
     | 'provider_unavailable'
     | 'provider_invalid_response'
     | 'tool_error'
+    | 'agent_stalled'
     | 'budget_exhausted'
     | 'cancelled'
     | 'stale_context'
@@ -710,6 +719,18 @@ export interface AgentApplyRecoveryReceipt {
   readonly refreshedPreviewId: string;
   readonly attempt: number;
   readonly recoveredAt: IsoTimestamp;
+}
+
+/**
+ * Durable authoring recovery that survives the provider checkpoint. It is
+ * separate from `lastError`, which is intentionally cleared when the next
+ * assistant tool call is stored.
+ */
+export interface AgentProposalRecoveryReceipt {
+  readonly kind: 'private_restore';
+  readonly draftHash: string;
+  readonly message: string;
+  readonly createdAt: IsoTimestamp;
 }
 
 export interface AgentState {
@@ -757,6 +778,7 @@ export interface AgentState {
   readonly lastError?: AgentPublicError;
   readonly lastApplyFailure?: AgentApplyFailureReceipt;
   readonly applyRecovery?: AgentApplyRecoveryReceipt;
+  readonly proposalRecovery?: AgentProposalRecoveryReceipt;
   readonly checkpointStep: number;
   readonly createdAt: IsoTimestamp;
   readonly updatedAt: IsoTimestamp;

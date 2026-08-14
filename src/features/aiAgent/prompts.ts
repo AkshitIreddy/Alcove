@@ -1,9 +1,94 @@
 import type { AgentState } from './types';
+import { readerEvidenceUnitIds, visualImageExposurePageIds } from './coverage';
 import { explicitImageRequest } from './imageIntent';
 import {
   readerRequestsNotebookMutation,
   readerRequiresSourceEvidence,
 } from './intent';
+
+function nextWorkflowAction(state: AgentState): string {
+  if (
+    (
+      readerRequiresSourceEvidence(state) ||
+      (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0
+    ) &&
+    (state.sourceCoverage?.staleSourceIds.length ?? 0) > 0
+  ) {
+    return 'refresh the source manifest before any conversation or notebook terminal action';
+  }
+  if (!readerRequestsNotebookMutation(state)) {
+    return 'finish the conversational answer; do not start notebook authoring';
+  }
+  const coverage = state.sourceCoverage;
+  const attempted = new Set(coverage?.attemptedUnitIds ?? []);
+  if (
+    coverage?.mode === 'complete' &&
+    !coverage.complete &&
+    coverage.omittedUnitIds.length > 0 &&
+    coverage.omittedUnitIds.every((unitId) => attempted.has(unitId))
+  ) {
+    return 'ask one concise blocker question explaining that unresolved composed visuals cannot satisfy Preserve All; tell the reader to turn Preserve All off to continue with extractable evidence, or cancel';
+  }
+  if (
+    state.lastError?.code === 'tool_error' &&
+    state.lastError.retryable === false &&
+    state.lastError.message.includes('Notebook Script is identical to the current draft')
+  ) {
+    return 'inspect the current script or diagnostics, then prepare a materially changed replacement; never repeat the blocked draft';
+  }
+  if (state.notebookSnapshot === undefined) return 'inspect the notebook once';
+  if (state.insertionTarget === undefined) return 'choose one sensible insertion target';
+  if (state.draft === undefined) return 'submit one complete initial Notebook Script draft';
+  if (state.draft.sourceManifestDigest !== state.sourceManifest?.digest) {
+    return 'replace the draft using the current source context';
+  }
+  if (state.sourceManifest !== undefined && readerRequiresSourceEvidence(state)) {
+    const readerUnits = new Set(readerEvidenceUnitIds(state.sourceManifest));
+    const currentReads = [...new Set(
+      (state.sourceCoverage?.readUnitIds ?? []).filter(
+        (unitId) => readerUnits.has(unitId),
+      ),
+    )].sort();
+    const draftedReads = [...(state.draft.sourceReadUnitIds ?? [])].sort();
+    if (JSON.stringify(currentReads) !== JSON.stringify(draftedReads)) {
+      return 'reaffirm or revise the complete draft after incorporating the newly read source evidence';
+    }
+  }
+  const validationCurrent = state.validation?.draftHash === state.draft.draftHash;
+  if (!validationCurrent) return 'validate the current draft';
+  if (!state.validation?.valid) return 'repair the reported deterministic diagnostics with a changed draft';
+  const previewCurrent = state.previewGeneration?.draftHash === state.draft.draftHash &&
+    state.previewGeneration.stale !== true;
+  if (!previewCurrent) return 'render the current validated draft; do not resubmit it';
+  const blocking = previewCurrent &&
+    state.visualReview?.draftHash === state.draft.draftHash &&
+    state.visualReview.generationId === state.previewGeneration?.generationId &&
+    state.visualReview.findings.some(
+      (finding) => finding.severity === 'blocking' && !finding.resolved,
+    ) === true;
+  if (blocking) return 'repair the recorded blocking visual findings with a changed draft';
+  if (state.visualReview !== undefined && state.previewGeneration !== undefined) {
+    const exposed = new Set(visualImageExposurePageIds(
+      state.visualReview,
+      state.previewGeneration,
+    ));
+    const inspected = new Set(state.visualReview.inspectedPageIds);
+    if (state.previewGeneration.pages.some((page) => !exposed.has(page.pageId))) {
+      return exposed.size > 0
+        ? 'record the exposed-page review and load only the remaining preview-image batch'
+        : 'load the rendered preview pages in useful batches';
+    }
+    if (state.previewGeneration.pages.some((page) => !inspected.has(page.pageId))) {
+      return 'record observable visual findings for the exposed preview pages';
+    }
+  }
+  if (state.visualReview?.complete && state.visualReview.passed) {
+    return state.patchProposal?.status === 'waiting_for_approval'
+      ? 'surface the one immutable final preview decision'
+      : 'prepare the notebook patch from the passed current preview';
+  }
+  return 'use the narrowly advertised tool that advances the current gate';
+}
 
 /**
  * The model controls strategy and tool routing. This prompt states invariants,
@@ -76,6 +161,15 @@ export function buildAgentSystemPrompt(state: AgentState): string {
         }
       : null,
     insertionTarget: state.insertionTarget ?? null,
+    doNotRepeat: state.lastError?.code === 'tool_error' &&
+        state.lastError.retryable === false &&
+        state.lastError.message.includes('Notebook Script is identical to the current draft')
+      ? {
+          tool: 'submit_notebook_script',
+          draftHash: state.draft?.draftHash ?? null,
+          reason: state.lastError.message,
+        }
+      : null,
     portableImagePrompts: state.draft
       ? {
           explicitlyRequested: imageRequest.requested,
@@ -86,6 +180,7 @@ export function buildAgentSystemPrompt(state: AgentState): string {
             : 0,
         }
       : null,
+    nextRequiredAction: nextWorkflowAction(state),
   };
 
   return [
@@ -97,6 +192,8 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     '',
     'Use Alcove’s native catalogue as an editorial vocabulary, not a quota: select varied callouts, cards, tables, diagrams, timelines, spoilers, stickers, paper treatments and other supported blocks only where each one clarifies structure, comparison, sequence, memory or practice. Do not decorate every paragraph or force content into a catalogue item that changes its meaning.',
     '',
+    'Author native structure with actual Notebook Script, not invented HTML/JSX or named prose. The compact reliable forms are ordinary Markdown tables; `::: callout {variant=tip}` ... `:::`; `::: spoiler` ... `:::`; `::: columns` containing closed `::: col` children; and fenced `graph`, `flowchart`, `tree`, `mindmap` or `timeline` payloads. Graph/flowchart edges use `A -> B: label`. `::page` is a rare protected boundary. Submit the complete raw document, never an outer presentation fence.',
+    '',
     'The deterministic craft check enforces a small semantic floor for ordinary multi-page drafts before rendering: a two-page note needs at least one meaning-bearing native structure; three or more pages need more than one structure, at least two distinct editorial roles, and those structures spread across more than one page. Headings, prose, ordinary bullet lists, stickers, colours and paper styling alone do not satisfy it. This is a floor, not a checklist: choose the smallest set that genuinely fits the subject—a comparison table or columns for contrasts, a diagram or timeline for relationships and sequence, a callout/card for a key idea, code or maths for technical material, or a spoiler/toggle for a useful recall check. Explicit requests for plain, minimal, bullets-only, as-is or verbatim pages bypass this semantic-variety check. They never permit wrapping the complete Notebook Script in an outer code fence: submit the raw script so its headings, emphasis, lists and containers render as blocks, retaining fences only around actual code or diagram payloads. Never add an external image slot merely to pass the check; image slots remain explicit-request-only.',
     '',
     'Use a two-pass composition rule for supplied material. Pass 1 faithfully structures the source and lets it paginate naturally. Render and inspect those native pages before deciding whether enrichment is needed. In pass 2, first prefer layout repair such as removing a premature boundary or pulling the next coherent block backward; never damage a meaningful section boundary just to fill paper. Only when an inspected page still has awkward unused space may you add at most one compact, relevant enrichment there: an example, analogy, why-it-matters note, recall question, definition, caution or mini-summary. Then submit the revised complete draft, revalidate, rerender and visually review every new page. Intentional whitespace is valid. Never force fullness, repeat material, add generic filler, or fabricate a source claim.',
@@ -107,7 +204,7 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     '',
     'For a conversational answer, read only the evidence needed (or every unit when the reader requires complete coverage), then call finish_conversation with the complete friendly reader-facing answer in its `answer` field. Do not emit the answer separately before the tool call. If the reader attaches or explicitly references a source as the subject of the question, inspect its manifest and read relevant grounded units before answering; never answer from the filename or an earlier assumption. Do not create a draft, insertion target, render or approval. You may keep talking in the same task after completion when the reader sends a follow-up. Source-grounded conversational answers use only unit ids you actually read; the app derives their citations locally.',
     '',
-    'Use tools with the same agency as a careful collaborator: inspect, draft, validate, render, review and present according to the state you discover. Tool order is your decision; deterministic tool results tell you what prerequisite is missing, while source authority, current revisions, native visual review and final reader approval remain hard gates. A plan is optional. Publish it once, and update it only after the reader or material work changes—never paraphrase the same plan repeatedly.',
+    'Use tools with the same agency as a careful collaborator: inspect, draft, validate, render, review and present according to the state you discover. The advertised tool list is deliberately phase-gated: choose only a currently advertised capability, and advance the `nextRequiredAction` in Current state. Never resubmit the exact current draft; an unchanged draft is no progress. Deterministic tool results tell you what prerequisite is missing, while source authority, current revisions, native visual review and final reader approval remain hard gates. A plan is optional. Publish it once, and update it only after the reader or material work changes—never paraphrase the same plan repeatedly.',
     '',
     'Ask the reader only when essential topic/content/intent is truly missing or an actual blocker cannot be resolved with tools. `ask_user` accepts exactly one natural-language question. Do not build a form, repeat the same question, offer an option menu, or ask for placement/style/length when the current page, notebook context and sensible editorial defaults are enough. The reader replies in ordinary prose; interpret that exact reply and choose the next tool yourself. Treat “add this”, “put that in my book”, and similar references as the immediately preceding useful assistant answer, selected content or attached material when a clear antecedent exists. Never ask the reader to restate content already present in the conversation.',
     '',

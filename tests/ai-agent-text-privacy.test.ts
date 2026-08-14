@@ -344,7 +344,7 @@ describe('AI Agent local text veil', () => {
 
   it('restores reader-visible plan and question fields while keeping model history masked', async () => {
     const transformed = obfuscatePrivateText(
-      'Email alice@example.org for details.',
+      'Add a notebook page reminding me to email alice@example.org for details.',
       createAgentTextPrivacyReceipt({ namespace: 'presentation', now: NOW }),
       NOW,
     );
@@ -890,9 +890,17 @@ describe('AI Agent local text veil', () => {
       arguments: { request: 'current' },
     }, new AbortController().signal);
     expect(rejected.state.patchProposal).toBeUndefined();
-    expect(disposedGenerations).toEqual(['restored-generation']);
-    // A rejected exact-text render is destroyed before any state checkpoint
-    // can own it. Retry from the still-valid masked review with a good layout.
+    expect(disposedGenerations).toEqual([
+      'restored-generation',
+      'masked-generation',
+    ]);
+    expect(rejected.state.proposalRecovery).toMatchObject({
+      kind: 'private_restore',
+      draftHash: maskedHash,
+    });
+    // The failed private layout re-enters a changed-script repair phase, so its
+    // masked review is no longer durable authority and is destroyed too. Use a
+    // fresh pristine state below to keep proving the successful local restore.
     rejectRestoredLayout = false;
     finalRenders.length = 0;
     disposedGenerations.length = 0;

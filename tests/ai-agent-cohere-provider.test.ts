@@ -55,6 +55,62 @@ import {
 } from '../src/features/aiAgent/cohereProvider';
 
 describe('Cohere AI agent provider', () => {
+  it('disables extended reasoning only for a sole deterministic routing tool', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-routing',
+      runId: 'run-routing',
+      threadId: 'thread-routing',
+      systemPrompt: 'system',
+      tools: [{
+        name: 'validate_notebook_script',
+        description: 'Validate the current draft.',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        effect: 'read',
+      }],
+      messages: [],
+      toolChoice: 'required',
+      maxOutputTokens: 16_384,
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]).toMatchObject({
+      maxTokens: 2_048,
+      thinking: { type: 'disabled' },
+    });
+  });
+
+  it('keeps the full reasoning budget for draft composition', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-composition',
+      runId: 'run-composition',
+      threadId: 'thread-composition',
+      systemPrompt: 'system',
+      tools: [{
+        name: 'submit_notebook_script',
+        description: 'Submit a composed Notebook Script draft.',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        effect: 'draft',
+      }],
+      messages: [],
+      toolChoice: 'required',
+      maxOutputTokens: 16_384,
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]).toMatchObject({
+      maxTokens: 16_384,
+      thinking: { type: 'enabled', tokenBudget: 8_000 },
+    });
+  });
+
   it('accepts two complete sequential tool calls and preserves their identities', async () => {
     gateway.scriptedEvents.push(
       {

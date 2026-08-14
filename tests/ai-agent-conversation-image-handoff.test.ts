@@ -18,7 +18,10 @@ import type {
   AgentProviderTurnRequest,
 } from '../src/features/aiAgent/provider';
 import { AgentRuntime } from '../src/features/aiAgent/runtime';
-import { AgentToolCatalog } from '../src/features/aiAgent/tools';
+import {
+  AgentToolCatalog,
+  availableAgentToolNames,
+} from '../src/features/aiAgent/tools';
 import {
   createInitialAgentState,
   type AgentState,
@@ -158,6 +161,96 @@ function baseImageState(): AgentState {
   };
 }
 
+function withNotebookPlacement(state: AgentState): AgentState {
+  return {
+    ...state,
+    lifecycle: 'running',
+    notebookSnapshot: {
+      bookId: state.identity.bookId,
+      bookRevision: 'book-revision-1',
+      pageIds: ['page-1'],
+      pageRevisions: { 'page-1': 'page-revision-1' },
+      capturedAt: NOW,
+    },
+    insertionTarget: { kind: 'book_end' },
+  };
+}
+
+function reviewedImageDraftState(): AgentState {
+  const placed = withNotebookPlacement(baseImageState());
+  const pages = [1, 2].map((pageNumber) => ({
+    pageId: `preview-page-${pageNumber}`,
+    pageNumber,
+    width: 620,
+    height: 720,
+    image: {
+      resourceId: `preview-image-${pageNumber}`,
+      mimeType: 'image/png' as const,
+      digest: `preview-image-digest-${pageNumber}`,
+      width: 620,
+      height: 720,
+    },
+    textDigest: `preview-text-digest-${pageNumber}`,
+    layoutDigest: `preview-layout-digest-${pageNumber}`,
+    paginationSpill: false,
+    residualOverflow: false,
+  }));
+  return {
+    ...placed,
+    phase: 'reviewing_preview',
+    usage: { ...placed.usage, providerCalls: 3 },
+    draft: {
+      runId: placed.identity.runId,
+      version: 1,
+      script: SCRIPT,
+      draftHash: 'draft-1',
+      createdAt: NOW,
+    },
+    validation: {
+      draftHash: 'draft-1',
+      parserDiagnostics: [],
+      staticDiagnostics: [],
+      imageDiagnostics: [],
+      pageLedgerDiagnostics: [],
+      valid: true,
+      checkedAt: NOW,
+    },
+    previewGeneration: {
+      generationId: 'generation-1',
+      draftHash: 'draft-1',
+      layoutHash: 'layout-1',
+      rendererVersion: 'test-renderer',
+      bookSnapshotRevision: 'book-revision-1',
+      createdAt: NOW,
+      parserValid: true,
+      layoutValid: true,
+      stale: false,
+      pageCount: pages.length,
+      pages,
+      diagnostics: [],
+    },
+    visualReview: {
+      generationId: 'generation-1',
+      draftHash: 'draft-1',
+      requiredPageIds: pages.map((page) => page.pageId),
+      imageExposures: pages.map((page) => ({
+        generationId: 'generation-1',
+        pageId: page.pageId,
+        imageResourceId: page.image.resourceId,
+        imageDigest: page.image.digest,
+        layoutDigest: page.layoutDigest,
+        readRequestedAtProviderCall: 1,
+        exposedAt: NOW,
+      })),
+      inspectedPageIds: pages.map((page) => page.pageId),
+      findings: [],
+      complete: true,
+      passed: true,
+      updatedAt: NOW,
+    },
+  };
+}
+
 function adaptersForManifest(sourceManifest: SourceManifest): AgentAdapters {
   const base = adapters();
   return {
@@ -232,10 +325,7 @@ describe('portable generated-image handoff', () => {
       'has not explicitly requested external images',
     );
 
-    const rejected = await catalog().execute({
-      ...ordinary,
-      lifecycle: 'running',
-    }, {
+    const rejected = await catalog().execute(withNotebookPlacement(ordinary), {
       id: 'unrequested-slots',
       name: 'submit_notebook_script',
       arguments: { script: SCRIPT, citedUnitIds: [], reason: 'initial' },
@@ -411,19 +501,40 @@ describe('portable generated-image handoff', () => {
     });
   });
 
-  it('stores a durable prompt handoff and invalidates it when the draft changes', async () => {
-    const tools = catalog();
-    const state: AgentState = {
-      ...baseImageState(),
-      lifecycle: 'running',
-      draft: {
-        runId: 'run-1',
-        version: 1,
-        script: SCRIPT,
-        draftHash: 'draft-1',
-        createdAt: NOW,
+  it('reopens drafting when the reader revokes image slots after review', () => {
+    const reviewed = reviewedImageDraftState();
+    const revokedMessage = {
+      id: 'user-revokes-images',
+      role: 'user' as const,
+      text: 'Revise the notebook pages without any image slots.',
+      createdAt: NOW,
+    };
+    const revoked: AgentState = {
+      ...reviewed,
+      conversation: [...reviewed.conversation, revokedMessage],
+      budgetWindow: {
+        ...(reviewed.budgetWindow ?? {
+          providerCallsAtStart: 0,
+          toolCallsAtStart: 0,
+          repairPassesAtStart: 0,
+          startedAt: NOW,
+        }),
+        readerMessageId: revokedMessage.id,
       },
     };
+
+    expect(explicitImageRequest(revoked)).toMatchObject({ requested: false });
+    expect([...availableAgentToolNames(revoked)]).toEqual([
+      'submit_notebook_script',
+    ]);
+  });
+
+  it('stores a durable prompt handoff and invalidates it when the draft changes', async () => {
+    const tools = catalog();
+    const state = reviewedImageDraftState();
+    expect([...availableAgentToolNames(state)]).toEqual([
+      'prepare_image_generation_prompts',
+    ]);
     const prepared = await tools.execute(state, {
       id: 'prepare-prompts',
       name: 'prepare_image_generation_prompts',
@@ -448,7 +559,27 @@ describe('portable generated-image handoff', () => {
     }, new AbortController().signal);
 
     expect(prepared.state.imagePromptHandoff?.prompts).toHaveLength(2);
-    const changed = await tools.execute(prepared.state, {
+    expect([...availableAgentToolNames(prepared.state)]).toEqual([
+      'propose_notebook_patch',
+    ]);
+    const repairState: AgentState = {
+      ...prepared.state,
+      validation: {
+        ...prepared.state.validation!,
+        valid: false,
+        staticDiagnostics: [{
+          severity: 'error',
+          code: 'test.repair-required',
+          message: 'Change the draft before continuing.',
+        }],
+      },
+      previewGeneration: undefined,
+      visualReview: undefined,
+    };
+    expect([...availableAgentToolNames(repairState)]).toEqual([
+      'submit_notebook_script',
+    ]);
+    const changed = await tools.execute(repairState, {
       id: 'replace-draft',
       name: 'submit_notebook_script',
       arguments: {
@@ -460,22 +591,34 @@ describe('portable generated-image handoff', () => {
     expect(changed.state.imagePromptHandoff).toBeUndefined();
   });
 
-  it('does not let a later tool call rewrite the immutable prompts on a proposal', async () => {
-    const initial = baseImageState();
+  it('does not advertise or execute a prompt rewrite after a proposal exists', async () => {
+    const reviewed = reviewedImageDraftState();
+    const imagePromptHandoff = buildImagePromptHandoff({
+      draftHash: reviewed.draft!.draftHash,
+      script: reviewed.draft!.script,
+      prompts: [
+        {
+          slotId: 'page-1-image-1',
+          role: 'explanatory_diagram',
+          aspect: 'landscape_4_3',
+          prompt: 'A clear pond food web with friendly animals and generous spacing around every arrow.',
+        },
+        {
+          slotId: 'page-2-image-1',
+          role: 'analogy_scene',
+          aspect: 'portrait_4_5',
+          prompt: 'A cute fox librarian arranging fact cards into labelled shelves, warm and uncluttered.',
+        },
+      ],
+      now: NOW,
+    });
     const state: AgentState = {
-      ...initial,
-      lifecycle: 'running',
-      draft: {
-        runId: initial.identity.runId,
-        version: 1,
-        script: SCRIPT,
-        draftHash: 'draft-1',
-        createdAt: NOW,
-      },
+      ...reviewed,
+      imagePromptHandoff,
       patchProposal: {
         patchId: 'patch-1',
         idempotencyKey: 'key-1',
-        runId: initial.identity.runId,
+        runId: reviewed.identity.runId,
         draftVersion: 1,
         draftHash: 'draft-1',
         script: SCRIPT,
@@ -489,29 +632,23 @@ describe('portable generated-image handoff', () => {
           bookId: 'book-1',
           expectedBookRevision: 'book-revision-1',
           insertionTarget: { kind: 'book_end' },
-          expectedPageCount: 0,
-          pages: [],
+          expectedPageCount: reviewed.previewGeneration!.pageCount,
+          pages: reviewed.previewGeneration!.pages,
           assumptions: [],
           citations: [],
-          imageGenerationPrompts: [],
+          imageGenerationPrompts: imagePromptHandoff.prompts,
           sourceCoverage: {
             manifestDigest: '', mode: 'relevant', requiredUnitIds: [], readUnitIds: [],
             citedUnitIds: [], omittedUnitIds: [], staleSourceIds: [], complete: true, updatedAt: NOW,
           },
-          visualReview: {
-            generationId: 'generation-1', draftHash: 'draft-1', requiredPageIds: [],
-            imageExposures: [], inspectedPageIds: [], findings: [], complete: true, passed: true,
-            updatedAt: NOW,
-          },
-          validation: {
-            draftHash: 'draft-1', parserDiagnostics: [], staticDiagnostics: [],
-            imageDiagnostics: [], pageLedgerDiagnostics: [], valid: true, checkedAt: NOW,
-          },
+          visualReview: reviewed.visualReview!,
+          validation: reviewed.validation!,
         },
-        status: 'proposed',
+        status: 'waiting_for_approval',
         createdAt: NOW,
       },
     };
+    expect([...availableAgentToolNames(state)]).toEqual(['submit_notebook_patch']);
     const result = await catalog().execute(state, {
       id: 'late-prompts',
       name: 'prepare_image_generation_prompts',
@@ -519,7 +656,7 @@ describe('portable generated-image handoff', () => {
     }, new AbortController().signal);
 
     expect(result.result).toMatchObject({
-      error: expect.stringMatching(/immutable once a preview proposal exists/i),
+      error: expect.stringMatching(/not available in the current agent phase/i),
     });
     expect(result.state.patchProposal).toBe(state.patchProposal);
   });
@@ -714,7 +851,8 @@ describe('answer-only agent completion', () => {
     expect(result.state.lifecycle).toBe('failed');
     expect(result.state.lastError?.message).toMatch(/unusable response/i);
     expect(result.state.conversation).toHaveLength(1);
-    expect(requests[0]?.tools.map((tool) => tool.name)).toContain('finish_conversation');
+    expect(requests[0]?.tools.map((tool) => tool.name)).not.toContain('finish_conversation');
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain('inspect_notebook');
   });
 
   it('keeps notebook intent after a sensible-defaults follow-up', () => {

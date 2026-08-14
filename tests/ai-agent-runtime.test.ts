@@ -6,6 +6,7 @@ import type {
 import {
   createSourceCoverageLedger,
   createVisualReviewLedger,
+  recordSourceCitations,
   recordSourceReads,
   recordVisualImageExposures,
   recordVisualInspection,
@@ -26,7 +27,10 @@ import type {
 } from '../src/features/aiAgent/provider';
 import { planAdaptiveRetrieval } from '../src/features/aiAgent/retrieval';
 import { AgentRuntime } from '../src/features/aiAgent/runtime';
-import { AgentToolCatalog } from '../src/features/aiAgent/tools';
+import {
+  AgentToolCatalog,
+  availableAgentToolNames,
+} from '../src/features/aiAgent/tools';
 import {
   createInitialAgentState,
   type AgentActivityEvent,
@@ -766,16 +770,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
           yield { type: 'finish', reason: 'tool_calls' };
           return;
         }
-        yield {
-          type: 'tool_call',
-          id: 'ask-after-inspection',
-          name: 'ask_user',
-          arguments: {
-            kind: 'requirements',
-            question: 'Which explanation from our conversation should I turn into pages?',
-          },
-        };
-        yield { type: 'finish', reason: 'tool_calls' };
+        throw new Error('bounded provider stop after the inspection assertion');
       },
     };
     const { adapters } = fakeAdapters();
@@ -789,7 +784,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     });
 
     expect(requests).toHaveLength(2);
-    expect(waiting.interrupt?.kind).toBe('requirements');
+    expect(waiting.state.lifecycle).toBe('failed');
     expect(waiting.state.conversation.some((message) =>
       /copy this into insert script|prose must remain internal/i.test(message.text)
     )).toBe(false);
@@ -955,8 +950,8 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(provider.requests).toHaveLength(3);
     const resumedRequest = provider.requests[2]!;
     const advertisedTools = resumedRequest.tools.map((tool) => tool.name);
-    expect(advertisedTools).toContain('submit_notebook_script');
-    expect(advertisedTools).toContain('finish_conversation');
+    expect(advertisedTools).toContain('inspect_notebook');
+    expect(advertisedTools).not.toContain('finish_conversation');
     const resumedProviderHistory = JSON.stringify(resumedRequest.messages);
     expect(resumedProviderHistory).not.toMatch(/response\s*:\s*yes/iu);
     const readerReplyResult = resumedRequest.messages.find((message) =>
@@ -1031,13 +1026,19 @@ describe('Alcove autonomous notebook agent runtime', () => {
       mediaType: 'application/pdf',
       digest: 'retry-ingestion-digest',
     };
-    const provider = new ScriptedProvider([{
-      name: 'ask_user',
-      args: {
-        kind: 'requirements',
-        question: 'Were the sources prepared before this question?',
+    const provider = new ScriptedProvider([
+      {
+        name: 'read_full_source',
+        args: { sourceId: 'source-1' },
       },
-    }]);
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          question: 'Were the sources prepared before this question?',
+        },
+      },
+    ]);
     const originalStream = provider.streamTurn.bind(provider);
     provider.streamTurn = async function* (request, context) {
       const restored = await persistence.loadTask('task-ingestion-retry');
@@ -1075,14 +1076,15 @@ describe('Alcove autonomous notebook agent runtime', () => {
     const retried = await restarted.retry();
 
     expect(ingestionCalls).toBe(2);
-    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests).toHaveLength(2);
     expect(providerSawPreparedState).toBe(true);
     expect(retried.state.pendingSourceAttachments).toBeUndefined();
     expect(retried.state.sourceManifest?.digest).toBe(manifest.digest);
     expect(retried.state.sourceCoverage).toMatchObject({
       requiredUnitIds: ['unit-1'],
-      omittedUnitIds: ['unit-1'],
-      complete: false,
+      readUnitIds: ['unit-1'],
+      omittedUnitIds: [],
+      complete: true,
     });
   });
 
@@ -1096,10 +1098,16 @@ describe('Alcove autonomous notebook agent runtime', () => {
         },
       },
       {
-        name: 'ask_user',
+        name: 'read_full_source',
         args: {
-          kind: 'requirements',
-          question: 'Is there anything else I should know about that evidence?',
+          sourceId: 'source-1',
+        },
+      },
+      {
+        name: 'finish_conversation',
+        args: {
+          answer: 'I read the complete attached evidence and kept every source unit in scope.',
+          citedUnitIds: ['unit-1'],
         },
       },
     ]);
@@ -1126,14 +1134,18 @@ describe('Alcove autonomous notebook agent runtime', () => {
       "I don't want to lose any information from the attached source.",
       { preserveAllSourceInformation: true },
     );
-    expect(resumed.interrupt?.kind).toBe('requirements');
+    expect(resumed.interrupt).toBeUndefined();
+    expect(resumed.state.lifecycle).toBe('completed');
+    expect(provider.requests[1]?.tools.map((tool) => tool.name)).toContain(
+      'read_full_source',
+    );
     expect(resumed.state.sourceManifest?.digest).toBe(manifestWithUnits(1).digest);
     expect(resumed.state.taskBrief.preserveAllSourceInformation).toBe(true);
     expect(resumed.state.sourceCoverage).toMatchObject({
       mode: 'complete',
       requiredUnitIds: ['unit-1'],
-      omittedUnitIds: ['unit-1'],
-      complete: false,
+      omittedUnitIds: [],
+      complete: true,
     });
   });
 
@@ -1366,24 +1378,17 @@ describe('Alcove autonomous notebook agent runtime', () => {
           },
         }],
       },
-      {
-        name: 'ask_user',
-        args: {
-          kind: 'requirements',
-          question: 'Should I continue after inspecting and planning?',
-        },
-      },
     ]);
     const { adapters } = fakeAdapters();
     const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
-    const waiting = await runtime.start({
+    const result = await runtime.start({
       bookId: 'book-1',
-      goal: 'Inspect and plan in one parallel tool batch.',
+      goal: 'Add a new notebook page; inspect my notebook and plan it in one parallel tool batch.',
     });
 
-    expect(waiting.interrupt?.kind).toBe('requirements');
+    expect(result.state.lifecycle).toBe('failed');
     expect(provider.requests).toHaveLength(2);
-    expect(waiting.state.plan?.summary).toBe('Inspect and plan together');
+    expect(result.state.plan?.summary).toBe('Inspect and plan together');
     const secondHistory = provider.requests[1]?.messages ?? [];
     const assistantIndex = secondHistory.findIndex((message) =>
       message.role === 'assistant' && message.toolCalls?.length === 2
@@ -1399,7 +1404,6 @@ describe('Alcove autonomous notebook agent runtime', () => {
   it('lets the model route tools, self-review every rendered page, and returns only an approved proposal', async () => {
     const provider = new ScriptedProvider([
       { name: 'inspect_notebook', args: {} },
-      { name: 'list_source_manifest', args: {} },
       { name: 'read_full_source', args: { sourceId: 'source-1' } },
       {
         name: 'set_plan',
@@ -1778,6 +1782,97 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(secondApproval.state.conversation).toEqual(approvalConversation);
   });
 
+  it('reaches the immutable preview in nine bounded turns without source or repair churn', async () => {
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: [
+            '# Why cats have whiskers',
+            '',
+            'Whiskers help cats sense nearby surfaces and changes in air movement.',
+          ].join('\n'),
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: {
+          generationId: 'generation-1',
+          pageIds: ['preview-page-1'],
+        },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ]);
+    const runtime = new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      new InMemoryAgentPersistence(),
+    );
+
+    const waiting = await runtime.start({
+      taskId: 'task-bounded-happy-path',
+      threadId: 'thread-bounded-happy-path',
+      runId: 'run-bounded-happy-path',
+      bookId: 'book-1',
+      goal: 'Add the cat-whisker explanation to my book.',
+      budget: { maxProviderCalls: 10 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(waiting.state.lifecycle).toBe('waiting_for_preview_decision');
+    expect(provider.requests).toHaveLength(9);
+    expect(waiting.state.usage).toMatchObject({
+      providerCalls: 9,
+      repairPasses: 0,
+    });
+
+    const expectedRequiredActions = [
+      'inspect_notebook',
+      'propose_insertion',
+      'submit_notebook_script',
+      'validate_notebook_script',
+      'render_draft_preview',
+      'read_draft_preview_pages',
+      'record_visual_review',
+      'propose_notebook_patch',
+      'submit_notebook_patch',
+    ];
+    for (const [index, requiredAction] of expectedRequiredActions.entries()) {
+      const advertised = provider.requests[index]?.tools.map((tool) => tool.name) ?? [];
+      expect(advertised, `provider turn ${index + 1}`).toContain(requiredAction);
+      if (index >= 2) {
+        expect(
+          advertised.filter((tool) =>
+            ![
+              'list_source_manifest',
+              'plan_source_retrieval',
+              'read_source_range',
+              'read_full_source',
+              'search_source_index',
+              'rerank_source_hits',
+              'inspect_source_coverage',
+            ].includes(tool)
+          ),
+          `provider turn ${index + 1} non-source actions`,
+        ).toEqual([requiredAction]);
+      }
+    }
+  });
+
   it('grandfathers the exact reviewed three-page headings-and-bullets log during receipt recovery', async () => {
     const failed = exactThreePageDiagnosticFailedApplyState();
     expect(notebookCraftDiagnostics(failed.patchProposal!.script, failed)).toEqual([
@@ -1947,6 +2042,144 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(disposed).toEqual([forgedRecovery.generationId]);
     expect(refused.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
     expect(provider.requests).toHaveLength(0);
+  });
+
+  it('keeps private-preview repair durable across provider checkpoints and unchanged drafts', async () => {
+    const sourceManifest = manifestWithUnits(1);
+    const sourceCoverage = recordSourceReads(
+      createSourceCoverageLedger(sourceManifest, 'relevant', NOW),
+      sourceManifest,
+      [{
+        sourceId: 'source-1',
+        sourceDigest: 'source-digest-1',
+        units: [{
+          unitId: 'unit-1',
+          anchor: sourceManifest.sources[0]!.units[0]!.anchor,
+          text: 'Reader evidence.',
+          digest: 'unit-digest-1',
+        }],
+        truncated: false,
+      }],
+      NOW,
+      0,
+    );
+    const veiled = textVeiledFailedApplyState();
+    const state: AgentState = {
+      ...veiled,
+      lifecycle: 'running',
+      phase: 'reviewing_preview',
+      sourceManifest,
+      sourceCoverage,
+      draft: {
+        ...veiled.draft!,
+        sourceManifestDigest: sourceManifest.digest,
+        sourceReadUnitIds: ['unit-1'],
+      },
+      localRestoredFinal: undefined,
+      patchProposal: undefined,
+      applyRecovery: undefined,
+      lastError: undefined,
+      lastApplyFailure: undefined,
+      usage: { ...veiled.usage, providerCalls: 2 },
+    };
+    const { adapters: defaults } = fakeAdapters(sourceManifest);
+    const adapters: AgentAdapters = {
+      ...defaults,
+      hash: {
+        ...defaults.hash,
+        digestText: async (text) =>
+          text === state.draft!.script ? state.draft!.draftHash : `restored:${text.length}`,
+      },
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page private notebook',
+          snapshot: state.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sources: {
+        ...defaults.sources,
+        getManifest: async () => sourceManifest,
+      },
+      sandbox: {
+        ...defaults.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.private-restored-layout',
+            message: 'Restored text changes the fixed-page structure.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const tools = new AgentToolCatalog(
+      adapters,
+      new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const failed = await tools.execute(state, {
+      id: 'private-proposal-fails',
+      name: 'propose_notebook_patch',
+      arguments: {},
+    }, new AbortController().signal);
+
+    expect(failed.result).toMatchObject({
+      recovered: true,
+      nextAction: expect.stringMatching(/revise the Notebook Script/i),
+    });
+    expect(failed.state.proposalRecovery).toMatchObject({
+      kind: 'private_restore',
+      draftHash: state.draft!.draftHash,
+    });
+    expect([...availableAgentToolNames({
+      ...failed.state,
+      // Provider checkpoints deliberately clear this transient field.
+      lastError: undefined,
+    })]).toEqual(['submit_notebook_script']);
+
+    const unchanged = await tools.execute({
+      ...failed.state,
+      lastError: undefined,
+    }, {
+      id: 'private-unchanged-repair',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft!.script,
+        citedUnitIds: [],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(unchanged.result).toMatchObject({ doNotRepeat: true });
+    expect(unchanged.state.proposalRecovery).toEqual(failed.state.proposalRecovery);
+    expect([...availableAgentToolNames({
+      ...unchanged.state,
+      lastError: undefined,
+    })]).toEqual(['submit_notebook_script']);
+
+    const citationOnly = await tools.execute({
+      ...failed.state,
+      lastError: undefined,
+    }, {
+      id: 'private-citation-only-repair',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: state.draft!.script,
+        citedUnitIds: ['unit-1'],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(citationOnly.result).not.toMatchObject({ error: expect.anything() });
+    expect(citationOnly.state.proposalRecovery).toEqual(failed.state.proposalRecovery);
+    expect([...availableAgentToolNames({
+      ...citationOnly.state,
+      lastError: undefined,
+    })]).toEqual(['submit_notebook_script']);
   });
 
   it('fails closed and disposes a new render when prior visual exposure cannot map', async () => {
@@ -2556,6 +2789,520 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(provider.requests).toHaveLength(0);
     expect(runtime.getSnapshot().state).toBeNull();
   });
+
+  it('stops a semantically identical invalid-draft replay despite reason churn', async () => {
+    const script = '# Cats\n\nCats use their whiskers to sense nearby surfaces.';
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: { script, citedUnitIds: [], reason: 'initial' },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: { script, citedUnitIds: [], reason: 'initial' },
+      },
+      {
+        name: 'submit_notebook_script',
+        args: { script, citedUnitIds: [], reason: 'repair' },
+      },
+      {
+        name: 'submit_notebook_script',
+        args: { script, citedUnitIds: [], reason: 'repair' },
+      },
+    ]);
+    const base = fakeAdapters().adapters;
+    const adapters: AgentAdapters = {
+      ...base,
+      sandbox: {
+        ...base.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.invalid-draft-for-watchdog',
+            message: 'Add one meaning-bearing native structure.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    const result = await runtime.start({
+      taskId: 'task-no-progress-watchdog',
+      threadId: 'thread-no-progress-watchdog',
+      runId: 'run-no-progress-watchdog',
+      bookId: 'book-1',
+      goal: 'Add this cat explanation to my book.',
+      budget: { maxProviderCalls: 24 },
+    });
+
+    expect(provider.requests).toHaveLength(7);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: {
+        code: 'agent_stalled',
+        retryable: true,
+      },
+      usage: {
+        providerCalls: 7,
+        toolCalls: 5,
+        repairPasses: 0,
+      },
+      draft: { version: 1 },
+    });
+    const repeatedResults = result.state.modelHistory.filter(
+      (turn): turn is Extract<AgentState['modelHistory'][number], { role: 'tool' }> =>
+        turn.role === 'tool' && turn.toolName === 'submit_notebook_script',
+    );
+    expect(repeatedResults).toHaveLength(4);
+    expect(repeatedResults.at(-2)?.content).toMatchObject({
+      retryable: true,
+      doNotRepeat: true,
+      watchdog: 'no_progress_warning',
+      nextAction: expect.stringContaining('Revise the Notebook Script materially'),
+    });
+    expect(repeatedResults.at(-1)?.content).toMatchObject({
+      retryable: true,
+      doNotRepeat: true,
+      watchdog: 'agent_stalled',
+    });
+    expect((await persistence.listEvents('task-no-progress-watchdog')).filter(
+      (event) => event.type === 'run.failed',
+    )).toHaveLength(1);
+  });
+
+  it('stalls whitespace-only invalid-draft churn before the full provider budget', async () => {
+    const script = '# Cats\n\nCats use their whiskers to sense nearby surfaces.';
+    const whitespaceVariants = [
+      '# Cats  \n\nCats use their whiskers to sense nearby surfaces.\t',
+      '\n# Cats\n\n\nCats use their whiskers to sense nearby surfaces.\n\n',
+      '# Cats\r\n\r\nCats use their whiskers to sense nearby surfaces.',
+      '# Cats\n \n\t\nCats use their whiskers to sense nearby surfaces.',
+      '# Cats\t\n\nCats use their whiskers to sense nearby surfaces. ',
+      '\n\n# Cats\n\nCats use their whiskers to sense nearby surfaces.\n',
+      '# Cats \r\n\r\n\r\nCats use their whiskers to sense nearby surfaces.\t',
+    ];
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: { script, citedUnitIds: [], reason: 'initial' },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      ...whitespaceVariants.flatMap((variant) => ([
+        {
+          name: 'submit_notebook_script',
+          args: { script: variant, citedUnitIds: [], reason: 'repair' },
+        },
+        { name: 'validate_notebook_script', args: {} },
+      ])),
+    ]);
+    const base = fakeAdapters().adapters;
+    const adapters: AgentAdapters = {
+      ...base,
+      sandbox: {
+        ...base.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.invalid-whitespace-churn',
+            message: 'Whitespace does not address the missing native structure.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const result = await new AgentRuntime(
+      provider,
+      adapters,
+      persistence,
+    ).start({
+      taskId: 'task-whitespace-watchdog',
+      threadId: 'thread-whitespace-watchdog',
+      runId: 'run-whitespace-watchdog',
+      bookId: 'book-1',
+      goal: 'Add this cat explanation to my book.',
+      budget: { maxProviderCalls: 24 },
+    });
+
+    expect(provider.requests.length).toBeLessThan(24);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: { code: 'agent_stalled' },
+    });
+    expect(result.state.usage.repairPasses).toBeLessThanOrEqual(4);
+    expect((await persistence.listEvents('task-whitespace-watchdog')).filter(
+      (event) => event.type === 'run.failed',
+    )).toHaveLength(1);
+  });
+
+  it('treats a blank-line change inside a fenced code body as material', async () => {
+    const firstScript = [
+      '# Greeting code',
+      '',
+      '```python',
+      'def greet():',
+      '    return "hello"',
+      '```',
+    ].join('\n');
+    const changedScript = [
+      '# Greeting code',
+      '',
+      '```python',
+      'def greet():',
+      '',
+      '    return "hello"',
+      '```',
+    ].join('\n');
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: { script: firstScript, citedUnitIds: [], reason: 'initial' },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: { script: changedScript, citedUnitIds: [], reason: 'repair' },
+      },
+    ]);
+    const base = fakeAdapters().adapters;
+    const adapters: AgentAdapters = {
+      ...base,
+      sandbox: {
+        ...base.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.keep-repairing',
+            message: 'Keep this focused run inside the repair phase.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const result = await new AgentRuntime(
+      provider,
+      adapters,
+      new InMemoryAgentPersistence(),
+    ).start({
+      taskId: 'task-fenced-code-watchdog',
+      threadId: 'thread-fenced-code-watchdog',
+      runId: 'run-fenced-code-watchdog',
+      bookId: 'book-1',
+      goal: 'Add this code example to my book.',
+      budget: { maxProviderCalls: 5 },
+    });
+
+    expect(provider.requests).toHaveLength(5);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: { code: 'budget_exhausted' },
+      draft: {
+        version: 2,
+        script: changedScript,
+      },
+      usage: { repairPasses: 1 },
+    });
+  });
+
+  it('treats a blank-line change inside multiline math as material', async () => {
+    const firstScript = [
+      '# Coupled equations',
+      '',
+      '$${align=left}',
+      '\\begin{aligned}',
+      'a &= b + c \\\\',
+      'd &= e + f',
+      '\\end{aligned}',
+      '$$',
+    ].join('\n');
+    const changedScript = [
+      '# Coupled equations',
+      '',
+      '$${align=left}',
+      '\\begin{aligned}',
+      'a &= b + c \\\\',
+      '',
+      'd &= e + f',
+      '\\end{aligned}',
+      '$$',
+    ].join('\n');
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: { script: firstScript, citedUnitIds: [], reason: 'initial' },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: { script: changedScript, citedUnitIds: [], reason: 'repair' },
+      },
+    ]);
+    const base = fakeAdapters().adapters;
+    const adapters: AgentAdapters = {
+      ...base,
+      sandbox: {
+        ...base.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.keep-math-repairing',
+            message: 'Keep this focused run inside the repair phase.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const result = await new AgentRuntime(
+      provider,
+      adapters,
+      new InMemoryAgentPersistence(),
+    ).start({
+      taskId: 'task-math-watchdog',
+      threadId: 'thread-math-watchdog',
+      runId: 'run-math-watchdog',
+      bookId: 'book-1',
+      goal: 'Add these equations to my book.',
+      budget: { maxProviderCalls: 5 },
+    });
+
+    expect(provider.requests).toHaveLength(5);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: { code: 'budget_exhausted' },
+      draft: {
+        version: 2,
+        script: changedScript,
+      },
+      usage: { repairPasses: 1 },
+    });
+  });
+
+  it('stops a blocked call alternating with an unchanged observation', async () => {
+    const invalidPlacement = {
+      name: 'propose_insertion',
+      args: { target: { kind: 'after_page' } },
+    };
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      invalidPlacement,
+      { name: 'inspect_selection', args: {} },
+      invalidPlacement,
+      { name: 'inspect_selection', args: {} },
+      invalidPlacement,
+      { name: 'inspect_selection', args: {} },
+      invalidPlacement,
+    ]);
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      persistence,
+    );
+    const result = await runtime.start({
+      taskId: 'task-alternating-no-progress',
+      threadId: 'thread-alternating-no-progress',
+      runId: 'run-alternating-no-progress',
+      bookId: 'book-1',
+      goal: 'Add a short cat explanation to my book.',
+      budget: { maxProviderCalls: 24 },
+    });
+
+    expect(provider.requests.length).toBeLessThan(24);
+    expect(provider.requests.length).toBeLessThanOrEqual(8);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: { code: 'agent_stalled' },
+    });
+    expect((await persistence.listEvents('task-alternating-no-progress')).filter(
+      (event) => event.type === 'run.failed',
+    )).toHaveLength(1);
+  });
+
+  it('stalls varied invalid arguments after a bounded no-material streak', async () => {
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        name: 'propose_insertion',
+        args: {
+          target: { kind: 'after_page' },
+          [`irrelevantAttempt${index + 1}`]: ` ${index + 1} `,
+        },
+      })),
+    ]);
+    const persistence = new InMemoryAgentPersistence();
+    const result = await new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      persistence,
+    ).start({
+      taskId: 'task-varied-invalid-watchdog',
+      threadId: 'thread-varied-invalid-watchdog',
+      runId: 'run-varied-invalid-watchdog',
+      bookId: 'book-1',
+      goal: 'Add a short cat explanation to my book.',
+      budget: { maxProviderCalls: 24 },
+    });
+
+    expect(provider.requests.length).toBeLessThanOrEqual(6);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: { code: 'agent_stalled' },
+    });
+    expect(result.state.usage.toolCalls).toBeLessThanOrEqual(4);
+    expect((await persistence.listEvents('task-varied-invalid-watchdog')).filter(
+      (event) => event.type === 'run.failed',
+    )).toHaveLength(1);
+  });
+
+  it('allows a materially changed script after an unchanged repair is rejected', async () => {
+    const firstScript = '# Cats\n\nA plain explanation that needs a native structure.';
+    const changedScript = [
+      '# Cats',
+      '',
+      '::: callout {variant=tip}',
+      'Whiskers help cats sense nearby surfaces.',
+      ':::',
+    ].join('\n');
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      { name: 'propose_insertion', args: { target: { kind: 'book_end' } } },
+      {
+        name: 'submit_notebook_script',
+        args: { script: firstScript, citedUnitIds: [], reason: 'initial' },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: { script: firstScript, citedUnitIds: [], reason: 'repair' },
+      },
+      {
+        name: 'submit_notebook_script',
+        args: { script: changedScript, citedUnitIds: [], reason: 'repair' },
+      },
+    ]);
+    const base = fakeAdapters().adapters;
+    const runtime = new AgentRuntime(
+      provider,
+      {
+        ...base,
+        sandbox: {
+          ...base.sandbox,
+          validate: async (draft) => ({
+            draftHash: draft.draftHash,
+            parserDiagnostics: [],
+            staticDiagnostics: [{
+              severity: 'error',
+              code: 'test.invalid-draft-for-watchdog',
+              message: 'Add one meaning-bearing native structure.',
+            }],
+            imageDiagnostics: [],
+            pageLedgerDiagnostics: [],
+            valid: false,
+            checkedAt: NOW,
+          }),
+        },
+      },
+      new InMemoryAgentPersistence(),
+    );
+    const result = await runtime.start({
+      taskId: 'task-changed-repair-after-repeat',
+      threadId: 'thread-changed-repair-after-repeat',
+      runId: 'run-changed-repair-after-repeat',
+      bookId: 'book-1',
+      goal: 'Add this cat explanation to my book.',
+      // End immediately after the changed repair so this focused regression
+      // does not need to script the unrelated validate/render/review tail.
+      budget: { maxProviderCalls: 6 },
+    });
+
+    expect(provider.requests).toHaveLength(6);
+    expect(result.state.lastError?.code).toBe('budget_exhausted');
+    expect(result.state.draft).toMatchObject({
+      version: 2,
+      script: changedScript,
+    });
+    expect(result.state.usage.repairPasses).toBe(1);
+    const changedResult = result.state.modelHistory.find((turn) =>
+      turn.role === 'tool' && turn.toolCallId === 'call-6'
+    );
+    expect(changedResult).toMatchObject({
+      role: 'tool',
+      toolName: 'submit_notebook_script',
+      isError: false,
+    });
+  });
+
+  it('does not carry an exact-call warning across a new reader-turn boundary', async () => {
+    const repeatedAnswer = {
+      answer: 'Four.',
+      citedUnitIds: [],
+    };
+    const provider = new ScriptedProvider([
+      { name: 'finish_conversation', args: repeatedAnswer },
+      { name: 'finish_conversation', args: repeatedAnswer },
+    ]);
+    const runtime = new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      new InMemoryAgentPersistence(),
+    );
+    const first = await runtime.start({
+      taskId: 'task-watchdog-reader-window',
+      threadId: 'thread-watchdog-reader-window',
+      runId: 'run-watchdog-reader-window',
+      bookId: 'book-1',
+      goal: 'What is two plus two?',
+    });
+    expect(first.state.lifecycle).toBe('completed');
+
+    const second = await runtime.sendUserMessage('What is two plus two?', {
+      userMessageId: 'reader-repeated-question-new-window',
+    });
+    expect(provider.requests).toHaveLength(2);
+    expect(second.state.lifecycle).toBe('completed');
+    expect(second.state.lastError).toBeUndefined();
+    expect(second.state.modelHistory.filter(
+      (turn) => turn.role === 'tool' && turn.toolName === 'finish_conversation',
+    )).toHaveLength(2);
+    expect(second.state.modelHistory.some((turn) =>
+      turn.role === 'tool' &&
+      turn.content !== null &&
+      typeof turn.content === 'object' &&
+      !Array.isArray(turn.content) &&
+      (turn.content as Readonly<Record<string, AgentJsonValue>>).watchdog ===
+        'no_progress_warning'
+    )).toBe(false);
+  });
 });
 
 describe('source and visual coverage gates', () => {
@@ -2645,6 +3392,14 @@ describe('source and visual coverage gates', () => {
     });
     const initial: AgentState = {
       ...base,
+      notebookSnapshot: {
+        bookId: identity.bookId,
+        bookRevision: 'book-revision-source-observation',
+        pageIds: ['page-1'],
+        pageRevisions: { 'page-1': 'page-revision-source-observation' },
+        capturedAt: NOW,
+      },
+      insertionTarget: { kind: 'book_end' },
       sourceManifest: manifest,
       sourceCoverage: createSourceCoverageLedger(manifest, 'relevant', NOW),
       usage: { ...base.usage, providerCalls: 1 },
@@ -2738,7 +3493,28 @@ describe('source and visual coverage gates', () => {
     );
     expect(blocked.complete).toBe(false);
     expect(blocked.readUnitIds).toEqual([]);
+    expect(blocked.attemptedUnitIds).toEqual([unit.id]);
     expect(blocked.omittedUnitIds).toEqual([unit.id]);
+    const preserveAllState = createInitialAgentState({
+      identity: {
+        taskId: 'task-unresolved-preserve-all',
+        threadId: 'thread-unresolved-preserve-all',
+        runId: 'run-unresolved-preserve-all',
+        bookId: 'book-1',
+      },
+      goal: 'Make notebook pages from this source.',
+      preserveAllSourceInformation: true,
+      now: NOW,
+      userMessageId: 'reader-unresolved-preserve-all',
+    });
+    expect([...new AgentToolCatalog(
+      fakeAdapters(manifest).adapters,
+      new AgentEventBus(),
+    ).descriptorsForState({
+      ...preserveAllState,
+      sourceManifest: manifest,
+      sourceCoverage: blocked,
+    }).map((tool) => tool.name)]).toEqual(['ask_user']);
 
     const availableManifest: SourceManifest = {
       ...manifest,
@@ -2900,7 +3676,7 @@ describe('source and visual coverage gates', () => {
     };
     const base = createInitialAgentState({
       identity,
-      goal: 'Build a grounded note',
+      goal: 'Build a grounded note from the attached source',
       now: NOW,
       userMessageId: 'message-stale-preview-source',
     });
@@ -2917,7 +3693,28 @@ describe('source and visual coverage gates', () => {
       providerCallCount: 2,
       now: NOW,
     });
-    const originalManifest = manifestWithUnits(0);
+    const originalManifest = manifestWithUnits(1);
+    const originalCoverage = recordSourceCitations(
+      recordSourceReads(
+        createSourceCoverageLedger(originalManifest, 'relevant', NOW),
+        originalManifest,
+        [{
+          sourceId: 'source-1',
+          sourceDigest: 'source-digest-1',
+          units: [{
+            unitId: 'unit-1',
+            anchor: originalManifest.sources[0]!.units[0]!.anchor,
+            text: 'Grounded source text.',
+            digest: 'unit-digest-1',
+          }],
+          truncated: false,
+        }],
+        NOW,
+        0,
+      ),
+      ['unit-1'],
+      NOW,
+    );
     const originalState: AgentState = {
       ...base,
       notebookSnapshot: {
@@ -2928,7 +3725,7 @@ describe('source and visual coverage gates', () => {
         capturedAt: NOW,
       },
       sourceManifest: originalManifest,
-      sourceCoverage: createSourceCoverageLedger(originalManifest, 'relevant', NOW),
+      sourceCoverage: originalCoverage,
       insertionTarget: { kind: 'book_end' },
       draft: {
         runId: identity.runId,
@@ -2936,6 +3733,7 @@ describe('source and visual coverage gates', () => {
         script: '# Grounded draft',
         draftHash: 'draft-hash',
         sourceManifestDigest: originalManifest.digest,
+        sourceReadUnitIds: ['unit-1'],
         createdAt: NOW,
       },
       validation: {
@@ -2949,6 +3747,7 @@ describe('source and visual coverage gates', () => {
       },
       previewGeneration: generation,
       visualReview: reviewed,
+      usage: { ...base.usage, providerCalls: 3 },
     };
     const preview = buildUserPreviewContract({
       state: originalState,
@@ -2961,7 +3760,7 @@ describe('source and visual coverage gates', () => {
       preview,
       now: NOW,
     });
-    const changedManifest = manifestWithUnits(1);
+    const changedManifest = manifestWithUnits(1, 101);
     const changedState: AgentState = {
       ...originalState,
       sourceManifest: changedManifest,
@@ -2991,9 +3790,15 @@ describe('source and visual coverage gates', () => {
     );
 
     expect(result.result).toMatchObject({
-      error: expect.stringMatching(/sources changed/i),
+      error: expect.stringMatching(/source changed/i),
+      recovered: true,
+      nextAction: expect.stringMatching(/list the current source manifest/i),
     });
-    expect(result.state.patchProposal?.status).toBe('waiting_for_approval');
+    expect(result.state.patchProposal).toBeUndefined();
+    expect(result.state.sourceCoverage?.staleSourceIds).toContain('source-1');
+    expect([...availableAgentToolNames(result.state)]).toEqual([
+      'list_source_manifest',
+    ]);
     expect(result.state.lifecycle).not.toBe('completed');
   });
 });

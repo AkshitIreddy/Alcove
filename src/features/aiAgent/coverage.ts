@@ -12,17 +12,35 @@ function sortedUnique(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+/**
+ * The Notebook Script specification is local authoring authority, not reader
+ * evidence. It must never make an attachment task look grounded, satisfy a
+ * preserve-all sweep, or appear in a reader-facing citation ledger.
+ */
+export function readerEvidenceSources(
+  manifest: SourceManifest,
+): SourceManifest['sources'] {
+  return manifest.sources.filter((source) => source.kind !== 'notebook_script_spec');
+}
+
+export function readerEvidenceUnitIds(manifest: SourceManifest): readonly string[] {
+  return readerEvidenceSources(manifest).flatMap((source) =>
+    source.units.map((unit) => unit.id),
+  );
+}
+
 export function createSourceCoverageLedger(
   manifest: SourceManifest,
   mode: SourceCoverageLedger['mode'],
   now: string,
   relevantUnitIds: readonly string[] = [],
 ): SourceCoverageLedger {
-  const everyUnit = manifest.sources.flatMap((source) =>
-    source.units.map((unit) => unit.id),
-  );
+  const everyUnit = readerEvidenceUnitIds(manifest);
+  const readerUnits = new Set(everyUnit);
   const requiredUnitIds = sortedUnique(
-    mode === 'complete' ? everyUnit : relevantUnitIds,
+    mode === 'complete'
+      ? everyUnit
+      : relevantUnitIds.filter((unitId) => readerUnits.has(unitId)),
   );
   return {
     manifestDigest: manifest.digest,
@@ -48,17 +66,29 @@ export function recordSourceReads(
   if (!Number.isInteger(providerCallCount) || providerCallCount < 0) {
     throw new Error('source exposure has an invalid provider-call checkpoint');
   }
+  const evidenceSources = readerEvidenceSources(manifest);
   const sourceDigests = new Map(
-    manifest.sources.map((source) => [source.id, source.digest]),
+    evidenceSources.map((source) => [source.id, source.digest]),
   );
   const unitsById = new Map(
-    manifest.sources.flatMap((source) =>
+    evidenceSources.flatMap((source) =>
       source.units.map((unit) => [unit.id, unit] as const),
     ),
   );
-  const staleSourceIds = new Set(ledger.staleSourceIds);
+  const evidenceSourceIds = new Set(sourceDigests.keys());
+  const evidenceUnitIds = new Set(unitsById.keys());
+  const requiredUnitIds = ledger.requiredUnitIds.filter((unitId) => evidenceUnitIds.has(unitId));
+  const staleSourceIds = new Set(
+    ledger.staleSourceIds.filter((sourceId) => evidenceSourceIds.has(sourceId)),
+  );
   const newlyRead: string[] = [];
+  const attempted = new Set(
+    (ledger.attemptedUnitIds ?? []).filter((unitId) => evidenceUnitIds.has(unitId)),
+  );
   for (const read of reads) {
+    // A legacy task may still carry the formerly exposed canonical source.
+    // Ignore it completely instead of recording it as evidence or staleness.
+    if (!sourceDigests.has(read.sourceId)) continue;
     if (sourceDigests.get(read.sourceId) !== read.sourceDigest) {
       staleSourceIds.add(read.sourceId);
       continue;
@@ -74,6 +104,8 @@ export function recordSourceReads(
     );
     for (const unit of read.units) {
       const descriptor = unitsById.get(unit.unitId);
+      if (descriptor === undefined) continue;
+      attempted.add(unit.unitId);
       const visualEvidence = descriptor?.visualEvidence ?? 'none';
       // Reading an extracted text placeholder is not equivalent to seeing the
       // required pixels. Search hits also flow through this function, so they
@@ -97,9 +129,14 @@ export function recordSourceReads(
       newlyRead.push(unit.unitId);
     }
   }
-  const readUnitIds = sortedUnique([...ledger.readUnitIds, ...newlyRead]);
+  const readUnitIds = sortedUnique([
+    ...ledger.readUnitIds.filter((unitId) => evidenceUnitIds.has(unitId)),
+    ...newlyRead,
+  ]);
   const exposures = new Map(
-    (ledger.readExposures ?? []).map((exposure) => [exposure.unitId, exposure]),
+    (ledger.readExposures ?? [])
+      .filter((exposure) => evidenceUnitIds.has(exposure.unitId))
+      .map((exposure) => [exposure.unitId, exposure]),
   );
   for (const unitId of newlyRead) {
     if (!exposures.has(unitId)) {
@@ -107,14 +144,17 @@ export function recordSourceReads(
     }
   }
   const readSet = new Set(readUnitIds);
-  const omittedUnitIds = ledger.requiredUnitIds.filter((id) => !readSet.has(id));
+  const omittedUnitIds = requiredUnitIds.filter((id) => !readSet.has(id));
   return {
     ...ledger,
+    requiredUnitIds,
     readUnitIds,
+    attemptedUnitIds: sortedUnique([...attempted]),
     readExposures: [...exposures.values()].sort((left, right) =>
       left.unitId.localeCompare(right.unitId),
     ),
     omittedUnitIds,
+    citedUnitIds: ledger.citedUnitIds.filter((unitId) => evidenceUnitIds.has(unitId)),
     staleSourceIds: sortedUnique([...staleSourceIds]),
     complete: omittedUnitIds.length === 0 && staleSourceIds.size === 0,
     updatedAt: now,
@@ -175,18 +215,39 @@ export function refreshCoverageAgainstManifest(
   current: SourceManifest,
   now: string,
 ): SourceCoverageLedger {
-  const oldDigests = new Map(previous.sources.map((source) => [source.id, source.digest]));
-  const staleSourceIds = current.sources
+  const currentSources = readerEvidenceSources(current);
+  const currentSourceIds = new Set(currentSources.map((source) => source.id));
+  const currentUnitIds = new Set(
+    currentSources.flatMap((source) => source.units.map((unit) => unit.id)),
+  );
+  const oldDigests = new Map(
+    readerEvidenceSources(previous).map((source) => [source.id, source.digest]),
+  );
+  const newlyStaleSourceIds = currentSources
     .filter((source) => oldDigests.get(source.id) !== source.digest)
     .map((source) => source.id);
-  if (current.digest === ledger.manifestDigest && staleSourceIds.length === 0) {
-    return ledger;
-  }
+  const requiredUnitIds = ledger.requiredUnitIds.filter((unitId) => currentUnitIds.has(unitId));
+  const readUnitIds = ledger.readUnitIds.filter((unitId) => currentUnitIds.has(unitId));
+  const read = new Set(readUnitIds);
+  const omittedUnitIds = requiredUnitIds.filter((unitId) => !read.has(unitId));
+  const staleSourceIds = sortedUnique([
+    ...ledger.staleSourceIds.filter((sourceId) => currentSourceIds.has(sourceId)),
+    ...newlyStaleSourceIds,
+  ]);
   return {
     ...ledger,
     manifestDigest: current.digest,
-    staleSourceIds: sortedUnique([...ledger.staleSourceIds, ...staleSourceIds]),
-    complete: false,
+    requiredUnitIds,
+    readUnitIds,
+    readExposures: (ledger.readExposures ?? []).filter((exposure) =>
+      currentUnitIds.has(exposure.unitId),
+    ),
+    citedUnitIds: ledger.citedUnitIds.filter((unitId) => currentUnitIds.has(unitId)),
+    omittedUnitIds,
+    staleSourceIds,
+    // A canonical-authority-only manifest revision is not a reader source
+    // change and therefore cannot invalidate otherwise complete evidence.
+    complete: staleSourceIds.length === 0 && omittedUnitIds.length === 0,
     updatedAt: now,
   };
 }

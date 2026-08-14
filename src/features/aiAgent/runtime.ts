@@ -976,24 +976,27 @@ export class AgentRuntime {
       });
     }
     if (
-      options.preserveAllSourceInformation === true &&
-      !active.state.taskBrief.preserveAllSourceInformation
+      options.preserveAllSourceInformation !== undefined &&
+      options.preserveAllSourceInformation !==
+        active.state.taskBrief.preserveAllSourceInformation
     ) {
       const now = this.adapters.clock.now();
+      const preserveAllSourceInformation = options.preserveAllSourceInformation;
       active.state = {
         ...active.state,
         taskBrief: {
           ...active.state.taskBrief,
-          preserveAllSourceInformation: true,
+          preserveAllSourceInformation,
         },
-        // Upgrading is monotonic and fail-closed. Rebuild the ledger in
-        // complete mode so prior selective reads cannot masquerade as an
-        // exhaustive sweep; the model may re-read them in bounded batches.
+        // Changing the reader-owned evidence contract rebuilds its ledger.
+        // Complete-mode reads cannot masquerade as relevant-only grounding,
+        // and turning Preserve All off never retroactively certifies units the
+        // model could not visually inspect.
         sourceCoverage: active.state.sourceManifest === undefined
           ? active.state.sourceCoverage
           : createSourceCoverageLedger(
               active.state.sourceManifest,
-              'complete',
+              preserveAllSourceInformation ? 'complete' : 'relevant',
               now,
             ),
         retrievalPlan: undefined,
@@ -1085,6 +1088,20 @@ export class AgentRuntime {
         : { pendingUserTurns: [...queuedUserTurns, userTurn] }),
       plan: startsFreshSettledTurn ? undefined : active.state.plan,
       retrievalPlan: startsFreshSettledTurn ? undefined : active.state.retrievalPlan,
+      // Citations authorize only the reader turn that produced them. Retain
+      // cached read receipts for a grounded follow-up, but do not let an old
+      // cited answer force an unrelated later turn through source freshness.
+      sourceCoverage:
+        startsFreshSettledTurn && active.state.sourceCoverage !== undefined
+          ? {
+              ...active.state.sourceCoverage,
+              citedUnitIds: [],
+              updatedAt: now,
+            }
+          : active.state.sourceCoverage,
+      notebookSnapshot: startsFreshSettledTurn
+        ? undefined
+        : active.state.notebookSnapshot,
       draft: startsFreshSettledTurn ? undefined : active.state.draft,
       validation: startsFreshSettledTurn ? undefined : active.state.validation,
       previewGeneration: startsFreshSettledTurn
@@ -1103,7 +1120,11 @@ export class AgentRuntime {
           ? undefined
           : active.state.imagePromptHandoff,
       patchProposal: startsFreshSettledTurn ? retainedAppliedProposal : undefined,
+      proposalRecovery: startsFreshSettledTurn
+        ? undefined
+        : active.state.proposalRecovery,
       localRestoredFinal: undefined,
+      lastError: startsFreshSettledTurn ? undefined : active.state.lastError,
       budgetWindow: {
         providerCallsAtStart: active.state.usage.providerCalls,
         toolCallsAtStart: active.state.usage.toolCalls,
@@ -1363,6 +1384,7 @@ export class AgentRuntime {
         script: failedProposal.script,
         draftHash: failedProposal.draftHash,
         sourceManifestDigest: failedState.draft?.sourceManifestDigest,
+        sourceReadUnitIds: failedState.draft?.sourceReadUnitIds,
         createdAt: failedProposal.createdAt,
       };
       const sandboxContext = {
@@ -1851,7 +1873,10 @@ export class AgentRuntime {
           },
         ];
     const preserveAllSourceInformation =
-      options.preserveAllSourceInformation === true ||
+      options.preserveAllSourceInformation ??
+      active.state.taskBrief.preserveAllSourceInformation;
+    const preserveModeChanged =
+      preserveAllSourceInformation !==
       active.state.taskBrief.preserveAllSourceInformation;
     active.state = {
       ...active.state,
@@ -1871,16 +1896,19 @@ export class AgentRuntime {
         ? active.state.taskBrief
         : {
             ...active.state.taskBrief,
-            preserveAllSourceInformation: true,
+            preserveAllSourceInformation,
           },
       sourceCoverage:
-        preserveAllSourceInformation &&
-        !active.state.taskBrief.preserveAllSourceInformation &&
+        preserveModeChanged &&
         active.state.sourceManifest !== undefined
-          ? createSourceCoverageLedger(active.state.sourceManifest, 'complete', now)
+          ? createSourceCoverageLedger(
+              active.state.sourceManifest,
+              preserveAllSourceInformation ? 'complete' : 'relevant',
+              now,
+            )
           : active.state.sourceCoverage,
       retrievalPlan:
-        preserveAllSourceInformation && !active.state.taskBrief.preserveAllSourceInformation
+        preserveModeChanged
           ? undefined
           : active.state.retrievalPlan,
       cancellation: {

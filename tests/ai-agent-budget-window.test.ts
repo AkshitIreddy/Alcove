@@ -70,6 +70,10 @@ function adapters(): AgentAdapters {
         }],
       }),
     },
+    hash: {
+      digestText: async (text) => `text:${text}`,
+      digestJson: async (value) => `json:${JSON.stringify(value)}`,
+    },
     sandbox: {
       dispose: async () => undefined,
     },
@@ -271,7 +275,7 @@ describe('AI agent per-reader-turn budget windows', () => {
     });
     expect(repairPassesInBudgetWindow(result.state)).toBe(0);
     expect(provider.requests[0]?.tools.map((tool) => tool.name)).toContain('finish_conversation');
-    expect(provider.requests[0]?.tools.map((tool) => tool.name)).toContain(
+    expect(provider.requests[0]?.tools.map((tool) => tool.name)).not.toContain(
       'submit_notebook_script',
     );
     expect(provider.requests[0]?.systemPrompt).toMatch(
@@ -317,14 +321,7 @@ describe('AI agent per-reader-turn budget windows', () => {
   });
 
   it('opens a new window when a stopped task is retried with a reader follow-up', async () => {
-    const provider = new BudgetProvider([
-      {
-        kind: 'tool',
-        name: 'inspect_notebook',
-        args: { request: 'current' },
-      },
-      finish('Recovered answer.'),
-    ]);
+    const provider = new BudgetProvider([finish('Recovered answer.')]);
     const persistence = new InMemoryAgentPersistence();
     const stoppedBase = createInitialAgentState({
       identity: {
@@ -369,14 +366,14 @@ describe('AI agent per-reader-turn budget windows', () => {
       (message) => message.text === 'Start over from this follow-up.',
     );
     expect(recovered.state.lifecycle).toBe('completed');
-    expect(recovered.state.usage).toMatchObject({ providerCalls: 9, toolCalls: 11 });
+    expect(recovered.state.usage).toMatchObject({ providerCalls: 8, toolCalls: 10 });
     expect(recovered.state.budgetWindow).toMatchObject({
       providerCallsAtStart: 7,
       toolCallsAtStart: 9,
       repairPassesAtStart: 0,
       readerMessageId: followUpMessage?.id,
     });
-    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests).toHaveLength(1);
     expect((await persistence.loadTask('budget-stop-task'))?.state.budgetWindow)
       .toEqual(recovered.state.budgetWindow);
   });

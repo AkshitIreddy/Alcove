@@ -485,7 +485,19 @@ describe('AI notebook semantic craft gate', () => {
   });
 
   it('normalizes an exact outer document fence at the submit boundary without a repair turn', async () => {
-    const initial = state();
+    const base = state();
+    const initial: AgentState = {
+      ...base,
+      lifecycle: 'running',
+      notebookSnapshot: {
+        bookId: base.identity.bookId,
+        bookRevision: 'book-craft-revision',
+        pageIds: ['page-craft-1'],
+        pageRevisions: { 'page-craft-1': 'page-craft-revision' },
+        capturedAt: NOW,
+      },
+      insertionTarget: { kind: 'book_end' },
+    };
     const catalog = new AgentToolCatalog(
       adapters(),
       new AgentEventBus(initial.identity, new InMemoryAgentPersistence(), () => NOW),

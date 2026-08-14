@@ -526,11 +526,14 @@ describe('AI agent production read/source adapters', () => {
     ], { taskId: 'task-1', signal: idleSignal() });
 
     expect(manifest.sources.map((source) => source.kind)).toEqual([
-      'notebook_script_spec',
       'text',
       'image',
       'pdf',
     ]);
+    const storedCanonical = [...sources.values()].find((source) =>
+      JSON.stringify(source.meta).includes('notebook_script_spec'),
+    );
+    expect(storedCanonical).toBeDefined();
     const code = manifest.sources.find((source) => source.kind === 'text')!;
     expect(code).toMatchObject({
       title: 'answer.ts',
@@ -549,6 +552,12 @@ describe('AI agent production read/source adapters', () => {
     );
     const pdf = manifest.sources.find((source) => source.kind === 'pdf')!;
     const capability = { taskId: 'task-1', manifestDigest: manifest.digest };
+    await expect(bundle.sources.readFullSource(
+      storedCanonical!.id,
+      60_000,
+      idleSignal(),
+      capability,
+    )).rejects.toThrow(/outside the current task manifest/i);
     expect(pdf.quarantined).toBe(true);
     expect(pdf.promptInjectionWarnings).toHaveLength(2);
     expect(pdf.units.map((unit) => unit.visualEvidence)).toEqual([
@@ -830,7 +839,11 @@ describe('AI agent production read/source adapters', () => {
       taskId: 'task-repair-index',
       signal: idleSignal(),
     });
-    const source = manifest.sources[0]!;
+    expect(manifest.sources).toEqual([]);
+    const storedCanonical = [...sources.values()][0]!;
+    const source = (storedCanonical.meta as {
+      descriptor: { id: string; units: readonly { id: string }[] };
+    }).descriptor;
     const completeChunks = chunks.get(source.id)!;
     expect(completeChunks).toHaveLength(source.units.length);
 
@@ -913,7 +926,17 @@ describe('AI agent production read/source adapters', () => {
           pages: [],
         };
       },
-      async inspectPage(): Promise<never> { throw new Error('unused'); },
+      async inspectPage(pageId) {
+        return {
+          pageId,
+          ordinal: 0,
+          revision: 'cancel-page-revision',
+          title: 'Cancellation source',
+          plainText: 'One bounded reader source unit.',
+          scriptSource: 'One bounded reader source unit.',
+          documentDigest: 'cancel-page-document',
+        };
+      },
       async inspectPageRange() { return []; },
       async inspectSelection() { return null; },
     };
@@ -938,7 +961,11 @@ describe('AI agent production read/source adapters', () => {
       semanticIndex: true,
       providerRerank: false,
     });
-    const manifest = await bundle.ingestion.ingest([], {
+    const manifest = await bundle.ingestion.ingest([{
+      kind: 'notebook_page',
+      pageId: 'cancel-page',
+      title: 'Cancellation source',
+    }], {
       taskId: 'task-cancel',
       signal: idleSignal(),
     });

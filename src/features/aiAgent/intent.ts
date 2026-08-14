@@ -95,6 +95,14 @@ export function readerRequiresSourceEvidence(state: AgentState): boolean {
     (source) => source.kind !== 'notebook_script_spec' && source.units.length > 0,
   ) === true;
   if (!readerSources) return false;
+  // Preserve All is a reader-owned UI contract, not wording the model may
+  // ignore. Scope it to notebook work so a later unrelated chat question does
+  // not revive an old attachment index merely because the task retains its
+  // audit receipt.
+  if (
+    state.taskBrief.preserveAllSourceInformation &&
+    readerRequestsNotebookMutation(state)
+  ) return true;
   const text = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   if (
     EXPLICIT_SOURCE_REFERENCE.test(text) ||
@@ -114,6 +122,7 @@ export function readerRequiresSourceEvidence(state: AgentState): boolean {
 
 export function readerRequiresCompleteSourceCoverage(state: AgentState): boolean {
   if (!readerRequiresSourceEvidence(state)) return false;
+  if (state.taskBrief.preserveAllSourceInformation) return true;
   const text = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   return COMPLETE_SOURCE_REQUEST.test(text);
 }

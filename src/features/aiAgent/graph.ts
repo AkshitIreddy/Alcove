@@ -8,11 +8,12 @@ import {
 import type { AgentAdapters } from './adapters';
 import type { AgentEventBus } from './events';
 import type { AgentPersistence } from './persistence';
+import { normalizeNotebookScriptSubmission } from './draftCraft';
 import {
   AgentProviderError,
   collectProviderTurn,
   isRetryableProviderError,
-  modelHistoryToProviderMessages,
+  modelHistoryToProviderProjection,
   type AgentProvider,
   type AgentProviderTurnRequest,
   type CollectedProviderTurn,
@@ -37,7 +38,7 @@ import {
   repairPassesInBudgetWindow,
   toolCallsInBudgetWindow,
 } from './policy';
-import { AgentToolCatalog } from './tools';
+import { AgentToolCatalog, materialWorkFingerprint } from './tools';
 import type {
   AgentConversationMessage,
   AgentInterrupt,
@@ -136,6 +137,310 @@ function discardInterruptSiblings(
       : turn,
   );
   return { ...state, modelHistory, pendingToolCalls: [] };
+}
+
+const NO_PROGRESS_WATCHDOG_RESULT = 'no_progress_warning';
+const MAX_STAGNANT_TOOL_RESULTS = 3;
+
+type NoProgressWatchdogDecision =
+  | { readonly action: 'execute' }
+  | {
+      readonly action: 'warn' | 'stall';
+      readonly signatureDigest: string;
+      readonly previousCallId: string;
+      readonly materialFingerprint: string;
+      readonly reason: 'semantic_replay' | 'stagnant_phase';
+    };
+
+function jsonRecord(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  return value !== null && !Array.isArray(value) && typeof value === 'object'
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+/**
+ * Collapse presentation-only whitespace for the no-progress signature without
+ * changing the authoritative Notebook Script that is stored, hashed, rendered
+ * or reviewed. Fenced and multiline-math bodies are deliberately opaque: code
+ * blocks preserve indentation, blank lines, line endings and every character,
+ * while diagrams and LaTeX can also attach meaning to whitespace. Only prose
+ * outside those verbatim regions is normalized.
+ */
+function notebookScriptWatchdogText(
+  script: string,
+): readonly Readonly<{ kind: 'markup' | 'verbatim'; text: string }>[] {
+  const source = normalizeNotebookScriptSubmission(script).script;
+  const rows: Array<{ text: string; raw: string }> = [];
+  const rowPattern = /([^\r\n]*)(\r\n|\r|\n|$)/g;
+  for (;;) {
+    const match = rowPattern.exec(source);
+    if (match === null) break;
+    if (match[0].length === 0) break;
+    rows.push({ text: match[1], raw: match[0] });
+  }
+
+  const blocks: Array<Readonly<{ kind: 'markup' | 'verbatim'; text: string }>> = [];
+  let markup = '';
+  const flushMarkup = (): void => {
+    const lines = markup
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/g, ''));
+    const compact: string[] = [];
+    for (const line of lines) {
+      if (line.length === 0 && compact[compact.length - 1] === '') continue;
+      compact.push(line);
+    }
+    while (compact[0] === '') compact.shift();
+    while (compact[compact.length - 1] === '') compact.pop();
+    if (compact.length > 0) {
+      blocks.push({ kind: 'markup', text: compact.join('\n') });
+    }
+    markup = '';
+  };
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const mathOpening = /^\s*\$\$(?:[ \t]*\{.*\})?\s*$/.test(rows[index].text);
+    if (mathOpening) {
+      flushMarkup();
+      let math = rows[index].raw;
+      while (index + 1 < rows.length) {
+        index += 1;
+        const row = rows[index];
+        math += row.raw;
+        if (/^\s*\$\$\s*$/.test(row.text)) break;
+      }
+      blocks.push({ kind: 'verbatim', text: math });
+      continue;
+    }
+    const opening = /^\s*(`{3,})/.exec(rows[index].text);
+    if (opening === null) {
+      markup += rows[index].raw;
+      continue;
+    }
+    flushMarkup();
+    const openLength = opening[1].length;
+    let fence = rows[index].raw;
+    while (index + 1 < rows.length) {
+      index += 1;
+      const row = rows[index];
+      fence += row.raw;
+      const closing = /^\s*(`{2,})\s*$/.exec(row.text);
+      if (
+        closing !== null &&
+        (openLength <= 3 || closing[1].length >= openLength)
+      ) break;
+    }
+    blocks.push({ kind: 'verbatim', text: fence });
+  }
+  flushMarkup();
+  return blocks;
+}
+
+function assistantCallForToolResult(
+  history: AgentState['modelHistory'],
+  toolCallId: string,
+): AgentModelToolCall | undefined {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const turn = history[index];
+    if (turn?.role !== 'assistant') continue;
+    const call = turn.toolCalls.find((candidate) => candidate.id === toolCallId);
+    if (call !== undefined) return call;
+  }
+  return undefined;
+}
+
+/**
+ * Detect semantic replays inside one reader turn. A changed Notebook Script or
+ * genuinely new observation changes the material fingerprint and remains a
+ * legitimate repair. Alternating a blocked call with an unrelated no-op no
+ * longer hides the earlier failure and burns the full 24-call budget.
+ */
+async function noProgressWatchdogDecision(
+  state: AgentState,
+  call: AgentModelToolCall,
+  dependencies: AgentGraphDependencies,
+): Promise<NoProgressWatchdogDecision> {
+  const readerMessageId = state.budgetWindow?.readerMessageId;
+  if (readerMessageId === undefined) return { action: 'execute' };
+  let readerTurnIndex = -1;
+  for (let index = state.modelHistory.length - 1; index >= 0; index -= 1) {
+    if (state.modelHistory[index]?.id === readerMessageId) {
+      readerTurnIndex = index;
+      break;
+    }
+  }
+  // Old/imported checkpoints without the current reader-message anchor fail
+  // open. A repeated first action in a later reader turn is legitimate even
+  // when its arguments happen to match an action from the prior turn.
+  if (readerTurnIndex < 0) return { action: 'execute' };
+  const currentReaderTurnHistory = state.modelHistory.slice(readerTurnIndex + 1);
+  const semanticSignature = (candidate: AgentModelToolCall): unknown => {
+    if (candidate.name !== 'submit_notebook_script') {
+      return { name: candidate.name, arguments: candidate.arguments };
+    }
+    const args = jsonRecord(candidate.arguments);
+    const script = typeof args?.script === 'string'
+      ? notebookScriptWatchdogText(args.script)
+      : args?.script;
+    const citedUnitIds = Array.isArray(args?.citedUnitIds)
+      ? [...new Set(args.citedUnitIds.filter(
+          (unitId): unitId is string => typeof unitId === 'string',
+        ))].sort()
+      : [];
+    // `reason` is explanatory metadata. Changing initial/repair wording, JSON
+    // key order or citation order does not turn the same script into progress.
+    return { name: candidate.name, script, citedUnitIds };
+  };
+  const currentDigest = await dependencies.adapters.hash.digestJson(
+    semanticSignature(call),
+  );
+  const currentMaterialFingerprint = materialWorkFingerprint(state);
+  const priorResults = currentReaderTurnHistory.filter(
+    (turn): turn is AgentModelToolTurn => turn.role === 'tool',
+  ).reverse();
+  for (const [resultIndex, previousResult] of priorResults.entries()) {
+    const previousCall = assistantCallForToolResult(
+      currentReaderTurnHistory,
+      previousResult.toolCallId,
+    );
+    if (previousCall === undefined) continue;
+    const previousDigest = await dependencies.adapters.hash.digestJson(
+      semanticSignature(previousCall),
+    );
+    if (currentDigest !== previousDigest) continue;
+    const previousPayload = jsonRecord(previousResult.content);
+    const sameMaterial =
+      previousPayload?.materialFingerprint === currentMaterialFingerprint;
+    const previouslyBlocked =
+      previousResult.isError ||
+      previousPayload?.doNotRepeat === true ||
+      previousPayload?.watchdog === NO_PROGRESS_WATCHDOG_RESULT;
+    // Preserve the original immediate-repeat guard for successful calls, and
+    // additionally remember failed/blocked signatures across intervening
+    // no-ops while the material state is identical.
+    if (resultIndex !== 0 && !(sameMaterial && previouslyBlocked)) continue;
+    return {
+      action:
+        previousPayload?.watchdog === NO_PROGRESS_WATCHDOG_RESULT &&
+        previousPayload.signatureDigest === currentDigest &&
+        (sameMaterial || resultIndex === 0)
+          ? 'stall'
+          : 'warn',
+      signatureDigest: currentDigest,
+      previousCallId: previousCall.id,
+      materialFingerprint: currentMaterialFingerprint,
+      reason: 'semantic_replay',
+    };
+  }
+  const phaseDigest = await dependencies.adapters.hash.digestJson({
+    kind: 'stagnant_agent_phase',
+    materialFingerprint: currentMaterialFingerprint,
+  });
+  let stagnantResults = 0;
+  for (const previousResult of priorResults) {
+    const previousPayload = jsonRecord(previousResult.content);
+    if (previousPayload?.materialFingerprint !== currentMaterialFingerprint) break;
+    if (
+      previousPayload.watchdog === NO_PROGRESS_WATCHDOG_RESULT &&
+      previousPayload.signatureDigest === phaseDigest
+    ) {
+      return {
+        action: 'stall',
+        signatureDigest: phaseDigest,
+        previousCallId: previousResult.toolCallId,
+        materialFingerprint: currentMaterialFingerprint,
+        reason: 'stagnant_phase',
+      };
+    }
+    stagnantResults += 1;
+    if (stagnantResults >= MAX_STAGNANT_TOOL_RESULTS) {
+      return {
+        action: 'warn',
+        signatureDigest: phaseDigest,
+        previousCallId: previousResult.toolCallId,
+        materialFingerprint: currentMaterialFingerprint,
+        reason: 'stagnant_phase',
+      };
+    }
+  }
+  return { action: 'execute' };
+}
+
+function repeatedCallGuidance(call: AgentModelToolCall): string {
+  return call.name === 'submit_notebook_script'
+    ? 'Revise the Notebook Script materially from the current draft, then submit the changed complete script.'
+    : 'Choose a different currently available action that advances the task state.';
+}
+
+async function checkpointWatchdogResult(
+  state: AgentState,
+  call: AgentModelToolCall,
+  decision: Exclude<NoProgressWatchdogDecision, { readonly action: 'execute' }>,
+  dependencies: AgentGraphDependencies,
+): Promise<AgentState> {
+  const stalled = decision.action === 'stall';
+  const stagnantPhase = decision.reason === 'stagnant_phase';
+  const message = stagnantPhase
+    ? stalled
+      ? 'The agent kept calling tools without changing the notebook, evidence, draft or review state.'
+      : 'Alcove paused another tool call because several preceding calls made no material progress.'
+    : stalled
+      ? `The agent repeated ${call.name} after Alcove had already rejected that exact no-progress call.`
+      : `Alcove skipped an exact repeated ${call.name} call because no new reader input or tool result could make it progress.`;
+  const now = dependencies.adapters.clock.now();
+  const toolTurn: AgentModelToolTurn = {
+    id: dependencies.adapters.ids.create('tool'),
+    role: 'tool',
+    toolCallId: call.id,
+    toolName: call.name,
+    content: {
+      error: message,
+      retryable: true,
+      doNotRepeat: true,
+      watchdog: stalled ? 'agent_stalled' : NO_PROGRESS_WATCHDOG_RESULT,
+      signatureDigest: decision.signatureDigest,
+      previousCallId: decision.previousCallId,
+      materialFingerprint: decision.materialFingerprint,
+      nextAction: repeatedCallGuidance(call),
+    },
+    isError: true,
+    createdAt: now,
+  };
+  const checkpointStep = state.checkpointStep + 1;
+  const next: AgentState = {
+    ...state,
+    lifecycle: stalled ? 'failed' : state.lifecycle,
+    modelHistory: [...state.modelHistory, toolTurn],
+    pendingToolCalls: stalled ? [] : state.pendingToolCalls.slice(1),
+    lastError: {
+      code: stalled ? 'agent_stalled' : 'tool_error',
+      message,
+      retryable: true,
+    },
+    checkpointStep,
+    cancellation: {
+      ...state.cancellation,
+      lastSafeCheckpointStep: checkpointStep,
+    },
+    updatedAt: now,
+  };
+  await saveCurrentTask(next, dependencies);
+  await dependencies.events.emit({
+    type: 'tool.failed',
+    toolCallId: call.id,
+    toolName: call.name,
+    message,
+  });
+  if (stalled) {
+    await dependencies.events.emit({
+      type: 'run.failed',
+      error: next.lastError!,
+    });
+  }
+  return next;
 }
 
 /**
@@ -360,7 +665,14 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
 
     let providerState = state;
     let promptState = state;
-    let providerMessages = modelHistoryToProviderMessages(state.modelHistory);
+    // Keep the durable transcript complete for restart/debugging, but never
+    // resend every superseded repair script on every provider hop. The
+    // projection preserves one exact current script and every tool pairing.
+    let providerMessages = [...modelHistoryToProviderProjection(
+      state.modelHistory,
+      state.draft,
+      state.sourceManifest,
+    ).messages];
     if (state.textPrivacy !== undefined) {
       const now = dependencies.adapters.clock.now();
       const brief = obfuscateTaskBrief(state.taskBrief, state.textPrivacy, now);
@@ -564,6 +876,21 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
     const state = graphState.agent;
     const call = state.pendingToolCalls[0];
     if (call === undefined) return { agent: state };
+    const watchdog = await noProgressWatchdogDecision(
+      state,
+      call,
+      dependencies,
+    );
+    if (watchdog.action !== 'execute') {
+      return {
+        agent: await checkpointWatchdogResult(
+          state,
+          call,
+          watchdog,
+          dependencies,
+        ),
+      };
+    }
     const signal = dependencies.execution.currentSignal();
     const executed = await tools.execute(state, call, signal);
     if (executed.interrupt !== undefined) {
@@ -580,12 +907,19 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       };
     }
 
+    const resultRecord = jsonRecord(executed.result);
     const toolTurn: AgentModelToolTurn = {
       id: dependencies.adapters.ids.create('tool'),
       role: 'tool',
       toolCallId: call.id,
       toolName: call.name,
-      content: executed.result,
+      content:
+        executed.watchdogMaterialFingerprint !== undefined && resultRecord !== undefined
+          ? {
+              ...resultRecord,
+              materialFingerprint: executed.watchdogMaterialFingerprint,
+            }
+          : executed.result,
       isError:
         typeof executed.result === 'object' &&
         executed.result !== null &&

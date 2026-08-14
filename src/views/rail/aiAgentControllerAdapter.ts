@@ -303,6 +303,28 @@ export function latestTurnTimeline(
   );
 }
 
+/**
+ * A status event is an immutable audit receipt, not a forever-running widget.
+ * Keep at most the newest activity animated while the graph is genuinely busy;
+ * once it settles, every retained activity becomes a quiet completed row. This
+ * prevents old mini progress bars from reappearing beneath an answered turn.
+ */
+export function currentActivityTimeline(
+  items: readonly AiAgentTimelineItem[],
+  busy: boolean,
+): readonly AiAgentTimelineItem[] {
+  const liveId = busy
+    ? [...items].reverse().find(
+        (item) => item.kind === 'activity' && item.status === 'running',
+      )?.id
+    : undefined;
+  return items.map((item) =>
+    item.kind === 'activity' && item.status === 'running' && item.id !== liveId
+      ? { ...item, status: 'done' as const, progress: undefined }
+      : item,
+  );
+}
+
 const phaseProgress = (phase: AgentPhase | undefined): number | undefined => {
   switch (phase) {
     case 'intake': return 0.08;
@@ -649,7 +671,10 @@ export function createAiAgentPanelController(
   const viewState = (): AiAgentViewState => {
     const current = snapshot();
     const state = current.state;
-    const visibleTimeline = latestTurnTimeline(timeline());
+    const visibleTimeline = currentActivityTimeline(
+      latestTurnTimeline(timeline()),
+      current.busy,
+    );
     const conversationOnlySettled =
       state?.lifecycle === 'completed' &&
       state.patchProposal === undefined &&
@@ -665,7 +690,9 @@ export function createAiAgentPanelController(
         ? 'Placing the reviewed pages safely'
         : state?.lifecycle === 'cancelled'
           ? 'Stopped safely'
-        : phaseHeadline(state?.phase),
+          : state?.lifecycle === 'failed'
+            ? 'Agent task paused'
+            : phaseHeadline(state?.phase),
       workingNote: current.busy
         ? friendlyWorkingNote(
             state?.phase,
@@ -766,7 +793,9 @@ export function createAiAgentPanelController(
         }
         await registerQueuedSources();
         await core.sendUserMessage(message, {
-          preserveAllSourceInformation: asksForCompleteSourcePreservation(message),
+          preserveAllSourceInformation:
+            options.preserveAllSourceInformation?.() === true ||
+            asksForCompleteSourcePreservation(message),
           insertionTarget: options.insertionTarget?.(),
           userMessageId,
         });

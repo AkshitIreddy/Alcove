@@ -31,6 +31,25 @@ const CAPABILITIES: AgentProviderCapabilities = {
   supportsParallelToolCalls: true,
 };
 
+/**
+ * These phases have exactly one deterministic, argument-light transition.
+ * Spending an 8k reasoning allowance to decide between no alternatives adds
+ * latency and trial-tier pressure without improving the draft or visual
+ * judgment. Composition, source selection, image review and conversation keep
+ * the full reasoning configuration.
+ */
+const DETERMINISTIC_ROUTING_TOOLS = new Set([
+  'validate_notebook_script',
+  'render_draft_preview',
+  'propose_notebook_patch',
+  'submit_notebook_patch',
+]);
+
+function isDeterministicRoutingTurn(request: AgentProviderTurnRequest): boolean {
+  return request.tools.length === 1 &&
+    DETERMINISTIC_ROUTING_TOOLS.has(request.tools[0]!.name);
+}
+
 const SOURCE_IMAGE_LIMIT = { maxEdge: 1_600, maxPixels: 2_560_000, maxBytes: 1_800_000 };
 const DRAFT_IMAGE_LIMIT = { maxEdge: 2_000, maxPixels: 4_000_000, maxBytes: 2_400_000 };
 const MAX_PROVIDER_IMAGES_PER_TURN = 20;
@@ -446,6 +465,7 @@ export class CohereTauriAgentProvider implements AgentProvider {
     ];
     messages.push(...(await gatewayMessages(request.messages, context.signal, this.media)));
     abortIfNeeded(context.signal);
+    const deterministicRouting = isDeterministicRoutingTurn(request);
     const gatewayRequest: AiGatewayChatRequest = {
       runId: request.requestId,
       model: 'command-a-plus-05-2026',
@@ -455,9 +475,13 @@ export class CohereTauriAgentProvider implements AgentProvider {
         description: tool.description,
         parameters: tool.inputSchema as Readonly<Record<string, unknown>>,
       })),
-      maxTokens: request.maxOutputTokens ?? 16_384,
+      maxTokens: deterministicRouting
+        ? Math.min(request.maxOutputTokens ?? 2_048, 2_048)
+        : request.maxOutputTokens ?? 16_384,
       temperature: 0.25,
-      thinking: { type: 'enabled', tokenBudget: 8_000 },
+      thinking: deterministicRouting
+        ? { type: 'disabled' }
+        : { type: 'enabled', tokenBudget: 8_000 },
       // Command A+ 05-2026 rejects both `tool_choice` and citation-mode
       // controls even though it supports strict tools. The graph still fails
       // closed on a turn without a tool call, and Alcove derives citations

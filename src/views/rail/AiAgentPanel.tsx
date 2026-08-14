@@ -46,7 +46,11 @@ import {
 import { AgentIcon, CloseIcon } from './icons';
 import { canPresentFinalPreview } from './aiAgentPreviewGate';
 import AppScrollbar from '../AppScrollbar';
-import { agentMessageBlocks, agentMessageInlineTokens } from './agentMessageMarkdown';
+import {
+  agentMessageBlocks,
+  agentMessageInlineTokens,
+  type AgentMessageInlineToken,
+} from './agentMessageMarkdown';
 export { canPresentFinalPreview } from './aiAgentPreviewGate';
 
 /* ========================================================================== *
@@ -1011,20 +1015,40 @@ function AgentWorkingWhisper(props: { note: string }): JSX.Element {
 function MessageInline(props: { text: string }): JSX.Element {
   return (
     <For each={agentMessageInlineTokens(props.text)}>
-      {(token) => (
-        <Switch>
-          <Match when={token.kind === 'text'}>{token.kind === 'text' ? token.text : ''}</Match>
-          <Match when={token.kind === 'strong'}><strong>{token.kind === 'strong' ? token.text : ''}</strong></Match>
-          <Match when={token.kind === 'emphasis'}><em>{token.kind === 'emphasis' ? token.text : ''}</em></Match>
-          <Match when={token.kind === 'code'}><code>{token.kind === 'code' ? token.text : ''}</code></Match>
-          <Match when={token.kind === 'link'}>
-            {token.kind === 'link'
-              ? <a href={token.href} target="_blank" rel="noreferrer">{token.text}</a>
-              : null}
-          </Match>
-        </Switch>
-      )}
+      {(token) => <MessageInlineToken token={token} />}
     </For>
+  );
+}
+
+function MessageInlineToken(props: { token: AgentMessageInlineToken }): JSX.Element {
+  return (
+    <Switch>
+      <Match when={props.token.kind === 'text'}>
+        {props.token.kind === 'text' ? props.token.text : ''}
+      </Match>
+      <Match when={props.token.kind === 'strong'}>
+        {props.token.kind === 'strong'
+          ? <strong><For each={props.token.children}>{(child) => <MessageInlineToken token={child} />}</For></strong>
+          : null}
+      </Match>
+      <Match when={props.token.kind === 'emphasis'}>
+        {props.token.kind === 'emphasis'
+          ? <em><For each={props.token.children}>{(child) => <MessageInlineToken token={child} />}</For></em>
+          : null}
+      </Match>
+      <Match when={props.token.kind === 'code'}>
+        {props.token.kind === 'code' ? <code>{props.token.text}</code> : null}
+      </Match>
+      <Match when={props.token.kind === 'link'}>
+        {props.token.kind === 'link'
+          ? (
+              <a href={props.token.href} target="_blank" rel="noreferrer">
+                <For each={props.token.children}>{(child) => <MessageInlineToken token={child} />}</For>
+              </a>
+            )
+          : null}
+      </Match>
+    </Switch>
   );
 }
 

@@ -1,9 +1,13 @@
 export type AgentMessageInlineToken =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'strong'; readonly text: string }
-  | { readonly kind: 'emphasis'; readonly text: string }
+  | { readonly kind: 'strong'; readonly children: readonly AgentMessageInlineToken[] }
+  | { readonly kind: 'emphasis'; readonly children: readonly AgentMessageInlineToken[] }
   | { readonly kind: 'code'; readonly text: string }
-  | { readonly kind: 'link'; readonly text: string; readonly href: string };
+  | {
+      readonly kind: 'link';
+      readonly children: readonly AgentMessageInlineToken[];
+      readonly href: string;
+    };
 
 export type AgentMessageBlock =
   | { readonly kind: 'paragraph'; readonly text: string }
@@ -26,8 +30,39 @@ function safeLink(href: string): string | null {
   }
 }
 
-/** Safe inline Markdown projection. It never creates or parses HTML. */
-export function agentMessageInlineTokens(input: string): readonly AgentMessageInlineToken[] {
+function isWord(value: string | undefined): boolean {
+  return value !== undefined && /[\p{L}\p{N}]/u.test(value);
+}
+
+function isWhitespace(value: string | undefined): boolean {
+  return value !== undefined && /\s/u.test(value);
+}
+
+function delimiterCanOpen(input: string, marker: string, from: number): boolean {
+  if (marker[0] !== '_') return !isWhitespace(input[from + marker.length]);
+  return !isWord(input[from - 1]) && !isWhitespace(input[from + marker.length]);
+}
+
+function delimiterCanClose(input: string, marker: string, at: number): boolean {
+  if (isWhitespace(input[at - 1])) return false;
+  return marker[0] !== '_' || !isWord(input[at + marker.length]);
+}
+
+function closingDelimiter(input: string, marker: string, from: number): number {
+  if (!delimiterCanOpen(input, marker, from)) return -1;
+  let at = input.indexOf(marker, from + marker.length);
+  while (at > from + marker.length && !delimiterCanClose(input, marker, at)) {
+    at = input.indexOf(marker, at + marker.length);
+  }
+  return at;
+}
+
+/**
+ * Safe recursive inline Markdown projection. It never creates or parses HTML,
+ * and recursion is deliberately bounded because provider prose is untrusted.
+ */
+function inlineTokens(input: string, depth: number): readonly AgentMessageInlineToken[] {
+  if (depth > 8) return [{ kind: 'text', text: input }];
   const tokens: AgentMessageInlineToken[] = [];
   let plain = '';
   const flush = (): void => {
@@ -35,21 +70,16 @@ export function agentMessageInlineTokens(input: string): readonly AgentMessageIn
     tokens.push({ kind: 'text', text: plain });
     plain = '';
   };
-  const paired = (
-    marker: string,
-    from: number,
-    kind: 'strong' | 'emphasis' | 'code',
-  ): number | null => {
-    const end = input.indexOf(marker, from + marker.length);
-    if (end <= from + marker.length) return null;
-    const text = input.slice(from + marker.length, end);
-    if (text.includes('\n')) return null;
-    flush();
-    tokens.push({ kind, text });
-    return end + marker.length;
-  };
-
   for (let index = 0; index < input.length;) {
+    if (
+      input[index] === '\\' &&
+      index + 1 < input.length &&
+      /[\\`*_[\]{}()#+\-.!]/u.test(input[index + 1]!)
+    ) {
+      plain += input[index + 1];
+      index += 2;
+      continue;
+    }
     if (input[index] === '[') {
       const labelEnd = input.indexOf('](', index + 1);
       const hrefEnd = labelEnd < 0 ? -1 : input.indexOf(')', labelEnd + 2);
@@ -57,30 +87,75 @@ export function agentMessageInlineTokens(input: string): readonly AgentMessageIn
         const href = safeLink(input.slice(labelEnd + 2, hrefEnd));
         if (href !== null) {
           flush();
-          tokens.push({ kind: 'link', text: input.slice(index + 1, labelEnd), href });
+          tokens.push({
+            kind: 'link',
+            children: inlineTokens(input.slice(index + 1, labelEnd), depth + 1),
+            href,
+          });
           index = hrefEnd + 1;
           continue;
         }
       }
     }
-    if (input.startsWith('**', index) || input.startsWith('__', index)) {
-      const next = paired(input.slice(index, index + 2), index, 'strong');
-      if (next !== null) {
-        index = next;
+    if (input[index] === '`') {
+      const end = input.indexOf('`', index + 1);
+      if (end > index + 1) {
+        flush();
+        tokens.push({ kind: 'code', text: input.slice(index + 1, end) });
+        index = end + 1;
         continue;
       }
     }
-    if (input[index] === '`') {
-      const next = paired('`', index, 'code');
-      if (next !== null) {
-        index = next;
+    const triple = input.startsWith('***', index)
+      ? '***'
+      : input.startsWith('___', index)
+        ? '___'
+        : null;
+    if (triple !== null) {
+      const end = closingDelimiter(input, triple, index);
+      if (end > index + triple.length) {
+        flush();
+        tokens.push({
+          kind: 'strong',
+          children: [{
+            kind: 'emphasis',
+            children: inlineTokens(
+              input.slice(index + triple.length, end),
+              depth + 1,
+            ),
+          }],
+        });
+        index = end + triple.length;
+        continue;
+      }
+    }
+    const strong = input.startsWith('**', index)
+      ? '**'
+      : input.startsWith('__', index)
+        ? '__'
+        : null;
+    if (strong !== null) {
+      const end = closingDelimiter(input, strong, index);
+      if (end > index + strong.length) {
+        flush();
+        tokens.push({
+          kind: 'strong',
+          children: inlineTokens(input.slice(index + strong.length, end), depth + 1),
+        });
+        index = end + strong.length;
         continue;
       }
     }
     if (input[index] === '*' || input[index] === '_') {
-      const next = paired(input[index]!, index, 'emphasis');
-      if (next !== null) {
-        index = next;
+      const marker = input[index]!;
+      const end = closingDelimiter(input, marker, index);
+      if (end > index + 1) {
+        flush();
+        tokens.push({
+          kind: 'emphasis',
+          children: inlineTokens(input.slice(index + 1, end), depth + 1),
+        });
+        index = end + 1;
         continue;
       }
     }
@@ -89,6 +164,10 @@ export function agentMessageInlineTokens(input: string): readonly AgentMessageIn
   }
   flush();
   return tokens;
+}
+
+export function agentMessageInlineTokens(input: string): readonly AgentMessageInlineToken[] {
+  return inlineTokens(input, 0);
 }
 
 const unorderedItem = (line: string): string | null =>

@@ -540,6 +540,11 @@ asset receipts, and an application plan:
 The receipt digest is checked on rehydration and before apply. It is outside
 checkpointed `AgentState` because page JSON and display assets are larger,
 separately disposable work products rather than provider-neutral control state.
+The receipt body is JSON-canonicalised before both hashing and storage. Fresh
+PageDoc objects may contain optional `undefined` properties that JSON persistence
+omits; hashing that transient object but verifying the parsed value made a new
+receipt reject itself. Canonicalising only this handoff preserves every other
+notebook/source/cache hash identity while making persisted bytes authoritative.
 
 ### Visual exposure and review
 
@@ -557,6 +562,15 @@ validation, image-prompt handoff, preview generation and visual ledger; the new
 generation must traverse the entire gate again. Late events or images from an
 older run/generation cannot satisfy it.
 
+Ordinary multi-page authoring also crosses a deterministic semantic-craft gate
+in `draftCraft.ts`. Headings plus paragraphs/bullets are insufficient unless the
+reader explicitly requests plain/minimal/verbatim output. Two rendered pages
+need a meaning-bearing native structure; three or more need several structures
+serving at least two roles. The post-render check uses the real native page count,
+not only authored `::page` boundaries, so pagination spills cannot bypass it.
+Negated restraint (“do not leave it plain”) is composed intent, and empty image
+slots never count because external-image handoff remains reader-opt-in only.
+
 ### Exact apply and recovery
 
 Approval first revalidates proposal/preview identity in core, then passes the
@@ -571,6 +585,18 @@ selection replacement, recompute the immutable selection digest. They install
 the exact reviewed target document; there is no post-approval merge that could
 repaginate into unseen pages. Structural targets insert the receipt docs in the
 reviewed order.
+
+An approved apply failure has a separate bounded recovery lane. **Refresh
+preview** retains the failed proposal's exact script and placement, inspects the
+current notebook once, validates and renders locally, and compares every new
+page's image/text/layout digest, geometry and spill flags with the immutable
+failed preview. It makes zero provider or model-tool calls. Only an identical
+render receives a new proposal/idempotency identity plus durable
+`applyRecovery`; pixel or target drift fails closed and disposes the attempted
+generation. Restart reconstructs the refreshed final-preview interrupt from the
+receipt instead of resuming the stale LangGraph interrupt. For Text Veil, exact
+restored pages remain the reader/apply generation while the unchanged visual
+ledger continues to name the masked generation Cohere actually inspected.
 
 After mutation the seam lets editor carry/pagination settle, hashes every live
 reviewed page document against the receipt, verifies contiguous unique page

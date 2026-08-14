@@ -396,8 +396,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->380<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of it.
+<!--f:srcDocstrings-->345<!--/f--> of <!--f:srcFiles-->382<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7325<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1065,6 +1065,15 @@ mode cannot test/save a key or consume the setup flag. The highlighted-text
 popover similarly captures a stable selection request and delegates it; it
 does not retain a function that can replace the selection after focus moves.
 
+Provider conversation prose is projected by
+[`agentMessageMarkdown.ts`](../../src/views/rail/agentMessageMarkdown.ts), not
+inserted as HTML. Its bounded recursive token tree supports headings, paragraphs,
+lists, quotes, tables, fenced code, safe HTTP/HTTPS/mail links and nested inline
+strong/emphasis/code/link labels. Raw HTML and unsafe link protocols remain inert;
+CommonMark-style underscore boundaries keep identifiers such as
+`read_draft_preview_pages` and Windows/file names intact rather than interpreting
+their middle underscores as emphasis.
+
 `BookView.tsx` constructs the production dependency set once per open book:
 read-only notebook inspection, source ingestion/repository/retrieval, the native
 render sandbox, `SqliteAgentPersistence`, `CohereTauriAgentProvider`, the core
@@ -1291,6 +1300,22 @@ analogy, definition, caution, recall question, why-it-matters note or
 mini-summary. Intentional breathing room is valid; generic filler, repeated
 claims and invented source facts are not.
 
+[`draftCraft.ts`](../../src/features/aiAgent/draftCraft.ts) makes that editorial
+floor deterministic rather than prompt-only. Unless the latest reader direction
+explicitly asks for plain, minimal, bullets-only or verbatim pages, an ordinary
+two-page result needs at least one meaning-bearing native structure; a result of
+three or more pages needs several structures serving at least two semantic roles.
+Tables/columns count as comparison, diagrams as relationships or sequence,
+callouts/cards as focus, code/maths as technical explanation and spoilers/toggles
+as recall—not as interchangeable decoration. Stickers, paper colour and empty
+external-image slots do not satisfy the gate. The check runs during validation
+and again after native pagination using the **rendered** page count, so one long
+authored section cannot become three plain spill pages and evade it. Negated
+directions such as “do not leave it plain” resolve to composed mode before the
+plain-mode patterns. A single accidental outer `markdown`/`notebook-script`
+presentation fence is removed before draft hashing; real inner code and diagram
+fences remain byte-for-byte, while ambiguous wrappers fail closed.
+
 A managed image supplied by the reader is not an image-generation request. A
 visual source read may expose its exact opaque `ai/attachments/...` asset path
 and intrinsic dimensions; the draft can reuse that exact local asset, choose a
@@ -1350,6 +1375,27 @@ which immutable page-image digests were exposed, at what provider-call count,
 which pages were inspected and the observable findings. A blocking finding is
 never marked repaired in place; changing the script creates a new draft hash and
 therefore a new validation, generation, receipt and ledger.
+
+Receipt creation first JSON-canonicalises that exact body and hashes the same
+value that SQLite will return. This is deliberately narrower than the shared
+Agent hash: optional PageDoc properties whose fresh value is `undefined` are
+omitted by JSON persistence, and hashing the pre-serialization object used to
+make a newly reviewed preview fail its own receipt immediately. A browser-level
+round-trip gate renders three real pages, persists the receipt, rehydrates it and
+prepares the exact application plan before accepting this seam.
+
+If BookView rejects an apply after approval, **Refresh preview** does not reopen
+the provider workflow. The durable failed proposal locks its exact script and
+insertion target; Alcove inspects the current notebook once, reruns the sandbox's
+structural validation and native renderer locally, and accepts a replacement
+only when every page's image/text/layout digest and geometry are identical to
+the previously reviewed preview. The replacement proposal and `applyRecovery`
+receipt survive restart, approval remains idempotent, and provider/tool usage is
+unchanged. A mismatch disposes the new generation and leaves the original
+failure available for another explicit retry. Text Veil keeps its two-generation
+proof: the reader's restored private render is compared locally, while the
+visual-review ledger remains attached to the masked generation actually shown
+to Cohere rather than falsely claiming private pixels were exposed.
 
 ### Approval is a capability boundary
 

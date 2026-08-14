@@ -119,6 +119,25 @@ for the current working tree rather than relying on the long development chat.
 
 ### 2026-08-14 owner localhost follow-up
 
+- [x] Keep the typing caret/indicator optically inside the ruled text line at
+      native and fitted page scales; it must not cut through either adjacent
+      paper rule.
+- [x] Make a reviewed Agent preview retain its exact durable render receipt
+      until Insert has applied or the reader explicitly abandons it. Reproduce
+      and close the supplied `exact reviewed draft is no longer available`
+      failure.
+- [x] Make **Refresh preview** a bounded recovery of the already-reviewed
+      draft/target, not a return to unrestricted placement and draft tools;
+      prove it cannot loop through repeated `propose_insertion` and unchanged
+      `submit_notebook_script` calls.
+- [x] Render Agent conversation Markdown consistently (headings, bold, lists,
+      code and paragraphs) without exposing raw punctuation or collapsing the
+      reply card.
+- [x] Require semantically appropriate native catalogue craft for ordinary
+      multi-page generated notes instead of accepting headings plus plain
+      bullets only, while preserving explicit plain/minimal/verbatim requests
+      and the explicit-only external-image rule.
+
 - [x] Make the final-preview **Insert into book** action apply the exact reviewed
       pages once. It must not turn the approval into synthetic reader messages,
       ask for a refreshed approval, or complete without a notebook mutation.

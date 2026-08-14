@@ -642,6 +642,74 @@ describe('Alcove autonomous notebook agent runtime', () => {
     });
   });
 
+  it('recovers an ordinary explanation through one plain conversation turn after a rejected tool envelope', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'conversation-envelope-recovery',
+      capabilities: async () => ({
+        providerId: 'conversation-envelope-recovery',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'scripted rejected strict conversation envelope',
+            status: 400,
+            retryable: false,
+          });
+        }
+        yield {
+          type: 'public_text_delta',
+          text: 'Cookies are small pieces of data that websites store in your browser. ',
+        };
+        yield {
+          type: 'public_text_delta',
+          text: 'They remember sessions, preferences, and sometimes analytics identifiers.',
+        };
+        yield { type: 'usage', inputTokens: 42, outputTokens: 24 };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const greeting = await runtime.start({
+      taskId: 'task-conversation-envelope-recovery',
+      threadId: 'thread-conversation-envelope-recovery',
+      runId: 'run-conversation-envelope-recovery',
+      bookId: 'book-1',
+      goal: 'hi',
+      insertionTarget: { kind: 'book_end' },
+    });
+    expect(greeting.state.lifecycle).toBe('completed');
+    expect(requests).toHaveLength(0);
+
+    const result = await runtime.sendUserMessage('explain cookies', {
+      userMessageId: 'reader-explain-cookies',
+    });
+
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.lastError).toBeUndefined();
+    expect(result.state.usage).toMatchObject({ providerCalls: 2, inputTokens: 42, outputTokens: 24 });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({ toolChoice: 'auto' });
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+    expect(requests[1]).toMatchObject({ toolChoice: 'auto', tools: [] });
+    expect(result.state.conversation.filter((message) =>
+      message.role === 'assistant' && /Cookies are small pieces of data/u.test(message.text)
+    )).toHaveLength(1);
+  });
+
   it('repairs one empty provider turn before pausing an ordinary conversation', async () => {
     let calls = 0;
     const provider: AgentProvider = {

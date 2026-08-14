@@ -523,7 +523,10 @@ function eventItem(event: AgentActivityEvent): AiAgentTimelineItem | null {
     case 'run.completed':
       return { id: event.id, kind: 'activity', label: 'Agent work complete', detail: event.summary, status: 'done' };
     case 'run.failed':
-      return { id: event.id, kind: 'activity', label: 'Agent task paused', detail: event.error.message, status: 'error' };
+      // The durable error card below is the single actionable recovery UI.
+      // Repeating the same failure as a transcript activity made one provider
+      // error look like several separate pauses.
+      return null;
   }
   return null;
 }
@@ -734,7 +737,11 @@ export function createAiAgentPanelController(
               actionLabel: 'Continue',
             }
           : {
-              title: state.lastError.code === 'stale_context' ? 'The book changed' : 'The agent paused safely',
+              title: state.lastError.code === 'stale_context'
+                ? 'The book changed'
+                : state.lastError.code === 'provider_invalid_response'
+                  ? 'The AI reply could not be used'
+                  : 'The agent needs your attention',
               detail: state.lastError.message,
               retryable: state.lastError.retryable,
               tone: 'paused',

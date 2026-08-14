@@ -22,6 +22,7 @@ import {
 import { buildAgentSystemPrompt } from './prompts';
 import {
   latestReaderText,
+  readerRequiresSourceEvidence,
   readerRequestsNotebookMutation,
 } from './intent';
 import {
@@ -732,6 +733,9 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
     const privacyInstruction = textPrivacySystemInstruction(
       providerState.textPrivacy,
     );
+    const strictToolTurn =
+      readerRequestsNotebookMutation(providerState) ||
+      readerRequiresSourceEvidence(providerState);
     let request: AgentProviderTurnRequest = {
       requestId: dependencies.adapters.ids.create('provider'),
       runId: providerState.identity.runId,
@@ -744,7 +748,10 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         .join('\n\n'),
       messages: providerMessages,
       tools: tools.descriptorsForState(providerState),
-      toolChoice: 'required',
+      // An ordinary source-free explanation is allowed to arrive as natural
+      // prose and is wrapped into Alcove's local finish tool below. Notebook
+      // work and grounded source work remain forced, strict tool turns.
+      toolChoice: strictToolTurn ? 'required' : 'auto',
     };
     if (providerState.textPrivacy !== undefined) {
       // Re-project the complete provider message envelope after building the
@@ -783,26 +790,51 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
           invocationUsage,
         );
       } catch (error) {
+        if (
+          !strictToolTurn &&
+          error instanceof AgentProviderError &&
+          error.code === 'invalid_response'
+        ) {
+          // Some provider/schema combinations can reject or corrupt an
+          // otherwise harmless optional-tool envelope. Conversation-only
+          // turns have no notebook or source authority, so make one bounded
+          // plain-prose request and validate/wrap its complete STOP response
+          // through finish_conversation locally. The failed first attempt is
+          // still counted against the provider-call budget.
+          turn = await invokeProviderWithRetry(
+            providerState,
+            {
+              ...request,
+              requestId: dependencies.adapters.ids.create('provider'),
+              tools: [],
+              toolChoice: 'auto',
+              systemPrompt: `${request.systemPrompt}\n\nThe optional conversation-tool envelope was not usable. Answer the reader's current request directly in complete reader-facing prose. Do not describe tools, workflow, or this recovery instruction.`,
+            },
+            dependencies,
+            invocationUsage,
+          );
+        } else {
         // A malformed provider stream normally fails closed. These four
         // argument-free singleton phases are different: local policy already
         // selected the only authorized transition, and each tool rechecks its
         // own freshness/safety boundary. Preserve the failed call in usage,
         // then route the deterministic local capability instead of pausing on
         // malformed JSON or an incomplete tool stream.
-        if (
+          if (
           deterministicTool === undefined ||
           !(error instanceof AgentProviderError) ||
           error.code !== 'invalid_response'
         ) throw error;
-        turn = {
-          publicText: '',
-          toolPlan: '',
-          toolCalls: [],
-          citations: [],
-          inputTokens: 0,
-          outputTokens: 0,
-          finishReason: 'stop',
-        };
+          turn = {
+            publicText: '',
+            toolPlan: '',
+            toolCalls: [],
+            citations: [],
+            inputTokens: 0,
+            outputTokens: 0,
+            finishReason: 'stop',
+          };
+        }
       }
       let fallbackCall = turn.toolCalls.length === 0
         ? proseOnlyConversationFallback(providerState, turn)

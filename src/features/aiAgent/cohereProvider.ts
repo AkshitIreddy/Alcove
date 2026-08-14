@@ -475,7 +475,14 @@ export class CohereTauriAgentProvider implements AgentProvider {
         request.toolChoice === 'required' && request.tools.length > 0
           ? 'REQUIRED'
           : undefined,
-      strictTools: request.tools.length > 0 ? true : undefined,
+      // Ordinary source-free conversation deliberately allows a direct prose
+      // answer. Local Zod validation still guards any optional tool call; the
+      // provider's experimental strict schema mode is reserved for turns
+      // where Alcove requires a concrete notebook/source capability.
+      strictTools:
+        request.toolChoice === 'required' && request.tools.length > 0
+          ? true
+          : undefined,
     };
 
     const queued: AgentProviderStreamEvent[] = [];

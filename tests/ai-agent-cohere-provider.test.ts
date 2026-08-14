@@ -115,6 +115,36 @@ describe('Cohere AI agent provider', () => {
     });
   });
 
+  it('allows ordinary conversation prose without forcing Cohere strict-tool mode', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-conversation',
+      runId: 'run-conversation',
+      threadId: 'thread-conversation',
+      systemPrompt: 'Answer the reader clearly.',
+      tools: [{
+        name: 'finish_conversation',
+        description: 'Finish the conversational answer.',
+        inputSchema: {
+          type: 'object',
+          properties: { answer: { type: 'string' } },
+          required: ['answer'],
+          additionalProperties: false,
+        },
+        effect: 'propose',
+      }],
+      messages: [],
+      toolChoice: 'auto',
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
+    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+  });
+
   it('accepts two complete sequential tool calls and preserves their identities', async () => {
     gateway.scriptedEvents.push(
       {

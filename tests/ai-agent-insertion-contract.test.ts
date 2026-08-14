@@ -7,6 +7,7 @@ import type {
   AgentProviderStreamEvent,
   AgentProviderTurnRequest,
   AgentRuntimeSnapshot,
+  AgentState,
   AiAgentController as CoreAiAgentController,
   DraftPreviewGeneration,
   NotebookInsertionTarget,
@@ -314,6 +315,73 @@ function panelApplyFixture() {
 }
 
 describe('AI insertion target boundaries', () => {
+  it('keeps a provider pause in one recovery card instead of duplicating it in the transcript', () => {
+    const failedState: AgentState = {
+      ...createInitialAgentState({
+        identity: {
+          taskId: 'task-single-pause',
+          threadId: 'thread-single-pause',
+          runId: 'run-single-pause',
+          bookId: 'current-book',
+        },
+        goal: 'explain cookies',
+        now: NOW,
+        userMessageId: 'message-single-pause',
+      }),
+      lifecycle: 'failed',
+      phase: 'failed',
+      lastError: {
+        code: 'provider_invalid_response',
+        message: 'The AI provider returned an unusable response.',
+        retryable: true,
+      },
+    };
+    const snapshot: AgentRuntimeSnapshot = {
+      state: failedState,
+      interrupt: null,
+      busy: false,
+    };
+    let eventListener: ((event: AgentActivityEvent) => void) | undefined;
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => undefined,
+      subscribeEvents: (listener: (event: AgentActivityEvent) => void) => {
+        eventListener = listener;
+        return () => { eventListener = undefined; };
+      },
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: 'current-book',
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [],
+      renderUrlFor: (image) => `asset://${image.resourceId}`,
+      onApprovedProposal: () => undefined,
+    });
+
+    try {
+      eventListener?.({
+        id: 'event-single-pause',
+        sequence: 1,
+        threadId: failedState.identity.threadId,
+        taskId: failedState.identity.taskId,
+        runId: failedState.identity.runId,
+        at: NOW,
+        type: 'run.failed',
+        error: failedState.lastError!,
+      });
+      expect(controller.state().timeline.some((item) =>
+        item.kind === 'activity' && item.label === 'Agent task paused'
+      )).toBe(false);
+      expect(controller.state().error).toMatchObject({
+        title: 'The AI reply could not be used',
+        detail: 'The AI provider returned an unusable response.',
+        retryable: true,
+      });
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('keeps a 48-page notebook snapshot local and sends one compact provider manifest', async () => {
     const pageIds = Array.from({ length: 48 }, (_, index) =>
       `page-${String(index + 1).padStart(2, '0')}-stable-id`);

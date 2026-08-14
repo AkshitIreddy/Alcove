@@ -1218,7 +1218,7 @@ function ErrorCard(props: {
   return (
     <article class="nb-ai-error-card" data-tone={props.error.tone ?? 'paused'} role="alert">
       <span class="nb-ai-card-kicker font-ui">
-        {stopped() ? 'stopped · your place is saved' : 'the task paused safely'}
+        {stopped() ? 'stopped · your place is saved' : 'your place is saved'}
       </span>
       <h3>{props.error.title}</h3>
       <p>{props.error.detail}</p>

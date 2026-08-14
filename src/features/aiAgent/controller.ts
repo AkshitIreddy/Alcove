@@ -25,6 +25,7 @@ export interface AiAgentController {
     options?: {
       readonly preserveAllSourceInformation?: boolean;
       readonly obfuscatePrivateText?: boolean;
+      readonly userMessageId?: string;
     },
   ): Promise<AgentRunResult>;
   registerAttachments(

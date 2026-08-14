@@ -332,10 +332,13 @@ function eventItem(event: AgentActivityEvent): AiAgentTimelineItem | null {
         citations: event.message.citations?.map(citationView),
       };
     case 'tool.started':
+      if (event.toolName === 'finish_conversation') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.summary, status: 'running' };
     case 'tool.completed':
+      if (event.toolName === 'finish_conversation') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.summary, status: 'done' };
     case 'tool.failed':
+      if (event.toolName === 'finish_conversation') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.message, status: 'error' };
     case 'source.coverage':
       return {
@@ -425,6 +428,12 @@ export function createAiAgentPanelController(
       next[at] = item;
       return next;
     });
+  };
+
+  const optimisticReaderMessage = (text: string): string => {
+    const id = `msg-local-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+    append({ id, kind: 'message', role: 'reader', text });
+    return id;
   };
 
   // A restored runtime may have conversation but no live event replay. Seed
@@ -593,6 +602,7 @@ export function createAiAgentPanelController(
     openIntegrationSettings: options.openIntegrationSettings,
     send: (message) => {
       const current = snapshot();
+      const userMessageId = optimisticReaderMessage(message);
       if (current.state === null) {
         const startingAttachments = options.sourceAttachments?.() ?? [];
         const startingFingerprint = attachmentFingerprint(startingAttachments);
@@ -610,6 +620,7 @@ export function createAiAgentPanelController(
           obfuscatePrivateText: options.obfuscatePrivateText?.() === true,
           attachments: startingAttachments,
           insertionTarget: options.insertionTarget?.(),
+          userMessageId,
         }).then(() => {
           registeredAttachmentFingerprint = startingFingerprint;
         }, (error) => {
@@ -628,6 +639,7 @@ export function createAiAgentPanelController(
         await registerQueuedSources();
         await core.sendUserMessage(message, {
           preserveAllSourceInformation: asksForCompleteSourcePreservation(message),
+          userMessageId,
         });
       })().then(() => undefined, report);
     },

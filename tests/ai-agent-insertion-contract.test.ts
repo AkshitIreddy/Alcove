@@ -429,6 +429,72 @@ describe('AI insertion target boundaries', () => {
 });
 
 describe('AI panel queued-source handoff', () => {
+  it('shows a submitted reader message immediately and hides the internal completion tool', async () => {
+    const state = createInitialAgentState({
+      identity: {
+        taskId: 'task-optimistic-message',
+        threadId: 'thread-optimistic-message',
+        runId: 'run-optimistic-message',
+        bookId: 'current-book',
+      },
+      goal: 'Existing task',
+      now: NOW,
+      userMessageId: 'existing-message',
+    });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let eventListener: ((event: AgentActivityEvent) => void) | undefined;
+    const sendUserMessage = vi.fn(async () => {
+      await pending;
+      return { state };
+    });
+    const core = {
+      getSnapshot: () => ({ state, interrupt: null, busy: false }),
+      subscribe: () => () => undefined,
+      subscribeEvents: (listener: (event: AgentActivityEvent) => void) => {
+        eventListener = listener;
+        return () => undefined;
+      },
+      sendUserMessage,
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: 'current-book',
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [],
+      renderUrlFor: () => '',
+      onApprovedProposal: () => undefined,
+    });
+
+    try {
+      const sending = controller.send?.('hello now');
+      expect(controller.state().timeline).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'message', role: 'reader', text: 'hello now' }),
+      ]));
+      await Promise.resolve();
+      expect(sendUserMessage).toHaveBeenCalledWith('hello now', expect.objectContaining({
+        userMessageId: expect.stringMatching(/^msg-local-/),
+      }));
+
+      eventListener?.({
+        type: 'tool.started',
+        id: 'event-finish',
+        runId: state.identity.runId,
+        sequence: 1,
+        occurredAt: NOW,
+        toolCallId: 'finish-call',
+        toolName: 'finish_conversation',
+        summary: 'answered in chat',
+      });
+      expect(controller.state().timeline.some(
+        (item) => item.kind === 'tool' && item.name === 'finish_conversation',
+      )).toBe(false);
+      release();
+      await sending;
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('collects all requirement choices before one resume and supports defaults for all remaining', async () => {
     const state = {
       ...createInitialAgentState({
@@ -579,7 +645,7 @@ describe('AI panel queued-source handoff', () => {
       await controller.send?.('Please continue with a gentler visual style.');
       expect(sendUserMessage).toHaveBeenCalledWith(
         'Please continue with a gentler visual style.',
-        { preserveAllSourceInformation: false },
+        expect.objectContaining({ preserveAllSourceInformation: false }),
       );
 
       controller.retry?.();
@@ -742,9 +808,9 @@ describe('AI panel queued-source handoff', () => {
       await Promise.all([first, second]);
       expect(registerAttachments).toHaveBeenCalledTimes(2);
       expect(sendUserMessage).toHaveBeenCalledTimes(1);
-      expect(sendUserMessage).toHaveBeenCalledWith('first', {
+      expect(sendUserMessage).toHaveBeenCalledWith('first', expect.objectContaining({
         preserveAllSourceInformation: false,
-      });
+      }));
     } finally {
       controller.dispose();
     }

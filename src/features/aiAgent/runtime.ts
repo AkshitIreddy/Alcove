@@ -40,6 +40,8 @@ export interface StartAgentTaskInput {
   readonly attachments?: readonly SourceAttachmentRef[];
   readonly insertionTarget?: NotebookInsertionTarget;
   readonly budget?: Partial<AgentToolBudget>;
+  /** Optional UI-issued id so the optimistic reader message reconciles exactly. */
+  readonly userMessageId?: string;
 }
 
 export interface AgentRuntimeSnapshot {
@@ -225,7 +227,7 @@ export class AgentRuntime {
       preserveAllSourceInformation: input.preserveAllSourceInformation,
       budget: input.budget,
       now,
-      userMessageId: this.adapters.ids.create('msg'),
+      userMessageId: input.userMessageId ?? this.adapters.ids.create('msg'),
     });
     initial = {
       ...initial,
@@ -704,6 +706,8 @@ export class AgentRuntime {
     options: {
       readonly preserveAllSourceInformation?: boolean;
       readonly obfuscatePrivateText?: boolean;
+      /** Optional UI-issued id so the optimistic reader message reconciles exactly. */
+      readonly userMessageId?: string;
     } = {},
   ): Promise<AgentRunResult> {
     const active = this.requireActive();
@@ -781,7 +785,7 @@ export class AgentRuntime {
     }
     const now = this.adapters.clock.now();
     const message = {
-      id: this.adapters.ids.create('msg'),
+      id: options.userMessageId ?? this.adapters.ids.create('msg'),
       role: 'user' as const,
       text: trimmed,
       createdAt: now,

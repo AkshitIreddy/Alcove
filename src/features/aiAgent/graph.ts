@@ -124,6 +124,29 @@ const NOTEBOOK_MUTATION_REQUEST = new RegExp(
   'iu',
 );
 
+const SIMPLE_GREETING = /^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))[\s!,.?]*$/iu;
+
+function localGreetingCompletion(state: AgentState): AgentModelToolCall | undefined {
+  if (
+    state.draft !== undefined ||
+    state.insertionTarget !== undefined ||
+    state.previewGeneration !== undefined ||
+    (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
+  ) return undefined;
+  const latestReaderText = [...state.conversation]
+    .reverse()
+    .find((message) => message.role === 'user')?.text.trim() ?? '';
+  if (!SIMPLE_GREETING.test(latestReaderText)) return undefined;
+  return {
+    id: `conversation-greeting-${state.identity.runId}-${state.checkpointStep + 1}`,
+    name: 'finish_conversation',
+    arguments: {
+      answer: 'Hi! What would you like to explore, explain, or add to this notebook?',
+      citedUnitIds: [],
+    },
+  };
+}
+
 function proseOnlyConversationFallback(
   state: AgentState,
   turn: CollectedProviderTurn,
@@ -291,9 +314,36 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       throw new Error('superseded agent run');
     }
 
-    // This is the final no-network boundary even when a custom runtime invokes
-    // the graph without going through AgentRuntime.restore().
+    // This is the final boundary even when a custom runtime invokes the graph
+    // without going through AgentRuntime.restore(). Local greeting completion
+    // must not bypass receipt-integrity checks either.
     assertAgentTextPrivacyReceipt(state.textPrivacy);
+
+    // Greetings should feel instant and must not fail merely because Command
+    // A+ chose an empty prose turn instead of the optional completion tool.
+    // This narrow local response has no notebook or source authority.
+    const greetingCall = localGreetingCompletion(state);
+    if (greetingCall !== undefined) {
+      const now = dependencies.adapters.clock.now();
+      const assistantTurn: AgentModelAssistantTurn = {
+        id: dependencies.adapters.ids.create('model'),
+        role: 'assistant',
+        content: '',
+        toolCalls: [greetingCall],
+        createdAt: now,
+      };
+      const next: AgentState = {
+        ...state,
+        modelHistory: [...state.modelHistory, assistantTurn],
+        pendingToolCalls: [greetingCall],
+        lastError: undefined,
+        checkpointStep: state.checkpointStep + 1,
+        updatedAt: now,
+      };
+      await saveCurrentTask(next, dependencies);
+      return { agent: next };
+    }
+
     let providerState = state;
     let promptState = state;
     let providerMessages = modelHistoryToProviderMessages(state.modelHistory);
@@ -350,17 +400,47 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
     }
 
     try {
-      const { turn, retries } = await invokeProviderWithRetry(
+      const firstInvocation = await invokeProviderWithRetry(
         providerState,
         request,
         dependencies,
       );
-      const fallbackCall = turn.toolCalls.length === 0
+      let turn = firstInvocation.turn;
+      let retries = firstInvocation.retries;
+      let providerCalls = 1;
+      let inputTokens = turn.inputTokens;
+      let outputTokens = turn.outputTokens;
+      let fallbackCall = turn.toolCalls.length === 0
         ? proseOnlyConversationFallback(providerState, turn)
         : undefined;
-      const toolCalls = fallbackCall === undefined
+      let toolCalls = fallbackCall === undefined
         ? turn.toolCalls
         : [fallbackCall];
+      if (
+        toolCalls.length === 0 &&
+        turn.publicText.trim() === '' &&
+        turn.finishReason === 'stop' &&
+        providerState.usage.providerCalls + providerCalls < providerState.budget.maxProviderCalls
+      ) {
+        const repaired = await invokeProviderWithRetry(
+          providerState,
+          {
+            ...request,
+            requestId: dependencies.adapters.ids.create('provider'),
+            systemPrompt: `${request.systemPrompt}\n\nYour previous turn ended without visible prose or a tool call. Complete this turn now: use finish_conversation with a complete answer for conversation-only intent, or choose the next valid work tool for notebook intent.`,
+          },
+          dependencies,
+        );
+        turn = repaired.turn;
+        retries += repaired.retries;
+        providerCalls += 1;
+        inputTokens += turn.inputTokens;
+        outputTokens += turn.outputTokens;
+        fallbackCall = turn.toolCalls.length === 0
+          ? proseOnlyConversationFallback(providerState, turn)
+          : undefined;
+        toolCalls = fallbackCall === undefined ? turn.toolCalls : [fallbackCall];
+      }
       if (toolCalls.length === 0) {
         throw new AgentProviderError({
           code: 'invalid_response',
@@ -414,10 +494,10 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         pendingToolCalls: toolCalls,
         usage: {
           ...providerState.usage,
-          providerCalls: providerState.usage.providerCalls + 1,
+          providerCalls: providerState.usage.providerCalls + providerCalls,
           providerRetries: providerState.usage.providerRetries + retries,
-          inputTokens: providerState.usage.inputTokens + turn.inputTokens,
-          outputTokens: providerState.usage.outputTokens + turn.outputTokens,
+          inputTokens: providerState.usage.inputTokens + inputTokens,
+          outputTokens: providerState.usage.outputTokens + outputTokens,
         },
         retry: { attempt: 0 },
         lastError: undefined,

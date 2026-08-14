@@ -301,6 +301,73 @@ function fakeAdapters(manifest: SourceManifest = manifestWithUnits(0)): {
 }
 
 describe('Alcove autonomous notebook agent runtime', () => {
+  it('answers a simple greeting locally instead of failing on an empty provider turn', async () => {
+    const provider = new ScriptedProvider([]);
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const result = await runtime.start({
+      taskId: 'task-local-greeting',
+      threadId: 'thread-local-greeting',
+      runId: 'run-local-greeting',
+      bookId: 'book-1',
+      goal: 'hi',
+    });
+
+    expect(provider.requests).toHaveLength(0);
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.conversation.at(-1)).toMatchObject({
+      role: 'assistant',
+      text: expect.stringMatching(/^Hi!/),
+    });
+  });
+
+  it('repairs one empty provider turn before pausing an ordinary conversation', async () => {
+    let calls = 0;
+    const provider: AgentProvider = {
+      id: 'empty-then-answer',
+      capabilities: async () => ({
+        providerId: 'empty-then-answer',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: true,
+      }),
+      async *streamTurn() {
+        calls += 1;
+        if (calls === 1) {
+          yield { type: 'usage', inputTokens: 30, outputTokens: 1 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        yield {
+          type: 'tool_call',
+          id: 'finish-after-empty',
+          name: 'finish_conversation',
+          arguments: { answer: 'Mathematics studies patterns, quantities, structures, and change.', citedUnitIds: [] },
+        };
+        yield { type: 'usage', inputTokens: 35, outputTokens: 12 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const result = await runtime.start({
+      taskId: 'task-empty-provider-repair',
+      threadId: 'thread-empty-provider-repair',
+      runId: 'run-empty-provider-repair',
+      bookId: 'book-1',
+      goal: 'What is mathematics?',
+    });
+
+    expect(calls).toBe(2);
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.usage).toMatchObject({ providerCalls: 2, inputTokens: 65, outputTokens: 13 });
+    expect(result.state.conversation.at(-1)?.text).toMatch(/patterns, quantities/i);
+  });
+
   it('submits every requirements choice together and accepts defaults only where declared', async () => {
     const provider = new ScriptedProvider([
       {

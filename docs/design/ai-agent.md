@@ -204,6 +204,30 @@ is checkpointed with its public prose, provider-authored `toolPlan`, exact call
 ids/names/arguments and pending call queue **before** the first tool runs. Tool
 results retain the originating `toolCallId`.
 
+Checkpoint history and provider context are deliberately different views.
+`AgentState.modelHistory` remains a complete durable forensic/restart record;
+no compaction mutates it. `modelHistoryToProviderProjection` creates an
+ephemeral transport view only after it can find a successful
+`submit_notebook_script` receipt matching the current durable draft. It retains
+all reader/assistant conversation, notebook/source reads, exact tool pairing
+and one byte-for-byte complete current script. Superseded and unchanged draft
+arguments become schema-shaped hash/length receipts, and obsolete
+draft-validation/render/review results become bounded scalar/digest receipts.
+Without a matching receipt it sends the full history. This fail-open rule is
+what keeps context reduction from becoming a new source of draft authority.
+Legacy history is sanitized separately: canonical Notebook Script authority is
+discovered from both the current manifest and historical manifest results, and
+old canonical list/read payloads become paired redaction receipts before
+transport. A legacy manifest that still contains that authority must be
+refreshed before any other source tool is advertised.
+
+`inspect_notebook` is compact at creation rather than repaired later in
+history. The durable state receives the complete snapshot with ordered page ids
+and page revisions. The provider receives a routing manifest containing title,
+page count, book revision, capture time and page id/ordinal/optional title/token
+estimate rows—never the duplicate snapshot and per-page revision fields. Exact
+page content remains an explicit `inspect_page`/`inspect_page_range` read.
+
 Parallel tool calls belong to that one assistant turn. Cohere must see a result
 for every retained call as one contiguous group before the next model turn. An
 interrupting call is different: its siblings were authored without the future
@@ -211,6 +235,28 @@ reader answer, so the runtime discards them and trims the stored assistant call
 list at the interrupt. Resume supplies exactly one result to exactly that call
 and then returns to the model. This prevents both an invalid partial result set
 and stale work executing after a human decision.
+
+The tool node also owns a reader-turn no-progress watchdog. Starting after the
+current `budgetWindow.readerMessageId`, it compares semantic call signatures
+against blocked calls across intervening no-op/error calls while a material
+state fingerprint remains unchanged. Notebook submission signatures normalize
+line endings, trailing horizontal whitespace and blank-line runs in ordinary
+Notebook Script markup as well as sorted unique citations, and ignore
+explanatory `reason` wording. Fenced code/diagram regions remain byte-opaque so
+a real verbatim-body repair cannot be mistaken for whitespace churn; multiline
+`$$` LaTeX regions have the same byte-opaque rule. This is a watchdog-only
+normalization: the byte-exact Script stored, hashed, rendered and reviewed
+remains unchanged.
+The material fingerprint advances for real notebook/source observations,
+source coverage, draft/validation/render state and exact preview-image exposure.
+A first replay becomes a checkpointed, paired `no_progress_warning` result and
+does not execute. Repeating it after that warning clears pending calls and
+fails with `agent_stalled` instead of circling through the 24-call budget.
+Different tool names or syntactically varied invalid arguments cannot evade the
+guard: three consecutive results with the same material fingerprint produce a
+phase-level warning, and one more unchanged phase stalls safely.
+Changed material, a materially changed script/citation set, or the same action
+in a later reader turn fails open to normal execution.
 
 ### Tool schemas and capabilities
 
@@ -234,10 +280,66 @@ generation ownership and policy. The catalog exposes:
 - one high-value question/blocker interrupt, conversation-only completion, and
   final proposal/preview submission.
 
+That list is the superset, not the request sent on every turn.
+`availableAgentToolNames` is a deterministic phase gate over current reader
+intent and durable state. Conversation excludes notebook drafting/proposal;
+notebook mutation excludes `finish_conversation`; stale/missing grounded sources
+open only the relevant source capabilities; and the draft pipeline narrows from
+inspect/placement to submit, validate, render, pixel read, visual review,
+proposal and final preview submission. Repair submission reappears only for a
+changed source manifest, invalid validation, unresolved blocking visual finding
+or pending explicit reader feedback. A fully inspected generation that still
+has an invalid parser/layout receipt also returns to script repair even if its
+human-style visual findings are empty. Image-slot permission revocation and a
+failed local private-text restore are durable repair phases; citation-only
+resubmission cannot clear a private-layout failure.
+
+Preserve-all tasks finish required source reads before drafting. If extracted
+PDF text is available but the required composed-page pixels are not, each unit
+is recorded as attempted and the phase narrows to one reader blocker question;
+re-reading the same impossible unit cannot spend the call budget. Every
+grounded draft stamps the exact reader-evidence
+unit set available at authorship; if coverage later advances, both catalogue and
+hard proposal policy require a materially revised or re-cited submission. The
+same old script/citations cannot merely stamp the newer read set. The system
+prompt names the derived
+`nextRequiredAction`, while `descriptorsForState` sends only the phase-valid
+strict schemas. Most importantly, `AgentToolCatalog.execute` derives the set
+again against current state before parsing/executing a call, so stale queued
+calls and provider-invented transitions fail even if they once appeared in a
+prompt.
+
+Fresh settled reader turns clear the previous notebook snapshot, disposable
+draft pipeline and prior-turn citations. Cached source read receipts may remain
+for a genuine grounded follow-up, but an unrelated chat/edit does not call
+manifest, Embed, Search or Rerank merely because an older attachment exists.
+The next notebook edit inspects the live book once before drafting, while an
+explicit current-page/default insertion target supplied by the UI is retained.
+
 There is no arbitrary HTTP request, shell, filesystem path, SQL statement or
 editor transaction. Source reads receive a task/manifest-digest capability from
 trusted state; render reads require current generation and page ids; proposal
 and idempotency identities are derived locally from current hashes.
+
+The healthy source-free, no-repair preview path is explicitly bounded and
+tested at most nine provider decisions. A targetless request uses:
+
+1. inspect the notebook;
+2. choose insertion;
+3. submit one complete draft;
+4. validate;
+5. render;
+6. load the current page images;
+7. record visual review;
+8. prepare the immutable patch proposal;
+9. submit it to the final-preview interrupt.
+
+The production panel normally supplies the focused/current-page default target,
+so its corresponding path skips step 2 and reaches preview in eight provider
+turns. The reader's Insert decision and revision-checked apply remain outside
+those model turns. Grounded source reads, additional image batches, genuine
+repairs and explicit portable-image prompt handoff add bounded work rather than
+being hidden inside this baseline.
 
 ### Provider protocol
 
@@ -245,6 +347,15 @@ and idempotency identities are derived locally from current hashes.
 complete typed tool calls, citation ids, usage and finish. It deliberately has
 no credential or hidden-thinking event. `cohereProvider.ts` maps that boundary
 to Cohere V2 while preserving assistant tool plans and exact call continuity.
+
+The current Cohere adapter makes reasoning adaptive to the phase-gated request.
+If the request contains exactly one deterministic routing tool—
+`validate_notebook_script`, `render_draft_preview`, `propose_notebook_patch` or
+`submit_notebook_patch`—it disables thinking and caps output at 2,048 tokens.
+Composition, source choice, conversation and page-image judgment retain enabled
+thinking with an 8,000-token budget and the normal output allowance. This
+optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
+durable state still expose no reasoning channel.
 
 Images are observations for one turn, not durable repeated history. The adapter
 reattaches pixels only from the trailing unanswered tool-result group, after the
@@ -284,7 +395,10 @@ The reader chooses scope, not an implementation technique. The agent decides
 whether a source belongs directly in context, needs local search plus rerank,
 or needs complete traversal. An explicit instruction such as “do not lose any
 information” requires a source-unit coverage ledger; top-k retrieval cannot
-silently stand in for reading the whole source.
+silently stand in for reading the whole source. Preserve-all source work is an
+exclusive pre-draft phase, and the draft's read-set receipt prevents pages
+authored from partial evidence from becoming approvable merely because later
+reads completed the ledger.
 
 PDFs are extracted locally with stable page anchors. Alcove can expose only
 byte-valid embedded JPEG figures as managed supporting evidence; those objects
@@ -390,7 +504,15 @@ ordinal/character/page/figure anchors. Conservative prompt-injection detectors
 annotate suspicious text, but the security property does not depend on matching
 a phrase: every non-canonical attachment is always `untrusted_evidence` with
 `instructionPolicy: never_execute`. The generated Notebook Script specification
-is the only `canonical_authority` source.
+is retained locally as `canonical_authority`, but is deliberately filtered from
+the provider-facing task manifest and manifest capability. It is not an
+attachment, cannot enter the normal direct-read/search/embed/rerank path, never
+satisfies or expands reader-source coverage, and is rejected as a citation.
+Coverage creation/read/refresh sanitizes spec units from legacy ledgers, while
+complete coverage still requires every unit of an attached PDF or other reader
+source. Notebook Script syntax reaches the model through the compact authoring
+contract in the system prompt and is enforced by the parser/validator, not by
+pretending the specification is reader evidence.
 
 Lexical search is local. Embed v4 and Rerank v4 are optional provider-derived
 ordering aids and are re-authorized immediately before each call; a veiled task
@@ -585,6 +707,17 @@ selection replacement, recompute the immutable selection digest. They install
 the exact reviewed target document; there is no post-approval merge that could
 repaginate into unseen pages. Structural targets insert the receipt docs in the
 reviewed order.
+
+Freshness failures discovered while preparing or approving the terminal
+proposal are recoverable phases, not permission to repeat the same terminal
+call. Notebook revision/order drift disposes owned generations, clears the old
+snapshot and exposes only `inspect_notebook`; grounded source drift marks the
+reader sources stale and exposes only `list_source_manifest`. Source freshness
+is checked only when the current turn/draft actually uses source authority, so
+an unused old attachment cannot invalidate an unrelated edit. A Text Veil
+restore whose exact private values fail parser/layout safety records a durable
+`proposalRecovery` receipt and exposes only a materially changed Script repair;
+the marker survives the provider checkpoint that clears transient errors.
 
 An approved apply failure has a separate bounded recovery lane. **Refresh
 preview** retains the failed proposal's exact script and placement, inspects the

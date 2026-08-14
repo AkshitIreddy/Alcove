@@ -177,21 +177,40 @@ for the current working tree rather than relying on the long development chat.
       question when material information is genuinely missing. The next model
       turn interprets the free-text answer and chooses the appropriate typed
       tools itself.
-- [x] Keep tool autonomy capability-based: the model may inspect, plan, read,
-      draft, validate, render, review and propose in useful orders; Alcove
-      enforces prerequisites, source/revision authority, bounded retries and
-      explicit final approval rather than steering through an invisible wizard.
+- [x] Keep semantic choices model-owned while making deterministic workflow
+      phases explicit: Alcove exposes only the tools that can make material
+      progress from the current receipt, rejects hidden-tool drift, and keeps
+      source/revision authority plus final approval outside model discretion.
 - [x] Regress the copied 2026-08-14 trace: `hi` → explain a topic → `add to
       book` → clarification answer must reach a reviewed insertion proposal
       without duplicate questions, repeated no-op plans, a copied Script
       handoff, or a chat-only completion.
+- [x] Bound provider cost and repair churn: compact provider-only history while
+      retaining the full durable audit trail, keep notebook revisions local,
+      reject unchanged Script resubmissions, stop repeated no-progress calls,
+      and use the full Cohere reasoning budget only for composition, source
+      selection, conversation and visual judgment. The deterministic healthy
+      targetless insertion path reaches immutable preview in nine model turns
+      while the production panel's existing default target makes its path eight;
+      the exact supplied no-op loop stops at seven instead of exhausting all
+      twenty-four, and alternating blocked/no-op tools cannot evade the
+      reader-turn watchdog.
 
 Completed with per-reader-turn intent and budgets, durable natural questions,
 exact reply identity, semantic repeat-question and no-progress guards, and
 capability-based typed tools behind the existing immutable-preview approval
 boundary. Focused adversarial tests and the live `?fx=force` panel probe cover
 the copied trace, later unrelated chat turns, failure recovery and a deliberately
-reintroduced retired question form.
+reintroduced retired question form. After two earlier green repetitions, the
+final frozen-source Playwright gate ran all four runtime scenarios at 1500×940,
+1360×850 and 1200×800: 12/12 normal contexts reached the exact 9-turn
+targetless, 8-turn production-default,
+7-provider/5-accepted-call watchdog and 10-turn Preserve All outcomes. A further
+3/3 sabotage matrix rejected an intentionally premature draft and recovered in
+the exact ten-step source workflow (`GATE ALIVE`). Across the final 15 contexts
+there were zero repairs, retrieval/Cohere/network/browser errors, stale activity
+bars, conflicts, overflow or book mutations; every one of the 27 final
+panel/error/modal captures was inspected at original size.
 
 **Status — 2026-08-12:** the provider-neutral LangGraph runtime, secure Rust
 Cohere gateway, production notebook/source adapters, real PageEditor preview

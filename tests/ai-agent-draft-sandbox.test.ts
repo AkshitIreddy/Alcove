@@ -363,6 +363,9 @@ describe('production AI draft sandbox', () => {
     expect(generation.layoutValid).toBe(true);
     expect(generation.pages[0]?.width).toBe(1240);
     expect(sandbox.renderUrlFor(generation.pages[0]!.image)).toMatch(/^(?:blob:|data:image\/png)/);
+    const providerAsset = await sandbox.readAsset(generation.pages[0]!.image.resourceId);
+    expect(providerAsset.bytes).toEqual([1, 9]);
+    expect(providerAsset.metadata.sha256).toBe(generation.pages[0]!.image.digest);
   });
 
   it('blocks broken containers and empty explicit boundaries before layout', async () => {

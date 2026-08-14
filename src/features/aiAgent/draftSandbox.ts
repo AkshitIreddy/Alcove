@@ -169,6 +169,8 @@ export interface ProductionDraftSandboxOptions {
 
 export interface ProductionDraftSandbox {
   readonly adapter: DraftSandboxAdapter;
+  /** Exact private render bytes used by the provider on the next review turn. */
+  readAsset(resourceId: string): Promise<AiAttachmentData>;
   /** Synchronous lookup used by the panel after render/getGeneration hydrates it. */
   renderUrlFor(image: AgentImageRef): string;
   /** Revoke process-local object URLs while retaining resumable durable previews. */
@@ -1299,6 +1301,7 @@ export function createProductionDraftSandbox(
 
   return {
     adapter,
+    readAsset: (resourceId) => assets.read(resourceId),
     renderUrlFor(image) {
       return urls.get(image.resourceId) ?? '';
     },

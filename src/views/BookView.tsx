@@ -238,6 +238,7 @@ import {
   CohereTauriAgentProvider,
   createAiAgentController,
   installAiAgentController,
+  prepareBoundedProviderImage,
   randomAgentIds,
   systemAgentClock,
   webCryptoAgentHash,
@@ -3618,7 +3619,15 @@ export default function BookView(): JSX.Element {
     const previewSandbox = createProductionDraftSandbox();
     const persistence = new SqliteAgentPersistence();
     const runtime = new AgentRuntime(
-      new CohereTauriAgentProvider(providerPrivacyReady),
+      new CohereTauriAgentProvider(providerPrivacyReady, {
+        prepareImage: (part, signal) => prepareBoundedProviderImage(
+          part,
+          signal,
+          (resourceId) => previewSandbox.readAsset(resourceId).catch(
+            () => readAiAttachment(resourceId),
+          ),
+        ),
+      }),
       {
         notebook,
         ...sourceAdapters,

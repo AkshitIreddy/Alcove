@@ -844,6 +844,110 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   gap: 2px;
 }
 
+.nb-toc-search-head {
+  margin: calc(-1 * var(--space-12)) 0 var(--space-8);
+  padding: var(--space-12) 0 var(--space-8);
+  border-bottom: 1.5px dashed var(--paper-edge);
+}
+
+.nb-toc-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nb-toc-search > svg {
+  position: absolute;
+  left: 9px;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--ink-sepia-soft);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transform: rotate(-2deg);
+}
+
+.nb-toc-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 36px 6px 33px;
+  color: var(--ink-sepia);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 11px 15px 12px 14px / 13px 11px 15px 12px;
+  outline: none;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    box-shadow var(--dur-xs) var(--ease-out);
+}
+
+.nb-toc-search input::placeholder {
+  color: var(--ink-graphite-soft);
+  opacity: 0.75;
+}
+
+.nb-toc-search input:focus-visible {
+  background: var(--paper-cream);
+  box-shadow: 0 0 0 2px var(--wash-amber);
+}
+
+/* Chromium draws its own × for search inputs. Alcove's uneven ink × is the
+   one visible clear affordance, so there cannot be two competing at the end. */
+.nb-toc-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.nb-toc-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 27px;
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-graphite-soft);
+  border-radius: 9px 12px 10px 11px;
+}
+
+.nb-toc-search-clear:hover,
+.nb-toc-search-clear:focus-visible {
+  color: var(--ink-sepia);
+  background: var(--wash-blush-light);
+}
+
+.nb-toc-search-clear svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.nb-toc-search-meta {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 3px 2px 0;
+  color: var(--ink-graphite-soft);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
+}
+
+.nb-toc-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .nb-toc-row {
   display: flex;
   align-items: baseline;
@@ -899,6 +1003,43 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
 .nb-toc-page {
   flex: 0 0 auto;
   color: var(--ink-graphite-soft);
+}
+
+.nb-toc-empty {
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: var(--space-20) var(--space-12);
+  text-align: center;
+  color: var(--ink-graphite-soft);
+}
+
+.nb-toc-empty svg {
+  width: 43px;
+  height: 43px;
+  margin-bottom: 3px;
+  fill: var(--wash-amber-light);
+  stroke: var(--ink-sepia-soft);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(-2deg);
+}
+
+.nb-toc-empty strong {
+  color: var(--ink-sepia-soft);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.nb-toc-empty span {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  letter-spacing: var(--tracking-ui);
 }
 
 /* ----------------------------- history panel -------------------------------

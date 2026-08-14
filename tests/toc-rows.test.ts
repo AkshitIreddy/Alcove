@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Page, PageDoc } from '../src/data/types';
 import {
   buildTocRows,
+  filterTocRows,
+  normalizeTocSearch,
   pageHasVisibleContent,
 } from '../src/views/toc';
 
@@ -69,5 +71,47 @@ describe('table-of-contents presentation rows', () => {
     expect(
       pageHasVisibleContent(doc({ type: 'image', attrs: { src: 'x.png' } })),
     ).toBe(true);
+  });
+
+  it('searches headings without case or accent sensitivity and keeps book order', () => {
+    const rows = buildTocRows([
+      page(0, doc(heading('Résumé of naïve Bayes'), paragraph('Opening.'))),
+      page(1, doc(heading('Probability Review'))),
+      page(2, doc(heading('Bayesian Résumé'))),
+    ]);
+
+    expect(normalizeTocSearch('  RÉSUMÉ—Naïve  ')).toBe('resume naive');
+    expect(filterTocRows(rows, 'resume')).toEqual([rows[0], rows[2]]);
+    expect(filterTocRows(rows, 'NAIVE bayes')).toEqual([rows[0]]);
+  });
+
+  it('finds page aliases and requires every query word to match one row', () => {
+    const rows = buildTocRows([
+      page(0, doc(heading('Opening'))),
+      page(1, doc(heading('Worked example'))),
+      page(2, doc(heading('Closing notes'))),
+    ]);
+
+    expect(filterTocRows(rows, 'page 2')).toEqual([rows[1]]);
+    expect(filterTocRows(rows, 'p.3')).toEqual([rows[2]]);
+    expect(filterTocRows(rows, 'worked 2')).toEqual([rows[1]]);
+    expect(filterTocRows(rows, 'worked 3')).toEqual([]);
+    expect(filterTocRows(rows, '   ')).toEqual(rows);
+  });
+
+  it('matches numeric page aliases exactly in books with double-digit pages', () => {
+    const rows = buildTocRows(Array.from({ length: 22 }, (_, slot) =>
+      page(slot, doc(heading(
+        slot === 21 ? 'Appendix 2' : `Section ${String.fromCharCode(65 + slot)}`,
+      ))),
+    ));
+
+    expect(filterTocRows(rows, 'page 2')).toEqual([rows[1]]);
+    expect(filterTocRows(rows, 'p.2')).toEqual([rows[1]]);
+    // The exact alias reaches page 2; a numeral genuinely present in a title
+    // remains an ordinary text match rather than being hidden by alias logic.
+    expect(filterTocRows(rows, '2')).toEqual([rows[1], rows[21]]);
+    expect(filterTocRows(rows, 'section b 2')).toEqual([rows[1]]);
+    expect(filterTocRows(rows, 'section l 2')).toEqual([]);
   });
 });

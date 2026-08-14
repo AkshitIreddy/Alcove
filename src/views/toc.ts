@@ -21,6 +21,60 @@ export interface TocRow {
   readonly isPageRow: boolean;
 }
 
+/**
+ * Search spelling belongs here, beside the rows it searches, rather than in
+ * the panel. NFKD separates a reader-facing letter from its accent and the
+ * Unicode Mark class removes only that accent; words in non-Latin scripts are
+ * left intact. Punctuation becomes a word boundary, so `p.12`, `page 12` and
+ * a pasted heading with a curly dash all behave like ordinary search words.
+ */
+export function normalizeTocSearch(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{Mark}+/gu, '')
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .trim();
+}
+
+/**
+ * Preserve book order while matching every word in the query. Alongside the
+ * visible row copy, each entry owns friendly page aliases: searching for
+ * `page 7`, `p.7`, or simply `7` can all reach the seventh leaf even when its
+ * heading does not contain a number.
+ */
+export function filterTocRows(
+  rows: readonly TocRow[],
+  query: string,
+): TocRow[] {
+  const normalizedQuery = normalizeTocSearch(query);
+  const words = normalizedQuery.split(' ').filter(Boolean);
+  if (words.length === 0) return [...rows];
+
+  // A query made entirely from one page alias has exact numeric semantics.
+  // Treating the alias as part of one concatenated haystack made `page 2`
+  // match `page 12`, `page 20`, and so on because every word was tested as a
+  // substring. A heading can still match the same words normally; the exact
+  // rule applies only to the synthetic page-number alias.
+  const exactPageAlias = normalizedQuery.match(/^(?:(?:page|p)\s+)?(\d+)$/u);
+
+  return rows.filter((row) => {
+    const page = row.slot + 1;
+    const title = normalizeTocSearch(row.text);
+    const titleMatches = words.every((word) => title.includes(word));
+    if (exactPageAlias !== null) {
+      return page === Number(exactPageAlias[1]) || title.includes(normalizedQuery);
+    }
+    if (titleMatches) return true;
+
+    // Page aliases remain composable with title words (`worked 2`,
+    // `appendix page 7`), but their tokens are exact. Ordinary title words
+    // retain the forgiving substring behavior used before this fix.
+    const aliasWords = new Set(['page', 'p', String(page)]);
+    return words.every((word) => title.includes(word) || aliasWords.has(word));
+  });
+}
+
 const textOf = (node: { content?: unknown }): string =>
   Array.isArray(node.content)
     ? node.content

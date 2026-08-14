@@ -23,7 +23,12 @@ import {
   type AgentRunResult,
   type AgentState,
   type AgentToolBudget,
+  type DraftPreviewGeneration,
+  type DraftVisualReviewLedger,
+  type NotebookDraft,
   type NotebookInsertionTarget,
+  type NotebookPatchProposal,
+  type UserPreviewContract,
 } from './types';
 
 export interface StartAgentTaskInput {
@@ -163,6 +168,222 @@ function insertionTargetPageId(
   return target.kind === 'new_pages' ? target.afterPageId : undefined;
 }
 
+function recoveredPreviewInterrupt(state: AgentState): AgentInterrupt | null {
+  const recovery = state.applyRecovery;
+  const proposal = state.patchProposal;
+  if (
+    recovery === undefined ||
+    proposal === undefined ||
+    proposal.status !== 'waiting_for_approval' ||
+    proposal.patchId !== recovery.refreshedPatchId ||
+    proposal.preview.previewId !== recovery.refreshedPreviewId
+  ) {
+    return null;
+  }
+  return {
+    kind: 'final_preview',
+    title: 'Review the refreshed notebook draft',
+    preview: proposal.preview,
+    decisions: ['approve', 'reject', 'feedback', 'change_location'],
+  };
+}
+
+function sameReviewedPixels(
+  previous: UserPreviewContract,
+  generation: DraftPreviewGeneration,
+): boolean {
+  if (
+    !previous.visualReview.complete ||
+    !previous.visualReview.passed ||
+    previous.pages.length !== generation.pages.length ||
+    previous.expectedPageCount !== generation.pageCount ||
+    new Set(previous.pages.map((page) => page.pageId)).size !== previous.pages.length ||
+    new Set(generation.pages.map((page) => page.pageId)).size !== generation.pages.length
+  ) {
+    return false;
+  }
+  return generation.pages.every((page, index) => {
+    const earlier = previous.pages[index];
+    return earlier !== undefined &&
+      earlier.pageNumber === page.pageNumber &&
+      earlier.width === page.width &&
+      earlier.height === page.height &&
+      earlier.image.digest === page.image.digest &&
+      earlier.textDigest === page.textDigest &&
+      earlier.layoutDigest === page.layoutDigest &&
+      earlier.paginationSpill === page.paginationSpill &&
+      earlier.residualOverflow === page.residualOverflow;
+  });
+}
+
+function assertCompleteReviewOfGeneration(
+  review: DraftVisualReviewLedger,
+  generation: Pick<
+    DraftPreviewGeneration,
+    'generationId' | 'draftHash' | 'pages'
+  >,
+): void {
+  const pageIds = generation.pages.map((page) => page.pageId);
+  const inspected = new Set(review.inspectedPageIds);
+  const exposures = new Map(
+    review.imageExposures.map((exposure) => [exposure.pageId, exposure]),
+  );
+  if (
+    review.generationId !== generation.generationId ||
+    review.draftHash !== generation.draftHash ||
+    !review.complete ||
+    !review.passed ||
+    JSON.stringify(review.requiredPageIds) !== JSON.stringify(pageIds) ||
+    review.inspectedPageIds.length !== pageIds.length ||
+    inspected.size !== pageIds.length ||
+    review.imageExposures.length !== pageIds.length ||
+    exposures.size !== pageIds.length
+  ) {
+    throw new Error(
+      'The prior visual review does not belong to the exact preview generation. Ask the agent to rebuild the draft.',
+    );
+  }
+  for (const page of generation.pages) {
+    const exposure = exposures.get(page.pageId);
+    if (
+      !inspected.has(page.pageId) ||
+      exposure === undefined ||
+      exposure.generationId !== generation.generationId ||
+      exposure.imageResourceId !== page.image.resourceId ||
+      exposure.imageDigest !== page.image.digest ||
+      exposure.layoutDigest !== page.layoutDigest
+    ) {
+      throw new Error(
+        'The prior visual review does not cover every page of the exact preview generation. Ask the agent to rebuild the draft.',
+      );
+    }
+  }
+  if (review.findings.some((finding) =>
+    finding.generationId !== generation.generationId ||
+    !inspected.has(finding.pageId)
+  )) {
+    throw new Error(
+      'The prior visual findings do not belong to the exact preview generation. Ask the agent to rebuild the draft.',
+    );
+  }
+}
+
+/** Carry a passed review only across a byte-identical rerender. */
+function rebaseReviewedPixels(
+  previous: UserPreviewContract,
+  generation: DraftPreviewGeneration,
+  now: string,
+): DraftVisualReviewLedger {
+  if (!sameReviewedPixels(previous, generation)) {
+    throw new Error(
+      'The notebook or fixed page layout changed the reviewed pixels. Ask the agent to rebuild this draft instead of reusing the old approval.',
+    );
+  }
+  assertCompleteReviewOfGeneration(previous.visualReview, {
+    generationId: previous.generationId,
+    draftHash: previous.draftHash,
+    pages: previous.pages,
+  });
+  const pageIdByOldId = new Map(
+    previous.pages.map((page, index) => [page.pageId, generation.pages[index]!.pageId]),
+  );
+  const pageByOldId = new Map(previous.pages.map((page) => [page.pageId, page]));
+  const exposureByOldPageId = new Map(
+    previous.visualReview.imageExposures.map((exposure) => [exposure.pageId, exposure]),
+  );
+  const inspected = new Set(previous.visualReview.inspectedPageIds);
+  const rebasedExposures = previous.pages.map((oldPage, index) => {
+    const exposure = exposureByOldPageId.get(oldPage.pageId);
+    const page = generation.pages[index];
+    if (exposure === undefined || page === undefined || !inspected.has(oldPage.pageId)) {
+      throw new Error(
+        'The prior visual review does not cover every reviewed page. Ask the agent to rebuild the draft.',
+      );
+    }
+    return {
+      ...exposure,
+      generationId: generation.generationId,
+      pageId: page.pageId,
+      imageResourceId: page.image.resourceId,
+      imageDigest: page.image.digest,
+      layoutDigest: page.layoutDigest,
+    };
+  });
+  const findings = previous.visualReview.findings.map((finding) => {
+    const pageId = pageIdByOldId.get(finding.pageId);
+    if (pageId === undefined || !pageByOldId.has(finding.pageId)) {
+      throw new Error(
+        'The prior visual findings no longer map to the refreshed pages. Ask the agent to rebuild the draft.',
+      );
+    }
+    return { ...finding, generationId: generation.generationId, pageId };
+  });
+  return {
+    ...previous.visualReview,
+    generationId: generation.generationId,
+    draftHash: generation.draftHash,
+    requiredPageIds: generation.pages.map((page) => page.pageId),
+    imageExposures: rebasedExposures,
+    inspectedPageIds: generation.pages.map((page) => page.pageId),
+    findings,
+    complete: true,
+    passed: true,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Text Veil deliberately has two generations at the final boundary: the
+ * provider reviewed masked pixels, while the reader previews/applies a local
+ * restored render. In that case the masked review ledger must remain attached
+ * to its masked generation; rebasing it onto private pixels would falsely say
+ * the provider saw those pixels. Every other generation mismatch fails closed.
+ */
+function reviewForRefreshedPixels(
+  previous: UserPreviewContract,
+  generation: DraftPreviewGeneration,
+  state: AgentState,
+  now: string,
+): DraftVisualReviewLedger {
+  if (!sameReviewedPixels(previous, generation)) {
+    throw new Error(
+      'The notebook or fixed page layout changed the reviewed pixels. Ask the agent to rebuild this draft instead of reusing the old approval.',
+    );
+  }
+  if (previous.visualReview.generationId === previous.generationId) {
+    return rebaseReviewedPixels(previous, generation, now);
+  }
+
+  const privacy = state.textPrivacy;
+  const localFinal = state.localRestoredFinal;
+  const maskedDraft = state.draft;
+  const maskedGeneration = state.previewGeneration;
+  const maskedReview = state.visualReview;
+  if (
+    privacy === undefined ||
+    privacy.entries.length === 0 ||
+    localFinal === undefined ||
+    maskedDraft === undefined ||
+    maskedGeneration === undefined ||
+    maskedReview === undefined ||
+    localFinal.previewGeneration.generationId !== previous.generationId ||
+    localFinal.previewGeneration.draftHash !== previous.draftHash ||
+    localFinal.previewGeneration.layoutHash !== previous.layoutHash ||
+    localFinal.draft.draftHash !== previous.draftHash ||
+    localFinal.maskedDraftHash !== maskedDraft.draftHash ||
+    maskedGeneration.generationId !== previous.visualReview.generationId ||
+    maskedReview.generationId !== previous.visualReview.generationId ||
+    JSON.stringify(maskedReview) !== JSON.stringify(previous.visualReview) ||
+    !sameReviewedPixels(previous, localFinal.previewGeneration)
+  ) {
+    throw new Error(
+      'The private-text preview no longer matches its masked visual review. Ask the agent to rebuild the draft.',
+    );
+  }
+  assertCompleteReviewOfGeneration(maskedReview, maskedGeneration);
+  return maskedReview;
+}
+
 const OUT_OF_GRAPH_PATCH_STATUSES = new Set([
   'approved_pending_apply',
   'apply_failed',
@@ -182,6 +403,7 @@ function durableStateDominatesCheckpoint(
   ) {
     return true;
   }
+  if (recoveredPreviewInterrupt(durable) !== null) return true;
   return durable.checkpointStep > checkpoint.checkpointStep;
 }
 
@@ -663,7 +885,10 @@ export class AgentRuntime {
     assertAgentTextPrivacyReceipt(state.textPrivacy);
     const durableSettled = state.lifecycle === 'cancelled' ||
       state.patchProposal?.status === 'applied';
-    const effectiveInterrupt = durableSettled ? null : restoredInterrupt;
+    const localRecoveryInterrupt = recoveredPreviewInterrupt(state);
+    const effectiveInterrupt = durableSettled
+      ? null
+      : localRecoveryInterrupt ?? restoredInterrupt;
     if (effectiveInterrupt === null && durableSettled) {
       state = {
         ...state,
@@ -793,6 +1018,27 @@ export class AgentRuntime {
       });
     }
     if (active.interrupt?.kind === 'final_preview') {
+      const proposal = active.state.patchProposal;
+      const recovery = active.state.applyRecovery;
+      if (
+        proposal?.status === 'waiting_for_approval' &&
+        recovery?.refreshedPatchId === proposal.patchId &&
+        recovery.refreshedPreviewId === active.interrupt.preview.previewId
+      ) {
+        // Feedback on a locally recovered preview starts one clean authoring
+        // turn. Resuming the original graph would send the reply to the stale
+        // proposal that failed before this replacement preview existed.
+        active.interrupt = null;
+        active.state = {
+          ...active.state,
+          lifecycle: 'completed',
+          phase: 'finished',
+          patchProposal: undefined,
+          applyRecovery: undefined,
+          lastError: undefined,
+        };
+        return this.sendUserMessage(trimmed, options);
+      }
       return this.resume({
         kind: 'preview_decision',
         decision: 'feedback',
@@ -935,6 +1181,49 @@ export class AgentRuntime {
   async approvePreview(previewId: string): Promise<AgentRunResult> {
     const active = this.requireActive();
     const proposal = active.state.patchProposal;
+    const recovery = active.state.applyRecovery;
+    if (
+      proposal?.status === 'waiting_for_approval' &&
+      proposal.preview.previewId === previewId &&
+      recovery?.refreshedPatchId === proposal.patchId &&
+      recovery.refreshedPreviewId === previewId
+    ) {
+      // Refresh already rebuilt, validated and matched the exact previously
+      // reviewed pixels locally. This approval is therefore an out-of-graph
+      // product transition just like BookView apply settlement. Resuming the
+      // original LangGraph interrupt would approve its stale patch and append
+      // a synthetic reader message that the reader never typed.
+      const now = this.adapters.clock.now();
+      active.interrupt = null;
+      active.state = {
+        ...active.state,
+        lifecycle: 'waiting_for_preview_decision',
+        phase: 'waiting_for_preview_decision',
+        patchProposal: { ...proposal, status: 'approved_pending_apply' },
+        lastError: undefined,
+        checkpointStep: active.state.checkpointStep + 1,
+        updatedAt: now,
+      };
+      await this.persistence.saveTask(active.state);
+      await active.graph.updateState(active.config, {
+        agent: active.state,
+        pendingInterrupt: null,
+        pendingInterruptCall: null,
+        resumeValue: null,
+      });
+      this.notify();
+      return { state: active.state };
+    }
+    if (
+      proposal !== undefined &&
+      recovery?.refreshedPatchId === proposal.patchId &&
+      recovery.refreshedPreviewId === previewId &&
+      ['approved_pending_apply', 'approved'].includes(proposal.status)
+    ) {
+      // Rapid/double approval is idempotent while BookView owns the one apply
+      // transaction, and never manufactures a second decision bubble.
+      return { state: active.state };
+    }
     if (
       proposal?.preview.previewId === previewId &&
       ['approved_pending_apply', 'apply_failed', 'approved'].includes(proposal.status)
@@ -964,15 +1253,11 @@ export class AgentRuntime {
   }
 
   /**
-   * Recover from a BookView apply conflict through workflow state, not chat.
-   *
-   * The old path called sendUserMessage("Refresh the final preview..."). That
-   * made a local recovery button look like a new reader request, discarded the
-   * failed proposal without invalidating its render, and allowed the provider
-   * to finish conversationally without ever producing another approvable
-   * patch. Keep the original reader-turn anchor instead, refresh the notebook
-   * snapshot locally, destroy every render derived from the old revision, and
-   * give the model one private recovery observation before it resumes tools.
+   * Recover from a BookView apply conflict as one local transaction, not chat.
+   * The approved script and target stay locked; native validation/rendering
+   * run once, and the prior passed review may be rebased only when every page's
+   * pixels and layout identity are unchanged. No provider/tool budget exists
+   * in this path, so placement or draft churn is impossible by construction.
    */
   async refreshFailedPreview(): Promise<AgentRunResult> {
     const active = this.requireActive();
@@ -984,80 +1269,302 @@ export class AgentRuntime {
       throw new Error('there is no failed preview application to refresh');
     }
 
-    active.abort = new AbortController();
+    const failedState = active.state;
+    const refreshAbort = new AbortController();
+    active.abort = refreshAbort;
     active.bus.resume();
     active.busy = true;
+
+    // Install the same settlement barrier used by provider/graph turns before
+    // notifying subscribers or beginning asynchronous work. Stop can then
+    // await even a renderer that ignores AbortSignal, and no re-entrant UI
+    // callback can observe busy=true with invocation=null.
+    let settlement!: Promise<AgentRunResult>;
+    settlement = Promise.resolve()
+      .then(() => this.executeFailedPreviewRefresh(
+        active,
+        failedState,
+        failedProposal,
+        refreshAbort,
+      ))
+      .finally(() => {
+        if (active.invocation === settlement) active.invocation = null;
+      });
+    active.invocation = settlement;
     this.notify();
+    return settlement;
+  }
+
+  private async executeFailedPreviewRefresh(
+    active: ActiveExecution,
+    failedState: AgentState,
+    failedProposal: NotebookPatchProposal,
+    refreshAbort: AbortController,
+  ): Promise<AgentRunResult> {
+    const failedPreview = failedProposal.preview;
+    const previousGenerationIds = new Set(generationIdsOwnedByState(failedState));
+    let rendered: DraftPreviewGeneration | undefined;
+    const isCurrent = (): boolean =>
+      this.active === active &&
+      active.abort === refreshAbort &&
+      !refreshAbort.signal.aborted &&
+      !active.state.cancellation.requested &&
+      active.state.lifecycle !== 'cancelled';
+    const assertCurrent = (): void => {
+      if (!isCurrent()) {
+        throw new DOMException('Preview refresh was stopped', 'AbortError');
+      }
+    };
 
     try {
-      const notebook = await this.adapters.notebook.inspectNotebook(
-        active.state.identity.bookId,
-        active.abort.signal,
-      );
-      for (const generationId of generationIdsOwnedByState(active.state)) {
-        await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
-      }
-
-      const now = this.adapters.clock.now();
-      const targetPageId = insertionTargetPageId(active.state.insertionTarget);
-      const targetStillExists = targetPageId === undefined ||
-        notebook.snapshot.pageIds.includes(targetPageId);
-      const recoveryTurn = {
-        id: this.adapters.ids.create('local_apply_recovery'),
-        role: 'user' as const,
-        content: [
-          'The reader already approved this notebook insertion, but the local apply did not commit.',
-          'The local notebook state or apply receipt changed after review.',
-          'Rebuild and visually review a fresh final preview against the current notebook. Never claim that pages were inserted; only a later local Insert approval can perform the write.',
-        ].join('\n'),
-        createdAt: now,
-      };
-      const previousWindow = active.state.budgetWindow;
-      const state: AgentState = {
-        ...active.state,
-        lifecycle: 'running',
-        phase: 'checking_script',
-        notebookSnapshot: notebook.snapshot,
-        insertionTarget: targetStillExists
-          ? active.state.insertionTarget
-          : undefined,
-        previewGeneration: undefined,
-        visualReview: undefined,
-        patchProposal: undefined,
-        localRestoredFinal: undefined,
-        pendingToolCalls: [],
-        lastError: undefined,
-        modelHistory: [...active.state.modelHistory, recoveryTurn],
-        budgetWindow: {
-          providerCallsAtStart: active.state.usage.providerCalls,
-          toolCallsAtStart: active.state.usage.toolCalls,
-          repairPassesAtStart: active.state.usage.repairPasses,
-          startedAt: now,
-          // This remains the real reader request (for example “add to my
-          // book”), not either of the old synthetic approval/recovery labels.
-          readerMessageId: previousWindow?.readerMessageId,
-        },
-        checkpointStep: active.state.checkpointStep + 1,
-        updatedAt: now,
-      };
-      active.state = state;
+      assertCurrent();
       await active.bus.emit({
         type: 'status.changed',
         phase: 'checking_script',
-        summary: 'Refreshing the reviewed pages against the current notebook',
+        summary: 'Refreshing the exact reviewed pages against the current notebook',
       });
+      assertCurrent();
+      const notebook = await this.adapters.notebook.inspectNotebook(
+        failedState.identity.bookId,
+        refreshAbort.signal,
+      );
+      assertCurrent();
+      const target = failedProposal.insertionTarget;
+      const targetPageId = insertionTargetPageId(target);
+      if (
+        targetPageId !== undefined &&
+        !notebook.snapshot.pageIds.includes(targetPageId)
+      ) {
+        throw new Error(
+          'The exact reviewed placement no longer exists. Ask the agent to choose a new location.',
+        );
+      }
+      const targetPage = target.kind === 'caret' || target.kind === 'replace_selection'
+        ? await this.adapters.notebook.inspectPage(target.pageId, refreshAbort.signal)
+        : undefined;
+      assertCurrent();
+      if (targetPage !== undefined && targetPage.document === undefined) {
+        throw new Error(
+          'The exact target-page document is unavailable for a safe refreshed preview.',
+        );
+      }
+      const sandboxTarget = targetPage === undefined
+        ? undefined
+        : {
+            pageId: targetPage.pageId,
+            revision: targetPage.revision,
+            documentDigest: targetPage.documentDigest,
+            doc: targetPage.document!,
+          };
+      const now = this.adapters.clock.now();
+      const exactApprovedDraft: NotebookDraft = {
+        runId: failedProposal.runId,
+        version: failedProposal.draftVersion,
+        script: failedProposal.script,
+        draftHash: failedProposal.draftHash,
+        sourceManifestDigest: failedState.draft?.sourceManifestDigest,
+        createdAt: failedProposal.createdAt,
+      };
+      const sandboxContext = {
+        bookSnapshot: notebook.snapshot,
+        insertionTarget: target,
+        ...(sandboxTarget === undefined ? {} : { targetPage: sandboxTarget }),
+        signal: refreshAbort.signal,
+      };
+      // This draft already crossed the authoring-time craft gate, native
+      // render review and reader approval. Refresh is receipt recovery, so it
+      // reruns the sandbox's structural/layout safety checks without
+      // retroactively rejecting older approved work under a newer editorial
+      // quality policy (for example the semantic-variety craft floor).
+      const validation = await this.adapters.sandbox.validate(
+        exactApprovedDraft,
+        sandboxContext,
+      );
+      assertCurrent();
+      if (!validation.valid || validation.draftHash !== exactApprovedDraft.draftHash) {
+        throw new Error(
+          'The exact approved script no longer passes Alcove’s deterministic page checks.',
+        );
+      }
+      rendered = await this.adapters.sandbox.render(exactApprovedDraft, sandboxContext);
+      assertCurrent();
+      if (
+        rendered.draftHash !== exactApprovedDraft.draftHash ||
+        rendered.bookSnapshotRevision !== notebook.snapshot.bookRevision ||
+        !rendered.parserValid ||
+        !rendered.layoutValid ||
+        rendered.stale
+      ) {
+        throw new Error(
+          'The refreshed native render is not a valid current generation.',
+        );
+      }
+      const visualReview = reviewForRefreshedPixels(
+        failedPreview,
+        rendered,
+        failedState,
+        now,
+      );
+      const idempotencyKey = await this.adapters.hash.digestJson({
+        runId: failedProposal.runId,
+        draftHash: exactApprovedDraft.draftHash,
+        bookRevision: notebook.snapshot.bookRevision,
+        pageIds: notebook.snapshot.pageIds,
+        insertionTarget: target,
+      });
+      assertCurrent();
+      const previewId = `preview_${idempotencyKey.slice(0, 24)}`;
+      const patchId = `patch_${idempotencyKey.slice(0, 24)}`;
+      const preview: UserPreviewContract = {
+        ...failedPreview,
+        previewId,
+        generationId: rendered.generationId,
+        draftHash: rendered.draftHash,
+        layoutHash: rendered.layoutHash,
+        expectedBookRevision: notebook.snapshot.bookRevision,
+        expectedPageIds: [...notebook.snapshot.pageIds],
+        insertionTarget: target,
+        expectedPageCount: rendered.pageCount,
+        pages: rendered.pages,
+        visualReview,
+        validation,
+      };
+      const proposal: NotebookPatchProposal = {
+        ...failedProposal,
+        patchId,
+        idempotencyKey,
+        draftVersion: exactApprovedDraft.version,
+        draftHash: exactApprovedDraft.draftHash,
+        script: exactApprovedDraft.script,
+        expectedBookRevision: notebook.snapshot.bookRevision,
+        expectedPageIds: [...notebook.snapshot.pageIds],
+        insertionTarget: target,
+        preview,
+        status: 'waiting_for_approval',
+        createdAt: now,
+      };
+      const hasLocallyRestoredPrivateDraft =
+        failedState.textPrivacy !== undefined &&
+        failedState.textPrivacy.entries.length > 0 &&
+        failedState.draft?.draftHash !== exactApprovedDraft.draftHash;
+      const attempt = failedState.applyRecovery?.refreshedPatchId === failedProposal.patchId
+        ? failedState.applyRecovery.attempt + 1
+        : 1;
+      const state: AgentState = {
+        ...failedState,
+        lifecycle: 'waiting_for_preview_decision',
+        phase: 'waiting_for_preview_decision',
+        notebookSnapshot: notebook.snapshot,
+        insertionTarget: target,
+        ...(hasLocallyRestoredPrivateDraft
+          ? {
+              localRestoredFinal: {
+                maskedDraftHash: failedState.draft!.draftHash,
+                draft: exactApprovedDraft,
+                validation,
+                previewGeneration: rendered,
+                ...(preview.imageGenerationPrompts.length === 0
+                  ? {}
+                  : {
+                      imagePromptHandoff: {
+                        draftHash: exactApprovedDraft.draftHash,
+                        prompts: preview.imageGenerationPrompts,
+                        createdAt: now,
+                      },
+                    }),
+                finalizedAt: now,
+              },
+            }
+          : {
+              draft: exactApprovedDraft,
+              validation,
+              previewGeneration: rendered,
+              visualReview,
+              localRestoredFinal: undefined,
+            }),
+        patchProposal: proposal,
+        pendingToolCalls: [],
+        lastError: undefined,
+        // Keep lastApplyFailure verbatim for Copy Logs even after the new
+        // preview succeeds; it is the only forensic record of the first click.
+        applyRecovery: {
+          failedPatchId: failedProposal.patchId,
+          failedPreviewId: failedPreview.previewId,
+          refreshedPatchId: patchId,
+          refreshedPreviewId: previewId,
+          attempt,
+          recoveredAt: now,
+        },
+        checkpointStep: failedState.checkpointStep + 1,
+        updatedAt: now,
+      };
+      const interrupt = recoveredPreviewInterrupt(state);
+      if (interrupt === null) throw new Error('refreshed preview recovery invariant failed');
+      // Explicit Refresh transfers ownership to `rendered`. Destroy the old
+      // generations before publishing state that no longer names them; if a
+      // later save fails, the durable failed proposal still contains the exact
+      // script and target needed for another local retry.
+      const retainedGenerationIds = new Set(generationIdsOwnedByState(state));
+      for (const generationId of previousGenerationIds) {
+        if (!retainedGenerationIds.has(generationId)) {
+          assertCurrent();
+          await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
+          assertCurrent();
+        }
+      }
+      assertCurrent();
       await this.persistence.saveTask(state);
-      this.notify();
-      return this.invoke({
+      assertCurrent();
+      await active.graph.updateState(active.config, {
         agent: state,
         pendingInterrupt: null,
         pendingInterruptCall: null,
         resumeValue: null,
       });
-    } catch (error) {
+      assertCurrent();
+      active.state = state;
+      active.interrupt = interrupt;
+      await active.bus.emit({ type: 'preview.ready', generation: rendered });
+      assertCurrent();
+      await active.bus.emit(
+        { type: 'approval.requested', preview },
+        `approval:${proposal.patchId}:recovery`,
+      );
+      assertCurrent();
       active.busy = false;
       this.notify();
-      throw error;
+      assertCurrent();
+      return { state, interrupt };
+    } catch (error) {
+      if (
+        rendered !== undefined &&
+        !previousGenerationIds.has(rendered.generationId)
+      ) {
+        await this.adapters.sandbox.dispose(rendered.generationId).catch(() => undefined);
+      }
+      // Stop owns runtime state and the final durable write as soon as it
+      // aborts this refresh. Never reconstruct `failedState` after that point:
+      // it predates cancellation and would resurrect a retryable preview after
+      // Stop had already resolved.
+      if (!isCurrent()) return { state: active.state };
+      const now = this.adapters.clock.now();
+      const message = error instanceof Error
+        ? error.message
+        : 'The exact reviewed pages could not be refreshed safely.';
+      active.state = {
+        ...failedState,
+        lifecycle: 'waiting_for_preview_decision',
+        phase: 'waiting_for_preview_decision',
+        lastError: { code: 'stale_context', message, retryable: true },
+        checkpointStep: failedState.checkpointStep + 1,
+        updatedAt: now,
+      };
+      active.interrupt = null;
+      await this.persistence.saveTask(active.state);
+      if (!isCurrent()) return { state: active.state };
+      active.busy = false;
+      this.notify();
+      return { state: active.state };
     }
   }
 
@@ -1139,11 +1646,59 @@ export class AgentRuntime {
     return { state: active.state };
   }
 
-  rejectPreview(previewId: string, feedback?: string): Promise<AgentRunResult> {
+  async rejectPreview(previewId: string, feedback?: string): Promise<AgentRunResult> {
+    const active = this.requireActive();
+    const proposal = active.state.patchProposal;
+    const recovery = active.state.applyRecovery;
+    if (
+      proposal?.status === 'waiting_for_approval' &&
+      proposal.preview.previewId === previewId &&
+      recovery?.refreshedPatchId === proposal.patchId &&
+      recovery.refreshedPreviewId === previewId
+    ) {
+      for (const generationId of generationIdsOwnedByState(active.state)) {
+        await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
+      }
+      const now = this.adapters.clock.now();
+      active.interrupt = null;
+      active.state = {
+        ...active.state,
+        lifecycle: 'completed',
+        phase: 'finished',
+        previewGeneration: undefined,
+        visualReview: undefined,
+        localRestoredFinal: undefined,
+        patchProposal: { ...proposal, status: 'rejected' },
+        applyRecovery: undefined,
+        lastError: undefined,
+        checkpointStep: active.state.checkpointStep + 1,
+        updatedAt: now,
+      };
+      await this.persistence.saveTask(active.state);
+      await active.graph.updateState(active.config, {
+        agent: active.state,
+        pendingInterrupt: null,
+        pendingInterruptCall: null,
+        resumeValue: null,
+      });
+      this.notify();
+      return { state: active.state };
+    }
     return this.resumePreviewDecision(previewId, 'reject', feedback);
   }
 
   revisePreview(previewId: string, feedback: string): Promise<AgentRunResult> {
+    const active = this.requireActive();
+    const proposal = active.state.patchProposal;
+    const recovery = active.state.applyRecovery;
+    if (
+      proposal?.status === 'waiting_for_approval' &&
+      proposal.preview.previewId === previewId &&
+      recovery?.refreshedPatchId === proposal.patchId &&
+      recovery.refreshedPreviewId === previewId
+    ) {
+      return this.sendUserMessage(feedback);
+    }
     return this.resumePreviewDecision(previewId, 'feedback', feedback);
   }
 
@@ -1151,12 +1706,37 @@ export class AgentRuntime {
     previewId: string,
     insertionTarget: NotebookInsertionTarget,
   ): Promise<AgentRunResult> {
-    const locked = this.requireActive().state.insertionTarget;
+    const active = this.requireActive();
+    const locked = active.state.insertionTarget;
     if (
       locked?.kind === 'replace_selection' &&
       JSON.stringify(locked) !== JSON.stringify(insertionTarget)
     ) {
       throw new Error('A selected-text task stays anchored to that exact selection');
+    }
+    const proposal = active.state.patchProposal;
+    const recovery = active.state.applyRecovery;
+    if (
+      proposal?.status === 'waiting_for_approval' &&
+      proposal.preview.previewId === previewId &&
+      recovery?.refreshedPatchId === proposal.patchId &&
+      recovery.refreshedPreviewId === previewId
+    ) {
+      // An explicit reader location change rerenders the same script locally;
+      // it never reopens provider placement/drafting tools. Integrated changes
+      // fail closed below when their native pixels differ.
+      active.interrupt = null;
+      active.state = {
+        ...active.state,
+        insertionTarget,
+        patchProposal: {
+          ...proposal,
+          insertionTarget,
+          preview: { ...proposal.preview, insertionTarget },
+          status: 'apply_failed',
+        },
+      };
+      return this.refreshFailedPreview();
     }
     return this.resumePreviewDecision(
       previewId,
@@ -1184,7 +1764,8 @@ export class AgentRuntime {
       updatedAt: now,
     };
     // Keep the runtime non-resumable until both source setup and the captured
-    // graph invocation have settled and the final cancelled state is durable.
+    // invocation (provider graph or local preview recovery) have settled and
+    // the final cancelled state is durable.
     active.busy = true;
     active.interrupt = null;
     let stopError: unknown;

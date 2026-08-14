@@ -11,6 +11,7 @@ import {
   recordVisualInspection,
 } from '../src/features/aiAgent/coverage';
 import { AgentEventBus } from '../src/features/aiAgent/events';
+import { notebookCraftDiagnostics } from '../src/features/aiAgent/draftCraft';
 import { InMemoryAgentPersistence } from '../src/features/aiAgent/persistence';
 import {
   buildPatchProposal,
@@ -171,6 +172,318 @@ function previewGeneration(draftHash: string): DraftPreviewGeneration {
       },
     ],
     diagnostics: [],
+  };
+}
+
+function logShapedFailedApplyState(options: {
+  readonly omitExposure?: boolean;
+} = {}): AgentState {
+  const identity = {
+    taskId: 'task-48-page-recovery',
+    threadId: 'thread-48-page-recovery',
+    runId: 'run-48-page-recovery',
+    bookId: 'book-48-page-recovery',
+  };
+  const base = createInitialAgentState({
+    identity,
+    goal: 'add to my book',
+    now: NOW,
+    userMessageId: 'reader-add-to-book',
+  });
+  const pageIds = Array.from({ length: 48 }, (_, index) => `page-${index + 1}`);
+  const generation = {
+    ...previewGeneration('draft-kirby-vs-powerpuff'),
+    generationId: 'generation-failed-48',
+    draftHash: 'draft-kirby-vs-powerpuff',
+    bookSnapshotRevision: 'book-revision-48',
+    pages: previewGeneration('draft-kirby-vs-powerpuff').pages.map((page) => ({
+      ...page,
+      pageId: 'generation-failed-48:page:1',
+    })),
+  };
+  const exposed = recordVisualImageExposures(
+    createVisualReviewLedger(generation, NOW),
+    generation,
+    generation.pages,
+    { now: NOW, providerCallCount: 1 },
+  );
+  const reviewed = recordVisualInspection(exposed, generation, {
+    pageIds: generation.pages.map((page) => page.pageId),
+    findings: [],
+    providerCallCount: 2,
+    now: NOW,
+  });
+  const validation = {
+    draftHash: generation.draftHash,
+    parserDiagnostics: [],
+    staticDiagnostics: [],
+    imageDiagnostics: [],
+    pageLedgerDiagnostics: [],
+    valid: true,
+    checkedAt: NOW,
+  } as const;
+  const insertionTarget = { kind: 'after_page' as const, pageId: pageIds[47]! };
+  const preview = {
+    previewId: 'preview-failed-48',
+    generationId: generation.generationId,
+    draftHash: generation.draftHash,
+    layoutHash: generation.layoutHash,
+    bookId: identity.bookId,
+    expectedBookRevision: 'book-revision-48',
+    expectedPageIds: pageIds,
+    insertionTarget,
+    expectedPageCount: generation.pageCount,
+    pages: generation.pages,
+    assumptions: [],
+    citations: [],
+    imageGenerationPrompts: [],
+    sourceCoverage: createSourceCoverageLedger(manifestWithUnits(0), 'relevant', NOW),
+    visualReview: options.omitExposure
+      ? { ...reviewed, imageExposures: [] }
+      : reviewed,
+    validation,
+  };
+  return {
+    ...base,
+    lifecycle: 'waiting_for_preview_decision',
+    phase: 'waiting_for_preview_decision',
+    notebookSnapshot: {
+      bookId: identity.bookId,
+      bookRevision: 'book-revision-48',
+      pageIds,
+      pageRevisions: Object.fromEntries(pageIds.map((id, index) => [id, `revision-${index + 1}`])),
+      capturedAt: NOW,
+    },
+    draft: {
+      runId: identity.runId,
+      version: 1,
+      script: '# Kirby vs Powerpuff\n\n- Adaptability\n- Teamwork',
+      draftHash: generation.draftHash,
+      createdAt: NOW,
+    },
+    validation,
+    previewGeneration: generation,
+    visualReview: reviewed,
+    insertionTarget,
+    patchProposal: {
+      patchId: 'patch-failed-48',
+      idempotencyKey: 'idempotency-failed-48',
+      runId: identity.runId,
+      draftVersion: 1,
+      draftHash: generation.draftHash,
+      script: '# Kirby vs Powerpuff\n\n- Adaptability\n- Teamwork',
+      expectedBookRevision: 'book-revision-48',
+      expectedPageIds: pageIds,
+      insertionTarget,
+      preview,
+      status: 'apply_failed',
+      createdAt: NOW,
+    },
+    lastError: {
+      code: 'stale_context',
+      message: 'The exact reviewed draft is no longer available. Refresh the preview before inserting.',
+      retryable: true,
+    },
+    lastApplyFailure: {
+      patchId: 'patch-failed-48',
+      previewId: 'preview-failed-48',
+      message: 'The exact reviewed draft is no longer available. Refresh the preview before inserting.',
+      failedAt: NOW,
+    },
+  };
+}
+
+function textVeiledFailedApplyState(options: {
+  readonly forgePreviewReviewGeneration?: boolean;
+} = {}): AgentState {
+  const failed = logShapedFailedApplyState();
+  const placeholder = '⟦ALCOVE_PRIVATE_EMAIL_VEILTEST01_0001⟧';
+  const exactScript = `${failed.patchProposal!.script}\n\nContact alice@example.com`;
+  const maskedScript = `${failed.patchProposal!.script}\n\nContact ${placeholder}`;
+  const exactHash = 'draft-exact-private';
+  const maskedHash = 'draft-masked-private';
+  const exactGeneration: DraftPreviewGeneration = {
+    ...failed.previewGeneration!,
+    draftHash: exactHash,
+  };
+  const maskedGeneration: DraftPreviewGeneration = {
+    ...failed.previewGeneration!,
+    generationId: 'generation-masked-private',
+    draftHash: maskedHash,
+    layoutHash: 'layout-masked-private',
+    pages: failed.previewGeneration!.pages.map((page) => ({
+      ...page,
+      pageId: 'generation-masked-private:page:1',
+      image: {
+        ...page.image,
+        resourceId: 'rendered-masked-private',
+        digest: 'image-digest-masked-private',
+      },
+      textDigest: 'text-digest-masked-private',
+      layoutDigest: 'layout-digest-masked-private',
+    })),
+  };
+  const exposed = recordVisualImageExposures(
+    createVisualReviewLedger(maskedGeneration, NOW),
+    maskedGeneration,
+    maskedGeneration.pages,
+    { now: NOW, providerCallCount: 1 },
+  );
+  const maskedReview = recordVisualInspection(exposed, maskedGeneration, {
+    pageIds: maskedGeneration.pages.map((page) => page.pageId),
+    findings: [],
+    providerCallCount: 2,
+    now: NOW,
+  });
+  const exactValidation = {
+    ...failed.validation!,
+    draftHash: exactHash,
+  };
+  const maskedValidation = {
+    ...failed.validation!,
+    draftHash: maskedHash,
+  };
+  const exactDraft = {
+    ...failed.draft!,
+    script: exactScript,
+    draftHash: exactHash,
+  };
+  const maskedDraft = {
+    ...failed.draft!,
+    script: maskedScript,
+    draftHash: maskedHash,
+  };
+  const previewVisualReview = options.forgePreviewReviewGeneration
+    ? { ...maskedReview, generationId: 'generation-forged-private-review' }
+    : maskedReview;
+  return {
+    ...failed,
+    draft: maskedDraft,
+    validation: maskedValidation,
+    previewGeneration: maskedGeneration,
+    visualReview: maskedReview,
+    textPrivacy: {
+      version: 1,
+      enabled: true,
+      namespace: 'VEILTEST01',
+      entries: [{
+        placeholder,
+        value: 'alice@example.com',
+        kind: 'email',
+        createdAt: NOW,
+      }],
+      textOnly: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+    localRestoredFinal: {
+      maskedDraftHash: maskedHash,
+      draft: exactDraft,
+      validation: exactValidation,
+      previewGeneration: exactGeneration,
+      finalizedAt: NOW,
+    },
+    patchProposal: {
+      ...failed.patchProposal!,
+      draftHash: exactHash,
+      script: exactScript,
+      preview: {
+        ...failed.patchProposal!.preview,
+        draftHash: exactHash,
+        pages: exactGeneration.pages,
+        visualReview: previewVisualReview,
+        validation: exactValidation,
+      },
+    },
+  };
+}
+
+function exactThreePageDiagnosticFailedApplyState(): AgentState {
+  const failed = logShapedFailedApplyState();
+  const script = [
+    '# Kirby vs The Powerpuff Girls',
+    '',
+    '## Kirby',
+    '- **Origin:** Dream Land',
+    '- **Abilities:** Inhales enemies and copies their powers',
+    '- **Personality:** Cheerful, innocent, and determined',
+    '',
+    '::page',
+    '',
+    '## The Powerpuff Girls',
+    '- **Origin:** Townsville',
+    '- **Abilities:** Flight, strength, speed, and teamwork',
+    '- **Personality:** Blossom leads, Bubbles cares, Buttercup fights',
+    '',
+    '::page',
+    '',
+    '## Key differences',
+    '- Kirby adapts by copying powers; the girls have innate powers',
+    '- Kirby adventures solo; the girls protect their city as a team',
+    '- Both turn childlike charm into surprising strength',
+  ].join('\n');
+  const draftHash = 'draft-exact-log-three-pages';
+  const generationId = 'generation-failed-log-three-pages';
+  const seedPage = failed.previewGeneration!.pages[0]!;
+  const pages = [1, 2, 3].map((pageNumber) => ({
+    ...seedPage,
+    pageId: `${generationId}:page:${pageNumber}`,
+    pageNumber,
+    image: {
+      ...seedPage.image,
+      resourceId: `rendered-log-three-pages-${pageNumber}`,
+      digest: `image-digest-log-three-pages-${pageNumber}`,
+    },
+    textDigest: `text-digest-log-three-pages-${pageNumber}`,
+    layoutDigest: `layout-digest-log-three-pages-${pageNumber}`,
+  }));
+  const generation: DraftPreviewGeneration = {
+    ...failed.previewGeneration!,
+    generationId,
+    draftHash,
+    layoutHash: 'layout-log-three-pages',
+    pageCount: pages.length,
+    pages,
+  };
+  const exposed = recordVisualImageExposures(
+    createVisualReviewLedger(generation, NOW),
+    generation,
+    generation.pages,
+    { now: NOW, providerCallCount: 1 },
+  );
+  const review = recordVisualInspection(exposed, generation, {
+    pageIds: generation.pages.map((page) => page.pageId),
+    findings: [],
+    providerCallCount: 2,
+    now: NOW,
+  });
+  const validation = { ...failed.validation!, draftHash };
+  const draft = {
+    ...failed.draft!,
+    script,
+    draftHash,
+  };
+  return {
+    ...failed,
+    draft,
+    validation,
+    previewGeneration: generation,
+    visualReview: review,
+    patchProposal: {
+      ...failed.patchProposal!,
+      draftHash,
+      script,
+      preview: {
+        ...failed.patchProposal!.preview,
+        generationId,
+        draftHash,
+        layoutHash: generation.layoutHash,
+        expectedPageCount: pages.length,
+        pages,
+        visualReview: review,
+        validation,
+      },
+    },
   };
 }
 
@@ -1141,26 +1454,6 @@ describe('Alcove autonomous notebook agent runtime', () => {
           },
         }],
       },
-      // A local BookView apply conflict must invalidate the old render and
-      // return to the real render/review/proposal tools. It must never become
-      // an ordinary "refresh this" chat turn that can finish without a patch.
-      { name: 'render_draft_preview', args: {} },
-      {
-        name: 'read_draft_preview_pages',
-        args: {
-          generationId: 'generation-1',
-          pageIds: ['preview-page-1'],
-        },
-      },
-      {
-        name: 'record_visual_review',
-        args: {
-          generationId: 'generation-1',
-          reviews: [{ pageId: 'preview-page-1', findings: [] }],
-        },
-      },
-      { name: 'propose_notebook_patch', args: {} },
-      { name: 'submit_notebook_patch', args: {} },
     ]);
     const { adapters, ingested } = fakeAdapters(manifestWithUnits(1));
     const persistence = new InMemoryAgentPersistence();
@@ -1338,6 +1631,9 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(restoredFailure.state?.patchProposal).toMatchObject({ status: 'apply_failed' });
     expect(restoredFailure.state?.lastError?.message).toContain('target changed');
     const displayedConversationBeforeRefresh = restoredFailure.state?.conversation ?? [];
+    const modelHistoryBeforeRefresh = restoredFailure.state?.modelHistory ?? [];
+    const requestsBeforeRefresh = provider.requests.length;
+    const usageBeforeRefresh = restoredFailure.state?.usage;
     const refreshed = await afterFailedApplyCrash.refreshFailedPreview();
     expect(refreshed.interrupt?.kind).toBe('final_preview');
     expect(refreshed.state.patchProposal).toMatchObject({
@@ -1347,20 +1643,35 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(refreshed.state.conversation.filter((message) =>
       /refresh the final preview/i.test(message.text)
     )).toHaveLength(0);
-    expect(refreshed.state.modelHistory.some((turn) =>
-      turn.role === 'user' && /local apply did not commit/i.test(turn.content)
-    )).toBe(true);
-    const recoveryRequest = provider.requests.at(-5);
-    expect(recoveryRequest?.systemPrompt).toMatch(/"intent":"notebook_change"/);
-    expect(recoveryRequest?.tools.map((tool) => tool.name)).toContain('render_draft_preview');
-    expect(recoveryRequest?.tools.map((tool) => tool.name)).not.toContain('get_draft_preview_manifest');
+    expect(refreshed.state.modelHistory).toEqual(modelHistoryBeforeRefresh);
+    expect(provider.requests).toHaveLength(requestsBeforeRefresh);
+    expect(refreshed.state.usage).toEqual(usageBeforeRefresh);
+    expect(refreshed.state.applyRecovery).toMatchObject({
+      failedPatchId: approved.state.patchProposal!.patchId,
+      failedPreviewId: previewId,
+      refreshedPatchId: refreshed.state.patchProposal!.patchId,
+      refreshedPreviewId: refreshed.state.patchProposal!.preview.previewId,
+      attempt: 1,
+    });
+    expect(refreshed.state.lastApplyFailure?.message).toBe('target changed during apply');
 
     const refreshedPreviewId = refreshed.interrupt?.kind === 'final_preview'
       ? refreshed.interrupt.preview.previewId
       : '';
-    const retryPending = await afterFailedApplyCrash.approvePreview(refreshedPreviewId);
+    // A crash after local refresh reconstructs this replacement interrupt
+    // from applyRecovery instead of restoring the stale graph proposal.
+    await afterFailedApplyCrash.clearActiveTask();
+    const afterRefreshCrash = new AgentRuntime(provider, adapters, persistence);
+    const restoredRefresh = await afterRefreshCrash.restore('task-1');
+    expect(restoredRefresh.interrupt).toMatchObject({
+      kind: 'final_preview',
+      preview: { previewId: refreshedPreviewId },
+    });
+    const conversationBeforeRecoveredApproval = restoredRefresh.state?.conversation ?? [];
+    const retryPending = await afterRefreshCrash.approvePreview(refreshedPreviewId);
     expect(retryPending.state.patchProposal).toMatchObject({ status: 'approved_pending_apply' });
-    const finalized = await afterFailedApplyCrash.finalizeApprovedPatch(
+    expect(retryPending.state.conversation).toEqual(conversationBeforeRecoveredApproval);
+    const finalized = await afterRefreshCrash.finalizeApprovedPatch(
       retryPending.state.patchProposal!.patchId,
       { applied: true },
     );
@@ -1370,13 +1681,582 @@ describe('Alcove autonomous notebook agent runtime', () => {
     // for a diagnostic copied after the replacement preview succeeds.
     expect(finalized.state.lastError).toBeUndefined();
     expect(finalized.state.lastApplyFailure?.message).toBe('target changed during apply');
-    await afterFailedApplyCrash.clearActiveTask();
+    await afterRefreshCrash.clearActiveTask();
     const afterAppliedCrash = new AgentRuntime(provider, adapters, persistence);
     const restoredApplied = await afterAppliedCrash.restore('task-1');
     expect(restoredApplied.state?.patchProposal).toMatchObject({ status: 'applied' });
     expect(restoredApplied.state?.lifecycle).toBe('completed');
     expect(restoredApplied.interrupt).toBeNull();
   }, 20_000);
+
+  it('recovers the exact 48-page log shape locally, disposes before publish, and never spends provider budget', async () => {
+    const failed = logShapedFailedApplyState();
+    const originalPage = failed.patchProposal!.preview.pages[0]!;
+    const recoveredGeneration: DraftPreviewGeneration = {
+      ...failed.previewGeneration!,
+      generationId: 'generation-recovered-48',
+      bookSnapshotRevision: failed.notebookSnapshot!.bookRevision,
+      pages: [{
+        ...originalPage,
+        pageId: 'generation-recovered-48:page:1',
+        image: { ...originalPage.image, resourceId: 'rendered-recovered-48' },
+      }],
+    };
+    const order: string[] = [];
+    class OrderedPersistence extends InMemoryAgentPersistence {
+      override async saveTask(state: AgentState): Promise<void> {
+        order.push(`save:${state.patchProposal?.status ?? 'none'}`);
+        await super.saveTask(state);
+      }
+    }
+    const persistence = new OrderedPersistence();
+    await persistence.saveTask(failed);
+    order.length = 0;
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: failed.notebookSnapshot!.pageIds.map((pageId, index) => ({
+            pageId,
+            ordinal: index,
+            revision: failed.notebookSnapshot!.pageRevisions[pageId]!,
+            estimatedTokens: 10,
+          })),
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({ ...failed.validation!, draftHash: draft.draftHash }),
+        render: async () => recoveredGeneration,
+        getGeneration: async () => recoveredGeneration,
+        dispose: async (generationId) => {
+          order.push(`dispose:${generationId}`);
+        },
+      },
+    };
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+    const conversationBefore = runtime.getSnapshot().state!.conversation;
+    const usageBefore = runtime.getSnapshot().state!.usage;
+    const refreshed = await runtime.refreshFailedPreview();
+
+    expect(refreshed.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(refreshed.state.patchProposal).toMatchObject({
+      status: 'waiting_for_approval',
+      insertionTarget: failed.insertionTarget,
+    });
+    expect(refreshed.state.conversation).toEqual(conversationBefore);
+    expect(refreshed.state.usage).toEqual(usageBefore);
+    expect(provider.requests).toHaveLength(0);
+    expect(order.indexOf('dispose:generation-failed-48')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('dispose:generation-failed-48')).toBeLessThan(
+      order.indexOf('save:waiting_for_approval'),
+    );
+    expect(refreshed.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
+
+    // Reader-selected structural relocation is another one-pass local render,
+    // never a return to propose_insertion or submit_notebook_script.
+    const relocated = await runtime.changePlacement(
+      refreshed.state.patchProposal!.preview.previewId,
+      { kind: 'book_start' },
+    );
+    expect(relocated.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(relocated.state.patchProposal?.insertionTarget).toEqual({ kind: 'book_start' });
+    expect(relocated.state.applyRecovery?.attempt).toBe(2);
+    expect(provider.requests).toHaveLength(0);
+
+    const approvalConversation = relocated.state.conversation;
+    const previewId = relocated.state.patchProposal!.preview.previewId;
+    const firstApproval = await runtime.approvePreview(previewId);
+    const secondApproval = await runtime.approvePreview(previewId);
+    expect(firstApproval.state.patchProposal?.status).toBe('approved_pending_apply');
+    expect(secondApproval.state.patchProposal?.status).toBe('approved_pending_apply');
+    expect(secondApproval.state.conversation).toEqual(approvalConversation);
+  });
+
+  it('grandfathers the exact reviewed three-page headings-and-bullets log during receipt recovery', async () => {
+    const failed = exactThreePageDiagnosticFailedApplyState();
+    expect(notebookCraftDiagnostics(failed.patchProposal!.script, failed)).toEqual([
+      expect.objectContaining({ code: 'craft.semantic-variety-required' }),
+    ]);
+    const recoveredGeneration: DraftPreviewGeneration = {
+      ...failed.previewGeneration!,
+      generationId: 'generation-recovered-log-three-pages',
+      pages: failed.previewGeneration!.pages.map((page) => ({
+        ...page,
+        pageId: `generation-recovered-log-three-pages:page:${page.pageNumber}`,
+        image: {
+          ...page.image,
+          resourceId: `rendered-recovered-log-three-pages-${page.pageNumber}`,
+        },
+      })),
+    };
+    const provider = new ScriptedProvider([]);
+    const disposed: string[] = [];
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page notebook from copied diagnostic',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        // Native parser/schema/layout validation still runs. Only the newer
+        // editorial craft floor is intentionally not retroactive here.
+        validate: async (draft) => ({ ...failed.validation!, draftHash: draft.draftHash }),
+        render: async () => recoveredGeneration,
+        getGeneration: async () => recoveredGeneration,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(failed);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+    const refreshed = await runtime.refreshFailedPreview();
+
+    expect(refreshed.interrupt).toMatchObject({
+      kind: 'final_preview',
+      preview: { expectedPageCount: 3 },
+    });
+    expect(refreshed.state.patchProposal).toMatchObject({
+      status: 'waiting_for_approval',
+      script: failed.patchProposal!.script,
+      insertionTarget: failed.patchProposal!.insertionTarget,
+    });
+    expect(refreshed.state.patchProposal?.preview.pages).toHaveLength(3);
+    expect(provider.requests).toHaveLength(0);
+    expect(disposed).toEqual([failed.previewGeneration!.generationId]);
+    expect(refreshed.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
+  });
+
+  it('refreshes a Text Veil final while preserving its masked review generation', async () => {
+    const failed = textVeiledFailedApplyState();
+    const exactPage = failed.patchProposal!.preview.pages[0]!;
+    const recoveredGeneration: DraftPreviewGeneration = {
+      ...failed.localRestoredFinal!.previewGeneration,
+      generationId: 'generation-recovered-private-exact',
+      pages: [{
+        ...exactPage,
+        pageId: 'generation-recovered-private-exact:page:1',
+        image: { ...exactPage.image, resourceId: 'rendered-recovered-private-exact' },
+      }],
+    };
+    const disposed: string[] = [];
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page private notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({
+          ...failed.localRestoredFinal!.validation,
+          draftHash: draft.draftHash,
+        }),
+        render: async () => recoveredGeneration,
+        getGeneration: async () => recoveredGeneration,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(failed);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+    const refreshed = await runtime.refreshFailedPreview();
+
+    expect(refreshed.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(refreshed.state.patchProposal?.preview).toMatchObject({
+      generationId: recoveredGeneration.generationId,
+      visualReview: {
+        generationId: failed.previewGeneration!.generationId,
+        requiredPageIds: failed.previewGeneration!.pages.map((page) => page.pageId),
+      },
+    });
+    expect(refreshed.state.visualReview).toEqual(failed.visualReview);
+    expect(refreshed.state.previewGeneration?.generationId).toBe(
+      failed.previewGeneration!.generationId,
+    );
+    expect(refreshed.state.localRestoredFinal?.previewGeneration.generationId).toBe(
+      recoveredGeneration.generationId,
+    );
+    expect(disposed).toContain(failed.localRestoredFinal!.previewGeneration.generationId);
+    expect(disposed).not.toContain(failed.previewGeneration!.generationId);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('fails closed when a Text Veil preview forges the masked review generation', async () => {
+    const failed = textVeiledFailedApplyState({
+      forgePreviewReviewGeneration: true,
+    });
+    const exactPage = failed.patchProposal!.preview.pages[0]!;
+    const forgedRecovery: DraftPreviewGeneration = {
+      ...failed.localRestoredFinal!.previewGeneration,
+      generationId: 'generation-forged-private-recovery',
+      pages: [{
+        ...exactPage,
+        pageId: 'generation-forged-private-recovery:page:1',
+        image: { ...exactPage.image, resourceId: 'rendered-forged-private-recovery' },
+      }],
+    };
+    const disposed: string[] = [];
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page private notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({
+          ...failed.localRestoredFinal!.validation,
+          draftHash: draft.draftHash,
+        }),
+        render: async () => forgedRecovery,
+        getGeneration: async () => forgedRecovery,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(failed);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+    const refused = await runtime.refreshFailedPreview();
+
+    expect(refused.state.patchProposal?.status).toBe('apply_failed');
+    expect(refused.state.lastError?.message).toMatch(/private-text preview/i);
+    expect(disposed).toEqual([forgedRecovery.generationId]);
+    expect(refused.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('fails closed and disposes a new render when prior visual exposure cannot map', async () => {
+    const failed = logShapedFailedApplyState({ omitExposure: true });
+    const originalPage = failed.patchProposal!.preview.pages[0]!;
+    const newGeneration: DraftPreviewGeneration = {
+      ...failed.previewGeneration!,
+      generationId: 'generation-unreviewed-recovery',
+      pages: [{
+        ...originalPage,
+        pageId: 'generation-unreviewed-recovery:page:1',
+        image: { ...originalPage.image, resourceId: 'rendered-unreviewed-recovery' },
+      }],
+    };
+    const disposed: string[] = [];
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({ ...failed.validation!, draftHash: draft.draftHash }),
+        render: async () => newGeneration,
+        getGeneration: async () => newGeneration,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(failed);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+    const result = await runtime.refreshFailedPreview();
+
+    expect(result.state.patchProposal?.status).toBe('apply_failed');
+    expect(result.state.lastError?.message).toMatch(/exact preview generation/i);
+    expect(result.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
+    expect(disposed).toEqual(['generation-unreviewed-recovery']);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('disposes a pixel-mismatched recovery and permits one clean local retry', async () => {
+    const failed = logShapedFailedApplyState();
+    const originalPage = failed.patchProposal!.preview.pages[0]!;
+    let mismatch = true;
+    let renderAttempt = 0;
+    const disposed: string[] = [];
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({ ...failed.validation!, draftHash: draft.draftHash }),
+        render: async () => {
+          renderAttempt += 1;
+          return {
+            ...failed.previewGeneration!,
+            generationId: `generation-pixel-retry-${renderAttempt}`,
+            pages: [{
+              ...originalPage,
+              pageId: `generation-pixel-retry-${renderAttempt}:page:1`,
+              image: {
+                ...originalPage.image,
+                resourceId: `rendered-pixel-retry-${renderAttempt}`,
+                digest: mismatch ? 'different-png-digest' : originalPage.image.digest,
+              },
+            }],
+          };
+        },
+        getGeneration: async () => null,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(failed);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+
+    const refused = await runtime.refreshFailedPreview();
+    expect(refused.state.patchProposal?.status).toBe('apply_failed');
+    expect(refused.state.lastError?.message).toMatch(/changed the reviewed pixels/i);
+    expect(disposed).toEqual(['generation-pixel-retry-1']);
+    expect(refused.state.lastApplyFailure).toEqual(failed.lastApplyFailure);
+    expect(provider.requests).toHaveLength(0);
+
+    mismatch = false;
+    const retried = await runtime.refreshFailedPreview();
+    expect(retried.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(retried.state.patchProposal?.status).toBe('waiting_for_approval');
+    expect(disposed).toEqual([
+      'generation-pixel-retry-1',
+      'generation-failed-48',
+    ]);
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it('handles recovered reject and feedback outside the stale graph interrupt', async () => {
+    const recoveredState = (): AgentState => {
+      const failed = logShapedFailedApplyState();
+      const proposal = {
+        ...failed.patchProposal!,
+        status: 'waiting_for_approval' as const,
+      };
+      return {
+        ...failed,
+        patchProposal: proposal,
+        lastError: undefined,
+        applyRecovery: {
+          failedPatchId: 'earlier-failed-patch',
+          failedPreviewId: 'earlier-failed-preview',
+          refreshedPatchId: proposal.patchId,
+          refreshedPreviewId: proposal.preview.previewId,
+          attempt: 1,
+          recoveredAt: NOW,
+        },
+      };
+    };
+
+    const rejectedState = recoveredState();
+    const rejectedDisposed: string[] = [];
+    const rejectProvider = new ScriptedProvider([]);
+    const { adapters: rejectDefaults } = fakeAdapters();
+    const rejectPersistence = new InMemoryAgentPersistence();
+    await rejectPersistence.saveTask(rejectedState);
+    const rejectRuntime = new AgentRuntime(rejectProvider, {
+      ...rejectDefaults,
+      sandbox: {
+        ...rejectDefaults.sandbox,
+        dispose: async (generationId) => { rejectedDisposed.push(generationId); },
+      },
+    }, rejectPersistence);
+    const restoredReject = await rejectRuntime.restore(rejectedState.identity.taskId);
+    expect(restoredReject.interrupt).toMatchObject({ kind: 'final_preview' });
+    const rejected = await rejectRuntime.rejectPreview(
+      rejectedState.patchProposal!.preview.previewId,
+    );
+    expect(rejected.state.lifecycle).toBe('completed');
+    expect(rejected.state.patchProposal?.status).toBe('rejected');
+    expect(rejected.state.applyRecovery).toBeUndefined();
+    expect(rejectedDisposed).toContain('generation-failed-48');
+    expect(rejectProvider.requests).toHaveLength(0);
+
+    const feedbackState = recoveredState();
+    const feedbackProvider = new ScriptedProvider([{
+      name: 'ask_user',
+      args: {
+        kind: 'requirements',
+        question: 'Should the refreshed headings feel warmer throughout?',
+      },
+    }]);
+    const { adapters: feedbackAdapters } = fakeAdapters();
+    const feedbackPersistence = new InMemoryAgentPersistence();
+    await feedbackPersistence.saveTask(feedbackState);
+    const feedbackRuntime = new AgentRuntime(
+      feedbackProvider,
+      feedbackAdapters,
+      feedbackPersistence,
+    );
+    await feedbackRuntime.restore(feedbackState.identity.taskId);
+    const feedback = await feedbackRuntime.sendUserMessage('Make the headings warmer.');
+    expect(feedback.interrupt).toMatchObject({ kind: 'requirements' });
+    expect(feedback.state.applyRecovery).toBeUndefined();
+    expect(feedback.state.conversation.filter((message) =>
+      message.role === 'user' && message.text === 'Make the headings warmer.'
+    )).toHaveLength(1);
+    expect(feedbackProvider.requests).toHaveLength(1);
+    expect(JSON.stringify(feedbackProvider.requests[0]?.messages)).not.toMatch(
+      /Refresh the final preview against the notebook/i,
+    );
+  });
+
+  it('settles a deferred local Refresh before Stop resolves and never resurrects its captured failed state', async () => {
+    const failed = logShapedFailedApplyState();
+    const originalPage = failed.patchProposal!.preview.pages[0]!;
+    const deferredGeneration: DraftPreviewGeneration = {
+      ...failed.previewGeneration!,
+      generationId: 'generation-deferred-refresh-stop',
+      pages: [{
+        ...originalPage,
+        pageId: 'generation-deferred-refresh-stop:page:1',
+        image: {
+          ...originalPage.image,
+          resourceId: 'rendered-deferred-refresh-stop',
+        },
+      }],
+    };
+    let markRenderStarted!: () => void;
+    const renderStarted = new Promise<void>((resolve) => {
+      markRenderStarted = resolve;
+    });
+    let releaseRender!: (generation: DraftPreviewGeneration) => void;
+    const renderGate = new Promise<DraftPreviewGeneration>((resolve) => {
+      releaseRender = resolve;
+    });
+    let markCancellationSaved!: () => void;
+    const cancellationSaved = new Promise<void>((resolve) => {
+      markCancellationSaved = resolve;
+    });
+    const saves: Array<{
+      readonly lifecycle: AgentState['lifecycle'];
+      readonly proposalStatus: string | undefined;
+      readonly errorCode: string | undefined;
+    }> = [];
+    let cancellationSaveWitnessed = false;
+    class RecordingPersistence extends InMemoryAgentPersistence {
+      override async saveTask(state: AgentState): Promise<void> {
+        saves.push({
+          lifecycle: state.lifecycle,
+          proposalStatus: state.patchProposal?.status,
+          errorCode: state.lastError?.code,
+        });
+        await super.saveTask(state);
+        if (state.lifecycle === 'cancelled' && !cancellationSaveWitnessed) {
+          cancellationSaveWitnessed = true;
+          markCancellationSaved();
+        }
+      }
+    }
+    const persistence = new RecordingPersistence();
+    await persistence.saveTask(failed);
+    saves.length = 0;
+    const disposed: string[] = [];
+    const provider = new ScriptedProvider([]);
+    const { adapters: defaults } = fakeAdapters();
+    const adapters: AgentAdapters = {
+      ...defaults,
+      notebook: {
+        ...defaults.notebook,
+        inspectNotebook: async () => ({
+          title: '48-page notebook',
+          snapshot: failed.notebookSnapshot!,
+          pages: [],
+        }),
+      },
+      sandbox: {
+        validate: async (draft) => ({ ...failed.validation!, draftHash: draft.draftHash }),
+        // Deliberately ignores AbortSignal to witness Stop's settlement
+        // barrier rather than merely testing cooperative cancellation.
+        render: async () => {
+          markRenderStarted();
+          return renderGate;
+        },
+        getGeneration: async () => deferredGeneration,
+        dispose: async (generationId) => { disposed.push(generationId); },
+      },
+    };
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(failed.identity.taskId);
+
+    const refreshing = runtime.refreshFailedPreview();
+    await renderStarted;
+    let stopResolved = false;
+    const stopping = runtime.stop('Reader stopped a local preview refresh')
+      .then(() => { stopResolved = true; });
+    await cancellationSaved;
+    // Give an implementation with no Refresh settlement barrier a full turn
+    // to resolve Stop; the deliberately uncooperative render is still gated.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(stopResolved).toBe(false);
+    expect(runtime.getSnapshot()).toMatchObject({
+      busy: true,
+      state: {
+        lifecycle: 'cancelled',
+        cancellation: { requested: true },
+        lastError: { code: 'cancelled' },
+      },
+    });
+
+    releaseRender(deferredGeneration);
+    const [refreshResult] = await Promise.all([refreshing, stopping]);
+    expect(stopResolved).toBe(true);
+    expect(refreshResult.state.lifecycle).toBe('cancelled');
+    expect(runtime.getSnapshot()).toMatchObject({
+      busy: false,
+      interrupt: null,
+      state: {
+        lifecycle: 'cancelled',
+        lastError: { code: 'cancelled' },
+      },
+    });
+    expect((await persistence.loadTask(failed.identity.taskId))?.state).toMatchObject({
+      lifecycle: 'cancelled',
+      cancellation: { requested: true },
+      lastError: { code: 'cancelled' },
+    });
+    const firstCancelledSave = saves.findIndex((save) => save.lifecycle === 'cancelled');
+    expect(firstCancelledSave).toBeGreaterThanOrEqual(0);
+    expect(saves.slice(firstCancelledSave).every((save) =>
+      save.lifecycle === 'cancelled' &&
+      save.proposalStatus === 'apply_failed' &&
+      save.errorCode === 'cancelled'
+    )).toBe(true);
+    expect(disposed).toContain(deferredGeneration.generationId);
+    expect(provider.requests).toHaveLength(0);
+  });
 
   it('aborts a live provider stream and keeps the last safe state for retry', async () => {
     class BlockingProvider implements AgentProvider {

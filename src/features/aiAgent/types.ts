@@ -697,6 +697,21 @@ export interface AgentApplyFailureReceipt {
   readonly failedAt: IsoTimestamp;
 }
 
+/**
+ * Durable marker for a replacement preview rebuilt locally from an already
+ * approved draft after BookView rejected the apply. It distinguishes this
+ * local approval boundary from the older LangGraph human interrupt, so a
+ * restart cannot resume the stale proposal or manufacture a chat message.
+ */
+export interface AgentApplyRecoveryReceipt {
+  readonly failedPatchId: string;
+  readonly failedPreviewId: string;
+  readonly refreshedPatchId: string;
+  readonly refreshedPreviewId: string;
+  readonly attempt: number;
+  readonly recoveredAt: IsoTimestamp;
+}
+
 export interface AgentState {
   readonly schemaVersion: AgentStateVersion;
   readonly identity: AgentRunIdentity;
@@ -741,6 +756,7 @@ export interface AgentState {
   readonly cancellation: AgentCancellationState;
   readonly lastError?: AgentPublicError;
   readonly lastApplyFailure?: AgentApplyFailureReceipt;
+  readonly applyRecovery?: AgentApplyRecoveryReceipt;
   readonly checkpointStep: number;
   readonly createdAt: IsoTimestamp;
   readonly updatedAt: IsoTimestamp;

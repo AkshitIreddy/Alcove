@@ -67,13 +67,33 @@ export interface ReviewedDraftReceipt extends ReviewedDraftReceiptBody {
   readonly receiptDigest: string;
 }
 
+/**
+ * PageEditor documents are JSON storage documents, but a freshly mounted
+ * node can still carry an optional property whose value is `undefined` (for
+ * example a page's unset `ruleGapPx`). SQLite stores the receipt through
+ * JSON.stringify, which omits that property. Hashing the pre-serialization
+ * object and then verifying the parsed object therefore made a brand-new
+ * review fail its own receipt.
+ *
+ * Canonicalize at this narrow handoff instead of changing the shared Agent
+ * hash. Existing notebook/source/cache hashes keep their identities, while
+ * the exact pages returned here are byte-for-byte the pages durable storage
+ * will later return to the apply seam.
+ */
+function canonicalReceiptBody(
+  body: ReviewedDraftReceiptBody,
+): ReviewedDraftReceiptBody {
+  return JSON.parse(JSON.stringify(body)) as ReviewedDraftReceiptBody;
+}
+
 export async function createReviewedDraftReceipt(
   body: ReviewedDraftReceiptBody,
   hash: AgentHashAdapter,
 ): Promise<ReviewedDraftReceipt> {
+  const canonical = canonicalReceiptBody(body);
   return {
-    ...body,
-    receiptDigest: await hash.digestJson(body),
+    ...canonical,
+    receiptDigest: await hash.digestJson(canonical),
   };
 }
 

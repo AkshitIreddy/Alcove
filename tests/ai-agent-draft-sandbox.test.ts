@@ -13,7 +13,10 @@ import {
   rollbackFetchedImageAssetPromotions,
   type FetchedImageAssetReceipt,
 } from '../src/editor/media/assets';
-import type { AgentHashAdapter } from '../src/features/aiAgent/adapters';
+import {
+  webCryptoAgentHash,
+  type AgentHashAdapter,
+} from '../src/features/aiAgent/adapters';
 import {
   createProductionDraftSandbox,
   pageDocIsMeaningful,
@@ -121,6 +124,144 @@ const renderContext = {
 };
 
 describe('production AI draft sandbox', () => {
+  it('keeps a 48-page structural review applyable after its receipt crosses JSON storage', async () => {
+    const persisted = new Map<string, string>();
+    const receipts: ReviewedDraftReceiptStore = {
+      get: async (id) => {
+        const value = persisted.get(id);
+        return value === undefined
+          ? null
+          : JSON.parse(value) as ReviewedDraftReceipt;
+      },
+      put: async (receipt) => {
+        persisted.set(receipt.generationId, JSON.stringify(receipt));
+      },
+      delete: async (id) => {
+        persisted.delete(id);
+      },
+    };
+    const pageIds = Array.from({ length: 48 }, (_, index) => `existing-${index + 1}`);
+    const largeSnapshot: NotebookSnapshotRef = {
+      bookId: 'book-with-48-pages',
+      bookRevision: 'book-revision-48',
+      pageIds,
+      pageRevisions: Object.fromEntries(pageIds.map((id, index) => [id, `revision-${index + 1}`])),
+      capturedAt: NOW,
+    };
+    const insertionTarget = { kind: 'after_page' as const, pageId: pageIds[47]! };
+    const script = [
+      '# Kirby',
+      '',
+      '- Pink hero from Dream Land',
+      '- Copies abilities by inhaling foes',
+      '',
+      '::page',
+      '# The Powerpuff Girls',
+      '',
+      '- Blossom leads',
+      '- Bubbles brings heart',
+      '- Buttercup brings grit',
+      '',
+      '::page',
+      '# Friendly face-off',
+      '',
+      '- Adaptability versus teamwork',
+    ].join('\n');
+    const draftForReview: NotebookDraft = {
+      runId: 'run-log-shaped-review',
+      version: 1,
+      script,
+      draftHash: await webCryptoAgentHash.digestText(script),
+      createdAt: NOW,
+    };
+    const sandbox = createProductionDraftSandbox({
+      hash: webCryptoAgentHash,
+      now: () => NOW,
+      assets: assetStore(),
+      generations: generationStore(),
+      receipts,
+      hasNode: () => true,
+      resolveFetches: async (doc) => doc,
+      renderPages: async ({ pages }) => pages.map((page, index) => ({
+        // Native editor JSON may contain optional attrs before the durable
+        // receipt crosses JSON/SQLite. This is the exact production boundary
+        // that made a freshly approved preview unreadable.
+        doc: {
+          ...page.doc,
+          attrs: {
+            ...(page.doc.attrs ?? {}),
+            optionalNativeAttribute: undefined,
+          },
+        },
+        pngBytes: new Uint8Array([index + 1, 48]),
+        width: 1240,
+        height: 1750,
+        sourceStart: page.sourceStart,
+        sourceEnd: page.sourceEnd,
+        producedOverflow: false,
+        diagnostics: [],
+      })),
+    });
+    const generation = await sandbox.adapter.render(draftForReview, {
+      bookSnapshot: largeSnapshot,
+      insertionTarget,
+      signal: new AbortController().signal,
+    });
+
+    const prepared = await prepareAiProposalPages({
+      draftHash: draftForReview.draftHash,
+      expectedBookRevision: largeSnapshot.bookRevision,
+      preview: {
+        generationId: generation.generationId,
+        draftHash: draftForReview.draftHash,
+        layoutHash: generation.layoutHash,
+        bookId: largeSnapshot.bookId,
+        expectedBookRevision: largeSnapshot.bookRevision,
+        expectedPageIds: pageIds,
+        insertionTarget,
+        expectedPageCount: generation.pageCount,
+        pages: generation.pages,
+        assumptions: [],
+        citations: [],
+        imageGenerationPrompts: [],
+        sourceCoverage: {
+          manifestDigest: '',
+          mode: 'relevant',
+          requiredUnitIds: [],
+          readUnitIds: [],
+          citedUnitIds: [],
+          omittedUnitIds: [],
+          staleSourceIds: [],
+          complete: true,
+          updatedAt: NOW,
+        },
+        visualReview: {
+          generationId: generation.generationId,
+          draftHash: generation.draftHash,
+          requiredPageIds: generation.pages.map((page) => page.pageId),
+          imageExposures: [],
+          inspectedPageIds: generation.pages.map((page) => page.pageId),
+          findings: [],
+          complete: true,
+          passed: true,
+          updatedAt: NOW,
+        },
+        validation: await sandbox.adapter.validate(draftForReview, {
+          bookSnapshot: largeSnapshot,
+          insertionTarget,
+          signal: new AbortController().signal,
+        }),
+      },
+    }, { receiptStore: receipts, hash: webCryptoAgentHash });
+    expect(prepared).toHaveLength(3);
+    expect(prepared.every((page) =>
+      !Object.prototype.hasOwnProperty.call(
+        page.doc.attrs ?? {},
+        'optionalNativeAttribute',
+      )
+    )).toBe(true);
+  });
+
   it('rolls back only asset rows newly promoted by an abandoned apply', async () => {
     const asset = (id: string): FetchedImageAssetReceipt => ({
       id,

@@ -12,6 +12,10 @@ import {
   sourceUnitsUnobservedBeforeProviderCall,
   visualImageExposurePageIds,
 } from './coverage';
+import {
+  normalizeNotebookScriptSubmission,
+  withNotebookCraftValidation,
+} from './draftCraft';
 import type { AgentEventBus } from './events';
 import {
   generationIdsOwnedByState,
@@ -363,12 +367,16 @@ async function buildLocalRestoredFinal(
     createdAt: now,
   };
   const rawTarget = await exactSandboxTarget(state, context, 'local_final');
-  const validation = await context.adapters.sandbox.validate(draft, {
-    bookSnapshot: state.notebookSnapshot,
-    insertionTarget: state.insertionTarget,
-    targetPage: rawTarget.targetPage,
-    signal: context.signal,
-  });
+  const validation = withNotebookCraftValidation(
+    await context.adapters.sandbox.validate(draft, {
+      bookSnapshot: state.notebookSnapshot,
+      insertionTarget: state.insertionTarget,
+      targetPage: rawTarget.targetPage,
+      signal: context.signal,
+    }),
+    draft.script,
+    state,
+  );
   if (!validation.valid || validation.draftHash !== restoredHash) {
     throw new Error(
       'Restoring masked text changed the Notebook Script structure. Alcove kept the masked review and did not prepare an unsafe final preview.',
@@ -1302,7 +1310,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'submit_notebook_script',
       description:
-        'Submit a complete Notebook Script draft into the disposable agent workspace. This creates no book write. For supplied-material formatting, first submit faithful natural pagination; after rendered inspection, a repair may add at most one compact relevant enrichment to an awkward gap only when rearranging content would harm a semantic boundary. Use again after visual/parser repair, within the repair budget.',
+        'Submit a complete raw Notebook Script draft into the disposable agent workspace. This creates no book write. A single exact outer markdown/notebook-script presentation fence is removed locally; intentional inner code and diagram fences remain. For supplied-material formatting, first submit faithful natural pagination; after rendered inspection, a repair may add at most one compact relevant enrichment to an awkward gap only when rearranging content would harm a semantic boundary. Use again after visual/parser repair, within the repair budget.',
       effect: 'draft',
       schema: submitScriptSchema,
       async execute(state, args, context) {
@@ -1311,10 +1319,12 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead',
           );
         }
+        const normalizedSubmission = normalizeNotebookScriptSubmission(args.script);
+        const submittedScript = normalizedSubmission.script;
         const isRepair = state.draft !== undefined;
-        const portableImageSlots = extractPortableImageSlots(args.script);
+        const portableImageSlots = extractPortableImageSlots(submittedScript);
         if (portableImageSlots.length > 0) assertPortableImagesRequested(state);
-        const draftHash = await context.adapters.hash.digestText(args.script);
+        const draftHash = await context.adapters.hash.digestText(submittedScript);
         const changedDraft = state.draft?.draftHash !== draftHash;
         const sourceContextChanged =
           state.draft?.sourceManifestDigest !== state.sourceManifest?.digest;
@@ -1328,6 +1338,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
               draftVersion: state.draft!.version,
               draftHash,
               portableImageSlots,
+              outerDocumentFenceRemoved: normalizedSubmission.outerDocumentFenceRemoved,
               mutationPerformed: false,
               unchanged: true,
             }),
@@ -1353,7 +1364,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         const draft = {
           runId: state.identity.runId,
           version: (state.draft?.version ?? 0) + 1,
-          script: args.script,
+          script: submittedScript,
           draftHash,
           sourceManifestDigest: state.sourceManifest?.digest,
           createdAt: now,
@@ -1430,6 +1441,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             draftVersion: draft.version,
             draftHash,
             portableImageSlots,
+            outerDocumentFenceRemoved: normalizedSubmission.outerDocumentFenceRemoved,
             mutationPerformed: false,
           }),
           summary: isRepair ? `stored repaired draft ${draft.version}` : 'stored initial draft',
@@ -1509,7 +1521,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'validate_notebook_script',
       description:
-        'Run deterministic parser, image-reference, page-ledger and dry-layout preparation checks in the disposable sandbox.',
+        'Run deterministic parser, image-reference, page-ledger, semantic catalogue-craft and dry-layout preparation checks in the disposable sandbox.',
       effect: 'draft',
       schema: emptySchema,
       async execute(state, _args, context) {
@@ -1517,12 +1529,19 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (state.notebookSnapshot === undefined) throw new Error('inspect the notebook first');
         if (state.insertionTarget === undefined) throw new Error('propose an insertion target first');
         const sandboxTarget = await exactSandboxTarget(state, context);
-        const validation = await context.adapters.sandbox.validate(state.draft, {
-          bookSnapshot: state.notebookSnapshot,
-          insertionTarget: state.insertionTarget,
-          targetPage: sandboxTarget.targetPage,
-          signal: context.signal,
-        });
+        const validation = withNotebookCraftValidation(
+          await context.adapters.sandbox.validate(state.draft, {
+            bookSnapshot: state.notebookSnapshot,
+            insertionTarget: state.insertionTarget,
+            targetPage: sandboxTarget.targetPage,
+            signal: context.signal,
+          }),
+          state.draft.script,
+          state,
+          state.previewGeneration?.draftHash === state.draft.draftHash
+            ? state.previewGeneration.pageCount
+            : undefined,
+        );
         return {
           state: touch(state, context, {
             validation,
@@ -1560,6 +1579,38 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (generation.draftHash !== state.draft.draftHash) {
           throw new Error('sandbox returned a preview for the wrong draft');
         }
+        const renderedValidation = withNotebookCraftValidation(
+          state.validation,
+          state.draft.script,
+          state,
+          generation.pageCount,
+        );
+        if (!renderedValidation.valid) {
+          for (const generationId of previousGenerationIds) {
+            if (generationId !== generation.generationId) {
+              await context.adapters.sandbox.dispose(generationId).catch(() => undefined);
+            }
+          }
+          return {
+            state: touch(state, context, {
+              validation: renderedValidation,
+              previewGeneration: generation,
+              visualReview: undefined,
+              patchProposal: undefined,
+              localRestoredFinal: undefined,
+              phase: 'checking_script',
+            }),
+            result: json({
+              generationId: generation.generationId,
+              draftHash: generation.draftHash,
+              pageCount: generation.pageCount,
+              diagnostics: renderedValidation.staticDiagnostics.filter((diagnostic) =>
+                diagnostic.code.startsWith('craft.'),
+              ),
+            }),
+            summary: 'native pagination exposed a multi-page draft that needs semantic composition',
+          };
+        }
         const sameGeneration =
           state.previewGeneration?.generationId === generation.generationId &&
           state.previewGeneration.draftHash === generation.draftHash &&
@@ -1575,6 +1626,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         }
         return {
           state: touch(state, context, {
+            validation: renderedValidation,
             previewGeneration: generation,
             textPrivacy: sandboxTarget.textPrivacy,
             visualReview,

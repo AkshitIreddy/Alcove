@@ -3,6 +3,7 @@ export * from './attachmentIntake';
 export * from './controller';
 export * from './cohereProvider';
 export * from './coverage';
+export * from './draftCraft';
 export * from './events';
 export * from './graph';
 export * from './generationOwnership';

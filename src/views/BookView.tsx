@@ -253,10 +253,13 @@ import { createProductionSourceAdapters } from '../features/aiAgent/productionSo
 import { createProductionDraftSandbox } from '../features/aiAgent/draftSandbox';
 import {
   prepareAiProposalApplication,
+  jsonStorageCanonicalPageDoc,
   rollbackPreparedAiProposalAssets,
   verifyPreparedAiProposalDocuments,
+  verifyPreparedAiProposalPlacement,
   type PreparedAiProposalApplication,
   type PreparedAiProposalPage,
+  type ReviewedPagePlacement,
 } from '../features/aiAgent/prepareProposal';
 import {
   pendingManagedAiAttachmentsInState,
@@ -512,7 +515,16 @@ export default function BookView(): JSX.Element {
     };
   };
 
-  const setScriptInsertionActivity = async (active: boolean): Promise<void> => {
+  const setScriptInsertionActivity = async (
+    active: boolean,
+    /**
+     * `undefined` preserves the manual Insert Script contract: settle every
+     * populated spread. The AI path supplies the immutable reviewed page ids,
+     * because its sandbox already paginated every final leaf and applying one
+     * reviewed page must not remount an unrelated 48-page notebook.
+     */
+    settlePageIds?: readonly string[],
+  ): Promise<void> => {
     if (active) {
       setScriptInsertionSettling(false);
       scriptInsertionViewLock ??= {
@@ -537,16 +549,24 @@ export default function BookView(): JSX.Element {
      * and shift every later ordinal. The reader then sees a complete section
      * on the staged page and the same section again after it moves forward.
      *
-     * While the insertion overlay still owns navigation, silently mount every
-     * populated spread through the REAL editor and let its transaction,
-     * ResizeObserver and overflow callbacks settle. Repeat until a complete
-     * sweep leaves the ordered documents unchanged. This makes dialog close
-     * the atomic boundary: every page the reader can turn to has already been
-     * measured by the layout that will display it.
+     * While the insertion overlay still owns navigation, silently mount the
+     * affected spreads through the REAL editor and let their transactions,
+     * ResizeObservers and overflow callbacks settle. Manual Script insertion
+     * still requests the whole populated book because an imported section may
+     * repaginate existing pages; an AI receipt already contains final native
+     * leaves, so it names only the reviewed destinations. Repeat until a
+     * complete scoped sweep leaves those documents unchanged.
      */
+    const scopedPageIds = settlePageIds === undefined
+      ? null
+      : new Set(settlePageIds);
+    const pagesInScope = (): readonly Page[] =>
+      pages().filter((page) =>
+        docHasContent(page.doc) &&
+        (scopedPageIds === null || scopedPageIds.has(page.id)),
+      );
     const pageSignature = (): string =>
-      pages()
-        .filter((page) => docHasContent(page.doc))
+      pagesInScope()
         .map(
           (page) =>
             `${page.id}:${JSON.stringify(page.doc, (key, value) =>
@@ -564,12 +584,25 @@ export default function BookView(): JSX.Element {
       for (let sweep = 0; sweep < 4; sweep += 1) {
         await carryChain;
         const before = pageSignature();
-        for (let target = 0; ; target += 1) {
-          const lastContentSlot = pages().reduce(
-            (last, page, slot) => (docHasContent(page.doc) ? slot : last),
-            0,
-          );
-          if (target > spreadOfSlot(lastContentSlot)) break;
+        const targetSpreads = scopedPageIds === null
+          ? (() => {
+              const lastContentSlot = pages().reduce(
+                (last, page, slot) => (docHasContent(page.doc) ? slot : last),
+                0,
+              );
+              return Array.from(
+                { length: spreadOfSlot(lastContentSlot) + 1 },
+                (_, index) => index,
+              );
+            })()
+          : [...new Set(
+              pages()
+                .map((page, slot) =>
+                  scopedPageIds.has(page.id) ? spreadOfSlot(slot) : -1,
+                )
+                .filter((spread) => spread >= 0),
+            )].sort((left, right) => left - right);
+        for (const target of targetSpreads) {
           setSpreadIndex(target);
           // Solid mounts the leaves on the first frame; custom node views and
           // their observers settle over the following frames.
@@ -1438,6 +1471,12 @@ export default function BookView(): JSX.Element {
     const count = pages().length;
     const here = spreadIndex();
     if (!session()) return;
+    // The AI apply temporarily visits its reviewed destination spreads while
+    // holding the book mutation lock. Those visits are verification, not
+    // reader navigation: stocking from them both bloats the transaction and
+    // changes the very page order being proved. The effect reruns when the
+    // lock drops and fills the real reader position normally.
+    if (aiPatchApplying()) return;
     if (stocking) return;
 
     const readyThrough = here + READY_SPREADS_AHEAD;
@@ -2859,6 +2898,8 @@ export default function BookView(): JSX.Element {
     createSignal<AiAgentPanelController | undefined>();
   const [aiDemoPanelController, setAiDemoPanelController] =
     createSignal<AiAgentPanelController | undefined>();
+  const [aiApplyQaPanelController, setAiApplyQaPanelController] =
+    createSignal<AiAgentPanelController | undefined>();
   const [aiTutorialPreview, setAiTutorialPreview] = createSignal(false);
   const notebookForAiApply = createProductionNotebookReadAdapter();
   let aiCoreController: CoreAiAgentController | null = null;
@@ -3304,6 +3345,8 @@ export default function BookView(): JSX.Element {
     let claimed = false;
     let checkpointOpen = false;
     let preparedApplication: PreparedAiProposalApplication | null = null;
+    let reviewedPageIds: readonly string[] = [];
+    let reviewedPlacement: ReviewedPagePlacement | null = null;
     try {
       // Drain all earlier page producers before proving freshness. From this
       // point until finally, no reader-authored mutation can enter the view.
@@ -3362,7 +3405,6 @@ export default function BookView(): JSX.Element {
       await setScriptInsertionActivity(true);
       checkpointOpen = true;
       const target = proposal.insertionTarget;
-      let reviewedPageIds: readonly string[] = [];
       if (target.kind === 'caret' || target.kind === 'replace_selection') {
         if (
           application.plan.kind !== 'integrated_target' ||
@@ -3399,7 +3441,9 @@ export default function BookView(): JSX.Element {
         const following = prepared.slice(1);
         if (
           first.protectedStart ||
-          (await webCryptoAgentHash.digestJson(first.doc)) !==
+          (await webCryptoAgentHash.digestJson(
+            jsonStorageCanonicalPageDoc(first.doc),
+          )) !==
             application.plan.reviewedTargetDocumentDigest
         ) {
           throw new Error('The reviewed target-page document failed its receipt check');
@@ -3422,16 +3466,28 @@ export default function BookView(): JSX.Element {
           { emitUpdate: false },
         );
         reviewedPageIds = [target.pageId, ...continuationIds];
+        reviewedPlacement = {
+          kind: 'integrated',
+          targetPageId: target.pageId,
+        };
       } else if (target.kind === 'before_page') {
         if (application.plan.kind !== 'structural_pages') {
           throw new Error('The reviewed application plan is not a structural insertion');
         }
         reviewedPageIds = await insertPagesBefore(target.pageId, prepared);
+        reviewedPlacement = {
+          kind: 'before',
+          anchorPageId: target.pageId,
+        };
       } else if (target.kind === 'after_page') {
         if (application.plan.kind !== 'structural_pages') {
           throw new Error('The reviewed application plan is not a structural insertion');
         }
         reviewedPageIds = await appendPreparedAfter(target.pageId, prepared);
+        reviewedPlacement = {
+          kind: 'after',
+          anchorPageId: target.pageId,
+        };
       } else if (target.kind === 'book_start') {
         if (application.plan.kind !== 'structural_pages') {
           throw new Error('The reviewed application plan is not a structural insertion');
@@ -3458,6 +3514,7 @@ export default function BookView(): JSX.Element {
         } else {
           reviewedPageIds = await insertPagesBefore(first.id, prepared);
         }
+        reviewedPlacement = { kind: 'at_start' };
       } else {
         if (application.plan.kind !== 'structural_pages') {
           throw new Error('The reviewed application plan is not a structural insertion');
@@ -3489,20 +3546,26 @@ export default function BookView(): JSX.Element {
             prepared[0]!.doc as unknown as JSONContent,
             { emitUpdate: false },
           );
+          reviewedPlacement = { kind: 'at_start' };
         } else {
           reviewedPageIds = await appendPreparedAfter(anchor.id, prepared);
+          reviewedPlacement = {
+            kind: 'after',
+            anchorPageId: anchor.id,
+          };
         }
       }
 
       setPages(await listPages(bookId));
-      await setScriptInsertionActivity(false);
+      await setScriptInsertionActivity(false, reviewedPageIds);
       checkpointOpen = false;
       // Let every queued editor/pagination producer settle after snapshots
       // resume, then compare all structural and integrated destinations to the
       // exact receipt. Only these reviewed bytes may become the committed book.
       await appendLane;
       await carryChain;
-      const settledById = new Map((await listPages(bookId)).map((page) => [page.id, page]));
+      const settled = await listPages(bookId);
+      const settledById = new Map(settled.map((page) => [page.id, page]));
       await verifyPreparedAiProposalDocuments({
         pageIds: reviewedPageIds,
         pages: prepared,
@@ -3514,7 +3577,15 @@ export default function BookView(): JSX.Element {
           return live === null ? stored.doc : (live.getJSON() as PageDoc);
         },
       });
-      const resulting = await listPages(bookId);
+      if (reviewedPlacement === null) {
+        throw new Error('The reviewed insertion did not produce a placement receipt');
+      }
+      verifyPreparedAiProposalPlacement({
+        orderedPageIds: settled.map((page) => page.id),
+        reviewedPageIds,
+        placement: reviewedPlacement,
+      });
+      const resulting = settled;
       if (
         resulting.length === 0 ||
         resulting.some((page, index) => page.ord !== index) ||
@@ -3544,7 +3615,7 @@ export default function BookView(): JSX.Element {
     } catch (error) {
       if (checkpointOpen) {
         try {
-          await setScriptInsertionActivity(false);
+          await setScriptInsertionActivity(false, reviewedPageIds);
         } catch {
           // The exact pre-apply checkpoint below is still the authority.
         }
@@ -3621,6 +3692,48 @@ export default function BookView(): JSX.Element {
       },
     ];
   };
+
+  /*
+   * Provider-free browser regression for the REAL approved-proposal closure.
+   * The ordinary demo has its own reversible insertion seam, so it cannot
+   * prove BookView's receipt verification and apply journal. Keep this bridge
+   * behind a second exact QA opt-in and absent from every Tauri build path.
+   */
+  onMount(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (
+      '__TAURI_INTERNALS__' in window ||
+      query.get('fx') !== 'force' ||
+      query.get('qa') !== 'agent-apply'
+    ) return;
+    let cancelled = false;
+    let bridge: import('./rail/aiAgentApplyQaBridge').AiAgentApplyQaBridgeHandle | undefined;
+    void import('./rail/aiAgentApplyQaBridge').then(({ createAiAgentApplyQaBridge }) => {
+      const created = createAiAgentApplyQaBridge({
+        bookId: () => session()?.book.id,
+        bookTitle: () => session()?.book.title,
+        insertionTarget: aiDefaultInsertionTarget,
+        applyApprovedProposal: applyApprovedAiProposal,
+        restoreAppliedProposal: () => restoreScriptInsertion(true),
+        openPanel: () => setActivePanel('ai-agent'),
+      });
+      if (cancelled) {
+        void created.dispose();
+        return;
+      }
+      bridge = created;
+      window.__aiAgentApplyQa = created;
+      setAiApplyQaPanelController(created.controller);
+    }).catch((error) => {
+      if (!cancelled) console.error('[ai-agent-apply-qa] bridge unavailable', error);
+    });
+    onCleanup(() => {
+      cancelled = true;
+      if (window.__aiAgentApplyQa === bridge) delete window.__aiAgentApplyQa;
+      setAiApplyQaPanelController(undefined);
+      if (bridge !== undefined) void bridge.dispose();
+    });
+  });
 
   onMount(() => {
     let disposed = false;
@@ -4871,7 +4984,7 @@ export default function BookView(): JSX.Element {
               >
                 <AiAgentPanel
                   bookTitle={loaded.book.title}
-                  controller={aiDemoPanelController() ?? aiPanelController()}
+                  controller={aiApplyQaPanelController() ?? aiDemoPanelController() ?? aiPanelController()}
                   onNotify={notify}
                   tourPreview={aiTutorialPreview()}
                   panelOpen={activePanel() === 'ai-agent'}

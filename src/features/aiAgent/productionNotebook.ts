@@ -25,6 +25,7 @@ import type {
   NotebookSelectionInspection,
 } from './types';
 import { computeNotebookSelectionDigest } from './selectionDigest';
+import { jsonStorageCanonicalPageDoc } from './pageDocStorage';
 
 export interface NotebookRevisionPage {
   readonly id: string;
@@ -107,7 +108,7 @@ export function computeNotebookRevision(
       .map((page) => ({
         id: page.id,
         ord: page.ord,
-        doc: page.doc,
+        doc: jsonStorageCanonicalPageDoc(page.doc),
       })),
   );
 }
@@ -141,7 +142,7 @@ export function computeNotebookContentRevision(
     ordered.slice(0, authoredLength).map((page) => ({
       id: page.id,
       ord: page.ord,
-      doc: page.doc,
+      doc: jsonStorageCanonicalPageDoc(page.doc),
     })),
   );
 }
@@ -166,7 +167,7 @@ export function computeNotebookPageRevision(
   return hash.digestJson({
     id: page.id,
     ord: page.ord,
-    doc: page.doc,
+    doc: jsonStorageCanonicalPageDoc(page.doc),
   });
 }
 
@@ -177,7 +178,7 @@ async function inspectResolvedPage(
   signal: AbortSignal,
 ): Promise<NotebookPageInspection> {
   abortIfNeeded(signal);
-  const doc = liveDoc(page, deps);
+  const doc = jsonStorageCanonicalPageDoc(liveDoc(page, deps));
   const [revision, documentDigest] = await Promise.all([
     computeNotebookPageRevision({ ...page, doc }, deps.hash),
     deps.hash.digestJson(doc),

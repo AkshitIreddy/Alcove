@@ -15,6 +15,9 @@ import { webCryptoAgentHash } from './adapters';
 import { loadReviewedDraftReceipt } from './draftSandbox';
 import type { NotebookPatchProposal } from './types';
 import type { ReviewedDraftApplicationPlan } from './reviewedReceipt';
+import { jsonStorageCanonicalPageDoc } from './pageDocStorage';
+
+export { jsonStorageCanonicalPageDoc } from './pageDocStorage';
 
 export interface PreparedAiProposalPage {
   readonly source: string;
@@ -35,6 +38,69 @@ export interface PrepareAiProposalOptions {
   readonly promoteAssets?: (
     assets: readonly FetchedImageAssetReceipt[],
   ) => Promise<void>;
+}
+
+export type ReviewedPagePlacement =
+  | { readonly kind: 'at_start' }
+  | { readonly kind: 'before'; readonly anchorPageId: string }
+  | { readonly kind: 'after'; readonly anchorPageId: string }
+  | { readonly kind: 'integrated'; readonly targetPageId: string };
+
+/**
+ * Prove that the reviewed page ids still form the exact run BookView placed.
+ * Document receipts alone cannot detect an unrelated spill/reorder landing
+ * between two reviewed leaves, or a structurally valid run appearing on the
+ * wrong side of its reviewed anchor.
+ */
+export function verifyPreparedAiProposalPlacement(input: {
+  readonly orderedPageIds: readonly string[];
+  readonly reviewedPageIds: readonly string[];
+  readonly placement: ReviewedPagePlacement;
+}): void {
+  const { orderedPageIds, reviewedPageIds, placement } = input;
+  if (
+    reviewedPageIds.length === 0 ||
+    new Set(reviewedPageIds).size !== reviewedPageIds.length ||
+    new Set(orderedPageIds).size !== orderedPageIds.length
+  ) {
+    throw new Error('The reviewed pages did not settle into one valid page run');
+  }
+
+  const firstIndex = orderedPageIds.indexOf(reviewedPageIds[0]!);
+  const actualRun = firstIndex < 0
+    ? []
+    : orderedPageIds.slice(firstIndex, firstIndex + reviewedPageIds.length);
+  if (
+    firstIndex < 0 ||
+    actualRun.length !== reviewedPageIds.length ||
+    actualRun.some((pageId, index) => pageId !== reviewedPageIds[index])
+  ) {
+    throw new Error('The reviewed pages changed order while the application was settling');
+  }
+
+  if (placement.kind === 'at_start') {
+    if (firstIndex !== 0) {
+      throw new Error('The reviewed pages no longer begin this notebook');
+    }
+    return;
+  }
+  if (placement.kind === 'integrated') {
+    if (reviewedPageIds[0] !== placement.targetPageId) {
+      throw new Error('The reviewed integrated page no longer owns its target');
+    }
+    return;
+  }
+
+  const anchorIndex = orderedPageIds.indexOf(placement.anchorPageId);
+  if (anchorIndex < 0) {
+    throw new Error('The reviewed insertion anchor disappeared while settling');
+  }
+  const expectedFirst = placement.kind === 'before'
+    ? anchorIndex - reviewedPageIds.length
+    : anchorIndex + 1;
+  if (firstIndex !== expectedFirst) {
+    throw new Error('The reviewed pages moved away from their approved placement');
+  }
 }
 
 /**
@@ -122,8 +188,10 @@ export async function verifyPreparedAiProposalDocuments(input: {
     const actual = await input.readPageDoc(input.pageIds[index]!);
     if (actual === null) throw new Error('A reviewed page disappeared while settling');
     if (
-      (await hash.digestJson(actual)) !==
-        (await hash.digestJson(input.pages[index]!.doc))
+      (await hash.digestJson(jsonStorageCanonicalPageDoc(actual))) !==
+        (await hash.digestJson(
+          jsonStorageCanonicalPageDoc(input.pages[index]!.doc),
+        ))
     ) {
       throw new Error(
         'A page changed while the exact reviewed application was settling. The notebook was restored.',

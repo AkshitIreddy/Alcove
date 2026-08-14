@@ -22,7 +22,7 @@ describe('script insertion and late image pagination wiring', () => {
       'utf8',
     );
     const observer = source.match(
-      /const resize = new ResizeObserver\(\(\) => \{([\s\S]*?)\n\s*\}\);/,
+      /const resize = new ResizeObserver\(\([^)]*\) => \{([\s\S]*?)\n\s*\}\);/,
     )?.[1];
 
     expect(observer).toBeDefined();
@@ -78,5 +78,31 @@ describe('script insertion and late image pagination wiring', () => {
     expect(bookView).toContain('cursorCarried && scriptInsertionViewLock === null');
     expect(bookView).toContain('await carryChain;');
     expect(bookView).toContain('onInsertionActivity={setScriptInsertionActivity}');
+  });
+
+  it('settles only reviewed AI spreads and never grows stock from verification navigation', () => {
+    const bookView = readFileSync(
+      resolve(ROOT, 'src/views/BookView.tsx'),
+      'utf8',
+    );
+    const settlement = bookView.match(
+      /const setScriptInsertionActivity = async \(([\s\S]*?)\n\s*const armScriptInsertionUndo/,
+    )?.[1];
+    const stocking = bookView.match(
+      /const READY_SPREADS_AHEAD = 2;([\s\S]*?)\n\s*\/\*\* Contract rule 3/,
+    )?.[1];
+    const apply = bookView.match(
+      /const applyApprovedAiProposal = async \(([\s\S]*?)\n\s*const aiDefaultInsertionTarget/,
+    )?.[1];
+
+    expect(settlement).toBeDefined();
+    expect(settlement).toContain('settlePageIds?: readonly string[]');
+    expect(settlement).toContain('const scopedPageIds = settlePageIds === undefined');
+    expect(settlement).toContain('scopedPageIds.has(page.id) ? spreadOfSlot(slot) : -1');
+    expect(stocking).toBeDefined();
+    expect(stocking).toContain('if (aiPatchApplying()) return;');
+    expect(apply).toBeDefined();
+    expect(apply).toContain('await setScriptInsertionActivity(false, reviewedPageIds);');
+    expect(apply).toContain('verifyPreparedAiProposalPlacement({');
   });
 });

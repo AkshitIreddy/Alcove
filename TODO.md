@@ -119,6 +119,13 @@ for the current working tree rather than relying on the long development chat.
 
 ### 2026-08-14 owner localhost follow-up
 
+- [x] Make **Insert into book** finish in one bounded transaction on a large
+      notebook: JSON-storage-equivalent PageDocs must not fail exact receipt
+      verification, settlement must visit only affected pages, and Refresh
+      must not recreate an invariant apply/rollback loop. Prove the real
+      48-page Insert button path in Playwright, including timing and rollback
+      sabotage, before marking this complete.
+
 - [x] Keep the typing caret/indicator optically inside the ruled text line at
       native and fitted page scales; it must not cut through either adjacent
       paper rule.

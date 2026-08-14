@@ -7,6 +7,7 @@ vi.mock('../src/editor/extensions', async () => {
 import type { AiAttachmentData, AiAttachmentMetadata } from '../src/data/aiGateway';
 import type { ReviewedDraftReceiptStore } from '../src/data/aiAgentReviewedDraft';
 import { getDb } from '../src/data/db';
+import type { PageDoc } from '../src/data/types';
 import {
   missingFetchedImageAssetIds,
   recordAssetRow,
@@ -25,8 +26,10 @@ import {
   type StoredDraftGeneration,
 } from '../src/features/aiAgent/draftSandbox';
 import {
+  jsonStorageCanonicalPageDoc,
   prepareAiProposalPages,
   verifyPreparedAiProposalDocuments,
+  verifyPreparedAiProposalPlacement,
 } from '../src/features/aiAgent/prepareProposal';
 import { buildIntegratedTargetDocument } from '../src/features/aiAgent/integratedTarget';
 import type { ReviewedDraftReceipt } from '../src/features/aiAgent/reviewedReceipt';
@@ -365,10 +368,100 @@ describe('production AI draft sandbox', () => {
     })).rejects.toThrow('changed while the exact reviewed application was settling');
   });
 
+  it('compares receipt and live PageDocs through the real JSON-storage boundary', async () => {
+    const persisted: PageDoc = {
+      type: 'doc',
+      attrs: { pageStyle: 'ruled', lineHeightPx: 28 },
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'Profit is revenue minus costs.' }],
+      }],
+    };
+    const live: PageDoc = {
+      ...persisted,
+      attrs: {
+        ...persisted.attrs,
+        // TipTap's Document extension exposes this optional default even
+        // though JSON.stringify/SQLite omit it from the reviewed receipt.
+        ruleGapPx: undefined,
+      },
+    };
+
+    expect(JSON.stringify(live)).toBe(JSON.stringify(persisted));
+    expect(await webCryptoAgentHash.digestJson(live)).not.toBe(
+      await webCryptoAgentHash.digestJson(persisted),
+    );
+    expect(jsonStorageCanonicalPageDoc(live)).toEqual(persisted);
+    await expect(verifyPreparedAiProposalDocuments({
+      pageIds: ['installed-profit'],
+      pages: [{ source: '# Profit', doc: persisted, protectedStart: true }],
+      readPageDoc: () => live,
+      hash: webCryptoAgentHash,
+    })).resolves.toBeUndefined();
+
+    await expect(verifyPreparedAiProposalDocuments({
+      pageIds: ['installed-profit'],
+      pages: [{ source: '# Profit', doc: persisted, protectedStart: true }],
+      readPageDoc: () => ({
+        ...live,
+        content: [{
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Profit changed after review.' }],
+        }],
+      }),
+      hash: webCryptoAgentHash,
+    })).rejects.toThrow('changed while the exact reviewed application was settling');
+
+    const expectedBeforeSpill: PageDoc = {
+      ...persisted,
+      content: [
+        ...(persisted.content ?? []),
+        { type: 'paragraph', content: [{ type: 'text', text: 'Reviewed tail.' }] },
+      ],
+    };
+    await expect(verifyPreparedAiProposalDocuments({
+      pageIds: ['installed-profit'],
+      pages: [{
+        source: '# Profit\n\nProfit is revenue minus costs.\n\nReviewed tail.',
+        doc: expectedBeforeSpill,
+        protectedStart: true,
+      }],
+      // An unexpected pagination spill trims the reviewed source before it
+      // creates/mutates the following leaf. Even when that new id is outside
+      // the scoped mount list, the source receipt must fail closed.
+      readPageDoc: () => live,
+      hash: webCryptoAgentHash,
+    })).rejects.toThrow('changed while the exact reviewed application was settling');
+  });
+
+  it('requires reviewed pages to remain contiguous at their approved placement', () => {
+    expect(() => verifyPreparedAiProposalPlacement({
+      orderedPageIds: ['before', 'review-1', 'review-2', 'after', 'stock'],
+      reviewedPageIds: ['review-1', 'review-2'],
+      placement: { kind: 'after', anchorPageId: 'before' },
+    })).not.toThrow();
+    expect(() => verifyPreparedAiProposalPlacement({
+      orderedPageIds: ['before', 'review-1', 'spill', 'review-2', 'after'],
+      reviewedPageIds: ['review-1', 'review-2'],
+      placement: { kind: 'after', anchorPageId: 'before' },
+    })).toThrow('changed order');
+    expect(() => verifyPreparedAiProposalPlacement({
+      orderedPageIds: ['before', 'after', 'review-1', 'review-2'],
+      reviewedPageIds: ['review-1', 'review-2'],
+      placement: { kind: 'after', anchorPageId: 'before' },
+    })).toThrow('approved placement');
+    expect(() => verifyPreparedAiProposalPlacement({
+      orderedPageIds: ['target', 'review-2', 'after'],
+      reviewedPageIds: ['target', 'review-2'],
+      placement: { kind: 'integrated', targetPageId: 'target' },
+    })).not.toThrow();
+  });
+
   it('renders and receipts the exact integrated selection result, not a standalone fragment', async () => {
     const receipts = receiptStore();
     const targetDoc = {
       type: 'doc' as const,
+      attrs: { pageStyle: 'ruled' as const, lineHeightPx: 28 },
       content: [{
         type: 'paragraph',
         content: [{ type: 'text', text: 'Original surrounding sentence.' }],
@@ -387,13 +480,14 @@ describe('production AI draft sandbox', () => {
       targetPage: {
         pageId: 'existing-1',
         revision: 'page-revision-1',
-        documentDigest: await hash.digestJson(targetDoc),
+        documentDigest: await webCryptoAgentHash.digestJson(targetDoc),
         doc: targetDoc,
       },
       signal: new AbortController().signal,
     };
+    let renderedIntegratedDoc: PageDoc | undefined;
     const sandbox = createProductionDraftSandbox({
-      hash,
+      hash: webCryptoAgentHash,
       now: () => NOW,
       assets: assetStore(),
       generations: generationStore(),
@@ -405,11 +499,21 @@ describe('production AI draft sandbox', () => {
           targetPage === undefined ||
           (insertionTarget.kind !== 'caret' && insertionTarget.kind !== 'replace_selection')
         ) throw new Error('missing integrated target');
-        const doc = await buildIntegratedTargetDocument({
+        const integrated = await buildIntegratedTargetDocument({
           targetDoc: targetPage.doc,
           draftDoc: pages[0]!.doc,
           target: insertionTarget,
         });
+        const doc: PageDoc = {
+          ...integrated,
+          attrs: {
+            ...(integrated.attrs ?? {}),
+            // A live TipTap document carries the optional default, while its
+            // reviewed SQLite receipt omits it.
+            ruleGapPx: undefined,
+          },
+        };
+        renderedIntegratedDoc = doc;
         return [{
           doc,
           pngBytes: new Uint8Array([31]),
@@ -420,17 +524,34 @@ describe('production AI draft sandbox', () => {
         }];
       },
     });
-    const replacement = draft('A much warmer opening');
+    const replacementScript = 'A much warmer opening';
+    const replacement: NotebookDraft = {
+      ...draft(replacementScript),
+      draftHash: await webCryptoAgentHash.digestText(replacementScript),
+    };
     const generation = await sandbox.adapter.render(replacement, integratedContext);
     const receipt = await receipts.get(generation.generationId);
 
     expect(receipt?.applicationPlan).toMatchObject({
       kind: 'integrated_target',
       targetPageId: 'existing-1',
-      expectedTargetDocumentDigest: await hash.digestJson(targetDoc),
+      expectedTargetDocumentDigest: await webCryptoAgentHash.digestJson(targetDoc),
       targetPageIndex: 0,
       insertedPageStartIndex: 1,
     });
+    expect(renderedIntegratedDoc).toBeDefined();
+    expect(JSON.stringify(renderedIntegratedDoc)).toBe(
+      JSON.stringify(receipt?.pages[0]?.doc),
+    );
+    expect(await webCryptoAgentHash.digestJson(renderedIntegratedDoc)).not.toBe(
+      await webCryptoAgentHash.digestJson(receipt?.pages[0]?.doc),
+    );
+    if (receipt?.applicationPlan.kind !== 'integrated_target') {
+      throw new Error('expected an integrated reviewed application plan');
+    }
+    expect(receipt.applicationPlan.reviewedTargetDocumentDigest).toBe(
+      await webCryptoAgentHash.digestJson(receipt.pages[0]!.doc),
+    );
     expect(receipt?.pages[0]?.protectedStart).toBe(false);
     expect(JSON.stringify(receipt?.pages[0]?.doc)).toContain('A much warmer opening');
     expect(JSON.stringify(receipt?.pages[0]?.doc)).toContain('surrounding sentence');

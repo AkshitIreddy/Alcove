@@ -43,6 +43,7 @@ import type {
   DraftSandboxTargetPage,
 } from './adapters';
 import { webCryptoAgentHash } from './adapters';
+import { jsonStorageCanonicalPageDoc } from './pageDocStorage';
 import {
   REVIEWED_DRAFT_RECEIPT_VERSION,
   cloneReviewedDraftReceipt,
@@ -1218,7 +1219,9 @@ export function createProductionDraftSandbox(
               targetPageId: context.insertionTarget.pageId,
               expectedTargetRevision: context.targetPage!.revision,
               expectedTargetDocumentDigest: context.targetPage!.documentDigest,
-              reviewedTargetDocumentDigest: await hash.digestJson(mounted[0]!.doc),
+              reviewedTargetDocumentDigest: await hash.digestJson(
+                jsonStorageCanonicalPageDoc(mounted[0]!.doc),
+              ),
               targetPageIndex: 0,
               insertedPageStartIndex: 1,
             }

@@ -6,6 +6,7 @@ import type {
 import type { NotebookReadAdapter } from '../src/features/aiAgent/adapters';
 import {
   computeNotebookContentRevision,
+  computeNotebookPageRevision,
   computeNotebookRevision,
   createSourceCoverageLedger,
   createProductionSourceAdapters,
@@ -15,6 +16,7 @@ import {
   scoreLexicalText,
   splitCanonicalSpec,
   splitSourceText,
+  webCryptoAgentHash,
 } from '../src/features/aiAgent';
 
 const hash = {
@@ -57,6 +59,43 @@ describe('AI agent production read/source adapters', () => {
       first,
       { ...second, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Changed' }] }] } },
     ], hash)).not.toBe(expected);
+  });
+
+  it('keeps live optional undefined attrs equal to their persisted JSON revision', async () => {
+    const persisted = {
+      id: 'page-json-canonical',
+      ord: 0,
+      updatedAt: '2026-08-14T11:00:00.000Z',
+      doc: {
+        type: 'doc' as const,
+        attrs: { pageStyle: 'ruled' as const, lineHeightPx: 28 },
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Profit' }] }],
+      },
+    };
+    const live = {
+      ...persisted,
+      doc: {
+        ...persisted.doc,
+        attrs: { ...persisted.doc.attrs, ruleGapPx: undefined },
+      },
+    };
+
+    expect(await webCryptoAgentHash.digestJson(live.doc)).not.toBe(
+      await webCryptoAgentHash.digestJson(persisted.doc),
+    );
+    await expect(computeNotebookRevision([live], webCryptoAgentHash)).resolves.toBe(
+      await computeNotebookRevision([persisted], webCryptoAgentHash),
+    );
+    await expect(
+      computeNotebookContentRevision([live], webCryptoAgentHash),
+    ).resolves.toBe(
+      await computeNotebookContentRevision([persisted], webCryptoAgentHash),
+    );
+    await expect(
+      computeNotebookPageRevision(live, webCryptoAgentHash),
+    ).resolves.toBe(
+      await computeNotebookPageRevision(persisted, webCryptoAgentHash),
+    );
   });
 
   it('separates Agent content freshness from full structural history authority', async () => {

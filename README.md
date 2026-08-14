@@ -1199,7 +1199,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7795<!--/f--> lines.
+<!--f:rustLines-->7758<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1713,7 +1713,7 @@ reader.
 | | | Where it is explained |
 | --- | --- | --- |
 | Frontend source | <!--f:srcFiles-->385<!--/f--> TypeScript files, <!--f:srcDocstrings-->348<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
-| Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7795<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
+| Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7758<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |

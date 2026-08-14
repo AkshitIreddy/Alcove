@@ -357,6 +357,15 @@ thinking with an 8,000-token budget and the normal output allowance. This
 optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
 durable state still expose no reasoning channel.
 
+Every non-empty Agent catalogue is sent with Cohere `tool_choice: REQUIRED` as
+well as `strict_tools: true`. The first control requires a call; the second
+constrains its arguments to the advertised schema. Alcove still treats the
+provider stream as untrusted. If a well-formed empty completion or malformed
+tool stream occurs in one of the four singleton, argument-free phases above,
+the graph records that provider attempt and safely routes the only locally
+authorized transition. Any judgment-bearing or multi-tool phase still pauses
+after its single corrective turn rather than guessing the model's intent.
+
 Images are observations for one turn, not durable repeated history. The adapter
 reattaches pixels only from the trailing unanswered tool-result group, after the
 complete assistant -> tool-results sequence, in one synthetic user turn. Older
@@ -369,7 +378,10 @@ The adapter rejects malformed stream ordering, incomplete/duplicate calls,
 invalid argument JSON, mismatched finish reasons and completion without a valid
 message end. Rust independently fixes the outbound origin to Cohere, validates
 the request vocabulary and JSON/tool/image/stream bounds, verifies SSE content
-type, retries only bounded retryable failures and returns public error codes.
+type and returns typed public errors. The graph is the single chat-retry owner:
+one counted provider call is one Cohere `/v2/chat` HTTP attempt, including on
+desktop. Native Embed, Rerank and key-check requests retain their own bounded
+retry loops because they do not pass through the Agent graph.
 
 ### Persistence and cancellation
 
@@ -387,7 +399,11 @@ and Rust HTTP future. Rust also retains a bounded cancellation intent when Stop
 arrives before native request registration. Retry creates a fresh abort/run
 generation and resumes the safe checkpoint; a follow-up sent after Stop is
 queued durably before resume so it cannot be spliced between an assistant tool
-call and its mandatory result.
+call and its mandatory result. A checkpoint with a real pending node resumes
+that exact cursor. A provider failure has already routed to LangGraph `END`, so
+Retry seeds the saved domain state through `START`; merely updating the terminal
+checkpoint and invoking `null` would perform no work. Failed provider attempts
+are included in usage and budget accounting even when no valid turn is emitted.
 
 ## Source policy
 

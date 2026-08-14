@@ -73,7 +73,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7795<!--/f--> lines.
+<!--f:rustLines-->7758<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1139,6 +1139,15 @@ events are separate streams: prose becomes the reader-visible conversation;
 goals, plan steps, tool summaries, coverage, diagnostics and observed visual
 findings become the audit timeline. Neither contract has a raw reasoning field.
 
+The Cohere request pairs `tool_choice: REQUIRED` with `strict_tools: true` when
+the Agent catalogue is non-empty. They solve different problems: REQUIRED
+prevents a prose-only completion, while strict tools constrain the chosen call
+to its schema. Alcove still validates the stream and call locally. A provider
+that returns an empty completion or a malformed call in one of the four
+singleton argument-free routing phases is counted and replaced by that sole
+locally authorized transition; a judgment-bearing or multi-tool phase is never
+guessed this way.
+
 The Cohere adapter also spends reasoning budget according to the advertised
 surface. When exactly one deterministic routing tool is available—validation,
 native render, patch preparation or final preview submission—it disables
@@ -1598,7 +1607,10 @@ end, a finish reason inconsistent with emitted calls, and native completion
 before a valid message end. Rust independently constrains message/tool/schema/
 image/request sizes and JSON depth/node count, accepts only the fixed Cohere
 origin, verifies the SSE content type, caps individual and total event bytes,
-maps bounded public errors, and retries only retryable statuses/network faults.
+and maps bounded public errors. Chat has one retry owner: the graph counts and
+retries each `/v2/chat` HTTP attempt, so a 24-call window cannot hide three
+native attempts inside each logical call. Embed, Rerank and credential checks
+remain native bounded-retry operations outside the Agent graph.
 
 Stop crosses both layers. `AgentRuntime.stop()` first installs a new abort
 generation and durably marks cancellation, so an older invocation cannot later
@@ -1608,7 +1620,12 @@ cancel-before-registration registry also catches the race where the reader
 presses Stop just before the matching native request has registered. Stop never
 approves or applies a proposal; resuming a stopped conversation enters the real
 Retry path, queues the exact follow-up durably, installs a fresh run generation
-and resumes from the safe checkpoint.
+and resumes from the safe checkpoint. If the checkpoint owns a pending node,
+Retry resumes that cursor. If a provider failure already routed the graph to
+`END`, Retry re-enters through `START` with the same saved domain state; updating
+the terminal checkpoint and calling `invoke(null)` would otherwise appear to do
+nothing. Failed provider attempts count against the same usage window even when
+they never yield a valid assistant turn.
 
 ### Durable state is more than chat history
 

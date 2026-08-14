@@ -237,11 +237,18 @@ commits as safety checkpoints. Versioning, release-note finalisation, pushing,
 tagging and publication still require a later explicit go-ahead.
 
 A redacted live-provider compatibility smoke exercised both supplied key classes
-against the exact 23-tool production catalogue. It found and removed two
-Command A+ request fields the live API rejected (`citation_options` and
-`tool_choice`), after which both calls returned a complete streamed strict-tool
-result. The public animation uses a frozen, human-vetted Command A+ fixture and
-does not call Cohere during playback.
+against the exact 23-tool production catalogue. It found and removed the
+unsupported citation-mode request field. Cohere's current V2 contract now
+supports `tool_choice: REQUIRED` for Command A+ and distinguishes it from
+`strict_tools`; Alcove sends both on every non-empty Agent catalogue, serializes
+the field through desktop and localhost transports, and retains local protocol
+validation plus a safe singleton-phase fallback. Terminal provider failures
+restart from the durable graph state when the reader presses Retry, and failed
+attempts consume the provider budget. The graph is the sole chat-retry owner,
+so one counted call is one real Cohere `/v2/chat` attempt on both desktop and
+localhost; native Embed, Rerank and credential checks keep their separate
+bounded retries. The public animation uses a frozen, human-vetted Command A+
+fixture and does not call Cohere during playback.
 
 ### Product decision
 

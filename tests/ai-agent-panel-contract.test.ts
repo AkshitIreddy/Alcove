@@ -107,13 +107,20 @@ describe('AI agent conversational transcript', () => {
     expect(demo).not.toContain('Keep it here in our conversation');
   });
 
-  it('preserves safe plain-text paragraphs and line bullets without rendering provider HTML', () => {
+  it('renders provider prose as safe semantic Markdown without raw HTML', () => {
     const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
     const styles = readFileSync(resolve(ROOT, 'src/styles/ai-agent.css'), 'utf8');
 
-    expect(panel).toContain('<p>{item.text}</p>');
-    expect(styles).toMatch(/\.nb-ai-message p\s*\{[^}]*white-space:\s*pre-wrap;/s);
-    expect(styles).toMatch(/\.nb-ai-message p\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(panel).toContain('<MessageMarkdown text={item.text} />');
+    expect(panel).toContain('<Show when={!settledConversationOnly()}>');
+    expect(panel).toContain('<ul>');
+    expect(panel).toContain('<ol>');
+    expect(panel).toContain('<blockquote>');
+    expect(panel).toContain('<pre data-language={block.language}><code>{block.text}</code></pre>');
+    expect(panel).toContain('<table>');
+    expect(styles).toMatch(/\.nb-ai-message-copy\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(styles).toMatch(/\.nb-ai-message-copy ul,[^}]*list-style-position:\s*outside;/s);
+    expect(styles).toMatch(/\.nb-ai-message-copy pre\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(styles).toMatch(/\.nb-ai-message\s*\{[^}]*min-width:\s*0;/s);
     expect(styles).toMatch(/\.nb-ai-citations\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
     expect(styles).toMatch(/\.nb-ai-citations button\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s);
@@ -131,8 +138,8 @@ describe('AI agent conversational transcript', () => {
 
     expect(panel).not.toContain('The context chip is a starting scope.');
     expect(panel).not.toContain('other books stay local.');
-    expect(panel).toContain('Text veil reduces exposure in recognized text for this task.');
-    expect(panel).toContain('privacy & connection');
+    expect(panel).not.toContain('nb-ai-privacy-line');
+    expect(panel).not.toContain('privacy & connection');
   });
 
   it('remembers the pre-update bottom position before following newly appended work', () => {

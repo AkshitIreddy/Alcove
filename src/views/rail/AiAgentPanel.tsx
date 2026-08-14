@@ -46,7 +46,7 @@ import {
 import { AgentIcon, CloseIcon } from './icons';
 import { canPresentFinalPreview } from './aiAgentPreviewGate';
 import AppScrollbar from '../AppScrollbar';
-import { agentMessageInlineTokens } from './agentMessageMarkdown';
+import { agentMessageBlocks, agentMessageInlineTokens } from './agentMessageMarkdown';
 export { canPresentFinalPreview } from './aiAgentPreviewGate';
 
 /* ========================================================================== *
@@ -564,6 +564,14 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
     const tail = state().timeline[state().timeline.length - 1];
     return isVisibleLiveWork(tail) ? undefined : note;
   });
+  const settledConversationOnly = createMemo(() => {
+    const view = state();
+    return view.stage === 'complete'
+      && view.preview === undefined
+      && view.completedImageGenerationPrompts === undefined
+      && view.timeline.length > 0
+      && view.timeline.every((item) => item.kind === 'message');
+  });
 
   return (
     <div class="nb-ai-agent" data-stage={state().stage}>
@@ -576,6 +584,13 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           </div>
         </div>
         <div class="nb-ai-agent-task-actions">
+          <Show when={settledConversationOnly() && state().textPrivacy} keyed>
+            {(privacy) => (
+              <span class="nb-ai-text-veil font-ui" title={privacy.note} aria-label={`Text veil active. ${privacy.note}`}>
+                <span aria-hidden="true">◌</span> text veil · {privacy.replacementCount}
+              </span>
+            )}
+          </Show>
           <button
             type="button"
             class="nb-ai-icon-button"
@@ -623,6 +638,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
         </Show>
       </header>
 
+      <Show when={!settledConversationOnly()}>
       <div class="nb-ai-agent-status" aria-live="polite">
         <span class="nb-ai-agent-status-mark" data-stage={state().stage} aria-hidden="true" />
         <div>
@@ -661,6 +677,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           </span>
         </Show>
       </div>
+      </Show>
 
       <div class="nb-ai-agent-scroll-shell">
       <div class="nb-ai-agent-scroll" ref={transcriptRef} onScroll={rememberTranscriptPosition}>
@@ -880,16 +897,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
             ><SendIcon /></button>
           </div>
         </div>
-        <p class="nb-ai-privacy-line font-ui">
-          <Show when={state().textPrivacy}>
-            <span aria-hidden="true">◌</span>{' '}
-            <span>Text veil reduces exposure in recognized text for this task. It may miss context-dependent details and cannot mask words or numbers baked into image or scanned-PDF pixels.</span>
-          </Show>
-          <Show when={state().connection.status === 'connected'}>
-            <Show when={state().textPrivacy}>{' '}</Show>
-            <button type="button" onClick={() => props.controller?.openIntegrationSettings?.()}>privacy & connection</button>
-          </Show>
-        </p>
       </section>
 
       <Show when={props.panelOpen === true && !props.tourPreview && setupOpen()}>
@@ -990,6 +997,76 @@ function AgentWorkingWhisper(props: { note: string }): JSX.Element {
  *                              timeline pieces                               *
  * ========================================================================== */
 
+function MessageInline(props: { text: string }): JSX.Element {
+  return (
+    <For each={agentMessageInlineTokens(props.text)}>
+      {(token) => (
+        <Switch>
+          <Match when={token.kind === 'text'}>{token.kind === 'text' ? token.text : ''}</Match>
+          <Match when={token.kind === 'strong'}><strong>{token.kind === 'strong' ? token.text : ''}</strong></Match>
+          <Match when={token.kind === 'emphasis'}><em>{token.kind === 'emphasis' ? token.text : ''}</em></Match>
+          <Match when={token.kind === 'code'}><code>{token.kind === 'code' ? token.text : ''}</code></Match>
+          <Match when={token.kind === 'link'}>
+            {token.kind === 'link'
+              ? <a href={token.href} target="_blank" rel="noreferrer">{token.text}</a>
+              : null}
+          </Match>
+        </Switch>
+      )}
+    </For>
+  );
+}
+
+function MessageMarkdown(props: { text: string }): JSX.Element {
+  return (
+    <div class="nb-ai-message-copy">
+      <For each={agentMessageBlocks(props.text)}>
+        {(block) => (
+          <Switch>
+            <Match when={block.kind === 'paragraph'}>
+              {block.kind === 'paragraph' ? <p><MessageInline text={block.text} /></p> : null}
+            </Match>
+            <Match when={block.kind === 'heading'}>
+              {block.kind === 'heading' ? <h4 data-level={block.level}><MessageInline text={block.text} /></h4> : null}
+            </Match>
+            <Match when={block.kind === 'unordered-list'}>
+              {block.kind === 'unordered-list'
+                ? <ul><For each={block.items}>{(item) => <li><MessageInline text={item} /></li>}</For></ul>
+                : null}
+            </Match>
+            <Match when={block.kind === 'ordered-list'}>
+              {block.kind === 'ordered-list'
+                ? <ol start={block.start}><For each={block.items}>{(item) => <li><MessageInline text={item} /></li>}</For></ol>
+                : null}
+            </Match>
+            <Match when={block.kind === 'blockquote'}>
+              {block.kind === 'blockquote' ? <blockquote><MessageInline text={block.text} /></blockquote> : null}
+            </Match>
+            <Match when={block.kind === 'code-block'}>
+              {block.kind === 'code-block'
+                ? <pre data-language={block.language}><code>{block.text}</code></pre>
+                : null}
+            </Match>
+            <Match when={block.kind === 'table'}>
+              {block.kind === 'table'
+                ? (
+                  <div class="nb-ai-message-table-wrap">
+                    <table>
+                      <thead><tr><For each={block.headers}>{(cell) => <th><MessageInline text={cell} /></th>}</For></tr></thead>
+                      <tbody><For each={block.rows}>{(row) => <tr><For each={row}>{(cell) => <td><MessageInline text={cell} /></td>}</For></tr>}</For></tbody>
+                    </table>
+                  </div>
+                )
+                : null}
+            </Match>
+            <Match when={block.kind === 'rule'}><hr /></Match>
+          </Switch>
+        )}
+      </For>
+    </div>
+  );
+}
+
 function TimelineItem(props: {
   item: AiAgentTimelineItem;
   onCitation(id: string): void;
@@ -1002,19 +1079,7 @@ function TimelineItem(props: {
         {(item) => (
           <article class="nb-ai-message" data-role={item.role}>
             <span class="nb-ai-message-role font-ui">{item.role === 'agent' ? 'Alcove agent' : 'You'}</span>
-            <p class="nb-ai-message-copy">
-              <For each={agentMessageInlineTokens(item.text)}>
-                {(token) => (
-                  <Switch>
-                    <Match when={token.kind === 'text'}>{token.kind === 'text' ? token.text : ''}</Match>
-                    <Match when={token.kind === 'strong'}><strong>{token.kind === 'strong' ? token.text : ''}</strong></Match>
-                    <Match when={token.kind === 'emphasis'}><em>{token.kind === 'emphasis' ? token.text : ''}</em></Match>
-                    <Match when={token.kind === 'code'}><code>{token.kind === 'code' ? token.text : ''}</code></Match>
-                    <Match when={token.kind === 'break'}><br /></Match>
-                  </Switch>
-                )}
-              </For>
-            </p>
+            <MessageMarkdown text={item.text} />
             <Citations citations={item.citations ?? []} onOpen={props.onCitation} />
           </article>
         )}

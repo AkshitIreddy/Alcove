@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
   AgentAdapters,
+  AgentActivityEvent,
   AgentProvider,
   AgentProviderCapabilities,
   AgentProviderStreamEvent,
@@ -293,6 +294,49 @@ describe('AI insertion target boundaries', () => {
     },
   );
 
+  it.each([
+    { requested: { kind: 'after_page' as const }, expected: { kind: 'after_page', pageId: 'owned-page-2' } },
+    { requested: { kind: 'before_page' as const }, expected: { kind: 'before_page', pageId: 'owned-page-1' } },
+    { requested: { kind: 'caret' as const }, expected: { kind: 'after_page', pageId: 'owned-page-2' } },
+  ])('resolves an incomplete $requested.kind placement from the inspected notebook', async ({ requested, expected }) => {
+    const identity = {
+      taskId: `task-default-${requested.kind}`,
+      threadId: `thread-default-${requested.kind}`,
+      runId: `run-default-${requested.kind}`,
+      bookId: 'current-book',
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const tools = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, persistence, () => NOW),
+    );
+    const state = {
+      ...createInitialAgentState({
+        identity,
+        goal: 'Insert this in the book',
+        now: NOW,
+        userMessageId: 'message-default-target',
+      }),
+      lifecycle: 'running' as const,
+      notebookSnapshot: {
+        bookId: 'current-book',
+        bookRevision: 'current-revision',
+        pageIds: ['owned-page-1', 'owned-page-2'],
+        pageRevisions: { 'owned-page-1': 'revision-1', 'owned-page-2': 'revision-2' },
+        capturedAt: NOW,
+      },
+    };
+
+    const result = await tools.execute(state, {
+      id: `call-default-${requested.kind}`,
+      name: 'propose_insertion',
+      arguments: { target: requested },
+    }, new AbortController().signal);
+
+    expect(result.result).not.toHaveProperty('error');
+    expect(result.state.insertionTarget).toEqual(expected);
+  });
+
   it('shows an explicit placement conflict instead of selecting the first option', () => {
     const preview: UserPreviewContract = {
       previewId: 'preview-1',
@@ -429,6 +473,68 @@ describe('AI insertion target boundaries', () => {
 });
 
 describe('AI panel queued-source handoff', () => {
+  it('collapses conversational completion chrome to the reader and answer only', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-conversation-cleanup',
+        threadId: 'thread-conversation-cleanup',
+        runId: 'run-conversation-cleanup',
+        bookId: 'current-book',
+      },
+      goal: 'Explain Huffman coding',
+      now: NOW,
+      userMessageId: 'message-conversation-question',
+    });
+    const state = {
+      ...initial,
+      lifecycle: 'completed' as const,
+      phase: 'finished' as const,
+      conversation: [
+        ...initial.conversation,
+        {
+          id: 'message-conversation-answer',
+          role: 'assistant' as const,
+          text: 'Huffman coding gives common symbols shorter bit patterns.',
+          createdAt: NOW,
+        },
+      ],
+    };
+    let eventListener: ((event: AgentActivityEvent) => void) | undefined;
+    const core = {
+      getSnapshot: () => ({ state, interrupt: null, busy: false }),
+      subscribe: () => () => undefined,
+      subscribeEvents: (listener: (event: AgentActivityEvent) => void) => {
+        eventListener = listener;
+        return () => undefined;
+      },
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: 'current-book',
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [],
+      renderUrlFor: () => '',
+      onApprovedProposal: () => undefined,
+    });
+    const base = {
+      id: 'event-completion-chrome',
+      sequence: 1,
+      threadId: state.identity.threadId,
+      taskId: state.identity.taskId,
+      runId: state.identity.runId,
+      at: NOW,
+    };
+
+    try {
+      eventListener?.({ ...base, type: 'run.started', goal: state.taskBrief.goal });
+      eventListener?.({ ...base, id: 'event-status', sequence: 2, type: 'status.changed', phase: 'intake', summary: 'Understanding the task' });
+      eventListener?.({ ...base, id: 'event-complete', sequence: 3, type: 'run.completed', summary: 'No notebook mutation' });
+      expect(controller.state().timeline).toHaveLength(2);
+      expect(controller.state().timeline.every((item) => item.kind === 'message')).toBe(true);
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('shows a submitted reader message immediately and hides the internal completion tool', async () => {
     const state = createInitialAgentState({
       identity: {
@@ -448,6 +554,11 @@ describe('AI panel queued-source handoff', () => {
       await pending;
       return { state };
     });
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     const core = {
       getSnapshot: () => ({ state, interrupt: null, busy: false }),
       subscribe: () => () => undefined,
@@ -461,6 +572,7 @@ describe('AI panel queued-source handoff', () => {
       bookId: 'current-book',
       connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
       placements: () => [],
+      insertionTarget: () => ({ kind: 'book_end' }),
       renderUrlFor: () => '',
       onApprovedProposal: () => undefined,
     });
@@ -470,8 +582,14 @@ describe('AI panel queued-source handoff', () => {
       expect(controller.state().timeline).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: 'message', role: 'reader', text: 'hello now' }),
       ]));
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      frames.shift()?.(0);
       await Promise.resolve();
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      frames.shift()?.(16);
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sendUserMessage).toHaveBeenCalledWith('hello now', expect.objectContaining({
+        insertionTarget: { kind: 'book_end' },
         userMessageId: expect.stringMatching(/^msg-local-/),
       }));
 
@@ -479,8 +597,10 @@ describe('AI panel queued-source handoff', () => {
         type: 'tool.started',
         id: 'event-finish',
         runId: state.identity.runId,
+        threadId: state.identity.threadId,
+        taskId: state.identity.taskId,
         sequence: 1,
-        occurredAt: NOW,
+        at: NOW,
         toolCallId: 'finish-call',
         toolName: 'finish_conversation',
         summary: 'answered in chat',
@@ -491,7 +611,9 @@ describe('AI panel queued-source handoff', () => {
       release();
       await sending;
     } finally {
+      release();
       controller.dispose();
+      vi.unstubAllGlobals();
     }
   });
 

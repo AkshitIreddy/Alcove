@@ -706,6 +706,8 @@ export class AgentRuntime {
     options: {
       readonly preserveAllSourceInformation?: boolean;
       readonly obfuscatePrivateText?: boolean;
+      /** Fresh reader-context default for a new notebook-writing follow-up. */
+      readonly insertionTarget?: NotebookInsertionTarget;
       /** Optional UI-issued id so the optimistic reader message reconciles exactly. */
       readonly userMessageId?: string;
     } = {},
@@ -809,6 +811,10 @@ export class AgentRuntime {
         ? {}
         : { pendingUserTurns: [...queuedUserTurns, userTurn] }),
       pendingToolCalls: [],
+      insertionTarget:
+        active.state.draft === undefined && active.state.patchProposal === undefined
+          ? options.insertionTarget ?? active.state.insertionTarget
+          : active.state.insertionTarget,
       patchProposal: undefined,
       localRestoredFinal: undefined,
       updatedAt: now,

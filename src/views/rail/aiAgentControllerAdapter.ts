@@ -436,6 +436,19 @@ export function createAiAgentPanelController(
     return id;
   };
 
+  const afterOptimisticPaint = (): Promise<void> => new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      // A promise resolved inside one RAF continues in that frame's microtask
+      // checkpoint, still *before* the browser presents pixels.  Starting
+      // notebook inspection there can therefore hide the optimistic reader
+      // bubble behind first-run setup work.  The second RAF proves one full
+      // presentation boundary elapsed before any provider/runtime work begins.
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+
   // A restored runtime may have conversation but no live event replay. Seed
   // the transcript once, then live events update/append by stable ids.
   for (const message of core.getSnapshot().state?.conversation ?? []) {
@@ -535,6 +548,13 @@ export function createAiAgentPanelController(
     });
     const existing = new Set(timeline().map((item) => item.id));
     const visibleTimeline = [...timeline(), ...interruptItems.filter((item) => !existing.has(item.id))];
+    const conversationOnlySettled =
+      state?.lifecycle === 'completed' &&
+      state.patchProposal === undefined &&
+      state.draft === undefined;
+    const readerTimeline = conversationOnlySettled
+      ? visibleTimeline.filter((item) => item.kind === 'message')
+      : visibleTimeline;
     const preview = activePreview();
     return {
       connection: options.connection(),
@@ -553,7 +573,7 @@ export function createAiAgentPanelController(
       threadId: state?.identity.taskId,
       threadTitle: options.activeThreadTitle?.() ?? state?.taskBrief.goal,
       threads: options.threads?.() ?? [],
-      timeline: visibleTimeline,
+      timeline: readerTimeline,
       attachments: options.attachments?.() ?? [],
       context: options.context?.() ?? DEFAULT_CONTEXT,
       preview: preview === undefined ? undefined : previewView(preview, current, options),
@@ -601,47 +621,53 @@ export function createAiAgentPanelController(
     skipKeySetup: () => safely(() => options.skipKeySetup?.()),
     openIntegrationSettings: options.openIntegrationSettings,
     send: (message) => {
-      const current = snapshot();
       const userMessageId = optimisticReaderMessage(message);
-      if (current.state === null) {
-        const startingAttachments = options.sourceAttachments?.() ?? [];
-        const startingFingerprint = attachmentFingerprint(startingAttachments);
-        const direction = creativeDirection === undefined
-          ? undefined
-          : `${creativeDirection.name}: ${creativeDirection.prompt}`;
-        return core.startTask({
-          bookId: options.bookId,
-          goal: message,
-          creativeDirection: direction,
-          defaultContextPolicy: options.defaultContextPolicy?.(),
-          preserveAllSourceInformation:
-            options.preserveAllSourceInformation?.() === true ||
-            asksForCompleteSourcePreservation(message),
-          obfuscatePrivateText: options.obfuscatePrivateText?.() === true,
-          attachments: startingAttachments,
-          insertionTarget: options.insertionTarget?.(),
-          userMessageId,
-        }).then(() => {
-          registeredAttachmentFingerprint = startingFingerprint;
-        }, (error) => {
-          // Initial ingestion can fail before any source rows exist. The
-          // runtime persists the exact queued refs in pendingSourceAttachments
-          // for Retry; mark that same queue registered so Remove/Delete/New
-          // task actions do not silently run ingestion again.
-          const durablePending = core.getSnapshot().state?.pendingSourceAttachments ?? [];
-          if (attachmentFingerprint(durablePending) === startingFingerprint) {
-            registeredAttachmentFingerprint = startingFingerprint;
-          }
-          report(error);
-        });
-      }
       return (async () => {
+        // Yield a real paint boundary before graph construction/source setup.
+        // Without this, the signal updates immediately but the first message
+        // cannot become pixels until the expensive first-task work yields.
+        await afterOptimisticPaint();
+        const current = snapshot();
+        if (current.state === null) {
+          const startingAttachments = options.sourceAttachments?.() ?? [];
+          const startingFingerprint = attachmentFingerprint(startingAttachments);
+          const direction = creativeDirection === undefined
+            ? undefined
+            : `${creativeDirection.name}: ${creativeDirection.prompt}`;
+          await core.startTask({
+            bookId: options.bookId,
+            goal: message,
+            creativeDirection: direction,
+            defaultContextPolicy: options.defaultContextPolicy?.(),
+            preserveAllSourceInformation:
+              options.preserveAllSourceInformation?.() === true ||
+              asksForCompleteSourcePreservation(message),
+            obfuscatePrivateText: options.obfuscatePrivateText?.() === true,
+            attachments: startingAttachments,
+            insertionTarget: options.insertionTarget?.(),
+            userMessageId,
+          });
+          registeredAttachmentFingerprint = startingFingerprint;
+          return;
+        }
         await registerQueuedSources();
         await core.sendUserMessage(message, {
           preserveAllSourceInformation: asksForCompleteSourcePreservation(message),
+          insertionTarget: options.insertionTarget?.(),
           userMessageId,
         });
-      })().then(() => undefined, report);
+      })().then(() => undefined, (error) => {
+        // Initial ingestion can fail before any source rows exist. The
+        // runtime persists the exact queued refs in pendingSourceAttachments
+        // for Retry; mark that same queue registered so Remove/Delete/New
+        // task actions do not silently run ingestion again.
+        const durablePending = core.getSnapshot().state?.pendingSourceAttachments ?? [];
+        const queuedFingerprint = attachmentFingerprint(options.sourceAttachments?.() ?? []);
+        if (attachmentFingerprint(durablePending) === queuedFingerprint) {
+          registeredAttachmentFingerprint = queuedFingerprint;
+        }
+        report(error);
+      });
     },
     attachFiles: options.attachFiles,
     removeAttachment: options.removeAttachment,

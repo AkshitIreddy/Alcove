@@ -1119,9 +1119,39 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (state.notebookSnapshot === undefined) {
           throw new Error('inspect the current notebook before proposing placement');
         }
-        const parsedTarget = insertionTargetSchema.safeParse(args.target);
+        const pageIds = state.notebookSnapshot.pageIds;
+        const firstPageId = pageIds[0];
+        const lastPageId = pageIds[pageIds.length - 1];
+        let candidate: unknown = args.target;
+        let parsedTarget = insertionTargetSchema.safeParse(candidate);
         if (!parsedTarget.success) {
-          throw new Error('the insertion target is incomplete for its selected kind');
+          // Command A+ strict transport cannot express a discriminated union,
+          // so it occasionally selects a location kind but omits that kind's
+          // anchor fields. Resolve only non-destructive placement omissions
+          // from the inspected current notebook. Never guess a selection.
+          if (args.target.kind === 'after_page' || args.target.kind === 'caret') {
+            const pageId = args.target.pageId ?? lastPageId;
+            candidate = pageId === undefined
+              ? { kind: 'book_end' }
+              : { kind: 'after_page', pageId };
+          } else if (args.target.kind === 'before_page') {
+            candidate = firstPageId === undefined
+              ? { kind: 'book_start' }
+              : { kind: 'before_page', pageId: firstPageId };
+          } else if (
+            args.target.kind === 'replace_selection' &&
+            state.insertionTarget?.kind === 'replace_selection'
+          ) {
+            candidate = state.insertionTarget;
+          }
+          parsedTarget = insertionTargetSchema.safeParse(candidate);
+        }
+        if (!parsedTarget.success) {
+          throw new Error(
+            args.target.kind === 'replace_selection'
+              ? 'inspect and preserve the active selection before proposing a replacement'
+              : 'the insertion target is incomplete for its selected kind',
+          );
         }
         const target = parsedTarget.data as NotebookInsertionTarget;
         const targetPageId = target.kind === 'caret' ||

@@ -687,6 +687,17 @@ export function createAiAgentDemoBridge(options: DemoBridgeOptions): AiAgentDemo
     copyText: async (text) => {
       await navigator.clipboard.writeText(text);
     },
+    copyDiagnosticLog: async () => {
+      await navigator.clipboard.writeText(JSON.stringify({
+        logVersion: 1,
+        notice: 'Frozen offline demo trace. No provider request or saved API credential exists.',
+        scenario,
+        stage,
+        sent,
+        renderedPages: preview?.pages.length ?? 0,
+        insertedPages: insertedPageIds.length,
+      }, null, 2));
+    },
   };
 
   const handle: AiAgentDemoBridgeHandle = {

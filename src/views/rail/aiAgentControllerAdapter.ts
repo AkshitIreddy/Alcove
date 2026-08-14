@@ -138,20 +138,147 @@ const phaseHeadline = (phase: AgentPhase | undefined): string | undefined => {
   }
 };
 
-const phaseWorkingNote = (phase: AgentPhase | undefined): string => {
-  switch (phase) {
-    case 'intake': return 'Gathering your thoughts…';
-    case 'reading_sources': return 'Reading with a pencil in hand…';
-    case 'planning': return 'Sketching a gentle plan…';
-    case 'drafting': return 'Imagining the pages…';
-    case 'checking_script': return 'Checking the little details…';
-    case 'rendering_preview': return 'Turning the ideas into pages…';
-    case 'reviewing_preview': return 'Looking with a careful eye…';
-    case 'repairing': return 'Tidying the rough edges…';
-    case 'building_preview': return 'Tying the ribbon on the preview…';
-    default: return 'Thinking it through…';
-  }
+const WORKING_NOTES: Readonly<Partial<Record<AgentPhase, readonly string[]>>> = {
+  intake: [
+    'Gathering your thoughts…',
+    'Finding the thread in your idea…',
+    'Putting the first puzzle pieces together…',
+    'Opening the little idea drawer…',
+  ],
+  reading_sources: [
+    'Reading with a pencil in hand…',
+    'Following the interesting clues…',
+    'Leafing through the evidence…',
+  ],
+  planning: [
+    'Sketching a gentle plan…',
+    'Arranging the stepping stones…',
+    'Giving every idea a good home…',
+  ],
+  drafting: [
+    'Imagining the pages…',
+    'Turning thoughts into tidy pieces…',
+    'Building the first paper draft…',
+  ],
+  checking_script: [
+    'Checking the little details…',
+    'Counting every bracket and page break…',
+    'Making sure the pieces fit…',
+  ],
+  rendering_preview: [
+    'Turning the ideas into pages…',
+    'Pressing the draft onto paper…',
+    'Seeing how the pages settle…',
+  ],
+  reviewing_preview: [
+    'Looking with a careful eye…',
+    'Giving every page a tiny inspection…',
+    'Checking the corners and quiet gaps…',
+  ],
+  repairing: [
+    'Tidying the rough edges…',
+    'Mending the fussy little bits…',
+    'Giving the draft one thoughtful polish…',
+  ],
+  building_preview: [
+    'Tying the ribbon on the preview…',
+    'Preparing the pages for your look…',
+    'Putting the finished preview together…',
+  ],
 };
+
+export function friendlyWorkingNote(
+  phase: AgentPhase | undefined,
+  seed: string,
+): string {
+  const choices = phase === undefined ? undefined : WORKING_NOTES[phase];
+  const phrases = choices?.length ? choices : ['Thinking it through…', 'Letting the idea take shape…'];
+  let hash = 2166136261;
+  for (const character of `${phase ?? 'unknown'}:${seed}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return phrases[(hash >>> 0) % phrases.length]!;
+}
+
+export function buildAiAgentDiagnosticLog(
+  runtime: AgentRuntimeSnapshot,
+  timeline: readonly AiAgentTimelineItem[],
+  connection: AiAgentConnectionView,
+  attachments: readonly AiAgentAttachmentView[],
+): string {
+  const state = runtime.state;
+  const interrupt = runtime.interrupt === null
+    ? null
+    : runtime.interrupt.kind === 'requirements'
+      ? {
+          kind: runtime.interrupt.kind,
+          title: runtime.interrupt.title,
+          questions: runtime.interrupt.questions.map((question) => question.prompt),
+        }
+      : runtime.interrupt.kind === 'blocker'
+        ? {
+            kind: runtime.interrupt.kind,
+            title: runtime.interrupt.title,
+            message: runtime.interrupt.message,
+          }
+        : {
+            kind: runtime.interrupt.kind,
+            title: runtime.interrupt.title,
+            previewId: runtime.interrupt.preview.previewId,
+          };
+  const trace = timeline.map((item) => {
+    if (item.kind !== 'message') return item;
+    return { id: item.id, kind: item.kind, role: item.role, text: item.text };
+  });
+  return JSON.stringify({
+    logVersion: 1,
+    generatedAt: new Date().toISOString(),
+    notice: 'Reader-copied diagnostic. Contains this task’s messages and tool statuses; never contains the saved API credential.',
+    connection: {
+      status: connection.status,
+      provider: connection.provider,
+      keyKind: connection.keyKind ?? null,
+    },
+    runtime: state === null ? null : {
+      taskId: state.identity.taskId,
+      threadId: state.identity.threadId,
+      runId: state.identity.runId,
+      bookId: state.identity.bookId,
+      lifecycle: state.lifecycle,
+      phase: state.phase,
+      busy: runtime.busy,
+      checkpointStep: state.checkpointStep,
+      usage: state.usage,
+      budget: state.budget,
+      cancellation: state.cancellation,
+      lastError: state.lastError ?? null,
+      pendingToolCalls: state.pendingToolCalls.map((call) => call.name),
+      draftVersion: state.draft?.version ?? null,
+      validationValid: state.validation?.valid ?? null,
+      previewGenerationId: state.previewGeneration?.generationId ?? null,
+      visualReview: state.visualReview === undefined ? null : {
+        complete: state.visualReview.complete,
+        passed: state.visualReview.passed,
+        findings: state.visualReview.findings.map((finding) => ({
+          severity: finding.severity,
+          category: finding.category,
+          summary: finding.summary,
+          resolved: finding.resolved,
+        })),
+      },
+      proposalStatus: state.patchProposal?.status ?? null,
+    },
+    interrupt,
+    attachments: attachments.map((attachment) => ({
+      name: attachment.name,
+      kind: attachment.kind,
+      status: attachment.status,
+      detail: attachment.detail ?? null,
+    })),
+    timeline: trace,
+  }, null, 2);
+}
 
 const phaseProgress = (phase: AgentPhase | undefined): number | undefined => {
   switch (phase) {
@@ -564,7 +691,12 @@ export function createAiAgentPanelController(
         : state?.lifecycle === 'cancelled'
           ? 'Stopped safely'
         : phaseHeadline(state?.phase),
-      workingNote: current.busy ? phaseWorkingNote(state?.phase) : undefined,
+      workingNote: current.busy
+        ? friendlyWorkingNote(
+            state?.phase,
+            `${state?.identity.taskId ?? 'new'}:${state?.usage.providerCalls ?? 0}:${state?.checkpointStep ?? 0}`,
+          )
+        : undefined,
       progress: applyingApprovedPatch()
         ? 1
         : current.busy ? phaseProgress(state?.phase) : undefined,
@@ -620,6 +752,13 @@ export function createAiAgentPanelController(
     configureKey: options.configureKey,
     skipKeySetup: () => safely(() => options.skipKeySetup?.()),
     openIntegrationSettings: options.openIntegrationSettings,
+    copyText: (text) => navigator.clipboard.writeText(text),
+    copyDiagnosticLog: () => navigator.clipboard.writeText(buildAiAgentDiagnosticLog(
+      snapshot(),
+      timeline(),
+      options.connection(),
+      options.attachments?.() ?? [],
+    )),
     send: (message) => {
       const userMessageId = optimisticReaderMessage(message);
       return (async () => {

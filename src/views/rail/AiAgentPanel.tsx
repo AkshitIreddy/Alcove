@@ -295,6 +295,8 @@ export interface AiAgentController {
   readonly requestChanges?: (previewId: string) => void;
   readonly refreshAfterConflict?: (draftId: string) => void;
   readonly copyText?: (text: string, successMessage: string) => void | Promise<void>;
+  /** Copies a reader-initiated, key-free task trace for bug reports. */
+  readonly copyDiagnosticLog?: () => void | Promise<void>;
 }
 
 export interface AiAgentPanelProps {
@@ -545,6 +547,21 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
     void props.controller?.send?.(text);
   };
 
+  const sendFromKeyboard = (event: KeyboardEvent, action: () => void): void => {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    action();
+  };
+
+  const copyDiagnosticLog = (): void => {
+    const copy = props.controller?.copyDiagnosticLog;
+    if (copy === undefined) return;
+    void Promise.resolve(copy()).then(
+      () => props.onNotify?.('AI task log copied. It includes this task’s messages and tool statuses, but never the saved API credential.'),
+      () => props.onNotify?.('Could not copy the AI task log.'),
+    );
+  };
+
   const askForChanges = (): void => {
     const preview = state().preview;
     if (!canPresentFinalPreview(preview)) return;
@@ -611,6 +628,15 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           >
             tasks <ChevronIcon />
           </button>
+          <button
+            type="button"
+            class="nb-ai-icon-button"
+            aria-label="Copy AI task log"
+            data-tooltip="copy task log"
+            data-tooltip-side="bottom"
+            disabled={props.controller?.copyDiagnosticLog === undefined}
+            onClick={copyDiagnosticLog}
+          ><CopyIcon /></button>
         </div>
         <Show when={threadMenuOpen()}>
           <ThreadMenu
@@ -825,10 +851,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
               props.onNotify?.('Large paste attached as Pasted text.');
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
-                send();
-              }
+              sendFromKeyboard(event, send);
             }}
           />
           <div class="nb-ai-composer-toolbar">
@@ -887,7 +910,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
             </div>
 
             <span class="nb-ai-composer-spacer" />
-            <span class="nb-ai-send-hint font-ui">Ctrl ↵</span>
+            <span class="nb-ai-send-hint font-ui">Enter sends · Shift ↵ line</span>
             <button
               type="button"
               class="nb-ai-send"
@@ -923,6 +946,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           direction={direction()}
           canSend={state().canSend !== false && state().connection.status === 'connected'}
           onInput={setDraft}
+          onSendFromKeyboard={(event) => sendFromKeyboard(event, send)}
           onPasteAttachment={(text) => {
             void props.controller?.attachFiles?.([pastedTextFile(text)]);
             props.onNotify?.('Large paste attached as Pasted text.');
@@ -1591,6 +1615,7 @@ function ExpandedComposer(props: {
   direction: AiSpecStylePreset;
   canSend: boolean;
   onInput(value: string): void;
+  onSendFromKeyboard(event: KeyboardEvent): void;
   onPasteAttachment(text: string): void;
   onClose(): void;
   onSend(): void;
@@ -1616,6 +1641,7 @@ function ExpandedComposer(props: {
             value={props.value}
             placeholder="Describe the outcome, important sources, audience, depth, tone, and anything that must be preserved. The agent will ask if a genuinely important detail is missing."
             onInput={(event) => props.onInput(event.currentTarget.value)}
+            onKeyDown={props.onSendFromKeyboard}
             onPaste={(event) => {
               const text = event.clipboardData?.getData('text/plain') ?? '';
               if (classifyAgentComposerPaste(text).kind !== 'attachment') return;

@@ -126,6 +126,17 @@ describe('AI agent conversational transcript', () => {
     expect(styles).toMatch(/\.nb-ai-citations button\s*\{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s);
   });
 
+  it('sends on Enter, keeps Shift+Enter for a newline and exposes a task-log copy button', () => {
+    const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
+
+    expect(panel).toContain("event.key !== 'Enter' || event.shiftKey || event.isComposing");
+    expect(panel).toContain('onKeyDown={props.onSendFromKeyboard}');
+    expect(panel).toContain('Enter sends · Shift ↵ line');
+    expect(panel).toContain('aria-label="Copy AI task log"');
+    expect(panel).toContain('data-tooltip="copy task log"');
+    expect(panel).toContain('copyDiagnosticLog');
+  });
+
   it('does not invent a reader message when the preview viewer is opened', () => {
     const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
 
@@ -175,8 +186,11 @@ describe('AI agent conversational transcript', () => {
     expect(panel).toContain('readonly workingNote?: string');
     expect(panel).toContain('isVisibleLiveWork(tail) ? undefined : note');
     expect(panel).toContain('<AgentWorkingWhisper note={note} />');
-    expect(adapter).toContain("case 'planning': return 'Sketching a gentle plan…'");
-    expect(adapter).toContain("case 'drafting': return 'Imagining the pages…'");
+    expect(adapter).toContain('const WORKING_NOTES');
+    expect(adapter).toContain("'Sketching a gentle plan…'");
+    expect(adapter).toContain("'Arranging the stepping stones…'");
+    expect(adapter).toContain("'Imagining the pages…'");
+    expect(adapter).toContain('friendlyWorkingNote(');
     expect(styles).toContain('.nb-ai-working-whisper');
     expect(styles).toContain('@keyframes nb-ai-thinking-dot');
   });

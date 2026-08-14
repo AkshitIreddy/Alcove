@@ -26,7 +26,11 @@ import {
   canSubmitNotebookPatch,
   availableAgentToolNames,
 } from '../src/features/aiAgent';
-import { createAiAgentPanelController } from '../src/views/rail/aiAgentControllerAdapter';
+import {
+  buildAiAgentDiagnosticLog,
+  createAiAgentPanelController,
+  friendlyWorkingNote,
+} from '../src/views/rail/aiAgentControllerAdapter';
 
 const NOW = '2026-08-12T08:00:00.000Z';
 
@@ -528,6 +532,33 @@ describe('AI insertion target boundaries', () => {
 });
 
 describe('AI panel queued-source handoff', () => {
+  it('rotates friendly working phrases deterministically and copies a key-free task trace', () => {
+    const phrases = new Set(
+      Array.from({ length: 12 }, (_, index) => friendlyWorkingNote('intake', `task-${index}`)),
+    );
+    expect(phrases.size).toBeGreaterThan(1);
+    expect([...phrases].every((phrase) => phrase.endsWith('…'))).toBe(true);
+
+    const state = citationReadyState();
+    const log = buildAiAgentDiagnosticLog(
+      { state, interrupt: null, busy: false },
+      [{ id: 'reader-log', kind: 'message', role: 'reader', text: 'Add this to my book' }, {
+        id: 'tool-log',
+        kind: 'tool',
+        name: 'validate_notebook_script',
+        summary: 'deterministic checks passed',
+        status: 'done',
+      }],
+      { status: 'connected', provider: 'Cohere', keyKind: 'trial' },
+      [],
+    );
+    expect(log).toContain('Add this to my book');
+    expect(log).toContain('validate_notebook_script');
+    expect(log).toContain('providerCalls');
+    expect(log).not.toContain('"apiKey"');
+    expect(log).not.toContain('sourceCoverage');
+  });
+
   it('collapses conversational completion chrome to the reader and answer only', () => {
     const initial = createInitialAgentState({
       identity: {

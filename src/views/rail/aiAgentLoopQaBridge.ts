@@ -26,6 +26,7 @@ import type {
   AgentProviderStreamEvent,
   AgentProviderTurnRequest,
 } from '../../features/aiAgent/provider';
+import { AgentProviderError } from '../../features/aiAgent/provider';
 import { AgentRuntime } from '../../features/aiAgent/runtime';
 import type {
   AgentJsonValue,
@@ -50,6 +51,7 @@ import {
 export type AiAgentLoopQaScenario =
   | 'healthy-targetless'
   | 'healthy-production-default'
+  | 'provider-invalid-retry'
   | 'invalid-repeat'
   | 'preserve-all';
 
@@ -153,6 +155,7 @@ const STALLED_SCRIPT = '# Cats\n\nCats use their whiskers to sense nearby surfac
 function routeScenario(): AiAgentLoopQaScenario {
   const value = new URLSearchParams(window.location.search).get('scenario');
   return value === 'healthy-production-default' ||
+    value === 'provider-invalid-retry' ||
     value === 'invalid-repeat' ||
     value === 'preserve-all'
     ? value
@@ -278,7 +281,9 @@ const TOOL_PRIORITY = [
 class DeterministicLoopQaProvider implements AgentProvider {
   readonly id = 'alcove-agent-loop-qa';
   readonly requests: AgentProviderTurnRequest[] = [];
+  readonly attemptedTools: string[] = [];
   readonly selectedTools: string[] = [];
+  readonly invalidResponseTools: string[] = [];
   private sabotageAttempted = false;
 
   constructor(
@@ -310,8 +315,20 @@ class DeterministicLoopQaProvider implements AgentProvider {
     if (selected === undefined) {
       throw new Error(`QA provider received no supported next tool: ${[...names].join(', ')}`);
     }
+    this.attemptedTools.push(selected);
     if (this.sabotageEarlyDraft && !this.sabotageAttempted) {
       this.sabotageAttempted = true;
+    }
+    if (
+      this.scenario === 'provider-invalid-retry' &&
+      (selected === 'validate_notebook_script' || selected === 'read_draft_preview_pages') &&
+      !this.invalidResponseTools.includes(selected)
+    ) {
+      this.invalidResponseTools.push(selected);
+      throw new AgentProviderError({
+        code: 'invalid_response',
+        message: `QA injected an unusable provider response at ${selected}.`,
+      });
     }
     const submitCount = this.selectedTools.filter(
       (name) => name === 'submit_notebook_script',
@@ -337,9 +354,15 @@ export interface AiAgentLoopQaState {
   readonly phase: AgentState['phase'] | null;
   readonly interruptKind: 'requirements' | 'blocker' | 'final_preview' | null;
   readonly providerCalls: number;
+  readonly providerRetries: number;
+  readonly providerRequestCount: number;
   readonly toolCalls: number;
   readonly repairPasses: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly attemptedTools: readonly string[];
   readonly selectedTools: readonly string[];
+  readonly invalidResponseTools: readonly string[];
   readonly advertisedTools: readonly (readonly string[])[];
   readonly executedTools: readonly {
     readonly name: string;
@@ -349,6 +372,8 @@ export interface AiAgentLoopQaState {
   readonly sourceCoverageComplete: boolean | null;
   readonly draftSourceReadUnitIds: readonly string[];
   readonly previewPageCount: number;
+  readonly draftVersion: number | null;
+  readonly draftHash: string | null;
   readonly errorCode: string | null;
   readonly bridgeError: string | null;
 }
@@ -464,7 +489,10 @@ export function createAiAgentLoopQaBridge(
   let bridgeError: string | null = null;
   const placements = (): readonly AiAgentPlacementOption[] => {
     const productionDefault = options.defaultInsertionTarget();
-    if (scenario === 'healthy-production-default' && productionDefault !== undefined) {
+    if (
+      (scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry') &&
+      productionDefault !== undefined
+    ) {
       return [{
         id: 'qa-production-default',
         label: 'After the current page',
@@ -512,7 +540,8 @@ export function createAiAgentLoopQaBridge(
     sourceAttachments: () => sourceAttachments,
     placements,
     preserveAllSourceInformation: () => scenario === 'preserve-all',
-    insertionTarget: () => scenario === 'healthy-production-default'
+    insertionTarget: () =>
+      scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry'
       ? options.defaultInsertionTarget()
       : undefined,
     renderUrlFor: sandbox.renderUrlFor,
@@ -548,9 +577,15 @@ export function createAiAgentLoopQaBridge(
         phase: state?.phase ?? null,
         interruptKind: snapshot.interrupt?.kind ?? null,
         providerCalls: state?.usage.providerCalls ?? 0,
+        providerRetries: state?.usage.providerRetries ?? 0,
+        providerRequestCount: provider.requests.length,
         toolCalls: state?.usage.toolCalls ?? 0,
         repairPasses: state?.usage.repairPasses ?? 0,
+        inputTokens: state?.usage.inputTokens ?? 0,
+        outputTokens: state?.usage.outputTokens ?? 0,
+        attemptedTools: [...provider.attemptedTools],
         selectedTools: [...provider.selectedTools],
+        invalidResponseTools: [...provider.invalidResponseTools],
         advertisedTools: provider.requests.map((request) =>
           request.tools.map((tool) => tool.name),
         ),
@@ -561,6 +596,8 @@ export function createAiAgentLoopQaBridge(
         sourceCoverageComplete: state?.sourceCoverage?.complete ?? null,
         draftSourceReadUnitIds: [...(state?.draft?.sourceReadUnitIds ?? [])],
         previewPageCount: state?.previewGeneration?.pageCount ?? 0,
+        draftVersion: state?.draft?.version ?? null,
+        draftHash: state?.draft?.draftHash ?? null,
         errorCode: state?.lastError?.code ?? null,
         bridgeError,
       };

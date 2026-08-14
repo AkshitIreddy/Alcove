@@ -80,6 +80,77 @@ const SCENARIOS = {
     kind: 'preview',
     sourceReadUnitIds: [],
   },
+  'provider-invalid-retry': {
+    goal: 'Create clear notebook pages explaining the water cycle.',
+    providerCalls: 9,
+    providerRetries: 0,
+    toolCalls: 8,
+    repairPasses: 0,
+    inputTokens: 840,
+    outputTokens: 168,
+    order: [
+      'inspect_notebook',
+      'submit_notebook_script',
+      'validate_notebook_script',
+      'render_draft_preview',
+      'read_draft_preview_pages',
+      'record_visual_review',
+      'propose_notebook_patch',
+      'submit_notebook_patch',
+    ],
+    selectedOrder: [
+      'inspect_notebook',
+      'submit_notebook_script',
+      'render_draft_preview',
+      'read_draft_preview_pages',
+      'record_visual_review',
+      'propose_notebook_patch',
+      'submit_notebook_patch',
+    ],
+    attemptedOrder: [
+      'inspect_notebook',
+      'submit_notebook_script',
+      'validate_notebook_script',
+      'render_draft_preview',
+      'read_draft_preview_pages',
+      'read_draft_preview_pages',
+      'record_visual_review',
+      'propose_notebook_patch',
+      'submit_notebook_patch',
+    ],
+    invalidResponseTools: [
+      'validate_notebook_script',
+      'read_draft_preview_pages',
+    ],
+    paused: {
+      providerCalls: 5,
+      providerRequestCount: 5,
+      providerRetries: 0,
+      toolCalls: 4,
+      inputTokens: 360,
+      outputTokens: 72,
+      attemptedOrder: [
+        'inspect_notebook',
+        'submit_notebook_script',
+        'validate_notebook_script',
+        'render_draft_preview',
+        'read_draft_preview_pages',
+      ],
+      selectedOrder: [
+        'inspect_notebook',
+        'submit_notebook_script',
+        'render_draft_preview',
+      ],
+      executedOrder: [
+        'inspect_notebook',
+        'submit_notebook_script',
+        'validate_notebook_script',
+        'render_draft_preview',
+      ],
+    },
+    kind: 'retry-preview',
+    sourceReadUnitIds: [],
+  },
   'invalid-repeat': {
     goal: 'Create a short notebook explanation about how cats use their whiskers.',
     providerCalls: 7,
@@ -261,6 +332,15 @@ async function uiEvidence(page, viewport) {
       legacyQuestionCards: document.querySelectorAll('.nb-ai-question-card').length,
       legacyQuestionOptions: document.querySelectorAll('.nb-ai-question-options').length,
       conflictCards: document.querySelectorAll('.nb-ai-conflict-card').length,
+      errorCards: document.querySelectorAll('.nb-ai-error-card').length,
+      errorCardText: tidy(document.querySelector('.nb-ai-error-card')?.textContent),
+      retryButtons: [...document.querySelectorAll('.nb-ai-error-card button')].filter((button) =>
+        /try again/i.test(button.textContent ?? '')).length,
+      retryButtonDisabled: (() => {
+        const button = [...document.querySelectorAll('.nb-ai-error-card button')].find((candidate) =>
+          /try again/i.test(candidate.textContent ?? ''));
+        return button instanceof HTMLButtonElement ? button.disabled : null;
+      })(),
       refreshPreviewButtons: [...document.querySelectorAll('button')].filter((button) =>
         /refresh the preview safely/i.test(button.textContent ?? '')).length,
       selectedPlacementLabel: tidy(
@@ -310,11 +390,14 @@ async function fullPreviewEvidence(page, viewport) {
 function scenarioAssertions(run, config) {
   const state = run.state;
   const selected = state?.selectedTools ?? [];
+  const attempted = state?.attemptedTools ?? [];
   const advertised = state?.advertisedTools ?? [];
   const executed = state?.executedTools ?? [];
   const executedNames = executed.map((tool) => tool.name);
   const executedErrors = executed.map((tool) => tool.isError === true);
-  const chosenToolsAdvertised = selected.every((tool, index) =>
+  const expectedSelectedOrder = config.selectedOrder ?? config.order;
+  const expectedAdvertisedOrder = config.attemptedOrder ?? expectedSelectedOrder;
+  const chosenToolsAdvertised = expectedAdvertisedOrder.every((tool, index) =>
     advertised[index]?.includes(tool) === true);
   const noStaleBars = run.animationSamples.every((sample) =>
     sample.headerProgress === 0 && sample.workingWhispers === 0 && sample.miniProgress === 0);
@@ -328,11 +411,14 @@ function scenarioAssertions(run, config) {
     bridgeAvailable: state !== null && state !== undefined,
     expectedProvider: state?.providerId === 'alcove-agent-loop-qa',
     exactProviderCallCount: state?.providerCalls === config.providerCalls,
+    exactProviderRequestCount: state?.providerRequestCount === config.providerCalls,
     exactToolCallCount: state?.toolCalls === config.toolCalls,
     exactRepairPasses: state?.repairPasses === config.repairPasses,
-    exactSelectedToolOrder: sameArray(selected, config.order),
+    exactSelectedToolOrder: sameArray(selected, expectedSelectedOrder),
+    exactAttemptedToolOrder: config.attemptedOrder === undefined ||
+      sameArray(attempted, config.attemptedOrder),
     exactExecutedToolOrder: sameArray(executedNames, config.order),
-    advertisedTurnCountMatches: advertised.length === selected.length,
+    advertisedTurnCountMatches: advertised.length === expectedAdvertisedOrder.length,
     everyChosenToolAdvertised: chosenToolsAdvertised,
     noRetrieval: state?.retrievalCalls === 0,
     noBridgeError: state?.bridgeError === null,
@@ -368,7 +454,7 @@ function scenarioAssertions(run, config) {
   const allNativeImagesLoaded = run.ui.finalPreviewImages.length > 0 &&
     run.ui.finalPreviewImages.every((image) =>
       image.complete && image.naturalWidth > 0 && image.naturalHeight > 0 && image.src !== '');
-  return {
+  const previewAssertions = {
     ...common,
     allExecutedToolsSucceeded: executedErrors.every((isError) => !isError),
     settledAtImmutablePreview:
@@ -399,6 +485,79 @@ function scenarioAssertions(run, config) {
     preserveAllCoverageComplete:
       run.scenario !== 'preserve-all' || state?.sourceCoverageComplete === true,
   };
+  if (config.kind !== 'retry-preview') return previewAssertions;
+
+  const paused = run.pausedState;
+  const pausedExecutedNames = (paused?.executedTools ?? []).map((tool) => tool.name);
+  const pausedNoStaleBars = run.pausedAnimationSamples.every((sample) =>
+    sample.headerProgress === 0 && sample.workingWhispers === 0 && sample.miniProgress === 0);
+  const validateOnlySamples = run.lifecycleSamples.filter((sample) =>
+    sameArray(sample.invalidResponseTools ?? [], ['validate_notebook_script']));
+  const validateAdvancedSamples = validateOnlySamples.filter((sample) =>
+    (sample.attemptedTools ?? []).includes('render_draft_preview'));
+  return {
+    ...previewAssertions,
+    exactInvalidResponseInjectionOrder:
+      sameArray(state?.invalidResponseTools ?? [], config.invalidResponseTools),
+    noAutomaticProviderRetries: state?.providerRetries === config.providerRetries,
+    exactSuccessfulProviderTokenUsage:
+      state?.inputTokens === config.inputTokens && state?.outputTokens === config.outputTokens,
+    deterministicValidateAdvancedWithoutPause:
+      validateOnlySamples.length > 0 &&
+      validateAdvancedSamples.length > 0 &&
+      validateOnlySamples.every((sample) =>
+        sample.lifecycle !== 'failed' &&
+        sample.errorCode === null &&
+        sample.errorCards === 0),
+    pausedAtPreviewReadBoundary:
+      paused?.lifecycle === 'failed' &&
+      paused?.phase === 'reviewing_preview' &&
+      paused?.interruptKind === null &&
+      paused?.errorCode === 'provider_invalid_response',
+    exactPausedUsage:
+      paused?.providerCalls === config.paused.providerCalls &&
+      paused?.providerRequestCount === config.paused.providerRequestCount &&
+      paused?.providerRetries === config.paused.providerRetries &&
+      paused?.toolCalls === config.paused.toolCalls &&
+      paused?.inputTokens === config.paused.inputTokens &&
+      paused?.outputTokens === config.paused.outputTokens,
+    exactPausedAttemptedOrder:
+      sameArray(paused?.attemptedTools ?? [], config.paused.attemptedOrder),
+    exactPausedSelectedOrder:
+      sameArray(paused?.selectedTools ?? [], config.paused.selectedOrder),
+    exactPausedExecutedOrder:
+      sameArray(pausedExecutedNames, config.paused.executedOrder),
+    pausedDraftIsVersionOne:
+      paused?.draftVersion === 1 && typeof paused?.draftHash === 'string' && paused.draftHash !== '',
+    retryPreservedExactDraft:
+      state?.draftVersion === paused?.draftVersion && state?.draftHash === paused?.draftHash,
+    retryMadeANewProviderAttempt:
+      run.retryAttemptState?.providerRequestCount > paused?.providerRequestCount &&
+      run.retryAttemptState?.attemptedTools?.at(-1) === 'read_draft_preview_pages',
+    visibleRetryWasEnabled:
+      run.pausedUi.errorCards === 1 &&
+      run.pausedUi.retryButtons === 1 &&
+      run.pausedUi.retryButtonDisabled === false &&
+      /provider returned an unusable response/i.test(run.pausedUi.errorCardText),
+    pausedWithoutPreviewOrConflict:
+      run.pausedUi.finalPreviewCards === 0 &&
+      run.pausedUi.conflictCards === 0 &&
+      run.pausedUi.placementConflictText === false,
+    pausedPanelInsideViewport:
+      run.pausedUi.panelFullyInsideViewport === true &&
+      run.pausedUi.horizontalOverflow === false &&
+      run.pausedUi.panelHorizontalOverflow === false,
+    noStaleProgressAtPausedCheckpoint: pausedNoStaleBars,
+    noPrematureVisualInspectionClaim:
+      !/rendered pages inspected at their real proportions/i.test(run.pausedUi.panelTail),
+    finalPreviewClearedErrorUi:
+      run.ui.errorCards === 0 && run.ui.retryButtons === 0,
+    timingOrderIsMonotonic:
+      run.timing.pausedAtMs > 0 &&
+      run.timing.retryClickedAtMs >= run.timing.pausedAtMs &&
+      run.timing.retryAttemptObservedAtMs >= run.timing.retryClickedAtMs &&
+      run.timing.previewReadyAtMs >= run.timing.retryAttemptObservedAtMs,
+  };
 }
 
 function sabotageAssertions(run, config) {
@@ -417,6 +576,7 @@ function sabotageAssertions(run, config) {
     advertisedTools: advertised.slice(1),
     executedTools: executed.slice(1),
     providerCalls: (state?.providerCalls ?? 0) - 1,
+    providerRequestCount: (state?.providerRequestCount ?? 0) - 1,
     toolCalls: (state?.toolCalls ?? 0) - 1,
     sabotageEarlyDraft: false,
   } };
@@ -475,13 +635,25 @@ try {
         httpErrors: [],
         cohereRequests: [],
         state: null,
+        pausedState: null,
+        retryAttemptState: null,
         before: null,
         after: null,
         ui: null,
+        pausedUi: null,
         animationSamples: [],
+        pausedAnimationSamples: [],
+        lifecycleSamples: [],
         fullPreview: null,
         fullPreviewAfterCapture: null,
         screenshots: {},
+        timing: {
+          sendClickedAtMs: null,
+          pausedAtMs: null,
+          retryClickedAtMs: null,
+          retryAttemptObservedAtMs: null,
+          previewReadyAtMs: null,
+        },
         assertions: {},
         status: 'running',
         startedAt: new Date(runStartedAt).toISOString(),
@@ -544,20 +716,94 @@ try {
         }
 
         await composer.fill(config.goal);
+        if (config.kind === 'retry-preview') {
+          await page.evaluate(() => {
+            const samples = [];
+            const startedAt = performance.now();
+            globalThis.__agentRetryQaSamples = samples;
+            globalThis.__agentRetryQaTimer = window.setInterval(() => {
+              const state = globalThis.__aiAgentLoopQa?.state();
+              if (state === undefined || samples.length >= 2_000) return;
+              samples.push({
+                atMs: Math.round((performance.now() - startedAt) * 10) / 10,
+                lifecycle: state.lifecycle,
+                phase: state.phase,
+                errorCode: state.errorCode,
+                attemptedTools: [...state.attemptedTools],
+                invalidResponseTools: [...state.invalidResponseTools],
+                errorCards: document.querySelectorAll('.nb-ai-error-card').length,
+              });
+            }, 8);
+          });
+        }
+        run.timing.sendClickedAtMs = Date.now() - runStartedAt;
         await send.click();
-        await page.waitForFunction(({ expectedScenario, expectedKind }) => {
-          const state = globalThis.__aiAgentLoopQa?.state();
-          if (state === undefined || state.scenario !== expectedScenario) return false;
-          if (state.bridgeError !== null) return true;
-          if (state.lifecycle === 'failed') return true;
-          return expectedKind === 'error'
-            ? state.lifecycle === 'failed' && state.errorCode !== null
-            : state.lifecycle === 'waiting_for_preview_decision' &&
-              state.interruptKind === 'final_preview';
-        }, { expectedScenario: scenario, expectedKind: config.kind }, { timeout: 120_000 });
+        if (config.kind === 'retry-preview') {
+          await page.waitForFunction(({ expectedScenario, expectedCalls }) => {
+            const state = globalThis.__aiAgentLoopQa?.state();
+            return state?.scenario === expectedScenario &&
+              state.lifecycle === 'failed' &&
+              state.errorCode === 'provider_invalid_response' &&
+              state.providerRequestCount === expectedCalls &&
+              state.invalidResponseTools.length === 2;
+          }, {
+            expectedScenario: scenario,
+            expectedCalls: config.paused.providerRequestCount,
+          }, { timeout: 120_000 });
+          await page.locator('.nb-ai-error-card').waitFor({ state: 'visible' });
+          const retryButton = page.locator('.nb-ai-error-card button', { hasText: 'Try again' });
+          await retryButton.waitFor({ state: 'visible' });
+          run.timing.pausedAtMs = Date.now() - runStartedAt;
+          run.pausedState = await page.evaluate(() => globalThis.__aiAgentLoopQa.state());
+          run.pausedAnimationSamples = await settleAnimations(page);
+          run.pausedUi = await uiEvidence(page, viewport);
+          run.lifecycleSamples = await page.evaluate(() => {
+            window.clearInterval(globalThis.__agentRetryQaTimer);
+            return globalThis.__agentRetryQaSamples ?? [];
+          });
+          run.screenshots.pausedPanel = resolve(runOut, 'paused-error-panel.png');
+          run.screenshots.pausedViewport = resolve(runOut, 'paused-error-viewport.png');
+          await panel.screenshot({
+            path: run.screenshots.pausedPanel,
+            animations: 'disabled',
+            caret: 'hide',
+          });
+          await page.screenshot({
+            path: run.screenshots.pausedViewport,
+            animations: 'disabled',
+            caret: 'hide',
+          });
+
+          run.timing.retryClickedAtMs = Date.now() - runStartedAt;
+          await retryButton.click();
+          await page.waitForFunction((pausedRequestCount) =>
+            (globalThis.__aiAgentLoopQa?.state().providerRequestCount ?? 0) > pausedRequestCount,
+          run.pausedState.providerRequestCount);
+          run.timing.retryAttemptObservedAtMs = Date.now() - runStartedAt;
+          run.retryAttemptState = await page.evaluate(() => globalThis.__aiAgentLoopQa.state());
+          await page.waitForFunction(() => {
+            const state = globalThis.__aiAgentLoopQa?.state();
+            return state?.lifecycle === 'waiting_for_preview_decision' &&
+              state.interruptKind === 'final_preview' &&
+              state.errorCode === null;
+          }, null, { timeout: 120_000 });
+          run.timing.previewReadyAtMs = Date.now() - runStartedAt;
+        } else {
+          await page.waitForFunction(({ expectedScenario, expectedKind }) => {
+            const state = globalThis.__aiAgentLoopQa?.state();
+            if (state === undefined || state.scenario !== expectedScenario) return false;
+            if (state.bridgeError !== null) return true;
+            if (state.lifecycle === 'failed') return true;
+            return expectedKind === 'error'
+              ? state.lifecycle === 'failed' && state.errorCode !== null
+              : state.lifecycle === 'waiting_for_preview_decision' &&
+                state.interruptKind === 'final_preview';
+          }, { expectedScenario: scenario, expectedKind: config.kind }, { timeout: 120_000 });
+          run.timing.previewReadyAtMs = Date.now() - runStartedAt;
+        }
 
         run.state = await page.evaluate(() => globalThis.__aiAgentLoopQa.state());
-        const unexpectedlyFailed = config.kind === 'preview' && run.state.lifecycle === 'failed';
+        const unexpectedlyFailed = config.kind !== 'error' && run.state.lifecycle === 'failed';
         if (!unexpectedlyFailed) {
           await page.waitForFunction((expectedKind) => {
             if (expectedKind === 'error') return document.querySelector('.nb-ai-error-card') !== null;
@@ -586,7 +832,7 @@ try {
           caret: 'hide',
         });
 
-        if (config.kind === 'preview' && !unexpectedlyFailed) {
+        if (config.kind !== 'error' && !unexpectedlyFailed) {
           await page.locator('button[aria-label="Open the full page preview"]').click();
           const dialog = page.locator('.nb-ai-full-preview');
           await dialog.waitFor({ state: 'visible' });

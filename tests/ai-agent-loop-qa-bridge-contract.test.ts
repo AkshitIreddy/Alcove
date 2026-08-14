@@ -95,13 +95,14 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(options).not.toMatch(/applyApproved|onApproved|write|save|delete/i);
   });
 
-  it('pins the four scenarios and the deterministic tool-order contract', () => {
+  it('pins the five scenarios and the deterministic tool-order contract', () => {
     const scenarioType = bridge.match(
       /export type AiAgentLoopQaScenario\s*=([\s\S]*?);/,
     )?.[1] ?? '';
     expect(quotedValues(scenarioType)).toEqual([
       'healthy-targetless',
       'healthy-production-default',
+      'provider-invalid-retry',
       'invalid-repeat',
       'preserve-all',
     ]);
@@ -156,5 +157,25 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(bridge).toContain("scenario === 'invalid-repeat'");
     expect(bridge).toContain("scenario === 'preserve-all'");
     expect(bridge).toContain("scenario === 'healthy-production-default'");
+    expect(bridge).toContain("scenario === 'provider-invalid-retry'");
+  });
+
+  it('injects invalid provider responses at deterministic validation and preview reading only once', () => {
+    const provider = sourceSection(
+      bridge,
+      'class DeterministicLoopQaProvider implements AgentProvider',
+      'export interface AiAgentLoopQaState',
+    );
+
+    expect(provider).toContain("selected === 'validate_notebook_script'");
+    expect(provider).toContain("selected === 'read_draft_preview_pages'");
+    expect(provider).toContain('!this.invalidResponseTools.includes(selected)');
+    expect(provider).toContain("code: 'invalid_response'");
+    expect(provider.indexOf('this.attemptedTools.push(selected)')).toBeLessThan(
+      provider.indexOf("code: 'invalid_response'"),
+    );
+    expect(provider.indexOf("code: 'invalid_response'")).toBeLessThan(
+      provider.indexOf('this.selectedTools.push(selected)'),
+    );
   });
 });

@@ -260,6 +260,71 @@
   --nb-feature-block-gap: calc(var(--page-line-height) / 2);
 }
 
+/*
+ * The insertion mark belongs to the handwriting, not to Chromium's 27px
+ * Patrick Hand line box. The browser exposes no native caret-height control,
+ * so WritingCaret installs an absolute overlay beside ProseMirror at a
+ * collapsed text selection and the focused editor hides only its native
+ * equivalent.
+ *
+ * Keeping the mark OUTSIDE the prose DOM is important: even a zero-width inline
+ * widget splits a text run, which can change shaping and soft-wrap affinity.
+ * The overlay cannot alter a wrap point, line box, pagination measurement or
+ * stored JSON. Its bottom is derived from the page's actual ruling phase and
+ * stays clear of the printed rule while following the reader's rule-gap
+ * adjustment within the clear band; height is capped below one writing pitch
+ * so a large heading cannot turn back into a line-crossing spear.
+ */
+.nb-prose.ProseMirror-focused {
+  caret-color: transparent;
+}
+
+.nb-writing-caret {
+  position: absolute;
+  z-index: 5;
+  display: none;
+  width: 1.5px;
+  border-radius: 999px;
+  background: var(--ink-sepia);
+  pointer-events: none;
+  animation: nb-writing-caret-blink 1.06s steps(1, end) infinite;
+}
+
+.nb-writing-caret.is-visible {
+  display: block;
+}
+
+/* Nested source editors (display maths and similar node-view controls) own
+   their own browser selection. Do not inherit the prose root's transparent
+   native caret into those independent editable surfaces. */
+.nb-prose.ProseMirror-focused.nb-is-composing,
+.nb-prose.ProseMirror-focused :is(input, textarea, [contenteditable='true']) {
+  caret-color: var(--ink-sepia);
+}
+
+@keyframes nb-writing-caret-blink {
+  0%,
+  52% {
+    opacity: 1;
+  }
+  53%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-writing-caret {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .nb-writing-caret {
+    background: CanvasText;
+  }
+}
+
 .nb-page-editor .nb-prose > [data-nb-block-flow='feature'] {
   margin-block-start: var(--nb-feature-block-gap);
   margin-block-end: var(--nb-feature-block-gap);

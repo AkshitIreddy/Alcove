@@ -22,6 +22,7 @@ import { offset } from '@floating-ui/dom';
 import { nanoid } from 'nanoid';
 import { NotebookDocument } from './document';
 import { EmojiBaseline } from './emojiBaseline';
+import { WritingCaret } from './writingCaret';
 import { NotebookCodeBlock } from './nodes/codeBlock';
 import { NotebookHighlight } from './highlightStyles';
 import { NotebookFace } from './marks/face';
@@ -156,6 +157,10 @@ export function createEditorExtensions(
       // view on <body> — see toolbar/extension.ts for why it must not be a
       // node view.
       SelectionToolbarExtension,
+      // Chromium's native caret crosses the printed rule because it owns the
+      // full font line box. This visual-only overlay keeps a short writing mark
+      // above the rule without changing the stored schema or page geometry.
+      WritingCaret,
     );
     if (options.dragHandle) {
       extensions.push(

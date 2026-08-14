@@ -2013,6 +2013,7 @@ export class AgentRuntime {
       const hasCheckpoint = (
         graphSnapshot.values as { readonly agent?: AgentState }
       ).agent !== undefined;
+      const checkpointHasPendingNode = graphSnapshot.next.length > 0;
       const runnableGraphState = {
         agent: active.state,
         pendingInterrupt: null,
@@ -2027,7 +2028,14 @@ export class AgentRuntime {
         // tool call), but make the state runnable again.
         await active.graph.updateState(active.config, runnableGraphState);
         assertRetryCurrent();
-        const invocation = this.invoke(null);
+        // Failed provider turns route to END. Updating that terminal
+        // checkpoint changes its data but cannot resurrect its graph cursor;
+        // invoke(null) would therefore return immediately and make the Retry
+        // button appear inert. Preserve a real pending node (for Stop/resume),
+        // but seed START with the same durable state after a terminal failure.
+        const invocation = this.invoke(
+          checkpointHasPendingNode ? null : runnableGraphState,
+        );
         settleRetrySetup();
         return invocation;
       }

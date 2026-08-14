@@ -36,7 +36,17 @@ describe('AI gateway localhost development transport', () => {
       runId: 'browser-chat-1',
       model: 'command-a-plus-05-2026',
       messages: [{ role: 'user', content: 'Hello' }],
-      tools: [],
+      tools: [{
+        name: 'finish_conversation',
+        description: 'Finish after writing the reader-facing answer.',
+        parameters: {
+          type: 'object',
+          properties: { request: { type: 'string' } },
+          required: ['request'],
+          additionalProperties: false,
+        },
+      }],
+      toolChoice: 'REQUIRED',
       strictTools: true,
     }, (event) => events.push(event));
 
@@ -46,6 +56,7 @@ describe('AI gateway localhost development transport', () => {
       stream: true,
       model: 'command-a-plus-05-2026',
       messages: [{ role: 'user', content: 'Hello' }],
+      tool_choice: 'REQUIRED',
       strict_tools: true,
     });
     expect(events.map((event) => event.type)).toEqual([

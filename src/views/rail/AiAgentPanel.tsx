@@ -1173,7 +1173,9 @@ function TimelineItem(props: {
             <div>
               <span class="nb-ai-card-kicker font-ui">native page review · round {item.round}</span>
               <strong>{item.detail}</strong>
-              <Show when={item.pageCount}><span class="font-ui">{item.pageCount} rendered pages inspected at their real proportions</span></Show>
+              <Show when={item.pageCount}><span class="font-ui">
+                {item.pageCount} rendered {item.pageCount === 1 ? 'page' : 'pages'} {item.status === 'inspecting' ? 'ready' : 'inspected'} at {item.status === 'inspecting' ? 'the intended' : 'their real'} proportions
+              </span></Show>
               <Show when={(item.findings?.length ?? 0) > 0}>
                 <ul><For each={item.findings}>{(finding) => <li>{finding}</li>}</For></ul>
               </Show>

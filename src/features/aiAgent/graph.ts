@@ -12,6 +12,7 @@ import { normalizeNotebookScriptSubmission } from './draftCraft';
 import {
   AgentProviderError,
   collectProviderTurn,
+  deterministicRoutingToolName,
   isRetryableProviderError,
   modelHistoryToProviderProjection,
   type AgentProvider,
@@ -444,11 +445,11 @@ async function checkpointWatchdogResult(
 }
 
 /**
- * Command A+ supports strict tool schemas but does not support REQUIRED tool
- * choice. A conversational turn may therefore end with useful prose and no
- * call at all. Treat that narrow case as an answer-only completion, never as
+ * REQUIRED tool choice is sent on Agent requests, but the returned provider
+ * stream is still untrusted. Preserve a narrow answer-only fallback for a
+ * useful conversational completion that violates that request; it never gains
  * notebook authority. Explicit book-editing language still fails closed so a
- * provider cannot silently replace requested pages with a chat response.
+ * prose response cannot silently replace requested pages.
  */
 const SIMPLE_GREETING = /^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))[\s!,.?]*$/iu;
 
@@ -491,7 +492,21 @@ function proseOnlyConversationFallback(
   };
 }
 
+class ProviderCallBudgetExhaustedError extends Error {
+  constructor(readonly limit: number) {
+    super(`provider-call budget exhausted (${limit})`);
+    this.name = 'ProviderCallBudgetExhaustedError';
+  }
+}
+
 function publicErrorFromProvider(error: unknown): AgentPublicError {
+  if (error instanceof ProviderCallBudgetExhaustedError) {
+    return {
+      code: 'budget_exhausted',
+      message: error.message,
+      retryable: false,
+    };
+  }
   if (!(error instanceof AgentProviderError)) {
     return {
       code: 'internal',
@@ -558,15 +573,31 @@ async function invokeProviderWithRetry(
   state: AgentState,
   request: AgentProviderTurnRequest,
   dependencies: AgentGraphDependencies,
-): Promise<{ readonly turn: CollectedProviderTurn; readonly retries: number }> {
+  usage: {
+    providerCalls: number;
+    providerRetries: number;
+    inputTokens: number;
+    outputTokens: number;
+  },
+): Promise<CollectedProviderTurn> {
   let attempt = 0;
+  const callsAtInvocationStart = providerCallsInBudgetWindow(state);
   while (true) {
+    if (
+      callsAtInvocationStart + usage.providerCalls >=
+        state.budget.maxProviderCalls
+    ) {
+      throw new ProviderCallBudgetExhaustedError(state.budget.maxProviderCalls);
+    }
     const signal = dependencies.execution.currentSignal();
+    usage.providerCalls += 1;
     try {
       const turn = await collectProviderTurn(
         dependencies.provider.streamTurn(request, { signal }),
       );
-      return { turn, retries: attempt };
+      usage.inputTokens += turn.inputTokens;
+      usage.outputTokens += turn.outputTokens;
+      return turn;
     } catch (error) {
       if (signal.aborted) throw error;
       if (
@@ -575,7 +606,14 @@ async function invokeProviderWithRetry(
       ) {
         throw error;
       }
+      if (
+        callsAtInvocationStart + usage.providerCalls >=
+          state.budget.maxProviderCalls
+      ) {
+        throw new ProviderCallBudgetExhaustedError(state.budget.maxProviderCalls);
+      }
       attempt += 1;
+      usage.providerRetries += 1;
       const delayMs = retryDelayMs(
         attempt,
         error instanceof AgentProviderError ? error.retryAfterMs : undefined,
@@ -728,33 +766,67 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       await saveCurrentTask(providerState, dependencies);
     }
 
+    const invocationUsage = {
+      providerCalls: 0,
+      providerRetries: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+    const deterministicTool = deterministicRoutingToolName(request);
     try {
-      const firstInvocation = await invokeProviderWithRetry(
-        providerState,
-        request,
-        dependencies,
-      );
-      let turn = firstInvocation.turn;
-      let retries = firstInvocation.retries;
-      let providerCalls = 1;
-      let inputTokens = turn.inputTokens;
-      let outputTokens = turn.outputTokens;
+      let turn: CollectedProviderTurn;
+      try {
+        turn = await invokeProviderWithRetry(
+          providerState,
+          request,
+          dependencies,
+          invocationUsage,
+        );
+      } catch (error) {
+        // A malformed provider stream normally fails closed. These four
+        // argument-free singleton phases are different: local policy already
+        // selected the only authorized transition, and each tool rechecks its
+        // own freshness/safety boundary. Preserve the failed call in usage,
+        // then route the deterministic local capability instead of pausing on
+        // malformed JSON or an incomplete tool stream.
+        if (
+          deterministicTool === undefined ||
+          !(error instanceof AgentProviderError) ||
+          error.code !== 'invalid_response'
+        ) throw error;
+        turn = {
+          publicText: '',
+          toolPlan: '',
+          toolCalls: [],
+          citations: [],
+          inputTokens: 0,
+          outputTokens: 0,
+          finishReason: 'stop',
+        };
+      }
       let fallbackCall = turn.toolCalls.length === 0
         ? proseOnlyConversationFallback(providerState, turn)
         : undefined;
       let toolCalls = fallbackCall === undefined
         ? turn.toolCalls
         : [fallbackCall];
+      if (toolCalls.length === 0 && deterministicTool !== undefined) {
+        toolCalls = [{
+          id: `deterministic-${deterministicTool}-${providerState.identity.runId}-${providerState.checkpointStep + 1}`,
+          name: deterministicTool,
+          arguments: {},
+        }];
+      }
       const notebookToolRepair =
         toolCalls.length === 0 && readerRequestsNotebookMutation(providerState);
       if (
         toolCalls.length === 0 &&
         turn.finishReason === 'stop' &&
         (turn.publicText.trim() === '' || notebookToolRepair) &&
-        providerCallsInBudgetWindow(providerState) + providerCalls <
+        providerCallsInBudgetWindow(providerState) + invocationUsage.providerCalls <
           providerState.budget.maxProviderCalls
       ) {
-        const repaired = await invokeProviderWithRetry(
+        turn = await invokeProviderWithRetry(
           providerState,
           {
             ...request,
@@ -764,12 +836,8 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
               : `${request.systemPrompt}\n\nYour previous turn ended without visible prose or a tool call. Complete this turn now: use finish_conversation with a complete answer for conversation-only intent, or choose the next valid work tool for notebook intent.`,
           },
           dependencies,
+          invocationUsage,
         );
-        turn = repaired.turn;
-        retries += repaired.retries;
-        providerCalls += 1;
-        inputTokens += turn.inputTokens;
-        outputTokens += turn.outputTokens;
         fallbackCall = turn.toolCalls.length === 0
           ? proseOnlyConversationFallback(providerState, turn)
           : undefined;
@@ -833,10 +901,11 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         pendingToolCalls: toolCalls,
         usage: {
           ...providerState.usage,
-          providerCalls: providerState.usage.providerCalls + providerCalls,
-          providerRetries: providerState.usage.providerRetries + retries,
-          inputTokens: providerState.usage.inputTokens + inputTokens,
-          outputTokens: providerState.usage.outputTokens + outputTokens,
+          providerCalls: providerState.usage.providerCalls + invocationUsage.providerCalls,
+          providerRetries:
+            providerState.usage.providerRetries + invocationUsage.providerRetries,
+          inputTokens: providerState.usage.inputTokens + invocationUsage.inputTokens,
+          outputTokens: providerState.usage.outputTokens + invocationUsage.outputTokens,
         },
         retry: { attempt: 0 },
         lastError: undefined,
@@ -852,6 +921,14 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         ...providerState,
         lifecycle: 'failed',
         lastError: publicError,
+        usage: {
+          ...providerState.usage,
+          providerCalls: providerState.usage.providerCalls + invocationUsage.providerCalls,
+          providerRetries:
+            providerState.usage.providerRetries + invocationUsage.providerRetries,
+          inputTokens: providerState.usage.inputTokens + invocationUsage.inputTokens,
+          outputTokens: providerState.usage.outputTokens + invocationUsage.outputTokens,
+        },
         retry: {
           ...providerState.retry,
           attempt: providerState.retry.attempt + 1,

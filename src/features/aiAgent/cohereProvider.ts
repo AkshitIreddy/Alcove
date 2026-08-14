@@ -11,6 +11,7 @@ import {
 } from '../../data/aiGateway';
 import {
   AgentProviderError,
+  deterministicRoutingToolName,
   type AgentProvider,
   type AgentProviderCapabilities,
   type AgentProviderStreamEvent,
@@ -30,25 +31,6 @@ const CAPABILITIES: AgentProviderCapabilities = {
   maxOutputTokens: 32_000,
   supportsParallelToolCalls: true,
 };
-
-/**
- * These phases have exactly one deterministic, argument-light transition.
- * Spending an 8k reasoning allowance to decide between no alternatives adds
- * latency and trial-tier pressure without improving the draft or visual
- * judgment. Composition, source selection, image review and conversation keep
- * the full reasoning configuration.
- */
-const DETERMINISTIC_ROUTING_TOOLS = new Set([
-  'validate_notebook_script',
-  'render_draft_preview',
-  'propose_notebook_patch',
-  'submit_notebook_patch',
-]);
-
-function isDeterministicRoutingTurn(request: AgentProviderTurnRequest): boolean {
-  return request.tools.length === 1 &&
-    DETERMINISTIC_ROUTING_TOOLS.has(request.tools[0]!.name);
-}
 
 const SOURCE_IMAGE_LIMIT = { maxEdge: 1_600, maxPixels: 2_560_000, maxBytes: 1_800_000 };
 const DRAFT_IMAGE_LIMIT = { maxEdge: 2_000, maxPixels: 4_000_000, maxBytes: 2_400_000 };
@@ -218,6 +200,7 @@ function providerError(error: unknown): AgentProviderError {
       : {};
   const code = typeof record.code === 'string' ? record.code.toLowerCase() : '';
   const status = typeof record.status === 'number' ? record.status : undefined;
+  const retryable = typeof record.retryable === 'boolean' ? record.retryable : undefined;
   const message =
     typeof record.message === 'string'
       ? record.message
@@ -226,7 +209,8 @@ function providerError(error: unknown): AgentProviderError {
         : 'Cohere could not complete the agent turn';
   return new AgentProviderError({
     code:
-      code.includes('auth') || code.includes('configured')
+      code.includes('auth') || code.includes('configured') ||
+        code.includes('permission') || code.includes('credential')
         ? 'auth'
         : code.includes('rate')
           ? 'rate_limit'
@@ -234,11 +218,13 @@ function providerError(error: unknown): AgentProviderError {
             ? 'cancelled'
             : code.includes('timeout')
               ? 'timeout'
-              : code.includes('protocol') || code.includes('response')
+              : code.includes('protocol') || code.includes('response') ||
+                  code.includes('invalid') || code.includes('duplicate')
                 ? 'invalid_response'
                 : 'unavailable',
     message,
     status,
+    retryable,
     retryAfterMs:
       typeof record.retryAfterMs === 'number' ? record.retryAfterMs : undefined,
   });
@@ -465,7 +451,7 @@ export class CohereTauriAgentProvider implements AgentProvider {
     ];
     messages.push(...(await gatewayMessages(request.messages, context.signal, this.media)));
     abortIfNeeded(context.signal);
-    const deterministicRouting = isDeterministicRoutingTurn(request);
+    const deterministicRouting = deterministicRoutingToolName(request) !== undefined;
     const gatewayRequest: AiGatewayChatRequest = {
       runId: request.requestId,
       model: 'command-a-plus-05-2026',
@@ -482,11 +468,14 @@ export class CohereTauriAgentProvider implements AgentProvider {
       thinking: deterministicRouting
         ? { type: 'disabled' }
         : { type: 'enabled', tokenBudget: 8_000 },
-      // Command A+ 05-2026 rejects both `tool_choice` and citation-mode
-      // controls even though it supports strict tools. The graph still fails
-      // closed on a turn without a tool call, and Alcove derives citations
-      // from its trusted local source ledger instead of provider prose.
-      strictTools: true,
+      // Cohere treats these as separate guarantees: strict tools validate the
+      // selected call against its schema, while REQUIRED prevents a prose-only
+      // completion when Alcove has exposed an autonomous tool transition.
+      toolChoice:
+        request.toolChoice === 'required' && request.tools.length > 0
+          ? 'REQUIRED'
+          : undefined,
+      strictTools: request.tools.length > 0 ? true : undefined,
     };
 
     const queued: AgentProviderStreamEvent[] = [];

@@ -2114,13 +2114,6 @@ pub enum AiStreamEvent {
         event_type: AiProviderEventType,
         data: JsonValue,
     },
-    Retry {
-        #[serde(rename = "runId")]
-        run_id: String,
-        attempt: u8,
-        #[serde(rename = "retryAfterMs")]
-        retry_after_ms: u64,
-    },
     Completed {
         #[serde(rename = "runId")]
         run_id: String,
@@ -2509,79 +2502,42 @@ async fn open_chat_stream(
     state: &AiState,
     key: &SecretString,
     control: &RunControl,
-    run_id: &str,
     body: &JsonValue,
-    channel: &Channel<AiStreamEvent>,
 ) -> Result<reqwest::Response, AiError> {
-    for attempt in 1..=MAX_ATTEMPTS {
-        let response = control
-            .wait(
-                state
-                    .client
-                    .post(format!("{COHERE_ORIGIN}/v2/chat"))
-                    .header(header::ACCEPT, "text/event-stream")
-                    .header("X-Client-Name", CLIENT_NAME)
-                    .bearer_auth(key.expose())
-                    .json(body)
-                    .send(),
-            )
-            .await?;
-        match response {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    let content_type_ok = response
-                        .headers()
-                        .get(header::CONTENT_TYPE)
-                        .and_then(|value| value.to_str().ok())
-                        .is_some_and(|value| {
-                            value.to_ascii_lowercase().starts_with("text/event-stream")
-                        });
-                    if !content_type_ok {
-                        return Err(AiError::new(
-                            AiErrorCode::ProviderProtocol,
-                            "Cohere did not return an event stream",
-                            false,
-                        ));
-                    }
-                    return Ok(response);
-                }
-                if is_retryable_status(status) && attempt < MAX_ATTEMPTS {
-                    let delay = retry_delay(response.headers(), attempt);
-                    drop(response);
-                    emit(
-                        channel,
-                        AiStreamEvent::Retry {
-                            run_id: run_id.to_string(),
-                            attempt: attempt + 1,
-                            retry_after_ms: delay.as_millis().min(u128::from(u64::MAX)) as u64,
-                        },
-                    )?;
-                    cancellable_sleep(control, delay).await?;
-                    continue;
-                }
+    let response = control
+        .wait(
+            state
+                .client
+                .post(format!("{COHERE_ORIGIN}/v2/chat"))
+                .header(header::ACCEPT, "text/event-stream")
+                .header("X-Client-Name", CLIENT_NAME)
+                .bearer_auth(key.expose())
+                .json(body)
+                .send(),
+        )
+        .await?;
+    match response {
+        Ok(response) => {
+            let status = response.status();
+            if !status.is_success() {
                 return Err(status_error(status));
             }
-            Err(error) => {
-                let mapped = network_error(&error);
-                if mapped.retryable && attempt < MAX_ATTEMPTS {
-                    let delay = retry_delay(&header::HeaderMap::new(), attempt);
-                    emit(
-                        channel,
-                        AiStreamEvent::Retry {
-                            run_id: run_id.to_string(),
-                            attempt: attempt + 1,
-                            retry_after_ms: delay.as_millis().min(u128::from(u64::MAX)) as u64,
-                        },
-                    )?;
-                    cancellable_sleep(control, delay).await?;
-                    continue;
-                }
-                return Err(mapped);
+            let content_type_ok = response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/event-stream"));
+            if !content_type_ok {
+                return Err(AiError::new(
+                    AiErrorCode::ProviderProtocol,
+                    "Cohere did not return an event stream",
+                    false,
+                ));
             }
+            Ok(response)
         }
+        Err(error) => Err(network_error(&error)),
     }
-    Err(AiError::internal())
 }
 
 async fn consume_chat_stream(
@@ -2672,7 +2628,10 @@ pub async fn ai_chat_stream(
     .map_err(|_| AiError::internal())??;
 
     let operation = async {
-        let response = open_chat_stream(&state, &key, &control, &run_id, &body, &on_event).await?;
+        // The graph owns bounded chat retries and counts each attempt against
+        // the reader-turn budget. Native Embed/Rerank/key-check requests keep
+        // their own bounded retry loops; chat must make exactly one HTTP try.
+        let response = open_chat_stream(&state, &key, &control, &body).await?;
         consume_chat_stream(response, &control, &run_id, &on_event).await
     };
     let result = match tokio::time::timeout(CHAT_DEADLINE, operation).await {
@@ -4371,7 +4330,9 @@ mod tests {
                     "properties": {"page": {"type": "integer"}},
                     "required": ["page"]
                 }
-            }]
+            }],
+            "toolChoice": "REQUIRED",
+            "strictTools": true
         }));
 
         let provider = validate_chat_request(&request).expect("request should validate");
@@ -4392,6 +4353,8 @@ mod tests {
         );
         assert_eq!(provider["messages"][2]["tool_call_id"], "call_1");
         assert_eq!(provider["tools"][0]["type"], "function");
+        assert_eq!(provider["tool_choice"], "REQUIRED");
+        assert_eq!(provider["strict_tools"], true);
     }
 
     #[test]

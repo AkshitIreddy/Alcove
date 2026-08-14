@@ -25,6 +25,7 @@ import type {
   AgentProviderStreamEvent,
   AgentProviderTurnRequest,
 } from '../src/features/aiAgent/provider';
+import { AgentProviderError } from '../src/features/aiAgent/provider';
 import { planAdaptiveRetrieval } from '../src/features/aiAgent/retrieval';
 import { AgentRuntime } from '../src/features/aiAgent/runtime';
 import {
@@ -686,6 +687,287 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(result.state.lifecycle).toBe('completed');
     expect(result.state.usage).toMatchObject({ providerCalls: 2, inputTokens: 65, outputTokens: 13 });
     expect(result.state.conversation.at(-1)?.text).toMatch(/patterns, quantities/i);
+  });
+
+  it('safely advances the sole deterministic phase when the provider returns no call after storing a draft', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const successfulTurns: ScriptedTurn[] = [
+      { name: 'inspect_notebook', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Water cycle\n\nWater evaporates, condenses, and falls again.',
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ];
+    let rejectedRenderProtocol = false;
+    const provider: AgentProvider = {
+      id: 'empty-deterministic-routing',
+      capabilities: async () => ({
+        providerId: 'empty-deterministic-routing',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (
+          request.tools.length === 1 &&
+          request.tools[0]?.name === 'validate_notebook_script'
+        ) {
+          yield { type: 'usage', inputTokens: 44, outputTokens: 2 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        if (
+          !rejectedRenderProtocol &&
+          request.tools.length === 1 &&
+          request.tools[0]?.name === 'render_draft_preview'
+        ) {
+          rejectedRenderProtocol = true;
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'scripted incomplete render tool stream',
+          });
+        }
+        const turn = successfulTurns.shift();
+        if (turn === undefined) throw new Error('provider ran out of deterministic QA turns');
+        yield {
+          type: 'tool_call',
+          id: `empty-routing-${requests.length}`,
+          name: turn.name,
+          arguments: turn.args,
+        };
+        yield { type: 'usage', inputTokens: 60, outputTokens: 12 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const waiting = await runtime.start({
+      taskId: 'task-empty-post-draft-routing',
+      threadId: 'thread-empty-post-draft-routing',
+      runId: 'run-empty-post-draft-routing',
+      bookId: 'book-1',
+      goal: 'Put a short water-cycle explanation in my book.',
+      insertionTarget: { kind: 'book_end' },
+      budget: { maxProviderCalls: 10 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(waiting.state.lifecycle).toBe('waiting_for_preview_decision');
+    expect(requests).toHaveLength(8);
+    expect(requests[2]?.tools.map((tool) => tool.name)).toEqual([
+      'validate_notebook_script',
+    ]);
+    expect(waiting.state.usage).toMatchObject({ providerCalls: 8, toolCalls: 8 });
+    const locallyRouted = waiting.state.modelHistory.flatMap((turn) =>
+      turn.role === 'assistant'
+        ? turn.toolCalls
+            .filter((call) => call.id.startsWith('deterministic-'))
+            .map((call) => call.name)
+        : [],
+    );
+    expect(locallyRouted).toEqual([
+      'validate_notebook_script',
+      'render_draft_preview',
+    ]);
+  });
+
+  it('restores and restarts a terminal invalid-provider checkpoint without replaying the stored draft', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    let rejectedValidate = false;
+    const successfulTurns: ScriptedTurn[] = [
+      { name: 'inspect_notebook', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Osmosis\n\nWater crosses a selective membrane toward the more concentrated side.',
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ];
+    const provider: AgentProvider = {
+      id: 'retry-terminal-invalid-response',
+      capabilities: async () => ({
+        providerId: 'retry-terminal-invalid-response',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (
+          !rejectedValidate &&
+          request.tools.length === 1 &&
+          request.tools[0]?.name === 'read_draft_preview_pages'
+        ) {
+          rejectedValidate = true;
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'scripted malformed provider stream',
+          });
+        }
+        const turn = successfulTurns.shift();
+        if (turn === undefined) throw new Error('provider ran out of Retry QA turns');
+        yield {
+          type: 'tool_call',
+          id: `retry-terminal-${requests.length}`,
+          name: turn.name,
+          arguments: turn.args,
+        };
+        yield { type: 'usage', inputTokens: 70, outputTokens: 14 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    const failed = await runtime.start({
+      taskId: 'task-terminal-invalid-retry',
+      threadId: 'thread-terminal-invalid-retry',
+      runId: 'run-terminal-invalid-retry',
+      bookId: 'book-1',
+      goal: 'Put an osmosis explanation in my book.',
+      insertionTarget: { kind: 'book_end' },
+      budget: { maxProviderCalls: 12 },
+    });
+
+    expect(failed.state.lifecycle).toBe('failed');
+    expect(failed.state.lastError?.code).toBe('provider_invalid_response');
+    expect(failed.state.usage).toMatchObject({ providerCalls: 5, toolCalls: 4 });
+    expect(failed.state.draft).toMatchObject({ version: 1 });
+    const failedDraftHash = failed.state.draft?.draftHash;
+
+    await runtime.clearActiveTask();
+    const restarted = new AgentRuntime(provider, adapters, persistence);
+    const restored = await restarted.restore('task-terminal-invalid-retry');
+    expect(restored).toMatchObject({
+      busy: false,
+      interrupt: null,
+      state: {
+        lifecycle: 'failed',
+        lastError: { code: 'provider_invalid_response', retryable: true },
+        draft: { version: 1, draftHash: failedDraftHash },
+      },
+    });
+    const requestCountBeforeRetry = requests.length;
+
+    const waiting = await restarted.retry();
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(waiting.state.lifecycle).toBe('waiting_for_preview_decision');
+    expect(waiting.state.draft).toMatchObject({ version: 1, draftHash: failedDraftHash });
+    expect(waiting.state.usage).toMatchObject({ providerCalls: 9, toolCalls: 8 });
+    expect(requests).toHaveLength(9);
+    expect(requests.length).toBeGreaterThan(requestCountBeforeRetry);
+    expect(requests.slice(requestCountBeforeRetry).map((request) =>
+      request.tools.map((tool) => tool.name)
+    )).toEqual([
+      ['read_draft_preview_pages'],
+      ['record_visual_review'],
+      ['propose_notebook_patch'],
+      ['submit_notebook_patch'],
+    ]);
+    const successfulToolNames = waiting.state.modelHistory.flatMap((turn) =>
+      turn.role === 'assistant' ? turn.toolCalls.map((call) => call.name) : [],
+    );
+    expect(successfulToolNames.filter((name) => name === 'inspect_notebook')).toHaveLength(1);
+    expect(successfulToolNames.filter((name) => name === 'submit_notebook_script')).toHaveLength(1);
+    const settled = restarted.getSnapshot();
+    expect(
+      settled.state?.lifecycle === 'running' &&
+      !settled.busy &&
+      settled.state.lastError === undefined &&
+      settled.interrupt === null
+    ).toBe(false);
+  });
+
+  it('never lets retryable provider attempts cross the reader-turn call budget', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'retry-budget-boundary',
+      capabilities: async () => ({
+        providerId: 'retry-budget-boundary',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        throw new AgentProviderError({
+          code: 'rate_limit',
+          message: 'scripted retryable rate limit',
+          retryAfterMs: 0,
+        });
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, fakeAdapters().adapters, persistence);
+    const failed = await runtime.start({
+      taskId: 'task-provider-retry-budget',
+      threadId: 'thread-provider-retry-budget',
+      runId: 'run-provider-retry-budget',
+      bookId: 'book-1',
+      goal: 'Explain osmosis.',
+      budget: { maxProviderCalls: 2, maxProviderRetries: 4 },
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(failed.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: {
+        code: 'budget_exhausted',
+        retryable: false,
+        message: 'provider-call budget exhausted (2)',
+      },
+      usage: { providerCalls: 2, providerRetries: 1 },
+    });
+    expect((await persistence.listEvents('task-provider-retry-budget')).filter(
+      (event) => event.type === 'retry.scheduled',
+    )).toHaveLength(1);
   });
 
   it('never publishes Notebook Script prose as the answer to a notebook-change request', async () => {

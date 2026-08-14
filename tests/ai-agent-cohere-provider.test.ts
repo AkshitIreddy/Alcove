@@ -53,6 +53,10 @@ import {
   CohereTauriAgentProvider,
   prepareBoundedProviderImage,
 } from '../src/features/aiAgent/cohereProvider';
+import {
+  AgentProviderError,
+  isRetryableProviderError,
+} from '../src/features/aiAgent/provider';
 
 describe('Cohere AI agent provider', () => {
   it('disables extended reasoning only for a sole deterministic routing tool', async () => {
@@ -309,6 +313,61 @@ describe('Cohere AI agent provider', () => {
     expect(gateway.requests).toHaveLength(0);
   });
 
+  it.each([
+    ['permissionDenied', false, 403, 'auth', false],
+    ['invalidRequest', false, 400, 'invalid_response', false],
+    ['providerUnavailable', true, 503, 'unavailable', true],
+  ] as const)(
+    'preserves gateway retry authority for %s errors',
+    async (gatewayCode, gatewayRetryable, status, expectedCode, expectedRetryable) => {
+      gateway.scriptedEvents.push({
+        type: 'error',
+        runId: `provider-error-${gatewayCode}`,
+        error: {
+          code: gatewayCode,
+          message: `scripted ${gatewayCode}`,
+          retryable: gatewayRetryable,
+          status,
+        },
+      });
+      const provider = new CohereTauriAgentProvider(() => true);
+      let caught: unknown;
+      try {
+        for await (const _event of provider.streamTurn({
+          requestId: `provider-error-${gatewayCode}`,
+          runId: `run-error-${gatewayCode}`,
+          threadId: `thread-error-${gatewayCode}`,
+          systemPrompt: 'system',
+          tools: [{
+            name: 'finish_conversation',
+            description: 'Finish the conversation.',
+            inputSchema: {
+              type: 'object',
+              properties: { request: { type: 'string' } },
+              required: ['request'],
+              additionalProperties: false,
+            },
+            effect: 'interrupt',
+          }],
+          messages: [],
+          toolChoice: 'required',
+        }, { signal: new AbortController().signal })) {
+          // drain queued protocol events before the gateway error is raised
+        }
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(AgentProviderError);
+      expect(caught).toMatchObject({
+        code: expectedCode,
+        retryable: gatewayRetryable,
+        status,
+      });
+      expect(isRetryableProviderError(caught)).toBe(expectedRetryable);
+    },
+  );
+
   it('keeps parallel tool results contiguous and sends their rendered images to the next model turn', async () => {
     gateway.requests.length = 0;
     gateway.serializedImageBytes.length = 0;
@@ -332,7 +391,17 @@ describe('Cohere AI agent provider', () => {
         runId: 'run-1',
         threadId: 'thread-1',
         systemPrompt: 'system',
-        tools: [],
+        tools: [{
+          name: 'record_visual_review',
+          description: 'Record the visual findings for the exposed preview pages.',
+          inputSchema: {
+            type: 'object',
+            properties: { request: { type: 'string' } },
+            required: ['request'],
+            additionalProperties: false,
+          },
+          effect: 'read',
+        }],
         toolChoice: 'required',
         messages: [
           {
@@ -389,13 +458,13 @@ describe('Cohere AI agent provider', () => {
     }
 
     const sent = gateway.requests[0]?.messages ?? [];
-    // The graph requires a tool transition on every autonomous turn, but
-    // Command A+ 05-2026 rejects the provider's tool_choice control. Alcove
-    // enforces the requirement on the returned turn instead.
+    // Schema strictness and call selection are separate Cohere controls. The
+    // Agent requires a tool on autonomous turns and still validates the
+    // returned protocol locally.
     expect(gateway.requests[0]).toMatchObject({
+      toolChoice: 'REQUIRED',
       strictTools: true,
     });
-    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
     expect(gateway.requests[0]?.citationMode).toBeUndefined();
     expect(gateway.requests[0]?.safetyMode).toBeUndefined();
     expect(sent.map((message) => message.role)).toEqual([

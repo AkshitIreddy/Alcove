@@ -112,8 +112,31 @@ export interface AgentProvider {
   ): AsyncIterable<AgentProviderStreamEvent>;
 }
 
+/**
+ * Argument-free workflow transitions whose authority is already determined by
+ * Alcove's phase gate. A provider normally emits the matching strict call, but
+ * an empty turn cannot make validation/render/proposal progress ambiguous when
+ * this is the only advertised capability.
+ */
+const DETERMINISTIC_ROUTING_TOOLS = new Set([
+  'validate_notebook_script',
+  'render_draft_preview',
+  'propose_notebook_patch',
+  'submit_notebook_patch',
+]);
+
+export function deterministicRoutingToolName(
+  request: Pick<AgentProviderTurnRequest, 'tools'>,
+): string | undefined {
+  if (request.tools.length !== 1) return undefined;
+  const name = request.tools[0]!.name;
+  return DETERMINISTIC_ROUTING_TOOLS.has(name) ? name : undefined;
+}
+
 export class AgentProviderError extends Error {
   readonly status?: number;
+  /** Explicit gateway retry authority; omitted for locally constructed errors. */
+  readonly retryable?: boolean;
   readonly code:
     | 'auth'
     | 'rate_limit'
@@ -127,12 +150,14 @@ export class AgentProviderError extends Error {
     readonly code: AgentProviderError['code'];
     readonly message: string;
     readonly status?: number;
+    readonly retryable?: boolean;
     readonly retryAfterMs?: number;
   }) {
     super(input.message);
     this.name = 'AgentProviderError';
     this.code = input.code;
     this.status = input.status;
+    this.retryable = input.retryable;
     this.retryAfterMs = input.retryAfterMs;
   }
 }
@@ -654,6 +679,7 @@ export function modelHistoryToProviderProjection(
 
 export function isRetryableProviderError(error: unknown): boolean {
   if (!(error instanceof AgentProviderError)) return false;
+  if (error.retryable !== undefined) return error.retryable;
   if (error.code === 'timeout' || error.code === 'rate_limit') return true;
   return error.code === 'unavailable' || error.status === 408 ||
     error.status === 429 || (error.status !== undefined && error.status >= 500);

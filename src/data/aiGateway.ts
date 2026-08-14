@@ -30,7 +30,6 @@ export type AiGatewayStreamEvent =
         | 'debug';
       readonly data: Record<string, unknown>;
     }
-  | { readonly type: 'retry'; readonly runId: string; readonly attempt: number; readonly retryAfterMs: number }
   | { readonly type: 'completed'; readonly runId: string }
   | { readonly type: 'cancelled'; readonly runId: string }
   | { readonly type: 'error'; readonly runId: string; readonly error: AiGatewayError };
@@ -199,6 +198,7 @@ function providerChatBody(request: AiGatewayChatRequest): Record<string, unknown
           : { token_budget: request.thinking.tokenBudget }),
       },
     }),
+    ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
     ...(request.strictTools === undefined ? {} : { strict_tools: request.strictTools }),
     ...(request.safetyMode === undefined ? {} : { safety_mode: request.safetyMode }),
   };

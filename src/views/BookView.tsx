@@ -2900,6 +2900,8 @@ export default function BookView(): JSX.Element {
     createSignal<AiAgentPanelController | undefined>();
   const [aiApplyQaPanelController, setAiApplyQaPanelController] =
     createSignal<AiAgentPanelController | undefined>();
+  const [aiLoopQaPanelController, setAiLoopQaPanelController] =
+    createSignal<AiAgentPanelController | undefined>();
   const [aiTutorialPreview, setAiTutorialPreview] = createSignal(false);
   const notebookForAiApply = createProductionNotebookReadAdapter();
   let aiCoreController: CoreAiAgentController | null = null;
@@ -3735,7 +3737,55 @@ export default function BookView(): JSX.Element {
     });
   });
 
+  /*
+   * Provider-free browser regression for the REAL AgentRuntime/graph/panel
+   * orchestration. It is a separate exact QA route from the apply transaction
+   * probe and is never constructed in Tauri.
+   */
   onMount(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (
+      !import.meta.env.DEV ||
+      '__TAURI_INTERNALS__' in window ||
+      query.get('fx') !== 'force' ||
+      query.get('qa') !== 'agent-loop'
+    ) return;
+    let cancelled = false;
+    let bridge: import('./rail/aiAgentLoopQaBridge').AiAgentLoopQaBridgeHandle | undefined;
+    void import('./rail/aiAgentLoopQaBridge').then(({ createAiAgentLoopQaBridge }) => {
+      const bookId = session()?.book.id;
+      if (bookId === undefined) throw new Error('Open a notebook before running Agent loop QA.');
+      const created = createAiAgentLoopQaBridge({
+        bookId,
+        bookTitle: session()?.book.title ?? 'QA notebook',
+        defaultInsertionTarget: aiDefaultInsertionTarget,
+        openPanel: () => setActivePanel('ai-agent'),
+      });
+      if (cancelled) {
+        void created.dispose();
+        return;
+      }
+      bridge = created;
+      window.__aiAgentLoopQa = created;
+      setAiLoopQaPanelController(created.controller);
+    }).catch((error) => {
+      if (!cancelled) console.error('[ai-agent-loop-qa] bridge unavailable', error);
+    });
+    onCleanup(() => {
+      cancelled = true;
+      if (window.__aiAgentLoopQa === bridge) delete window.__aiAgentLoopQa;
+      setAiLoopQaPanelController(undefined);
+      if (bridge !== undefined) void bridge.dispose();
+    });
+  });
+
+  onMount(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (
+      import.meta.env.DEV &&
+      query.get('fx') === 'force' &&
+      query.get('qa') === 'agent-loop'
+    ) return;
     let disposed = false;
     const mountedBookId = session()?.book.id ?? editorState.openBookId() ?? '';
     const notebook = createProductionNotebookReadAdapter();
@@ -4048,7 +4098,8 @@ export default function BookView(): JSX.Element {
    * touching a reader's desktop library.
    */
   onMount(() => {
-    if (new URLSearchParams(window.location.search).get('fx') !== 'force') return;
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('fx') !== 'force' || query.get('qa') === 'agent-loop') return;
     let cancelled = false;
     let publicBridge: Window['__aiAgentDemo'];
     let disposeBridge: (() => Promise<void>) | undefined;
@@ -4984,7 +5035,7 @@ export default function BookView(): JSX.Element {
               >
                 <AiAgentPanel
                   bookTitle={loaded.book.title}
-                  controller={aiApplyQaPanelController() ?? aiDemoPanelController() ?? aiPanelController()}
+                  controller={aiApplyQaPanelController() ?? aiLoopQaPanelController() ?? aiDemoPanelController() ?? aiPanelController()}
                   onNotify={notify}
                   tourPreview={aiTutorialPreview()}
                   panelOpen={activePanel() === 'ai-agent'}

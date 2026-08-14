@@ -1522,7 +1522,7 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->377<!--/f--> source files
+<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->380<!--/f--> source files
 open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
@@ -1712,7 +1712,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->377<!--/f--> TypeScript files, <!--f:srcDocstrings-->344<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->380<!--/f--> TypeScript files, <!--f:srcDocstrings-->344<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7795<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |

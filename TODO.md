@@ -117,6 +117,28 @@ for the current working tree rather than relying on the long development chat.
 
 ## 🚧 ACTIVE — in-book AI agent (implemented, unreleased, awaiting owner review)
 
+### 2026-08-14 owner localhost follow-up
+
+- [x] Make the final-preview **Insert into book** action apply the exact reviewed
+      pages once. It must not turn the approval into synthetic reader messages,
+      ask for a refreshed approval, or complete without a notebook mutation.
+- [x] Add a compact, keyboard-friendly search field to the open-book Table of
+      Contents, with useful matching, result feedback, empty state and unchanged
+      heading/page navigation.
+- [x] Render final-preview pages on the same resolved paper colour/style as the
+      destination book, and replace the heavy brown preview surround with a
+      calmer Alcove-native presentation that keeps the page visually primary.
+- [x] Prove unchanged notebook/source content reuses its durable embedding/index
+      work across turns and restarts, while ordinary conversation and unrelated
+      work do not invoke RAG/search merely because a book or source exists.
+
+  Verified together: 207 focused Agent/TOC tests, the 147-test fast gate,
+  TypeScript, strict README composition, an adversarial 48-page + blank-stock
+  revision probe, and the live two-viewport Agent flow. The reviewed page order
+  remains an exact prefix while Alcove may append blank stock; full structural
+  history still invalidates on later blank-page edits. Embeddings reuse exact
+  content digests across tasks/restarts and only changed chunks call Embed.
+
 ### 2026-08-14 conversational tool-loop redesign
 
 - [x] Keep transient task/start/preparation/completion receipts scoped to the

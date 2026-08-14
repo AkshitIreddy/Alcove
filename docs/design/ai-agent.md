@@ -323,6 +323,16 @@ are always task- and source-scoped, and every candidate joins to current
 canonical rows on chunk id, source id, task id and digest. A stale mirror can
 therefore order nothing authoritative.
 
+[`src/data/aiAgent.ts`](../../src/data/aiAgent.ts) also owns the durable
+`ai_agent_embedding_cache`. Its primary key is the retrieval `INDEX_VERSION`
+plus the exact chunk-content digest, so identical unchanged units reuse their
+document vector across turns, process restarts and different tasks. Indexing
+hydrates canonical chunks from those exact matches, deduplicates missing
+digests, and sends only genuinely changed/missing content to Embed. The cache
+stores no task/source authority or source text: the current capability and the
+canonical task + source + chunk + digest join remain mandatory before a hit is
+usable.
+
 Ordinary SQLite triggers maintain a durable dirty revision per source for
 writes from every connection. Reconciliation reads revision A, snapshots the
 canonical chunks, invalidates the published source-state row before changing
@@ -335,9 +345,23 @@ startup.
 
 Document/query embeddings still come from Cohere Embed v4 only when the current
 privacy gate permits that outbound text. Rerank v4 remains an optional final
-ordering pass. Text veil sets `local_only`, which skips both provider calls but
-retains FTS5 and the TypeScript fallback. Neither a derived-index failure nor a
-missing native extension is allowed to fail canonical source ingestion.
+ordering pass. Text veil sets `local_only`: exact local cache/chunk vectors may
+still be reused, but no new document/query Embed or Rerank call is made, and
+FTS5 plus the TypeScript fallback remain available. Source replacement/deletion
+prunes cache entries no longer referenced by a canonical chunk. If Stop races a
+provider result or its durable publication, the prior task chunks are restored
+and vectors produced by the interrupted run are removed. Neither a cache or
+derived-index failure nor a missing native extension is allowed to fail
+canonical source ingestion.
+
+Source capabilities are also turn-scoped. `readerRequiresSourceEvidence`
+derives intent from the current reader budget window—including clarification
+replies and explicit grounded follow-ups—and gates advertisement of manifest,
+direct-read, index-search, rerank and coverage tools. Merely retaining an old
+attachment does not expose those tools on an unrelated conversational turn, so
+ordinary chat does not inspect, embed, search or rerank stale context by
+accident. Completion/proposal policy uses the same predicate rather than a
+second, looser definition of grounded work.
 
 ### Intake and format matrix
 
@@ -465,11 +489,16 @@ preview must all name that same generation and draft hash; late events from an
 older provider stream or screenshot cannot bless newer content. This is why a
 text-only statement such as “looks good” can never unlock the preview.
 
-Approval records the target book revision, placement and proposal hash. Apply
-re-reads the revision, rejects stale targets, runs under one whole-book
-checkpoint, verifies the resulting page ids/content, and stores an idempotency
-key plus Undo receipt. Stop aborts the provider request and makes the apply node
-unreachable.
+Approval records the target book content revision, exact inspected page-id
+order, placement and proposal hash. Apply re-reads the content revision and
+requires the inspected ids to remain an exact prefix: BookView may safely append
+its empty ready-spread stock, but it cannot reorder/remove an existing blank
+anchor or change authored content without staling the preview. The separate
+full structural revision remains the durable whole-book/Undo authority, so a
+later reader-created blank page still invalidates an older restore receipt.
+Apply then runs under one whole-book checkpoint, verifies the resulting page
+ids/content, and stores an idempotency key plus Undo receipt. Stop aborts the
+provider request and makes the apply node unreachable.
 
 “Atomic” here is the reader-visible contract across a multi-page editor change:
 media and schema preparation happen before mutation; the live book revision is

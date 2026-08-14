@@ -396,7 +396,7 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->377<!--/f--> source files
+<!--f:srcDocstrings-->344<!--/f--> of <!--f:srcFiles-->380<!--/f--> source files
 open with a module docstring — <!--f:docstringLines-->7310<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
@@ -1205,13 +1205,31 @@ SQLite's process-wide auto-extension hook **before** plugin-sql/SQLx opens its
 pool, so every pooled connection sees the same extension and no sidecar service
 or second database is introduced.
 
+Document embeddings have a separate durable acceleration cache,
+`ai_agent_embedding_cache`, keyed by the retrieval `INDEX_VERSION` and the
+exact chunk-content digest. It contains vectors but no source ownership or
+source text. An unchanged chunk can therefore reuse its vector across later
+turns, app restarts and different Agent tasks; after a source edit, only chunk
+digests absent from both canonical chunk rows and that cache are sent for a new
+document embedding. Changing `INDEX_VERSION` creates a clean namespace rather
+than interpreting an old vector under a new embedding contract.
+
 Every lexical/vector hit is joined back to the current canonical task, source,
 chunk id and digest before it is accepted. FTS and vector candidate ranks are
 combined locally with deterministic reciprocal-rank fusion; the existing
 Cohere Rerank v4 pass may then reorder that bounded list. Embed v4 remains the
 optional source of 512-float document/query vectors. Text-veil tasks force
-local-only retrieval: no Embed or Rerank text leaves the machine, while FTS5
-and the existing TypeScript lexical scorer remain usable.
+local-only retrieval: existing local chunk/cache vectors may be hydrated, but
+no new document/query Embed or Rerank text leaves the machine, while FTS5 and
+the existing TypeScript lexical scorer remain usable.
+
+The cache is deliberately subordinate to canonical data. Deleting or replacing
+sources prunes cache entries whose digest is no longer referenced by any
+durable source chunk. If Stop races cache publication, the adapter restores the
+task's prior chunk rows and removes the document vectors produced by that
+interrupted run. A cache hit never grants source access: task/source capability
+checks and the canonical task + source + chunk + digest join still decide which
+evidence can participate in a result.
 
 The mirror is crash-repairable rather than transactionally authoritative.
 Ordinary SQLite triggers bump a durable per-source dirty revision on every
@@ -1226,11 +1244,18 @@ task searches the relevant source—opening a notebook never launches a global
 embedding/index migration.
 
 A task still chooses direct context, retrieval or a complete sweep from actual
-source size and the reader's guarantee. Reads update the source-unit ledger
-with the provider-call count at which evidence was exposed; policy requires a
-later model turn to have observed every supporting read before an answer or
-patch may claim it. In complete mode, required units cannot be replaced by
-top-k hits, and source digest drift invalidates the ledger.
+source size and the reader's guarantee—but only when the **current reader
+turn** calls for source evidence. `readerRequiresSourceEvidence` follows the
+current budget-window anchor through a clarification reply, recognises explicit
+source references, source operations, completeness requests and grounded
+follow-ups, and gates advertisement of the manifest/read/search/rerank/coverage
+tools. An attachment remaining on an older turn does not advertise those tools
+to unrelated chat, so it cannot silently trigger inspection, indexing, search
+or reranking. Reads update the source-unit ledger with the provider-call count
+at which evidence was exposed; policy requires a later model turn to have
+observed every supporting read before an answer or patch may claim it. In
+complete mode, required units cannot be replaced by top-k hits, and source
+digest drift invalidates the ledger.
 
 ### A conversation can finish without a proposal
 
@@ -1334,7 +1359,9 @@ renders, request another revision, and choose before/after the current page or
 the book's beginning/end. A selection rewrite instead has one locked **Replace
 selected text** target. Approval then crosses the sole mutation seam, which:
 
-1. recomputes the live book revision and refuses a stale target;
+1. recomputes the live content revision and requires the inspected page-id
+   sequence to remain an exact prefix, allowing only newly appended empty stock
+   leaves while refusing a stale/reordered target;
 2. prepares parser/media/schema work before mutation and rechecks the revision;
 3. claims a durable idempotency key so a restored task or double click cannot
    apply the same proposal twice;
@@ -1344,6 +1371,13 @@ selected text** target. Approval then crosses the sole mutation seam, which:
    reviewed page document and the final page order; and
 6. commits the result revision and records one complete Undo, so `Ctrl+Z` never
    leaves half an AI insertion.
+
+Agent freshness and durable history deliberately use two revisions. The former
+omits only the trailing empty suffix because the reader view keeps two blank
+spreads stocked ahead asynchronously; exact expected page ids still protect
+every existing structural anchor. The apply journal records the full structural
+revision, including blank leaves, so a later manual page action cannot silently
+re-arm an older whole-book Undo after restart.
 
 The patch journal writes the complete pre-apply page snapshot before the first
 mutation and moves through `applying`, `applied` and `undoing`. On open,

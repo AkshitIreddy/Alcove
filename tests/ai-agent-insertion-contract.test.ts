@@ -429,6 +429,86 @@ describe('AI insertion target boundaries', () => {
 });
 
 describe('AI panel queued-source handoff', () => {
+  it('collects all requirement choices before one resume and supports defaults for all remaining', async () => {
+    const state = {
+      ...createInitialAgentState({
+        identity: {
+          taskId: 'task-requirement-panel',
+          threadId: 'thread-requirement-panel',
+          runId: 'run-requirement-panel',
+          bookId: 'current-book',
+        },
+        goal: 'Insert content in the book',
+        now: NOW,
+        userMessageId: 'message-requirement-panel',
+      }),
+      lifecycle: 'waiting_for_user' as const,
+    };
+    const snapshot: AgentRuntimeSnapshot = {
+      state,
+      interrupt: {
+        kind: 'requirements',
+        title: 'Choose the remaining details',
+        allowSensibleDefaults: true,
+        questions: [
+          {
+            id: 'placement',
+            prompt: 'Where should it go?',
+            choices: [
+              { id: 'end', label: 'At the end' },
+              { id: 'start', label: 'At the beginning' },
+            ],
+            sensibleDefault: 'At the end',
+            allowFreeText: true,
+          },
+          {
+            id: 'format',
+            prompt: 'How should it look?',
+            choices: [{ id: 'polished', label: 'Polished notes' }],
+            sensibleDefault: 'Polished notes',
+            allowFreeText: true,
+          },
+        ],
+      },
+      busy: false,
+    };
+    const answerRequirements = vi.fn(async () => ({ state }));
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => undefined,
+      subscribeEvents: () => () => undefined,
+      answerRequirements,
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: 'current-book',
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [],
+      renderUrlFor: () => '',
+      onApprovedProposal: () => undefined,
+    });
+
+    try {
+      const questions = () => controller.state().timeline.filter(
+        (item) => item.kind === 'question',
+      );
+      expect(questions()).toHaveLength(2);
+      expect(questions().filter((item) => item.kind === 'question' && item.allowDefaults))
+        .toHaveLength(1);
+
+      controller.answerQuestion?.('question:placement', 'start');
+      expect(answerRequirements).not.toHaveBeenCalled();
+      expect(questions()[0]).toMatchObject({ answered: 'At the beginning' });
+
+      controller.useSensibleDefaults?.('question:placement');
+      expect(answerRequirements).toHaveBeenCalledWith(
+        { placement: 'At the beginning', format: 'Polished notes' },
+        ['format'],
+      );
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('keeps stopped recovery visible and preserves a follow-up through the controller', async () => {
     const initial = createInitialAgentState({
       identity: {

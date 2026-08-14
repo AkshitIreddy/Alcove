@@ -679,6 +679,7 @@ const askUserSchema = z
             choices: z
               .array(z.object({ id: z.string(), label: z.string() }).strict())
               .optional(),
+            sensibleDefault: z.string().min(1).optional(),
             allowFreeText: z.boolean().default(true),
           })
           .strict(),
@@ -1589,6 +1590,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           ...args.questions.flatMap((question) => [
             question.prompt,
             question.whyItMatters ?? '',
+            question.sensibleDefault ?? '',
             ...(question.choices?.map((choice) => choice.label) ?? []),
           ]),
         ];
@@ -1608,6 +1610,9 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
                   ...(question.whyItMatters === undefined
                     ? {}
                     : { whyItMatters: restoreDisplay(question.whyItMatters) }),
+                  ...(question.sensibleDefault === undefined
+                    ? {}
+                    : { sensibleDefault: restoreDisplay(question.sensibleDefault) }),
                   ...(question.choices === undefined
                     ? {}
                     : {
@@ -1617,7 +1622,9 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
                         })),
                       }),
                 })),
-                allowSensibleDefaults: true,
+                allowSensibleDefaults: args.questions.some(
+                  (question) => question.sensibleDefault !== undefined,
+                ),
               }
             : {
                 kind: 'blocker',
@@ -1999,9 +2006,14 @@ export class AgentToolCatalog {
     if (call.name === 'ask_user') {
       const text =
         resume.kind === 'requirements_answer'
-          ? resume.useSensibleDefaults
-            ? 'Use sensible defaults.'
-            : Object.values(resume.answers).join('\n')
+          ? [
+              ...Object.entries(resume.answers).map(
+                ([questionId, answer]) => `${questionId}: ${answer}`,
+              ),
+              ...((resume.defaultQuestionIds ?? []).length === 0
+                ? []
+                : [`Use the proposed sensible defaults for: ${(resume.defaultQuestionIds ?? []).join(', ')}.`]),
+            ].join('\n') || 'Continue with the supplied requirements.'
           : resume.kind === 'blocker_answer'
             ? resume.response
             : 'Continue.';

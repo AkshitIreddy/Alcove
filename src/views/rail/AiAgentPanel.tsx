@@ -46,6 +46,7 @@ import {
 import { AgentIcon, CloseIcon } from './icons';
 import { canPresentFinalPreview } from './aiAgentPreviewGate';
 import AppScrollbar from '../AppScrollbar';
+import { agentMessageInlineTokens } from './agentMessageMarkdown';
 export { canPresentFinalPreview } from './aiAgentPreviewGate';
 
 /* ========================================================================== *
@@ -1001,7 +1002,19 @@ function TimelineItem(props: {
         {(item) => (
           <article class="nb-ai-message" data-role={item.role}>
             <span class="nb-ai-message-role font-ui">{item.role === 'agent' ? 'Alcove agent' : 'You'}</span>
-            <p>{item.text}</p>
+            <p class="nb-ai-message-copy">
+              <For each={agentMessageInlineTokens(item.text)}>
+                {(token) => (
+                  <Switch>
+                    <Match when={token.kind === 'text'}>{token.kind === 'text' ? token.text : ''}</Match>
+                    <Match when={token.kind === 'strong'}><strong>{token.kind === 'strong' ? token.text : ''}</strong></Match>
+                    <Match when={token.kind === 'emphasis'}><em>{token.kind === 'emphasis' ? token.text : ''}</em></Match>
+                    <Match when={token.kind === 'code'}><code>{token.kind === 'code' ? token.text : ''}</code></Match>
+                    <Match when={token.kind === 'break'}><br /></Match>
+                  </Switch>
+                )}
+              </For>
+            </p>
             <Citations citations={item.citations ?? []} onOpen={props.onCitation} />
           </article>
         )}
@@ -1015,23 +1028,30 @@ function TimelineItem(props: {
             <Show when={item.answered} keyed>
               {(answer) => <p class="nb-ai-answer-receipt font-ui"><CheckIcon /> {answer}</p>}
             </Show>
-            <Show when={!item.answered}>
-              <div class="nb-ai-question-options">
-                <For each={item.options ?? []}>
-                  {(option) => (
-                    <button type="button" onClick={() => props.onAnswer(option.id)}>
-                      <strong>{option.label}</strong>
-                      <Show when={option.detail}><span class="font-ui">{option.detail}</span></Show>
-                    </button>
-                  )}
-                </For>
-                <Show when={item.allowDefaults}>
-                  <button type="button" class="is-defaults font-ui" onClick={props.onDefaults}>
-                    Use sensible defaults
+            <div class="nb-ai-question-options">
+              <For each={item.options ?? []}>
+                {(option) => (
+                  <button
+                    type="button"
+                    aria-pressed={item.answered === option.label}
+                    classList={{ 'is-selected': item.answered === option.label }}
+                    onClick={() => props.onAnswer(option.id)}
+                  >
+                    <strong>{option.label}</strong>
+                    <Show when={option.detail}><span class="font-ui">{option.detail}</span></Show>
                   </button>
-                </Show>
-              </div>
-            </Show>
+                )}
+              </For>
+              <Show when={item.allowDefaults}>
+                <button
+                  type="button"
+                  class="is-defaults font-ui"
+                  onClick={props.onDefaults}
+                >
+                  Use sensible defaults for all remaining
+                </button>
+              </Show>
+            </div>
           </article>
         )}
       </Match>

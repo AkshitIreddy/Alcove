@@ -301,6 +301,87 @@ function fakeAdapters(manifest: SourceManifest = manifestWithUnits(0)): {
 }
 
 describe('Alcove autonomous notebook agent runtime', () => {
+  it('submits every requirements choice together and accepts defaults only where declared', async () => {
+    const provider = new ScriptedProvider([
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          title: 'A few details',
+          questions: [
+            {
+              id: 'content',
+              prompt: 'What should be inserted?',
+              choices: [{ id: 'notes', label: 'Study notes' }],
+              sensibleDefault: 'Study notes',
+            },
+            {
+              id: 'placement',
+              prompt: 'Where should it go?',
+              choices: [{ id: 'end', label: 'At the end' }],
+              sensibleDefault: 'At the end',
+            },
+          ],
+        },
+      },
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          title: 'Recorded answers',
+          questions: [],
+        },
+      },
+    ]);
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const waiting = await runtime.start({
+      taskId: 'task-requirements-group',
+      threadId: 'thread-requirements-group',
+      runId: 'run-requirements-group',
+      bookId: 'book-1',
+      goal: 'Insert something in the book.',
+    });
+    expect(waiting.interrupt).toMatchObject({
+      kind: 'requirements',
+      allowSensibleDefaults: true,
+    });
+
+    await runtime.answerRequirements(
+      { content: 'Study notes', placement: 'At the end' },
+      ['placement'],
+    );
+    const secondRequest = provider.requests[1];
+    expect(JSON.stringify(secondRequest?.messages)).toContain('Study notes');
+    expect(JSON.stringify(secondRequest?.messages)).toContain('placement');
+  });
+
+  it('does not offer or accept a fake default for essential missing content', async () => {
+    const provider = new ScriptedProvider([{
+      name: 'ask_user',
+      args: {
+        kind: 'requirements',
+        title: 'Content required',
+        questions: [{ id: 'content', prompt: 'What should be inserted?' }],
+      },
+    }]);
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const waiting = await runtime.start({
+      taskId: 'task-no-fake-default',
+      threadId: 'thread-no-fake-default',
+      runId: 'run-no-fake-default',
+      bookId: 'book-1',
+      goal: 'Insert in book.',
+    });
+    expect(waiting.interrupt).toMatchObject({
+      kind: 'requirements',
+      allowSensibleDefaults: false,
+    });
+    await expect(runtime.answerRequirements({}, ['content']))
+      .rejects.toThrow(/no safe sensible default/i);
+  });
+
   it('cannot miss an immediate Stop while start is still hydrating source setup', async () => {
     const provider = new ScriptedProvider([{
       name: 'ask_user',

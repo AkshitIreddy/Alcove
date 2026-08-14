@@ -287,7 +287,7 @@ function questionItems(interrupt: AgentInterrupt | null): readonly AiAgentTimeli
         ? question.prompt
         : `${question.prompt} ${question.whyItMatters}`,
       options: question.choices?.map((choice) => ({ id: choice.id, label: choice.label })),
-      allowDefaults: interrupt.allowSensibleDefaults,
+      allowDefaults: false,
     }));
   }
   if (interrupt?.kind === 'blocker') {
@@ -393,6 +393,8 @@ export function createAiAgentPanelController(
   const [applyingApprovedPatch, setApplyingApprovedPatch] = createSignal(false);
   let creativeDirection: { name: string; prompt: string } | undefined;
   let registeredAttachmentFingerprint = '';
+  let requirementAnswers: Readonly<Record<string, string>> = {};
+  let requirementDefaultIds: readonly string[] = [];
 
   const attachmentFingerprint = (refs: readonly SourceAttachmentRef[]): string =>
     refs.map((ref) => {
@@ -503,7 +505,25 @@ export function createAiAgentPanelController(
   const viewState = (): AiAgentViewState => {
     const current = snapshot();
     const state = current.state;
-    const interruptItems = questionItems(current.interrupt);
+    const remainingRequirements = current.interrupt?.kind === 'requirements'
+      ? current.interrupt.questions.filter(
+          (question) => requirementAnswers[question.id] === undefined,
+        )
+      : [];
+    const defaultsOwner =
+      remainingRequirements.length > 0 &&
+      remainingRequirements.every((question) => question.sensibleDefault !== undefined)
+        ? remainingRequirements[0]?.id
+        : undefined;
+    const interruptItems = questionItems(current.interrupt).map((item) => {
+      if (item.kind !== 'question') return item;
+      const questionId = item.id.replace('question:', '');
+      return {
+        ...item,
+        answered: requirementAnswers[questionId],
+        allowDefaults: questionId === defaultsOwner,
+      };
+    });
     const existing = new Set(timeline().map((item) => item.id));
     const visibleTimeline = [...timeline(), ...interruptItems.filter((item) => !existing.has(item.id))];
     const preview = activePreview();
@@ -622,14 +642,57 @@ export function createAiAgentPanelController(
     answerQuestion: (_itemId, optionId) => {
       const interrupt = snapshot().interrupt;
       if (interrupt?.kind === 'requirements') {
-        const choice = interrupt.questions.flatMap((question) => question.choices ?? []).find((option) => option.id === optionId);
-        safely(() => core.sendUserMessage(choice?.label ?? optionId));
+        const questionId = _itemId.replace('question:', '');
+        const question = interrupt.questions.find((item) => item.id === questionId);
+        const choice = question?.choices?.find((option) => option.id === optionId);
+        if (question === undefined || choice === undefined) return;
+        requirementAnswers = { ...requirementAnswers, [questionId]: choice.label };
+        requirementDefaultIds = requirementDefaultIds.filter((id) => id !== questionId);
+        const unanswered = interrupt.questions.filter(
+          (item) => requirementAnswers[item.id] === undefined,
+        );
+        if (unanswered.length > 0) {
+          setSnapshot({ ...snapshot() });
+          return;
+        }
+        const answers = requirementAnswers;
+        requirementAnswers = {};
+        requirementDefaultIds = [];
+        safely(() => core.answerRequirements?.(answers, []) ?? core.sendUserMessage(
+          Object.values(answers).join('\n'),
+        ));
       } else if (interrupt?.kind === 'blocker') {
         const index = Number(optionId.replace('recovery:', ''));
         safely(() => core.sendUserMessage(interrupt.recoveryChoices?.[index] ?? optionId));
       }
     },
-    useSensibleDefaults: () => safely(() => core.useSensibleDefaults()),
+    useSensibleDefaults: (_itemId) => {
+      const interrupt = snapshot().interrupt;
+      if (interrupt?.kind !== 'requirements') return;
+      const unanswered = interrupt.questions.filter(
+        (question) => requirementAnswers[question.id] === undefined,
+      );
+      for (const question of unanswered) {
+        if (question.sensibleDefault === undefined) continue;
+        requirementAnswers = {
+          ...requirementAnswers,
+          [question.id]: question.sensibleDefault,
+        };
+        requirementDefaultIds = [...new Set([...requirementDefaultIds, question.id])];
+      }
+      const unresolved = interrupt.questions.filter(
+        (question) => requirementAnswers[question.id] === undefined,
+      );
+      if (unresolved.length > 0) {
+        setSnapshot({ ...snapshot() });
+        return;
+      }
+      const answers = requirementAnswers;
+      const defaults = requirementDefaultIds;
+      requirementAnswers = {};
+      requirementDefaultIds = [];
+      safely(() => core.answerRequirements?.(answers, defaults) ?? core.useSensibleDefaults());
+    },
     startNewTask: () => {
       setTimeline([]);
       safely(async () => {

@@ -31,6 +31,10 @@ export interface AiAgentController {
     attachments: readonly SourceAttachmentRef[],
   ): Promise<AgentRuntimeSnapshot>;
   useSensibleDefaults(): Promise<AgentRunResult>;
+  answerRequirements?(
+    answers: Readonly<Record<string, string>>,
+    defaultQuestionIds?: readonly string[],
+  ): Promise<AgentRunResult>;
   stop(reason?: string): Promise<void>;
   retry(): Promise<AgentRunResult>;
   /** Leave the current durable task in history and return to a fresh composer. */
@@ -60,6 +64,8 @@ export function createAiAgentController(runtime: AgentRuntime): AiAgentControlle
     sendUserMessage: (text, options) => runtime.sendUserMessage(text, options),
     registerAttachments: (attachments) => runtime.registerAttachments(attachments),
     useSensibleDefaults: () => runtime.useSensibleDefaults(),
+    answerRequirements: (answers, defaultQuestionIds) =>
+      runtime.answerRequirements(answers, defaultQuestionIds),
     stop: (reason) => runtime.stop(reason),
     retry: () => runtime.retry(),
     clearActiveTask: () => runtime.clearActiveTask(),

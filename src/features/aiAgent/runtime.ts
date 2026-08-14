@@ -829,10 +829,46 @@ export class AgentRuntime {
     if (active.interrupt?.kind !== 'requirements') {
       throw new Error('the agent is not waiting for requirements');
     }
+    const defaultable = active.interrupt.questions.filter(
+      (question) => question.sensibleDefault !== undefined,
+    );
+    if (defaultable.length !== active.interrupt.questions.length) {
+      throw new Error('answer the essential requirements before using defaults');
+    }
     return this.resume({
       kind: 'requirements_answer',
-      answers: {},
+      answers: Object.fromEntries(
+        defaultable.map((question) => [question.id, question.sensibleDefault!]),
+      ),
       useSensibleDefaults: true,
+      defaultQuestionIds: defaultable.map((question) => question.id),
+    });
+  }
+
+  async answerRequirements(
+    answers: Readonly<Record<string, string>>,
+    defaultQuestionIds: readonly string[] = [],
+  ): Promise<AgentRunResult> {
+    const active = this.requireActive();
+    if (active.interrupt?.kind !== 'requirements') {
+      throw new Error('the agent is not waiting for requirements');
+    }
+    const questions = new Map(active.interrupt.questions.map((question) => [question.id, question]));
+    for (const [questionId, answer] of Object.entries(answers)) {
+      if (!questions.has(questionId) || answer.trim() === '') {
+        throw new Error('requirements answer is empty or belongs to an older question');
+      }
+    }
+    for (const questionId of defaultQuestionIds) {
+      if (questions.get(questionId)?.sensibleDefault === undefined) {
+        throw new Error('that requirement has no safe sensible default');
+      }
+    }
+    return this.resume({
+      kind: 'requirements_answer',
+      answers,
+      useSensibleDefaults: defaultQuestionIds.length > 0,
+      defaultQuestionIds,
     });
   }
 

@@ -711,6 +711,8 @@ export interface AskUserQuestion {
   readonly prompt: string;
   readonly whyItMatters?: string;
   readonly choices?: readonly { readonly id: string; readonly label: string }[];
+  /** A concrete default the reader may accept; absent means input is essential. */
+  readonly sensibleDefault?: string;
   readonly allowFreeText: boolean;
 }
 
@@ -719,7 +721,7 @@ export type AgentInterrupt =
       readonly kind: 'requirements';
       readonly title: string;
       readonly questions: readonly AskUserQuestion[];
-      readonly allowSensibleDefaults: true;
+      readonly allowSensibleDefaults: boolean;
     }
   | {
       readonly kind: 'blocker';
@@ -739,6 +741,8 @@ export type AgentResumeValue =
       readonly kind: 'requirements_answer';
       readonly answers: Readonly<Record<string, string>>;
       readonly useSensibleDefaults: boolean;
+      /** Exact unanswered questions for which the reader accepted the proposed default. */
+      readonly defaultQuestionIds?: readonly string[];
     }
   | {
       readonly kind: 'blocker_answer';

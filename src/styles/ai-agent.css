@@ -513,6 +513,29 @@
   overflow-wrap: anywhere;
 }
 
+.nb-ai-message-copy strong {
+  font-weight: 700;
+  color: var(--ink-graphite);
+}
+
+.nb-ai-message-copy em {
+  color: var(--ink-sepia);
+}
+
+.nb-ai-message-copy code {
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--ink-sepia) 24%, transparent);
+  border-radius: 5px 4px 6px 4px;
+  background: var(--wash-lemon-light);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.nb-ai-question-options button.is-selected {
+  background: var(--wash-sky-light);
+  box-shadow: inset 0 0 0 1px var(--ink-sepia);
+}
+
 .nb-ai-working-whisper {
   justify-self: start;
   max-width: min(82%, 310px);

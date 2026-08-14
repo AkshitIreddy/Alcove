@@ -51,6 +51,7 @@ import {
 export type AiAgentLoopQaScenario =
   | 'healthy-targetless'
   | 'healthy-production-default'
+  | 'conversation-envelope-recovery'
   | 'provider-invalid-retry'
   | 'invalid-repeat'
   | 'preserve-all';
@@ -155,6 +156,7 @@ const STALLED_SCRIPT = '# Cats\n\nCats use their whiskers to sense nearby surfac
 function routeScenario(): AiAgentLoopQaScenario {
   const value = new URLSearchParams(window.location.search).get('scenario');
   return value === 'healthy-production-default' ||
+    value === 'conversation-envelope-recovery' ||
     value === 'provider-invalid-retry' ||
     value === 'invalid-repeat' ||
     value === 'preserve-all'
@@ -289,6 +291,7 @@ class DeterministicLoopQaProvider implements AgentProvider {
   constructor(
     readonly scenario: AiAgentLoopQaScenario,
     readonly sabotageEarlyDraft: boolean,
+    readonly sabotageConversationRecovery: boolean,
   ) {}
 
   capabilities(): Promise<AgentProviderCapabilities> {
@@ -308,6 +311,37 @@ class DeterministicLoopQaProvider implements AgentProvider {
     request: AgentProviderTurnRequest,
   ): AsyncIterable<AgentProviderStreamEvent> {
     this.requests.push(request);
+    if (this.scenario === 'conversation-envelope-recovery') {
+      const boundary = request.tools.length > 0
+        ? 'conversation_tool_envelope'
+        : 'plain_conversation';
+      this.attemptedTools.push(boundary);
+      if (
+        boundary === 'conversation_tool_envelope' ||
+        this.sabotageConversationRecovery
+      ) {
+        this.invalidResponseTools.push(boundary);
+        throw new AgentProviderError({
+          code: 'invalid_response',
+          message: `QA injected an unusable provider response at ${boundary}.`,
+          status: 400,
+          retryable: false,
+        });
+      }
+      this.selectedTools.push(boundary);
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      yield {
+        type: 'public_text_delta',
+        text: 'Cookies are small pieces of data that websites save in your browser. ',
+      };
+      yield {
+        type: 'public_text_delta',
+        text: 'They can keep you signed in, remember preferences, and support analytics or advertising.',
+      };
+      yield { type: 'usage', inputTokens: 75, outputTokens: 28 };
+      yield { type: 'finish', reason: 'stop' };
+      return;
+    }
     const names = new Set(request.tools.map((tool) => tool.name));
     const selected = this.sabotageEarlyDraft && !this.sabotageAttempted
       ? 'submit_notebook_script'
@@ -350,6 +384,7 @@ export interface AiAgentLoopQaState {
   readonly scenario: AiAgentLoopQaScenario;
   readonly providerId: 'alcove-agent-loop-qa';
   readonly sabotageEarlyDraft: boolean;
+  readonly sabotageConversationRecovery: boolean;
   readonly lifecycle: AgentState['lifecycle'] | null;
   readonly phase: AgentState['phase'] | null;
   readonly interruptKind: 'requirements' | 'blocker' | 'final_preview' | null;
@@ -376,6 +411,12 @@ export interface AiAgentLoopQaState {
   readonly draftHash: string | null;
   readonly errorCode: string | null;
   readonly bridgeError: string | null;
+  readonly conversation: readonly {
+    readonly role: 'user' | 'assistant';
+    readonly text: string;
+  }[];
+  readonly visiblePauseActivities: number;
+  readonly visibleErrorTitle: string | null;
 }
 
 export interface AiAgentLoopQaPublicBridge {
@@ -409,7 +450,14 @@ export function createAiAgentLoopQaBridge(
   const query = new URLSearchParams(window.location.search);
   const sabotageEarlyDraft =
     scenario === 'preserve-all' && query.get('sabotage') === 'early-draft';
-  const provider = new DeterministicLoopQaProvider(scenario, sabotageEarlyDraft);
+  const sabotageConversationRecovery =
+    scenario === 'conversation-envelope-recovery' &&
+    query.get('sabotage') === 'double-invalid';
+  const provider = new DeterministicLoopQaProvider(
+    scenario,
+    sabotageEarlyDraft,
+    sabotageConversationRecovery,
+  );
   const notebook = createProductionNotebookReadAdapter();
   const sandbox = createProductionDraftSandbox();
   const manifest = scenario === 'preserve-all' ? QA_MANIFEST : EMPTY_MANIFEST;
@@ -573,6 +621,7 @@ export function createAiAgentLoopQaBridge(
         scenario,
         providerId: provider.id,
         sabotageEarlyDraft,
+        sabotageConversationRecovery,
         lifecycle: state?.lifecycle ?? null,
         phase: state?.phase ?? null,
         interruptKind: snapshot.interrupt?.kind ?? null,
@@ -600,6 +649,14 @@ export function createAiAgentLoopQaBridge(
         draftHash: state?.draft?.draftHash ?? null,
         errorCode: state?.lastError?.code ?? null,
         bridgeError,
+        conversation: (state?.conversation ?? []).map((message) => ({
+          role: message.role,
+          text: message.text,
+        })),
+        visiblePauseActivities: panel.state().timeline.filter((item) =>
+          item.kind === 'activity' && item.label === 'Agent task paused'
+        ).length,
+        visibleErrorTitle: panel.state().error?.title ?? null,
       };
     },
     async dispose() {

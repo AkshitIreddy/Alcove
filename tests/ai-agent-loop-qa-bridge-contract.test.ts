@@ -95,13 +95,14 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(options).not.toMatch(/applyApproved|onApproved|write|save|delete/i);
   });
 
-  it('pins the five scenarios and the deterministic tool-order contract', () => {
+  it('pins the six scenarios and the deterministic tool-order contract', () => {
     const scenarioType = bridge.match(
       /export type AiAgentLoopQaScenario\s*=([\s\S]*?);/,
     )?.[1] ?? '';
     expect(quotedValues(scenarioType)).toEqual([
       'healthy-targetless',
       'healthy-production-default',
+      'conversation-envelope-recovery',
       'provider-invalid-retry',
       'invalid-repeat',
       'preserve-all',
@@ -157,7 +158,22 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(bridge).toContain("scenario === 'invalid-repeat'");
     expect(bridge).toContain("scenario === 'preserve-all'");
     expect(bridge).toContain("scenario === 'healthy-production-default'");
+    expect(bridge).toContain("scenario === 'conversation-envelope-recovery'");
     expect(bridge).toContain("scenario === 'provider-invalid-retry'");
+  });
+
+  it('pins one bounded plain-prose recovery for a rejected conversation envelope', () => {
+    const provider = sourceSection(
+      bridge,
+      'class DeterministicLoopQaProvider implements AgentProvider',
+      'export interface AiAgentLoopQaState',
+    );
+
+    expect(provider).toContain("boundary === 'conversation_tool_envelope'");
+    expect(provider).toContain(": 'plain_conversation';");
+    expect(provider).toContain("type: 'public_text_delta'");
+    expect(provider).toContain("type: 'finish', reason: 'stop'");
+    expect(provider).toContain('this.sabotageConversationRecovery');
   });
 
   it('injects invalid provider responses at deterministic validation and preview reading only once', () => {
@@ -171,11 +187,14 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(provider).toContain("selected === 'read_draft_preview_pages'");
     expect(provider).toContain('!this.invalidResponseTools.includes(selected)');
     expect(provider).toContain("code: 'invalid_response'");
-    expect(provider.indexOf('this.attemptedTools.push(selected)')).toBeLessThan(
-      provider.indexOf("code: 'invalid_response'"),
+    const previewInvalidBlock = provider.slice(
+      provider.indexOf('this.attemptedTools.push(selected)'),
     );
-    expect(provider.indexOf("code: 'invalid_response'")).toBeLessThan(
-      provider.indexOf('this.selectedTools.push(selected)'),
+    expect(previewInvalidBlock.indexOf('this.attemptedTools.push(selected)')).toBeLessThan(
+      previewInvalidBlock.indexOf("code: 'invalid_response'"),
+    );
+    expect(previewInvalidBlock.indexOf("code: 'invalid_response'")).toBeLessThan(
+      previewInvalidBlock.indexOf('this.selectedTools.push(selected)'),
     );
   });
 });

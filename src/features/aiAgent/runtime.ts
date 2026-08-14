@@ -765,12 +765,17 @@ export class AgentRuntime {
     if (active.interrupt?.kind === 'requirements') {
       return this.resume({
         kind: 'requirements_answer',
-        answers: { response: trimmed },
+        response: trimmed,
+        userMessageId: options.userMessageId,
         useSensibleDefaults: false,
       });
     }
     if (active.interrupt?.kind === 'blocker') {
-      return this.resume({ kind: 'blocker_answer', response: trimmed });
+      return this.resume({
+        kind: 'blocker_answer',
+        response: trimmed,
+        userMessageId: options.userMessageId,
+      });
     }
     if (active.interrupt?.kind === 'final_preview') {
       return this.resume({
@@ -782,7 +787,14 @@ export class AgentRuntime {
     }
     if (active.busy) throw new Error('wait for the current agent turn or stop it first');
 
-    for (const generationId of localFinalGenerationIdsOwnedByState(active.state)) {
+    const startsFreshSettledTurn = active.state.lifecycle === 'completed';
+    const retainedAppliedProposal = active.state.patchProposal?.status === 'applied'
+      ? active.state.patchProposal
+      : undefined;
+    const disposableGenerationIds = startsFreshSettledTurn
+      ? generationIdsOwnedByState(active.state)
+      : localFinalGenerationIdsOwnedByState(active.state);
+    for (const generationId of disposableGenerationIds) {
       await this.adapters.sandbox.dispose(generationId);
     }
     const now = this.adapters.clock.now();
@@ -810,13 +822,34 @@ export class AgentRuntime {
       ...(queuedUserTurns.length === 0
         ? {}
         : { pendingUserTurns: [...queuedUserTurns, userTurn] }),
+      plan: startsFreshSettledTurn ? undefined : active.state.plan,
+      retrievalPlan: startsFreshSettledTurn ? undefined : active.state.retrievalPlan,
+      draft: startsFreshSettledTurn ? undefined : active.state.draft,
+      validation: startsFreshSettledTurn ? undefined : active.state.validation,
+      previewGeneration: startsFreshSettledTurn
+        ? undefined
+        : active.state.previewGeneration,
+      visualReview: startsFreshSettledTurn ? undefined : active.state.visualReview,
       pendingToolCalls: [],
       insertionTarget:
-        active.state.draft === undefined && active.state.patchProposal === undefined
+        startsFreshSettledTurn
+          ? options.insertionTarget
+          : active.state.draft === undefined && active.state.patchProposal === undefined
           ? options.insertionTarget ?? active.state.insertionTarget
           : active.state.insertionTarget,
-      patchProposal: undefined,
+      imagePromptHandoff:
+        startsFreshSettledTurn && retainedAppliedProposal === undefined
+          ? undefined
+          : active.state.imagePromptHandoff,
+      patchProposal: startsFreshSettledTurn ? retainedAppliedProposal : undefined,
       localRestoredFinal: undefined,
+      budgetWindow: {
+        providerCallsAtStart: active.state.usage.providerCalls,
+        toolCallsAtStart: active.state.usage.toolCalls,
+        repairPassesAtStart: active.state.usage.repairPasses,
+        startedAt: now,
+        readerMessageId: message.id,
+      },
       updatedAt: now,
     };
     active.state = state;
@@ -847,6 +880,7 @@ export class AgentRuntime {
     }
     return this.resume({
       kind: 'requirements_answer',
+      response: defaultable.map((question) => question.sensibleDefault!).join('\n'),
       answers: Object.fromEntries(
         defaultable.map((question) => [question.id, question.sensibleDefault!]),
       ),
@@ -876,6 +910,7 @@ export class AgentRuntime {
     }
     return this.resume({
       kind: 'requirements_answer',
+      response: Object.values(answers).join('\n'),
       answers,
       useSensibleDefaults: defaultQuestionIds.length > 0,
       defaultQuestionIds,
@@ -1150,6 +1185,17 @@ export class AgentRuntime {
         requested: false,
         lastSafeCheckpointStep: active.state.cancellation.lastSafeCheckpointStep,
       },
+      ...(followUpMessage === undefined
+        ? {}
+        : {
+            budgetWindow: {
+              providerCallsAtStart: active.state.usage.providerCalls,
+              toolCallsAtStart: active.state.usage.toolCalls,
+              repairPassesAtStart: active.state.usage.repairPasses,
+              startedAt: now,
+              readerMessageId: followUpMessage.id,
+            },
+          }),
       lastError: undefined,
       checkpointStep: active.state.checkpointStep + 1,
       updatedAt: now,

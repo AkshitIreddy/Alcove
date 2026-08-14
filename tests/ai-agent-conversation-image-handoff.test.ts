@@ -210,7 +210,23 @@ function withCurrentAnswer(
 
 describe('portable generated-image handoff', () => {
   it('requires an explicit reader image request and lets the latest directive revoke it', async () => {
-    const ordinary = baseState();
+    const baseOrdinary = baseState();
+    const ordinary = {
+      ...baseOrdinary,
+      conversation: [
+        ...baseOrdinary.conversation,
+        {
+          id: 'user-pages-without-images',
+          role: 'user' as const,
+          text: 'Turn this into notebook pages without adding new images.',
+          createdAt: NOW,
+        },
+      ],
+      budgetWindow: {
+        ...baseOrdinary.budgetWindow!,
+        readerMessageId: 'user-pages-without-images',
+      },
+    };
     expect(explicitImageRequest(ordinary)).toEqual({ requested: false });
     expect(buildAgentSystemPrompt(ordinary)).toContain(
       'has not explicitly requested external images',
@@ -696,9 +712,9 @@ describe('answer-only agent completion', () => {
       goal: 'Create two notebook pages about math.',
     });
     expect(result.state.lifecycle).toBe('failed');
-    expect(result.state.lastError?.message).toMatch(/without choosing a completion or work tool/i);
+    expect(result.state.lastError?.message).toMatch(/unusable response/i);
     expect(result.state.conversation).toHaveLength(1);
-    expect(requests[0]?.tools.map((tool) => tool.name)).not.toContain('finish_conversation');
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain('finish_conversation');
   });
 
   it('keeps notebook intent after a sensible-defaults follow-up', () => {
@@ -723,6 +739,10 @@ describe('answer-only agent completion', () => {
           createdAt: NOW,
         },
       ],
+      budgetWindow: {
+        ...initial.budgetWindow!,
+        readerMessageId: 'reader-original-insert',
+      },
     };
 
     expect(canCompleteConversation(state, [])).toMatchObject({

@@ -80,6 +80,8 @@ export interface AgentPlan {
   readonly version: number;
   readonly summary: string;
   readonly steps: readonly AgentPlanStep[];
+  /** Material-work checkpoint this plan describes; excludes wording and clocks. */
+  readonly workFingerprint?: string;
   readonly createdAt: IsoTimestamp;
   readonly updatedAt: IsoTimestamp;
 }
@@ -628,6 +630,23 @@ export interface AgentUsage {
   readonly outputTokens: number;
 }
 
+/**
+ * Durable baselines for the current reader-authored turn. Usage itself stays
+ * monotonic because source-observation ledgers use the cumulative provider
+ * call count as an epoch; policy subtracts these baselines when enforcing the
+ * per-turn provider/tool budgets.
+ *
+ * The field on AgentState is optional so checkpoints written before budget
+ * windows existed naturally behave as the initial zero-based window.
+ */
+export interface AgentBudgetWindow {
+  readonly providerCallsAtStart: number;
+  readonly toolCallsAtStart: number;
+  readonly repairPassesAtStart?: number;
+  readonly startedAt: IsoTimestamp;
+  readonly readerMessageId?: string;
+}
+
 export interface AgentRetryState {
   readonly attempt: number;
   readonly lastStatus?: number;
@@ -698,6 +717,7 @@ export interface AgentState {
   readonly pendingToolCalls: readonly AgentModelToolCall[];
   readonly budget: AgentToolBudget;
   readonly usage: AgentUsage;
+  readonly budgetWindow?: AgentBudgetWindow;
   readonly retry: AgentRetryState;
   readonly cancellation: AgentCancellationState;
   readonly lastError?: AgentPublicError;
@@ -722,6 +742,8 @@ export type AgentInterrupt =
       readonly title: string;
       readonly questions: readonly AskUserQuestion[];
       readonly allowSensibleDefaults: boolean;
+      /** Durable assistant bubble that owns this otherwise-hidden pause. */
+      readonly messageId?: string;
     }
   | {
       readonly kind: 'blocker';
@@ -739,14 +761,20 @@ export type AgentInterrupt =
 export type AgentResumeValue =
   | {
       readonly kind: 'requirements_answer';
-      readonly answers: Readonly<Record<string, string>>;
-      readonly useSensibleDefaults: boolean;
+      /** Exact free-form reader reply. New flows use this field exclusively. */
+      readonly response?: string;
+      /** Reuses the optimistic panel message instead of emitting a duplicate. */
+      readonly userMessageId?: string;
+      /** Legacy structured-answer payload retained for restoring old tasks. */
+      readonly answers?: Readonly<Record<string, string>>;
+      readonly useSensibleDefaults?: boolean;
       /** Exact unanswered questions for which the reader accepted the proposed default. */
       readonly defaultQuestionIds?: readonly string[];
     }
   | {
       readonly kind: 'blocker_answer';
       readonly response: string;
+      readonly userMessageId?: string;
     }
   | {
       readonly kind: 'preview_decision';
@@ -927,6 +955,13 @@ export function createInitialAgentState(input: {
       providerRetries: 0,
       inputTokens: 0,
       outputTokens: 0,
+    },
+    budgetWindow: {
+      providerCallsAtStart: 0,
+      toolCallsAtStart: 0,
+      repairPassesAtStart: 0,
+      startedAt: input.now,
+      readerMessageId: input.userMessageId,
     },
     retry: { attempt: 0 },
     cancellation: { requested: false, lastSafeCheckpointStep: 0 },

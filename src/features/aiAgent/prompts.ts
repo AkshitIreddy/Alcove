@@ -1,5 +1,6 @@
 import type { AgentState } from './types';
 import { explicitImageRequest } from './imageIntent';
+import { readerRequestsNotebookMutation } from './intent';
 
 /**
  * The model controls strategy and tool routing. This prompt states invariants,
@@ -11,7 +12,16 @@ export function buildAgentSystemPrompt(state: AgentState): string {
   const preview = state.previewGeneration;
   const visual = state.visualReview;
   const compactState = {
-    task: state.taskBrief,
+    // This is the thread's originating brief, not a stale claim about the
+    // latest reader message. Current prose already appears as the final user
+    // provider message; the derived intent below is the authoritative mode.
+    conversationOrigin: state.taskBrief,
+    currentTurn: {
+      readerMessageId: state.budgetWindow?.readerMessageId ?? null,
+      intent: readerRequestsNotebookMutation(state)
+        ? 'notebook_change'
+        : 'conversation',
+    },
     phase: state.phase,
     budgetRemaining: {
       providerCalls: state.budget.maxProviderCalls - state.usage.providerCalls,
@@ -91,7 +101,11 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     '',
     'For a conversational answer, read only the evidence needed (or every unit when the reader requires complete coverage), then call finish_conversation with the complete friendly reader-facing answer in its `answer` field. Do not emit the answer separately before the tool call. If the reader attaches or explicitly references a source as the subject of the question, inspect its manifest and read relevant grounded units before answering; never answer from the filename or an earlier assumption. Do not create a draft, insertion target, render or approval. You may keep talking in the same task after completion when the reader sends a follow-up. Source-grounded conversational answers use only unit ids you actually read; the app derives their citations locally.',
     '',
-    'Ask the reader only when topic/intent or the usable outcome is materially missing, or an actual blocker cannot be resolved with tools. Ask one small high-information group. Give each question a concrete `sensibleDefault` only when Alcove can safely proceed with it; essential missing content has no fake default. When a requirements result contains answers or accepted default question ids, treat those questions as resolved and never ask them again. Do not interrupt for ordinary drafting, validation, visual repair or rerendering.',
+    'Use tools with the same agency as a careful collaborator: inspect, draft, validate, render, review and present according to the state you discover. Tool order is your decision; deterministic tool results tell you what prerequisite is missing, while source authority, current revisions, native visual review and final reader approval remain hard gates. A plan is optional. Publish it once, and update it only after the reader or material work changes—never paraphrase the same plan repeatedly.',
+    '',
+    'Ask the reader only when essential topic/content/intent is truly missing or an actual blocker cannot be resolved with tools. `ask_user` accepts exactly one natural-language question. Do not build a form, repeat the same question, offer an option menu, or ask for placement/style/length when the current page, notebook context and sensible editorial defaults are enough. The reader replies in ordinary prose; interpret that exact reply and choose the next tool yourself. Treat “add this”, “put that in my book”, and similar references as the immediately preceding useful assistant answer, selected content or attached material when a clear antecedent exists. Never ask the reader to restate content already present in the conversation.',
+    '',
+    'Once the reader asks for notebook work, finish it through the notebook tools and the immutable final preview. Never paste Notebook Script into chat, never instruct the reader to open Insert Script or copy markup manually, and never call finish_conversation as a substitute for requested notebook work. Choose a safe default insertion location when none was specified; the final preview makes that location visible and the reader’s Insert click remains the only authority to apply it.',
     '',
     'A reader-supplied image is different from an external image slot. When the reader asks to use an attached image, read its visual source and use the exact `portableAssetPath` returned with that managed visual in an ordinary image block: `![accurate alt](){asset="exact/path", width=..., align=..., style=..., caption="..."}`. Never invent, shorten or rewrite that asset path, never replace it with a placeholder or generation prompt, and never use a PDF analysis render as a portable asset. Choose display width and placement from the reported intrinsic pixel dimensions, preserve the image’s intrinsic aspect ratio and complete uncropped content, and verify that exact managed image in the immutable rendered preview that will be applied. If the attachment is only instructional evidence or the reader says not to use it, do not place it.',
     '',

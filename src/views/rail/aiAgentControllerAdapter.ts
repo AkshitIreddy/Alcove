@@ -17,7 +17,6 @@ import type {
   AgentActivityEvent,
   AgentContextPolicy,
   AgentImageRef,
-  AgentInterrupt,
   AgentPhase,
   AgentRuntimeSnapshot,
   AiAgentController as CoreAiAgentController,
@@ -280,6 +279,29 @@ export function buildAiAgentDiagnosticLog(
   }, null, 2);
 }
 
+/**
+ * Conversation is durable; operational receipts belong only to the latest
+ * reader turn. Keeping old receipts in diagnostics while retiring them from
+ * the panel prevents yesterday's progress bars from waking up when a new
+ * message starts.
+ */
+export function latestTurnTimeline(
+  items: readonly AiAgentTimelineItem[],
+): readonly AiAgentTimelineItem[] {
+  let latestReaderIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind === 'message' && item.role === 'reader') {
+      latestReaderIndex = index;
+      break;
+    }
+  }
+  if (latestReaderIndex < 0) return items;
+  return items.filter(
+    (item, index) => item.kind === 'message' || index >= latestReaderIndex,
+  );
+}
+
 const phaseProgress = (phase: AgentPhase | undefined): number | undefined => {
   switch (phase) {
     case 'intake': return 0.08;
@@ -404,32 +426,6 @@ function previewView(
   };
 }
 
-function questionItems(interrupt: AgentInterrupt | null): readonly AiAgentTimelineItem[] {
-  if (interrupt?.kind === 'requirements') {
-    return interrupt.questions.map((question) => ({
-      id: `question:${question.id}`,
-      kind: 'question' as const,
-      title: interrupt.title,
-      text: question.whyItMatters === undefined
-        ? question.prompt
-        : `${question.prompt} ${question.whyItMatters}`,
-      options: question.choices?.map((choice) => ({ id: choice.id, label: choice.label })),
-      allowDefaults: false,
-    }));
-  }
-  if (interrupt?.kind === 'blocker') {
-    return [{
-      id: 'question:blocker',
-      kind: 'question',
-      title: interrupt.title,
-      text: interrupt.message,
-      options: interrupt.recoveryChoices?.map((label, index) => ({ id: `recovery:${index}`, label })),
-      allowDefaults: false,
-    }];
-  }
-  return [];
-}
-
 function eventItem(event: AgentActivityEvent): AiAgentTimelineItem | null {
   switch (event.type) {
     case 'run.started':
@@ -438,7 +434,7 @@ function eventItem(event: AgentActivityEvent): AiAgentTimelineItem | null {
       return { id: event.id, kind: 'activity', label: event.summary, status: event.phase === 'finished' ? 'done' : 'running', progress: phaseProgress(event.phase) };
     case 'plan.updated':
       return {
-        id: event.id,
+        id: `plan:${event.plan.version}`,
         kind: 'plan',
         title: event.plan.summary,
         revision: event.plan.version,
@@ -459,13 +455,13 @@ function eventItem(event: AgentActivityEvent): AiAgentTimelineItem | null {
         citations: event.message.citations?.map(citationView),
       };
     case 'tool.started':
-      if (event.toolName === 'finish_conversation') return null;
+      if (event.toolName === 'finish_conversation' || event.toolName === 'ask_user') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.summary, status: 'running' };
     case 'tool.completed':
-      if (event.toolName === 'finish_conversation') return null;
+      if (event.toolName === 'finish_conversation' || event.toolName === 'ask_user') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.summary, status: 'done' };
     case 'tool.failed':
-      if (event.toolName === 'finish_conversation') return null;
+      if (event.toolName === 'finish_conversation' || event.toolName === 'ask_user') return null;
       return { id: event.toolCallId, kind: 'tool', name: event.toolName, summary: event.message, status: 'error' };
     case 'source.coverage':
       return {
@@ -523,8 +519,6 @@ export function createAiAgentPanelController(
   const [applyingApprovedPatch, setApplyingApprovedPatch] = createSignal(false);
   let creativeDirection: { name: string; prompt: string } | undefined;
   let registeredAttachmentFingerprint = '';
-  let requirementAnswers: Readonly<Record<string, string>> = {};
-  let requirementDefaultIds: readonly string[] = [];
 
   const attachmentFingerprint = (refs: readonly SourceAttachmentRef[]): string =>
     refs.map((ref) => {
@@ -654,27 +648,7 @@ export function createAiAgentPanelController(
   const viewState = (): AiAgentViewState => {
     const current = snapshot();
     const state = current.state;
-    const remainingRequirements = current.interrupt?.kind === 'requirements'
-      ? current.interrupt.questions.filter(
-          (question) => requirementAnswers[question.id] === undefined,
-        )
-      : [];
-    const defaultsOwner =
-      remainingRequirements.length > 0 &&
-      remainingRequirements.every((question) => question.sensibleDefault !== undefined)
-        ? remainingRequirements[0]?.id
-        : undefined;
-    const interruptItems = questionItems(current.interrupt).map((item) => {
-      if (item.kind !== 'question') return item;
-      const questionId = item.id.replace('question:', '');
-      return {
-        ...item,
-        answered: requirementAnswers[questionId],
-        allowDefaults: questionId === defaultsOwner,
-      };
-    });
-    const existing = new Set(timeline().map((item) => item.id));
-    const visibleTimeline = [...timeline(), ...interruptItems.filter((item) => !existing.has(item.id))];
+    const visibleTimeline = latestTurnTimeline(timeline());
     const conversationOnlySettled =
       state?.lifecycle === 'completed' &&
       state.patchProposal === undefined &&
@@ -740,7 +714,7 @@ export function createAiAgentPanelController(
       canStop: current.busy && !applyingApprovedPatch(),
       canSend: connectionReady() && !current.busy && !applyingApprovedPatch(),
       composerPlaceholder: current.interrupt?.kind === 'requirements'
-        ? 'Answer in your own words, or choose sensible defaults above…'
+        ? 'Reply naturally in your own words…'
         : current.interrupt?.kind === 'final_preview'
           ? 'Describe the changes you want in the final draft…'
           : 'Describe what you want this notebook to become…',
@@ -816,60 +790,6 @@ export function createAiAgentPanelController(
     },
     stop: () => safely(() => core.stop()),
     retry: () => safely(() => core.retry()),
-    answerQuestion: (_itemId, optionId) => {
-      const interrupt = snapshot().interrupt;
-      if (interrupt?.kind === 'requirements') {
-        const questionId = _itemId.replace('question:', '');
-        const question = interrupt.questions.find((item) => item.id === questionId);
-        const choice = question?.choices?.find((option) => option.id === optionId);
-        if (question === undefined || choice === undefined) return;
-        requirementAnswers = { ...requirementAnswers, [questionId]: choice.label };
-        requirementDefaultIds = requirementDefaultIds.filter((id) => id !== questionId);
-        const unanswered = interrupt.questions.filter(
-          (item) => requirementAnswers[item.id] === undefined,
-        );
-        if (unanswered.length > 0) {
-          setSnapshot({ ...snapshot() });
-          return;
-        }
-        const answers = requirementAnswers;
-        requirementAnswers = {};
-        requirementDefaultIds = [];
-        safely(() => core.answerRequirements?.(answers, []) ?? core.sendUserMessage(
-          Object.values(answers).join('\n'),
-        ));
-      } else if (interrupt?.kind === 'blocker') {
-        const index = Number(optionId.replace('recovery:', ''));
-        safely(() => core.sendUserMessage(interrupt.recoveryChoices?.[index] ?? optionId));
-      }
-    },
-    useSensibleDefaults: (_itemId) => {
-      const interrupt = snapshot().interrupt;
-      if (interrupt?.kind !== 'requirements') return;
-      const unanswered = interrupt.questions.filter(
-        (question) => requirementAnswers[question.id] === undefined,
-      );
-      for (const question of unanswered) {
-        if (question.sensibleDefault === undefined) continue;
-        requirementAnswers = {
-          ...requirementAnswers,
-          [question.id]: question.sensibleDefault,
-        };
-        requirementDefaultIds = [...new Set([...requirementDefaultIds, question.id])];
-      }
-      const unresolved = interrupt.questions.filter(
-        (question) => requirementAnswers[question.id] === undefined,
-      );
-      if (unresolved.length > 0) {
-        setSnapshot({ ...snapshot() });
-        return;
-      }
-      const answers = requirementAnswers;
-      const defaults = requirementDefaultIds;
-      requirementAnswers = {};
-      requirementDefaultIds = [];
-      safely(() => core.answerRequirements?.(answers, defaults) ?? core.useSensibleDefaults());
-    },
     startNewTask: () => {
       setTimeline([]);
       safely(async () => {

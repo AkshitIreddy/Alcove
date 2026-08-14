@@ -117,6 +117,34 @@ for the current working tree rather than relying on the long development chat.
 
 ## 🚧 ACTIVE — in-book AI agent (implemented, unreleased, awaiting owner review)
 
+### 2026-08-14 conversational tool-loop redesign
+
+- [x] Keep transient task/start/preparation/completion receipts scoped to the
+      reader turn that owns them; starting a follow-up must never resurrect
+      progress bars beneath an already-finished answer.
+- [x] Persist each model-authored clarification and the reader's exact reply as
+      ordinary conversation messages. Never render the same question twice,
+      remove it after answering, or rewrite `yes` as `response: yes`.
+- [x] Replace form-like requirement options with one concise natural-language
+      question when material information is genuinely missing. The next model
+      turn interprets the free-text answer and chooses the appropriate typed
+      tools itself.
+- [x] Keep tool autonomy capability-based: the model may inspect, plan, read,
+      draft, validate, render, review and propose in useful orders; Alcove
+      enforces prerequisites, source/revision authority, bounded retries and
+      explicit final approval rather than steering through an invisible wizard.
+- [x] Regress the copied 2026-08-14 trace: `hi` → explain a topic → `add to
+      book` → clarification answer must reach a reviewed insertion proposal
+      without duplicate questions, repeated no-op plans, a copied Script
+      handoff, or a chat-only completion.
+
+Completed with per-reader-turn intent and budgets, durable natural questions,
+exact reply identity, semantic repeat-question and no-progress guards, and
+capability-based typed tools behind the existing immutable-preview approval
+boundary. Focused adversarial tests and the live `?fx=force` panel probe cover
+the copied trace, later unrelated chat turns, failure recovery and a deliberately
+reintroduced retired question form.
+
 **Status — 2026-08-12:** the provider-neutral LangGraph runtime, secure Rust
 Cohere gateway, production notebook/source adapters, real PageEditor preview
 sandbox, model-first visual review loop, approval-only whole-book apply path,

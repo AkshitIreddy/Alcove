@@ -31,7 +31,12 @@ import {
   restorePrivateText,
   textPrivacySystemInstruction,
 } from './textPrivacy';
-import { canCallAnotherProviderTurn } from './policy';
+import {
+  canCallAnotherProviderTurn,
+  providerCallsInBudgetWindow,
+  repairPassesInBudgetWindow,
+  toolCallsInBudgetWindow,
+} from './policy';
 import { AgentToolCatalog } from './tools';
 import type {
   AgentConversationMessage,
@@ -65,6 +70,23 @@ export interface AgentGraphDependencies {
   readonly events: AgentEventBus;
   readonly execution: AgentGraphExecutionContext;
   readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+}
+
+/**
+ * buildAgentSystemPrompt historically subtracts cumulative usage from the
+ * configured limits. Give that read-only projection the current-window deltas
+ * while preserving the real monotonic counts everywhere else in the graph.
+ */
+function promptStateWithWindowUsage(state: AgentState): AgentState {
+  return {
+    ...state,
+    usage: {
+      ...state.usage,
+      providerCalls: providerCallsInBudgetWindow(state),
+      toolCalls: toolCallsInBudgetWindow(state),
+      repairPasses: repairPassesInBudgetWindow(state),
+    },
+  };
 }
 
 const AgentGraphState = Annotation.Root({
@@ -364,7 +386,10 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       requestId: dependencies.adapters.ids.create('provider'),
       runId: providerState.identity.runId,
       threadId: providerState.identity.threadId,
-      systemPrompt: [buildAgentSystemPrompt(promptState), privacyInstruction]
+      systemPrompt: [
+        buildAgentSystemPrompt(promptStateWithWindowUsage(promptState)),
+        privacyInstruction,
+      ]
         .filter(Boolean)
         .join('\n\n'),
       messages: providerMessages,
@@ -408,18 +433,23 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       let toolCalls = fallbackCall === undefined
         ? turn.toolCalls
         : [fallbackCall];
+      const notebookToolRepair =
+        toolCalls.length === 0 && readerRequestsNotebookMutation(providerState);
       if (
         toolCalls.length === 0 &&
-        turn.publicText.trim() === '' &&
         turn.finishReason === 'stop' &&
-        providerState.usage.providerCalls + providerCalls < providerState.budget.maxProviderCalls
+        (turn.publicText.trim() === '' || notebookToolRepair) &&
+        providerCallsInBudgetWindow(providerState) + providerCalls <
+          providerState.budget.maxProviderCalls
       ) {
         const repaired = await invokeProviderWithRetry(
           providerState,
           {
             ...request,
             requestId: dependencies.adapters.ids.create('provider'),
-            systemPrompt: `${request.systemPrompt}\n\nYour previous turn ended without visible prose or a tool call. Complete this turn now: use finish_conversation with a complete answer for conversation-only intent, or choose the next valid work tool for notebook intent.`,
+            systemPrompt: notebookToolRepair
+              ? `${request.systemPrompt}\n\nYour previous turn tried to answer a notebook-change request with prose. That prose was not shown. Do not paste Notebook Script or manual insertion instructions into chat. Choose the concrete notebook capability that advances the current work, and continue until the immutable final preview is presented.`
+              : `${request.systemPrompt}\n\nYour previous turn ended without visible prose or a tool call. Complete this turn now: use finish_conversation with a complete answer for conversation-only intent, or choose the next valid work tool for notebook intent.`,
           },
           dependencies,
         );
@@ -440,10 +470,18 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         });
       }
       const now = dependencies.adapters.clock.now();
+      const publicTextIsOwnedByTool = toolCalls.some(
+        (call) => call.name === 'finish_conversation' || call.name === 'ask_user',
+      );
+      const publicTextShouldStayInternal =
+        publicTextIsOwnedByTool || readerRequestsNotebookMutation(providerState);
       const assistantTurn: AgentModelAssistantTurn = {
         id: dependencies.adapters.ids.create('model'),
         role: 'assistant',
-        content: turn.publicText,
+        // These tools carry the sole reader-visible prose in their validated
+        // arguments. Dropping incidental streamed prose prevents the next
+        // provider turn from seeing a duplicate question/answer formulation.
+        content: publicTextShouldStayInternal ? '' : turn.publicText,
         ...(turn.toolPlan === '' ? {} : { toolPlan: turn.toolPlan }),
         toolCalls,
         createdAt: now,
@@ -452,11 +490,8 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         turn.publicText,
         providerState.textPrivacy,
       );
-      const answerWillBePublishedByFinish = toolCalls.some(
-        (call) => call.name === 'finish_conversation',
-      );
       const publicMessage: AgentConversationMessage | undefined =
-        !answerWillBePublishedByFinish && turn.publicText.trim()
+        !publicTextShouldStayInternal && turn.publicText.trim()
         ? {
             id: dependencies.adapters.ids.create('msg'),
             role: 'assistant',
@@ -515,7 +550,11 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       };
       await saveCurrentTask(failed, dependencies);
       await dependencies.events.emit({ type: 'run.failed', error: publicError });
-      throw error;
+      // Return the graph's fully current failure state. Throwing here makes
+      // AgentRuntime's outer catch rebuild from its pre-resume snapshot,
+      // which can erase the exact reader reply and durable question that were
+      // already checkpointed by the human node.
+      return { agent: failed };
     }
   };
 

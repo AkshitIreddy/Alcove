@@ -30,6 +30,7 @@ import {
   buildAiAgentDiagnosticLog,
   createAiAgentPanelController,
   friendlyWorkingNote,
+  latestTurnTimeline,
 } from '../src/views/rail/aiAgentControllerAdapter';
 
 const NOW = '2026-08-12T08:00:00.000Z';
@@ -247,7 +248,7 @@ function citationReadyState() {
 }
 
 describe('AI insertion target boundaries', () => {
-  it('advertises only workflow-valid notebook tools at each durable checkpoint', () => {
+  it('advertises notebook capabilities broadly while retaining hard preview gates', () => {
     const ready = citationReadyState();
     const mutation = {
       ...ready,
@@ -269,9 +270,9 @@ describe('AI insertion target boundaries', () => {
     };
     const beforeDraftTools = availableAgentToolNames(beforeDraft);
     expect(beforeDraftTools.has('submit_notebook_script')).toBe(true);
-    expect(beforeDraftTools.has('propose_insertion')).toBe(false);
+    expect(beforeDraftTools.has('propose_insertion')).toBe(true);
     expect(beforeDraftTools.has('propose_notebook_patch')).toBe(false);
-    expect(beforeDraftTools.has('finish_conversation')).toBe(false);
+    expect(beforeDraftTools.has('finish_conversation')).toBe(true);
 
     const beforeValidation = {
       ...mutation,
@@ -282,13 +283,13 @@ describe('AI insertion target boundaries', () => {
     };
     const validationTools = availableAgentToolNames(beforeValidation);
     expect(validationTools.has('validate_notebook_script')).toBe(true);
-    expect(validationTools.has('submit_notebook_script')).toBe(false);
-    expect(validationTools.has('propose_insertion')).toBe(false);
+    expect(validationTools.has('submit_notebook_script')).toBe(true);
+    expect(validationTools.has('propose_insertion')).toBe(true);
     expect(validationTools.has('propose_notebook_patch')).toBe(false);
 
     const reviewedTools = availableAgentToolNames(mutation);
     expect(reviewedTools.has('propose_notebook_patch')).toBe(true);
-    expect(reviewedTools.has('submit_notebook_script')).toBe(false);
+    expect(reviewedTools.has('submit_notebook_script')).toBe(true);
     expect(reviewedTools.has('record_visual_review')).toBe(false);
 
     const unreadPreview = {
@@ -299,6 +300,244 @@ describe('AI insertion target boundaries', () => {
     const unreadPreviewTools = availableAgentToolNames(unreadPreview);
     expect(unreadPreviewTools.has('read_draft_preview_pages')).toBe(true);
     expect(unreadPreviewTools.has('record_visual_review')).toBe(false);
+  });
+
+  it('lets the model see both outcomes but rejects a notebook draft for an answer-only turn', async () => {
+    const identity = {
+      taskId: 'task-capability-choice',
+      threadId: 'thread-capability-choice',
+      runId: 'run-capability-choice',
+      bookId: 'current-book',
+    };
+    const tools = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const state = createInitialAgentState({
+      identity,
+      goal: 'What is mathematics?',
+      now: NOW,
+      userMessageId: 'reader-capability-choice',
+    });
+
+    expect(availableAgentToolNames(state).has('finish_conversation')).toBe(true);
+    expect(availableAgentToolNames(state).has('submit_notebook_script')).toBe(true);
+    const rejected = await tools.execute(state, {
+      id: 'wrong-draft-choice',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: '::page\n# Mathematics',
+        reason: 'initial',
+        citedUnitIds: [],
+      },
+    }, new AbortController().signal);
+
+    expect(rejected.result).toMatchObject({
+      error: expect.stringMatching(/conversational answer/i),
+      retryable: true,
+    });
+    expect(rejected.state.draft).toBeUndefined();
+  });
+
+  it('retires set_plan until material work changes instead of accepting paraphrase loops', async () => {
+    const identity = {
+      taskId: 'task-plan-watchdog',
+      threadId: 'thread-plan-watchdog',
+      runId: 'run-plan-watchdog',
+      bookId: 'current-book',
+    };
+    const tools = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'Add this explanation to my book',
+      now: NOW,
+      userMessageId: 'reader-plan-watchdog',
+    });
+    const first = await tools.execute(initial, {
+      id: 'plan-one',
+      name: 'set_plan',
+      arguments: {
+        summary: 'Build reviewed pages',
+        steps: [{ id: 'draft', title: 'Draft the pages' }],
+      },
+    }, new AbortController().signal);
+    const repeated = await tools.execute(first.state, {
+      id: 'plan-two',
+      name: 'set_plan',
+      arguments: {
+        summary: 'Prepare polished notebook pages',
+        steps: [{ id: 'compose', title: 'Compose the pages' }],
+      },
+    }, new AbortController().signal);
+
+    expect(first.state.plan?.version).toBe(1);
+    expect(repeated.state.plan).toEqual(first.state.plan);
+    expect(repeated.result).toMatchObject({ accepted: false, unchanged: true });
+    expect(availableAgentToolNames(first.state).has('set_plan')).toBe(false);
+    expect(availableAgentToolNames(first.state).has('submit_notebook_script')).toBe(true);
+  });
+
+  it('keeps notebook intent through a natural clarification answer in a greeting-started task', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-intent-latch',
+        threadId: 'thread-intent-latch',
+        runId: 'run-intent-latch',
+        bookId: 'current-book',
+      },
+      goal: 'hi',
+      now: NOW,
+      userMessageId: 'reader-hi',
+    });
+    const state = {
+      ...initial,
+      conversation: [
+        ...initial.conversation,
+        { id: 'agent-lions', role: 'assistant' as const, text: 'Lions live in prides.', createdAt: NOW },
+        { id: 'reader-add', role: 'user' as const, text: 'add that to my book', createdAt: NOW },
+        { id: 'agent-question', role: 'assistant' as const, text: 'Should I make this a short lesson?', createdAt: NOW },
+        { id: 'reader-yes', role: 'user' as const, text: 'yes', createdAt: NOW },
+      ],
+    };
+    const tools = availableAgentToolNames(state);
+
+    expect(tools.has('submit_notebook_script')).toBe(true);
+    expect(tools.has('finish_conversation')).toBe(true);
+  });
+
+  it('starts a later ordinary question in conversation mode even when an old draft remains', () => {
+    const priorNotebookState = citationReadyState();
+    const state = {
+      ...priorNotebookState,
+      lifecycle: 'running' as const,
+      conversation: [
+        { id: 'reader-add-old', role: 'user' as const, text: 'Add this to my book', createdAt: NOW },
+        { id: 'agent-done-old', role: 'assistant' as const, text: 'The reviewed pages were added.', createdAt: NOW },
+        { id: 'reader-math-new', role: 'user' as const, text: 'What is mathematics?', createdAt: NOW },
+      ],
+      budgetWindow: {
+        providerCallsAtStart: priorNotebookState.usage.providerCalls,
+        toolCallsAtStart: priorNotebookState.usage.toolCalls,
+        repairPassesAtStart: priorNotebookState.usage.repairPasses,
+        startedAt: NOW,
+        readerMessageId: 'reader-math-new',
+      },
+    };
+    const tools = availableAgentToolNames(state);
+
+    expect(tools.has('finish_conversation')).toBe(true);
+    expect(tools.has('submit_notebook_script')).toBe(true);
+  });
+
+  it('rejects a paraphrased second clarification after the reader already answered', async () => {
+    const identity = {
+      taskId: 'task-question-watchdog',
+      threadId: 'thread-question-watchdog',
+      runId: 'run-question-watchdog',
+      bookId: 'current-book',
+    };
+    const tools = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'Add something to my book',
+      now: NOW,
+      userMessageId: 'reader-question-watchdog',
+    });
+    const firstCall = {
+      id: 'ask-once',
+      name: 'ask_user',
+      arguments: {
+        kind: 'requirements',
+        question: 'What topic should I add?',
+      },
+    } as const;
+    const stateWithAssistantCall = {
+      ...initial,
+      modelHistory: [
+        ...initial.modelHistory,
+        {
+          id: 'assistant-ask-once',
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [firstCall],
+          createdAt: NOW,
+        },
+      ],
+    };
+    const first = await tools.execute(
+      stateWithAssistantCall,
+      firstCall,
+      new AbortController().signal,
+    );
+    expect(first.interrupt?.kind).toBe('requirements');
+    const resumed = await tools.completeInterrupt(
+      first.state,
+      firstCall,
+      {
+        kind: 'requirements_answer',
+        response: 'Use the lion explanation.',
+        userMessageId: 'reader-question-answer',
+      },
+      new AbortController().signal,
+    );
+    const stateWithAnswerReceipt = {
+      ...resumed.state,
+      modelHistory: [
+        ...resumed.state.modelHistory,
+        {
+          id: 'tool-ask-once',
+          role: 'tool' as const,
+          toolCallId: firstCall.id,
+          toolName: firstCall.name,
+          content: resumed.result,
+          isError: false,
+          createdAt: NOW,
+        },
+      ],
+    };
+    const repeated = await tools.execute(
+      stateWithAnswerReceipt,
+      {
+        ...firstCall,
+        id: 'ask-twice',
+        arguments: {
+          kind: 'requirements',
+          question: 'What specific topic would you like me to include?',
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(repeated.interrupt).toBeUndefined();
+    expect(repeated.result).toMatchObject({
+      error: expect.stringMatching(/already answered.*clarification/i),
+      retryable: true,
+    });
+    expect(repeated.state.conversation.filter(
+      (message) => message.role === 'assistant' && message.text === 'What topic should I add?',
+    )).toHaveLength(1);
+    const afterRejectedQuestion = {
+      ...repeated.state,
+      modelHistory: [
+        ...repeated.state.modelHistory,
+        {
+          id: 'tool-ask-twice',
+          role: 'tool' as const,
+          toolCallId: 'ask-twice',
+          toolName: 'ask_user',
+          content: repeated.result,
+          isError: true,
+          createdAt: NOW,
+        },
+      ],
+    };
+    expect(availableAgentToolNames(afterRejectedQuestion).has('ask_user')).toBe(false);
   });
 
   it.each([
@@ -621,6 +860,24 @@ describe('AI panel queued-source handoff', () => {
     }
   });
 
+  it('never resurrects a completed turn’s progress bars during a follow-up', () => {
+    const visible = latestTurnTimeline([
+      { id: 'reader-old', kind: 'message', role: 'reader', text: 'hi' },
+      { id: 'status-old', kind: 'activity', label: 'Understanding', status: 'running' },
+      { id: 'agent-old', kind: 'message', role: 'agent', text: 'Hello!' },
+      { id: 'complete-old', kind: 'activity', label: 'Agent work complete', status: 'done' },
+      { id: 'reader-new', kind: 'message', role: 'reader', text: 'Explain lions' },
+      { id: 'status-new', kind: 'activity', label: 'Reading', status: 'running' },
+    ]);
+
+    expect(visible.map((item) => item.id)).toEqual([
+      'reader-old',
+      'agent-old',
+      'reader-new',
+      'status-new',
+    ]);
+  });
+
   it('shows a submitted reader message immediately and hides the internal completion tool', async () => {
     const state = createInitialAgentState({
       identity: {
@@ -703,7 +960,13 @@ describe('AI panel queued-source handoff', () => {
     }
   });
 
-  it('collects all requirement choices before one resume and supports defaults for all remaining', async () => {
+  it('keeps one natural question in conversation and sends the exact free-text reply', async () => {
+    const question = {
+      id: 'message-question',
+      role: 'assistant' as const,
+      text: 'What specific topic should I turn into pages?',
+      createdAt: NOW,
+    };
     const state = {
       ...createInitialAgentState({
         identity: {
@@ -717,41 +980,42 @@ describe('AI panel queued-source handoff', () => {
         userMessageId: 'message-requirement-panel',
       }),
       lifecycle: 'waiting_for_user' as const,
+      conversation: [
+        ...createInitialAgentState({
+          identity: {
+            taskId: 'task-requirement-panel',
+            threadId: 'thread-requirement-panel',
+            runId: 'run-requirement-panel',
+            bookId: 'current-book',
+          },
+          goal: 'Insert content in the book',
+          now: NOW,
+          userMessageId: 'message-requirement-panel',
+        }).conversation,
+        question,
+      ],
     };
     const snapshot: AgentRuntimeSnapshot = {
       state,
       interrupt: {
         kind: 'requirements',
-        title: 'Choose the remaining details',
-        allowSensibleDefaults: true,
-        questions: [
-          {
-            id: 'placement',
-            prompt: 'Where should it go?',
-            choices: [
-              { id: 'end', label: 'At the end' },
-              { id: 'start', label: 'At the beginning' },
-            ],
-            sensibleDefault: 'At the end',
-            allowFreeText: true,
-          },
-          {
-            id: 'format',
-            prompt: 'How should it look?',
-            choices: [{ id: 'polished', label: 'Polished notes' }],
-            sensibleDefault: 'Polished notes',
-            allowFreeText: true,
-          },
-        ],
+        title: 'A quick question',
+        allowSensibleDefaults: false,
+        questions: [{
+          id: 'ask-call',
+          prompt: question.text,
+          allowFreeText: true,
+        }],
+        messageId: question.id,
       },
       busy: false,
     };
-    const answerRequirements = vi.fn(async () => ({ state }));
+    const sendUserMessage = vi.fn(async () => ({ state }));
     const core = {
       getSnapshot: () => snapshot,
       subscribe: () => () => undefined,
       subscribeEvents: () => () => undefined,
-      answerRequirements,
+      sendUserMessage,
     } as unknown as CoreAiAgentController;
     const controller = createAiAgentPanelController(core, {
       bookId: 'current-book',
@@ -762,24 +1026,32 @@ describe('AI panel queued-source handoff', () => {
     });
 
     try {
-      const questions = () => controller.state().timeline.filter(
-        (item) => item.kind === 'question',
-      );
-      expect(questions()).toHaveLength(2);
-      expect(questions().filter((item) => item.kind === 'question' && item.allowDefaults))
-        .toHaveLength(1);
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      });
+      expect(controller.state().timeline).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: question.id,
+          kind: 'message',
+          role: 'agent',
+          text: question.text,
+        }),
+      ]));
+      expect(controller.state().timeline.map((item) => item.kind)).not.toContain('question');
 
-      controller.answerQuestion?.('question:placement', 'start');
-      expect(answerRequirements).not.toHaveBeenCalled();
-      expect(questions()[0]).toMatchObject({ answered: 'At the beginning' });
-
-      controller.useSensibleDefaults?.('question:placement');
-      expect(answerRequirements).toHaveBeenCalledWith(
-        { placement: 'At the beginning', format: 'Polished notes' },
-        ['format'],
+      await controller.send?.('Use the lion explanation from above.');
+      expect(sendUserMessage).toHaveBeenCalledWith(
+        'Use the lion explanation from above.',
+        expect.objectContaining({ userMessageId: expect.stringMatching(/^msg-local-/) }),
       );
+      expect(controller.state().timeline.filter(
+        (item) => item.kind === 'message' && item.role === 'reader' &&
+          item.text === 'Use the lion explanation from above.',
+      )).toHaveLength(1);
     } finally {
       controller.dispose();
+      vi.unstubAllGlobals();
     }
   });
 

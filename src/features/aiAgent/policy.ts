@@ -17,11 +17,41 @@ export interface PolicyDecision {
   readonly reason?: string;
 }
 
+function usageSinceWindowStart(current: number, baseline: number | undefined): number {
+  // Legacy checkpoints have no window and therefore retain the historical
+  // zero baseline. Clamp corrupt/future baselines so policy never creates a
+  // negative allowance or mutates the monotonic cumulative counters.
+  const safeCurrent = Math.max(0, current);
+  const safeBaseline = Math.min(safeCurrent, Math.max(0, baseline ?? 0));
+  return safeCurrent - safeBaseline;
+}
+
+export function providerCallsInBudgetWindow(state: AgentState): number {
+  return usageSinceWindowStart(
+    state.usage.providerCalls,
+    state.budgetWindow?.providerCallsAtStart,
+  );
+}
+
+export function toolCallsInBudgetWindow(state: AgentState): number {
+  return usageSinceWindowStart(
+    state.usage.toolCalls,
+    state.budgetWindow?.toolCallsAtStart,
+  );
+}
+
+export function repairPassesInBudgetWindow(state: AgentState): number {
+  return usageSinceWindowStart(
+    state.usage.repairPasses,
+    state.budgetWindow?.repairPassesAtStart,
+  );
+}
+
 export function canCallAnotherProviderTurn(state: AgentState): PolicyDecision {
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
   }
-  if (state.usage.providerCalls >= state.budget.maxProviderCalls) {
+  if (providerCallsInBudgetWindow(state) >= state.budget.maxProviderCalls) {
     return {
       allowed: false,
       code: 'budget',
@@ -35,7 +65,7 @@ export function canExecuteTool(state: AgentState): PolicyDecision {
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
   }
-  if (state.usage.toolCalls >= state.budget.maxToolCalls) {
+  if (toolCallsInBudgetWindow(state) >= state.budget.maxToolCalls) {
     return {
       allowed: false,
       code: 'budget',
@@ -165,6 +195,13 @@ export function canCompleteConversation(
 export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
+  }
+  if (!readerRequestsNotebookMutation(state)) {
+    return {
+      allowed: false,
+      code: 'incomplete',
+      reason: 'the current reader turn did not ask to change the notebook',
+    };
   }
   if (state.notebookSnapshot === undefined) {
     return { allowed: false, code: 'incomplete', reason: 'inspect the notebook first' };

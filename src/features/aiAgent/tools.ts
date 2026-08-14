@@ -30,6 +30,7 @@ import {
   canCompleteConversation,
   canExecuteTool,
   canSubmitNotebookPatch,
+  repairPassesInBudgetWindow,
 } from './policy';
 import { planAdaptiveRetrieval } from './retrieval';
 import {
@@ -292,6 +293,36 @@ function currentCoverage(state: AgentState, now: string) {
       now,
     )
   );
+}
+
+/**
+ * A plan may change after the reader answers or material work advances, not
+ * merely because the model found new wording. Keeping this deliberately free
+ * of clocks, usage counters, plan versions and lifecycle phases prevents
+ * plan-only loops from manufacturing their own “progress”.
+ */
+function materialWorkFingerprint(state: AgentState): string {
+  const latestConversationMessage = state.conversation[state.conversation.length - 1];
+  return JSON.stringify({
+    latestConversationMessageId: latestConversationMessage?.id ?? null,
+    notebookRevision: state.notebookSnapshot?.bookRevision ?? null,
+    sourceManifestDigest: state.sourceManifest?.digest ?? null,
+    readUnitIds: state.sourceCoverage?.readUnitIds ?? [],
+    citedUnitIds: state.sourceCoverage?.citedUnitIds ?? [],
+    draftHash: state.draft?.draftHash ?? null,
+    draftVersion: state.draft?.version ?? null,
+    insertionTarget: state.insertionTarget ?? null,
+    validation: state.validation === undefined
+      ? null
+      : { draftHash: state.validation.draftHash, valid: state.validation.valid },
+    previewGenerationId: state.previewGeneration?.generationId ?? null,
+    previewStale: state.previewGeneration?.stale ?? null,
+    inspectedPreviewPageIds: state.visualReview?.inspectedPageIds ?? [],
+    visualReviewPassed: state.visualReview?.passed ?? null,
+    patch: state.patchProposal === undefined
+      ? null
+      : { patchId: state.patchProposal.patchId, status: state.patchProposal.status },
+  });
 }
 
 async function buildLocalRestoredFinal(
@@ -669,28 +700,71 @@ const recordVisualSchema = z
 const askUserSchema = z
   .object({
     kind: z.enum(['requirements', 'blocker']),
-    title: z.string().min(1),
-    message: z.string().optional(),
-    questions: z
-      .array(
-        z
-          .object({
-            id: z.string().min(1),
-            prompt: z.string().min(1),
-            whyItMatters: z.string().optional(),
-            choices: z
-              .array(z.object({ id: z.string(), label: z.string() }).strict())
-              .optional(),
-            sensibleDefault: z.string().min(1).optional(),
-            allowFreeText: z.boolean().default(true),
-          })
-          .strict(),
-      )
-      .max(4)
-      .default([]),
-    recoveryChoices: z.array(z.string()).optional(),
+    /** One ordinary conversational question, rendered as an assistant bubble. */
+    question: z.string().min(1),
+    /** Optional short context, not a second question or an option list. */
+    context: z.string().optional(),
   })
   .strict();
+
+function questionNeedFingerprint(question: string): string {
+  const normalized = question
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/[\p{P}\p{S}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const semanticNeed: readonly [string, RegExp][] = [
+    ['image', /\b(?:image|picture|photo|illustration|visual)\b/u],
+    ['placement', /\b(?:where|placement|location|before|after|beginning|end|which page)\b/u],
+    ['length', /\b(?:length|long|short|concise|detailed|how many|page count|number of pages)\b/u],
+    ['style', /\b(?:style|tone|format|layout|look|direction|playful|formal|cute)\b/u],
+    ['detail', /\b(?:example|analogy|detail|preserve|recap|summary|exercise|practice|anything else|keep in mind)\b/u],
+    ['content', /\b(?:topic|subject|content|material|information|text|explanation|what to add|what should i add|what would you like me to include)\b/u],
+  ];
+  return semanticNeed.find(([, pattern]) => pattern.test(normalized))?.[0]
+    ?? `literal:${normalized}`;
+}
+
+function currentReaderModelTurns(state: AgentState): AgentState['modelHistory'] {
+  const anchorId = state.budgetWindow?.readerMessageId;
+  const anchorIndex = anchorId === undefined
+    ? 0
+    : state.modelHistory.findIndex(
+        (turn) => turn.role === 'user' && turn.id === anchorId,
+      );
+  return state.modelHistory.slice(anchorIndex >= 0 ? anchorIndex : state.modelHistory.length);
+}
+
+function answeredEquivalentQuestionExistsInCurrentReaderTurn(
+  state: AgentState,
+  question: string,
+): boolean {
+  const currentTurns = currentReaderModelTurns(state);
+  const answeredCallIds = new Set(
+    currentTurns.flatMap((turn) =>
+      turn.role === 'tool' && turn.toolName === 'ask_user' && !turn.isError
+        ? [turn.toolCallId]
+        : [],
+    ),
+  );
+  if (answeredCallIds.size === 0) return false;
+  const requestedNeed = questionNeedFingerprint(question);
+  return currentTurns.some((turn) =>
+    turn.role === 'assistant' && turn.toolCalls.some((call) => {
+      if (call.name !== 'ask_user' || !answeredCallIds.has(call.id)) return false;
+      const parsed = askUserSchema.safeParse(transportArguments(call.arguments));
+      return parsed.success &&
+        questionNeedFingerprint(parsed.data.question) === requestedNeed;
+    }),
+  );
+}
+
+function failedQuestionExistsInCurrentReaderTurn(state: AgentState): boolean {
+  return currentReaderModelTurns(state).some(
+    (turn) => turn.role === 'tool' && turn.toolName === 'ask_user' && turn.isError,
+  );
+}
 const proposePatchSchema = emptySchema;
 
 function verifiedPreviewCitations(state: AgentState): readonly SourceCitation[] {
@@ -1075,11 +1149,24 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'set_plan',
       description:
-        'Publish or update the concise user-visible work plan. Do not include private reasoning.',
+        'Publish one concise user-visible work plan, or update it only after the reader or material notebook work changes. Do not restate the same plan or include private reasoning.',
       effect: 'draft',
       schema: planSchema,
       async execute(state, args, context) {
         const now = context.adapters.clock.now();
+        const workFingerprint = materialWorkFingerprint(state);
+        if (state.plan?.workFingerprint === workFingerprint) {
+          return {
+            state,
+            result: json({
+              accepted: false,
+              unchanged: true,
+              version: state.plan.version,
+              next: 'Choose a concrete read, inspect, draft, validation, render, review, or presentation tool.',
+            }),
+            summary: 'kept the current plan; material work has not changed',
+          };
+        }
         const presentationFields = [
           args.summary,
           ...args.steps.flatMap((step) => [step.title, step.description ?? '']),
@@ -1100,6 +1187,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
               : { description: restoreDisplay(step.description) }),
             status: index === 0 ? ('in_progress' as const) : ('pending' as const),
           })),
+          workFingerprint,
           createdAt: state.plan?.createdAt ?? now,
           updatedAt: now,
         };
@@ -1203,6 +1291,11 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
       effect: 'draft',
       schema: submitScriptSchema,
       async execute(state, args, context) {
+        if (!readerRequestsNotebookMutation(state)) {
+          throw new Error(
+            'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead',
+          );
+        }
         const isRepair = state.draft !== undefined;
         const portableImageSlots = extractPortableImageSlots(args.script);
         if (portableImageSlots.length > 0) assertPortableImagesRequested(state);
@@ -1229,7 +1322,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (
           isRepair &&
           changedDraft &&
-          state.usage.repairPasses >= state.budget.maxRepairPasses
+          repairPassesInBudgetWindow(state) >= state.budget.maxRepairPasses
         ) {
           throw new Error(`repair budget exhausted (${state.budget.maxRepairPasses})`);
         }
@@ -1637,68 +1730,58 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
     definition({
       name: 'ask_user',
       description:
-        'Interrupt only for materially missing intent or an unresolvable blocker. Ask a small high-information group; ordinary style/depth/length can use visible sensible defaults.',
+        'Pause for exactly one materially necessary reader answer. Write one concise natural-language question; never make a form, option list, defaults menu, or ask about placement/style that can be inferred safely.',
       effect: 'interrupt',
       schema: askUserSchema,
       async execute(state, args, context) {
-        const presentationFields = [
-          args.title,
-          args.message ?? '',
-          ...(args.recoveryChoices ?? []),
-          ...args.questions.flatMap((question) => [
-            question.prompt,
-            question.whyItMatters ?? '',
-            question.sensibleDefault ?? '',
-            ...(question.choices?.map((choice) => choice.label) ?? []),
-          ]),
-        ];
+        if (answeredEquivalentQuestionExistsInCurrentReaderTurn(state, args.question)) {
+          throw new Error(
+            'the reader already answered this turn’s clarification; interpret that reply and continue with the next useful tool instead of asking again',
+          );
+        }
+        const presentationFields = [args.context ?? '', args.question];
         for (const field of presentationFields) {
           assertPrivatePlaceholdersRestorable(field, state.textPrivacy);
         }
         const restoreDisplay = (value: string): string =>
           restorePrivateText(value, state.textPrivacy);
+        const question = [args.context?.trim(), args.question.trim()]
+          .filter((part): part is string => part !== undefined && part !== '')
+          .map(restoreDisplay)
+          .join('\n\n');
+        const message: AgentConversationMessage = {
+          id: context.adapters.ids.create('msg'),
+          role: 'assistant',
+          text: question,
+          createdAt: context.adapters.clock.now(),
+        };
+        await context.events.emit({ type: 'assistant.message', message });
         const interrupt: AgentInterrupt =
           args.kind === 'requirements'
             ? {
                 kind: 'requirements',
-                title: restoreDisplay(args.title),
-                questions: args.questions.map((question) => ({
-                  ...question,
-                  prompt: restoreDisplay(question.prompt),
-                  ...(question.whyItMatters === undefined
-                    ? {}
-                    : { whyItMatters: restoreDisplay(question.whyItMatters) }),
-                  ...(question.sensibleDefault === undefined
-                    ? {}
-                    : { sensibleDefault: restoreDisplay(question.sensibleDefault) }),
-                  ...(question.choices === undefined
-                    ? {}
-                    : {
-                        choices: question.choices.map((choice) => ({
-                          ...choice,
-                          label: restoreDisplay(choice.label),
-                        })),
-                      }),
-                })),
-                allowSensibleDefaults: args.questions.some(
-                  (question) => question.sensibleDefault !== undefined,
-                ),
+                title: 'A quick question',
+                questions: [{
+                  id: context.call?.id ?? 'reader-reply',
+                  prompt: question,
+                  allowFreeText: true,
+                }],
+                allowSensibleDefaults: false,
+                messageId: message.id,
               }
             : {
                 kind: 'blocker',
-                title: restoreDisplay(args.title),
-                message: restoreDisplay(
-                  args.message ?? 'The agent needs your direction to continue.',
-                ),
-                recoveryChoices: args.recoveryChoices?.map(restoreDisplay),
+                title: 'I need your direction',
+                message: question,
               };
         return {
           state: touch(state, context, {
             lifecycle: 'waiting_for_user',
             phase: 'waiting_for_user',
+            conversation: [...state.conversation, message],
           }),
           result: json({ waitingForUser: true }),
-          summary: 'waiting for a high-value answer',
+          summary: 'waiting for the reader’s reply',
           interrupt,
         };
       },
@@ -1959,19 +2042,18 @@ export interface ToolCallResult {
 const ALWAYS_AVAILABLE_TOOLS = new Set([
   'inspect_notebook',
   'list_source_manifest',
-  'set_plan',
-  'ask_user',
 ]);
 
 /**
- * Cohere cannot be forced to choose a tool, so the catalogue itself is the
- * workflow rail. Advertising impossible later-stage tools caused expensive
- * guess/error loops (proposal before draft, repeated drafts before validation,
- * and placement changes after review). Only expose actions valid for the
- * current durable checkpoint; execute() remains the final authority.
+ * The catalogue describes capabilities, not a hidden wizard. The model owns
+ * strategy and may draft before placement or inspect placement before drafting;
+ * tool execution remains the deterministic authority for prerequisites. Only
+ * capabilities that need a concrete resource (a draft/render/proposal) wait for
+ * that resource, and irreversible apply authority never appears here at all.
  */
 export function availableAgentToolNames(state: AgentState): ReadonlySet<string> {
   const available = new Set(ALWAYS_AVAILABLE_TOOLS);
+  if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
   if (state.sourceManifest !== undefined) {
     available.add('plan_source_retrieval');
     available.add('read_source_range');
@@ -1980,29 +2062,20 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
     available.add('rerank_source_hits');
     available.add('inspect_source_coverage');
   }
-  const notebookWork = readerRequestsNotebookMutation(state) ||
-    state.draft !== undefined ||
-    state.patchProposal !== undefined;
+  // Conversation and notebook authoring are capabilities, not hidden modes.
+  // The model chooses between them from the reader's current turn. Execution
+  // and proposal policies remain the authority: finish_conversation rejects a
+  // write request, while submit_notebook_script rejects an answer-only turn.
+  available.add('finish_conversation');
+  available.add('submit_notebook_script');
 
-  if (!notebookWork) {
-    available.add('finish_conversation');
-    return available;
-  }
+  const workFingerprint = materialWorkFingerprint(state);
+  if (state.plan?.workFingerprint !== workFingerprint) available.add('set_plan');
 
   if (state.notebookSnapshot !== undefined) {
     available.add('inspect_page');
     available.add('inspect_page_range');
     available.add('inspect_selection');
-  }
-
-  // Placement is authored before the first draft. Once rendering begins, the
-  // reviewed location is immutable unless the reader changes it through the
-  // dedicated UI, which invalidates and rebuilds safely outside this tool.
-  if (
-    state.notebookSnapshot !== undefined &&
-    state.draft === undefined &&
-    state.insertionTarget === undefined
-  ) {
     available.add('propose_insertion');
   }
 
@@ -2016,28 +2089,12 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
   const blockingReview = state.visualReview?.findings.some(
     (finding) => finding.severity === 'blocking' && !finding.resolved,
   ) === true;
-  const sourceContextChanged = draft !== undefined &&
-    draft.sourceManifestDigest !== state.sourceManifest?.digest;
-
-  if (
-    state.notebookSnapshot !== undefined &&
-    state.insertionTarget !== undefined &&
-    (draft === undefined || sourceContextChanged ||
-      (validationCurrent && state.validation?.valid === false) || blockingReview)
-  ) {
-    available.add('submit_notebook_script');
-  }
-
   if (draft !== undefined) {
     available.add('parse_notebook_script');
     if (extractPortableImageSlots(draft.script).length > 0) {
       available.add('prepare_image_generation_prompts');
     }
-    if (
-      !validationCurrent &&
-      state.notebookSnapshot !== undefined &&
-      state.insertionTarget !== undefined
-    ) {
+    if (state.notebookSnapshot !== undefined && state.insertionTarget !== undefined) {
       available.add('validate_notebook_script');
     }
   }
@@ -2179,34 +2236,44 @@ export class AgentToolCatalog {
     if (call.name === 'ask_user') {
       const text =
         resume.kind === 'requirements_answer'
-          ? [
-              ...Object.entries(resume.answers).map(
-                ([questionId, answer]) => `${questionId}: ${answer}`,
-              ),
-              ...((resume.defaultQuestionIds ?? []).length === 0
-                ? []
-                : [`Use the proposed sensible defaults for: ${(resume.defaultQuestionIds ?? []).join(', ')}.`]),
-            ].join('\n') || 'Continue with the supplied requirements.'
+          ? resume.response?.trim() ||
+            Object.values(resume.answers ?? {}).map((answer) => answer.trim()).filter(Boolean).join('\n') ||
+            'Continue with the supplied requirements.'
           : resume.kind === 'blocker_answer'
             ? resume.response
             : 'Continue.';
+      const userMessageId =
+        resume.kind === 'requirements_answer' || resume.kind === 'blocker_answer'
+          ? resume.userMessageId
+          : undefined;
       const message = {
-        id: this.adapters.ids.create('msg'),
+        id: userMessageId ?? this.adapters.ids.create('msg'),
         role: 'user' as const,
         text,
         createdAt: this.adapters.clock.now(),
       };
-      await this.events.emit({ type: 'user.message', message });
+      const alreadyRecorded = state.conversation.some((item) => item.id === message.id);
+      if (!alreadyRecorded) await this.events.emit({ type: 'user.message', message });
+      const latestConversationMessage = state.conversation[state.conversation.length - 1];
       return {
         state: {
           ...state,
           lifecycle: 'running',
           phase: 'intake',
-          conversation: [...state.conversation, message],
+          conversation: alreadyRecorded
+            ? state.conversation
+            : [...state.conversation, message],
           checkpointStep: state.checkpointStep + 1,
           updatedAt: this.adapters.clock.now(),
         },
-        result: json(resume),
+        result: json({
+          kind: 'reader_reply',
+          response: text,
+          answeredQuestionMessageId:
+            latestConversationMessage?.role === 'assistant'
+              ? latestConversationMessage.id
+              : null,
+        }),
       };
     }
     if (call.name !== 'submit_notebook_patch') {

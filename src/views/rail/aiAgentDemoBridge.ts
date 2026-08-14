@@ -86,6 +86,8 @@ const EXPLAIN_REQUEST =
   'Can you explain Huffman coding with kittens?';
 const BUILD_REQUEST =
   'Great — turn that into three study-note pages and use this kitten infographic.';
+const NATURAL_QUESTION =
+  'I can turn the explanation above into notebook pages. Is there one detail you definitely want me to preserve?';
 
 const EXPLAIN_ANSWER =
   'Imagine a kitten shelter giving every sound a tag. The loudest regular “meow” gets a tiny tag because staff hear it constantly; a rare squeak can use a longer one. Huffman coding does the same with bits: repeatedly pair the two least-frequent symbols, grow a binary tree, then read each symbol\'s root-to-leaf path. Common symbols end up close to the root, so the whole message becomes shorter, and the leaf paths stay prefix-free so decoding never has to guess. I kept this explanation in our conversation because you asked a question rather than asking me to change the notebook.';
@@ -268,11 +270,19 @@ export function demoAttachmentVisible(sentMessageCount: number): boolean {
 function timelineFor(
   stage: AiAgentDemoStage,
   sent: readonly string[],
+  scenario: AiAgentDemoScenario,
 ): readonly AiAgentTimelineItem[] {
   if (stage === 'idle') return [];
   const first = sent[0] ?? EXPLAIN_REQUEST;
   const second = sent[1] ?? BUILD_REQUEST;
   const out: AiAgentTimelineItem[] = [message('demo-reader-explain', 'reader', first)];
+  if (scenario === 'conversation') {
+    if (stage === 'intake' && sent.length < 2) return out;
+    out.push(message('demo-agent-natural-question', 'agent', NATURAL_QUESTION));
+    if (sent.length < 2) return out;
+    out.push(message('demo-reader-natural-reply', 'reader', second));
+    return out;
+  }
   if (stage === 'intake' && sent.length < 2) return out;
   out.push(message('demo-agent-answer', 'agent', EXPLAIN_ANSWER));
   if (stage === 'answer') return out;
@@ -366,7 +376,12 @@ function stageView(
   preview: AiAgentDraftPreviewView | undefined,
   sent: readonly string[],
   bookTitle: string,
+  scenario: AiAgentDemoScenario,
 ): AiAgentViewState {
+  const conversationFixture = scenario === 'conversation';
+  const threadTitle = conversationFixture
+    ? 'Natural notebook follow-up · representative demo'
+    : 'Huffman coding with kittens · representative demo';
   const working = ['intake', 'plan', 'read', 'draft'].includes(stage);
   const reviewing = stage === 'review';
   const ready = stage === 'ready';
@@ -411,40 +426,52 @@ function stageView(
             : inserted || stage === 'answer'
               ? 'complete'
               : 'idle',
-    headline: ready
-      ? 'Three pages are ready for your decision'
-      : applying
-        ? 'Adding the three reviewed pages'
-        : inserted
-          ? 'Three reviewed pages were added'
-      : reviewing
-        ? 'Looking at every page before you do'
-        : stage === 'answer'
-          ? 'Answered here — the notebook is unchanged'
-          : working
-            ? 'Working through the kitten infographic'
-            : 'Frozen demo ready — no request sent',
+    headline: conversationFixture && stage === 'answer'
+      ? 'Waiting for your reply'
+      : ready
+        ? 'Three pages are ready for your decision'
+        : applying
+          ? 'Adding the three reviewed pages'
+          : inserted
+            ? 'Three reviewed pages were added'
+            : reviewing
+              ? 'Looking at every page before you do'
+              : stage === 'answer'
+                ? 'Answered here — the notebook is unchanged'
+                : working
+                  ? conversationFixture
+                    ? 'Shaping your notebook request'
+                    : 'Working through the kitten infographic'
+                  : 'Frozen demo ready — no request sent',
     workingNote: stage === 'intake'
       ? sent.length < 2
         ? 'Finding a cute way into the idea…'
-        : 'Imagining three little study pages…'
+        : conversationFixture
+          ? 'Connecting your reply to the notebook tools…'
+          : 'Imagining three little study pages…'
       : undefined,
     progress,
     threadId: 'demo-task-huffman-kittens',
-    threadTitle: 'Huffman coding with kittens · representative demo',
+    threadTitle,
     threads: [{
       id: 'demo-task-huffman-kittens',
-      title: 'Huffman coding with kittens · demo',
+      title: conversationFixture
+        ? 'Natural notebook follow-up · demo'
+        : 'Huffman coding with kittens · demo',
       updatedLabel: 'frozen example',
       status: inserted || stage === 'answer' ? 'complete' : ready ? 'paused' : 'active',
     }],
-    timeline: timelineFor(stage, sent),
-    attachments: demoAttachmentVisible(sent.length) ? [DEMO_ATTACHMENT] : [],
+    timeline: timelineFor(stage, sent, scenario),
+    attachments: scenario === 'study-notes' && demoAttachmentVisible(sent.length)
+      ? [DEMO_ATTACHMENT]
+      : [],
     context: CONTEXT,
     preview: visiblePreview,
     canStop: working || reviewing || applying,
     canSend: !working && !reviewing && !ready && !applying,
-    composerPlaceholder: ready
+    composerPlaceholder: conversationFixture && stage === 'answer'
+      ? 'Reply naturally in your own words…'
+      : ready
       ? 'Describe any changes you want in these reviewed demo pages…'
       : `Ask a question or describe what to make in ${bookTitle}…`,
   };
@@ -573,12 +600,12 @@ export function createAiAgentDemoBridge(options: DemoBridgeOptions): AiAgentDemo
   let insertionPromise: Promise<readonly string[]> | null = null;
   let disposed = false;
   const [readState, publishState] = createSignal<AiAgentViewState>(
-    stageView(stage, preview, sent, options.bookTitle),
+    stageView(stage, preview, sent, options.bookTitle, scenario),
   );
 
   const publish = (): void => {
     if (disposed) return;
-    publishState(stageView(stage, preview, sent, options.bookTitle));
+    publishState(stageView(stage, preview, sent, options.bookTitle, scenario));
   };
 
   const disposeSandbox = async (): Promise<void> => {
@@ -675,7 +702,7 @@ export function createAiAgentDemoBridge(options: DemoBridgeOptions): AiAgentDemo
         if (disposed) return;
         stage = 'ready';
         publishState({
-          ...stageView(stage, preview, sent, options.bookTitle),
+          ...stageView(stage, preview, sent, options.bookTitle, scenario),
           error: {
             title: 'Could not place the demo pages',
             detail: error instanceof Error ? error.message : 'The reversible demo insertion failed.',

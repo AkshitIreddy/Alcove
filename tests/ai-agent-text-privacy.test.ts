@@ -408,29 +408,23 @@ describe('AI Agent local text veil', () => {
       name: 'ask_user',
       arguments: {
         kind: 'requirements',
-        title: `A question for ${token}`,
-        message: null,
-        questions: [{
-          id: 'question-private',
-          prompt: `May I mention ${token}?`,
-          whyItMatters: `This changes how ${token} appears.`,
-          choices: [{ id: 'yes', label: `Use ${token}` }],
-          allowFreeText: true,
-        }],
-        recoveryChoices: null,
+        question: `May I mention ${token}?`,
+        context: `This changes how ${token} appears.`,
       },
     }, new AbortController().signal);
     expect(asked.interrupt).toMatchObject({
       kind: 'requirements',
-      title: 'A question for alice@example.org',
+      title: 'A quick question',
       questions: [{
-        id: 'question-private',
-        prompt: 'May I mention alice@example.org?',
-        whyItMatters: 'This changes how alice@example.org appears.',
-        choices: [{ id: 'yes', label: 'Use alice@example.org' }],
+        id: 'ask-private',
+        prompt: 'This changes how alice@example.org appears.\n\nMay I mention alice@example.org?',
       }],
     });
     expect(JSON.stringify(asked.interrupt)).not.toContain(token);
+    expect(asked.state.conversation.at(-1)).toMatchObject({
+      role: 'assistant',
+      text: 'This changes how alice@example.org appears.\n\nMay I mention alice@example.org?',
+    });
 
     const mutated = token.replace(/0001(?=⟧$)/u, '0002');
     const rejected = await tools.execute(state, {
@@ -495,10 +489,8 @@ describe('AI Agent local text veil', () => {
           name: 'ask_user',
           arguments: {
             kind: 'requirements',
-            title: 'One detail',
-            questions: [],
-            message: null,
-            recoveryChoices: null,
+            question: 'What should I do next?',
+            context: null,
           },
         };
         yield { type: 'finish', reason: 'tool_calls' };

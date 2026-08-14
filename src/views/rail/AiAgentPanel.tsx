@@ -129,15 +129,6 @@ export type AiAgentTimelineItem =
     }
   | {
       readonly id: string;
-      readonly kind: 'question';
-      readonly title: string;
-      readonly text: string;
-      readonly options?: readonly { id: string; label: string; detail?: string }[];
-      readonly answered?: string;
-      readonly allowDefaults?: boolean;
-    }
-  | {
-      readonly id: string;
       readonly kind: 'plan';
       readonly title: string;
       readonly revision?: number;
@@ -281,8 +272,6 @@ export interface AiAgentController {
   readonly setCreativeDirection?: (preset: AiSpecStylePreset) => void;
   readonly stop?: () => void;
   readonly retry?: () => void;
-  readonly answerQuestion?: (itemId: string, optionId: string) => void;
-  readonly useSensibleDefaults?: (itemId: string) => void;
   readonly startNewTask?: () => void;
   readonly selectThread?: (threadId: string) => void;
   readonly renameThread?: (threadId: string, title: string) => void;
@@ -726,8 +715,6 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
               <TimelineItem
                 item={item}
                 onCitation={(id) => props.controller?.openCitation?.(id)}
-                onAnswer={(optionId) => props.controller?.answerQuestion?.(item.id, optionId)}
-                onDefaults={() => props.controller?.useSensibleDefaults?.(item.id)}
               />
             )}
           </For>
@@ -1094,8 +1081,6 @@ function MessageMarkdown(props: { text: string }): JSX.Element {
 function TimelineItem(props: {
   item: AiAgentTimelineItem;
   onCitation(id: string): void;
-  onAnswer(optionId: string): void;
-  onDefaults(): void;
 }): JSX.Element {
   return (
     <Switch>
@@ -1105,42 +1090,6 @@ function TimelineItem(props: {
             <span class="nb-ai-message-role font-ui">{item.role === 'agent' ? 'Alcove agent' : 'You'}</span>
             <MessageMarkdown text={item.text} />
             <Citations citations={item.citations ?? []} onOpen={props.onCitation} />
-          </article>
-        )}
-      </Match>
-      <Match when={props.item.kind === 'question' ? props.item : undefined} keyed>
-        {(item) => (
-          <article class="nb-ai-question-card">
-            <span class="nb-ai-card-kicker font-ui">one thing before I begin</span>
-            <h3>{item.title}</h3>
-            <p>{item.text}</p>
-            <Show when={item.answered} keyed>
-              {(answer) => <p class="nb-ai-answer-receipt font-ui"><CheckIcon /> {answer}</p>}
-            </Show>
-            <div class="nb-ai-question-options">
-              <For each={item.options ?? []}>
-                {(option) => (
-                  <button
-                    type="button"
-                    aria-pressed={item.answered === option.label}
-                    classList={{ 'is-selected': item.answered === option.label }}
-                    onClick={() => props.onAnswer(option.id)}
-                  >
-                    <strong>{option.label}</strong>
-                    <Show when={option.detail}><span class="font-ui">{option.detail}</span></Show>
-                  </button>
-                )}
-              </For>
-              <Show when={item.allowDefaults}>
-                <button
-                  type="button"
-                  class="is-defaults font-ui"
-                  onClick={props.onDefaults}
-                >
-                  Use sensible defaults for all remaining
-                </button>
-              </Show>
-            </div>
           </article>
         )}
       </Match>

@@ -371,85 +371,292 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(result.state.conversation.at(-1)?.text).toMatch(/patterns, quantities/i);
   });
 
-  it('submits every requirements choice together and accepts defaults only where declared', async () => {
+  it('never publishes Notebook Script prose as the answer to a notebook-change request', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'notebook-prose-repair',
+      capabilities: async () => ({
+        providerId: 'notebook-prose-repair',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: true,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: 'public_text_delta', text: '# Copy this into Insert Script\n\nLion notes.' };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        yield {
+          type: 'tool_call',
+          id: 'repair-uses-tool',
+          name: 'ask_user',
+          arguments: {
+            kind: 'requirements',
+            question: 'Should I preserve the examples from the explanation above?',
+          },
+        };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const waiting = await runtime.start({
+      taskId: 'task-notebook-prose-repair',
+      threadId: 'thread-notebook-prose-repair',
+      runId: 'run-notebook-prose-repair',
+      bookId: 'book-1',
+      goal: 'Add the lion explanation into my book.',
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.systemPrompt).toMatch(/prose was not shown|concrete notebook capability/i);
+    expect(waiting.interrupt?.kind).toBe('requirements');
+    expect(waiting.state.conversation.some((message) =>
+      /copy this into insert script/i.test(message.text)
+    )).toBe(false);
+    expect(waiting.state.lifecycle).toBe('waiting_for_user');
+  });
+
+  it('keeps manual Notebook Script prose hidden even when the same turn uses a valid notebook tool', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'notebook-tool-with-prose',
+      capabilities: async () => ({
+        providerId: 'notebook-tool-with-prose',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: true,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: 'public_text_delta',
+            text: '# Copy this into Insert Script\n\nThis prose must remain internal.',
+          };
+          yield {
+            type: 'tool_call',
+            id: 'inspect-with-manual-prose',
+            name: 'inspect_notebook',
+            arguments: { request: 'current' },
+          };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        yield {
+          type: 'tool_call',
+          id: 'ask-after-inspection',
+          name: 'ask_user',
+          arguments: {
+            kind: 'requirements',
+            question: 'Which explanation from our conversation should I turn into pages?',
+          },
+        };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const waiting = await runtime.start({
+      taskId: 'task-tool-with-manual-prose',
+      threadId: 'thread-tool-with-manual-prose',
+      runId: 'run-tool-with-manual-prose',
+      bookId: 'book-1',
+      goal: 'Add the explanation above into my book.',
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(waiting.interrupt?.kind).toBe('requirements');
+    expect(waiting.state.conversation.some((message) =>
+      /copy this into insert script|prose must remain internal/i.test(message.text)
+    )).toBe(false);
+    expect(JSON.stringify(requests[1]?.messages)).not.toMatch(
+      /copy this into insert script|prose must remain internal/i,
+    );
+  });
+
+  it('keeps one natural question durable and records the exact free-form reply once', async () => {
     const provider = new ScriptedProvider([
       {
         name: 'ask_user',
+        text: 'One thing before I begin…',
         args: {
           kind: 'requirements',
-          title: 'A few details',
-          questions: [
-            {
-              id: 'content',
-              prompt: 'What should be inserted?',
-              choices: [{ id: 'notes', label: 'Study notes' }],
-              sensibleDefault: 'Study notes',
-            },
-            {
-              id: 'placement',
-              prompt: 'Where should it go?',
-              choices: [{ id: 'end', label: 'At the end' }],
-              sensibleDefault: 'At the end',
-            },
-          ],
+          context: 'I can turn that into a polished notebook section.',
+          question: 'Which explanation should I add?',
         },
       },
       {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Recorded answers',
-          questions: [],
+          question: 'Would you like any examples included?',
         },
       },
     ]);
     const { adapters } = fakeAdapters();
-    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, adapters, persistence);
     const waiting = await runtime.start({
-      taskId: 'task-requirements-group',
-      threadId: 'thread-requirements-group',
-      runId: 'run-requirements-group',
+      taskId: 'task-natural-question',
+      threadId: 'thread-natural-question',
+      runId: 'run-natural-question',
       bookId: 'book-1',
       goal: 'Insert something in the book.',
     });
     expect(waiting.interrupt).toMatchObject({
       kind: 'requirements',
-      allowSensibleDefaults: true,
+      allowSensibleDefaults: false,
+      questions: [{
+        prompt: 'I can turn that into a polished notebook section.\n\nWhich explanation should I add?',
+        allowFreeText: true,
+      }],
     });
+    const originalQuestion = waiting.state.conversation.at(-1);
+    expect(originalQuestion).toMatchObject({
+      role: 'assistant',
+      text: 'I can turn that into a polished notebook section.\n\nWhich explanation should I add?',
+    });
+    expect(waiting.state.conversation.some(
+      (message) => message.text === 'One thing before I begin…',
+    )).toBe(false);
 
-    await runtime.answerRequirements(
-      { content: 'Study notes', placement: 'At the end' },
-      ['placement'],
-    );
+    const reply = 'Use the lion explanation from our conversation.';
+    const resumed = await runtime.sendUserMessage(reply, { userMessageId: 'reader-reply-1' });
     const secondRequest = provider.requests[1];
-    expect(JSON.stringify(secondRequest?.messages)).toContain('Study notes');
-    expect(JSON.stringify(secondRequest?.messages)).toContain('placement');
+    const providerHistory = JSON.stringify(secondRequest?.messages);
+    expect(providerHistory).toContain(reply);
+    expect(providerHistory).not.toContain(`response: ${reply}`);
+    expect(providerHistory).not.toContain('One thing before I begin');
+    expect(resumed.state.conversation.filter((message) => message.text === reply))
+      .toEqual([expect.objectContaining({ id: 'reader-reply-1', role: 'user' })]);
+    expect(resumed.state.conversation).toContainEqual(originalQuestion);
+    expect((await persistence.loadTask('task-natural-question'))?.state.conversation)
+      .toContainEqual(originalQuestion);
   });
 
-  it('does not offer or accept a fake default for essential missing content', async () => {
-    const provider = new ScriptedProvider([{
-      name: 'ask_user',
-      args: {
-        kind: 'requirements',
-        title: 'Content required',
-        questions: [{ id: 'content', prompt: 'What should be inserted?' }],
+  it('restores a pending conversational question without turning it into a form', async () => {
+    const provider = new ScriptedProvider([
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          question: 'What topic would you like me to turn into pages?',
+        },
       },
-    }]);
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          question: 'Anything else I should keep in mind?',
+        },
+      },
+    ]);
     const { adapters } = fakeAdapters();
-    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, adapters, persistence);
     const waiting = await runtime.start({
-      taskId: 'task-no-fake-default',
-      threadId: 'thread-no-fake-default',
-      runId: 'run-no-fake-default',
+      taskId: 'task-restored-question',
+      threadId: 'thread-restored-question',
+      runId: 'run-restored-question',
       bookId: 'book-1',
       goal: 'Insert in book.',
     });
-    expect(waiting.interrupt).toMatchObject({
+    const questionMessage = waiting.state.conversation.at(-1);
+    await runtime.clearActiveTask();
+
+    const restarted = new AgentRuntime(provider, adapters, persistence);
+    const restored = await restarted.restore('task-restored-question');
+    expect(restored.interrupt).toMatchObject({
       kind: 'requirements',
       allowSensibleDefaults: false,
+      questions: [{
+        prompt: 'What topic would you like me to turn into pages?',
+      }],
     });
-    await expect(runtime.answerRequirements({}, ['content']))
-      .rejects.toThrow(/no safe sensible default/i);
+    const restoredQuestion = restored.interrupt?.kind === 'requirements'
+      ? restored.interrupt.questions[0]
+      : undefined;
+    expect(restoredQuestion).not.toHaveProperty('choices');
+    expect(restoredQuestion).not.toHaveProperty('sensibleDefault');
+    expect(restored.state?.conversation).toContainEqual(questionMessage);
+    const resumed = await restarted.sendUserMessage('Osmosis, with cute analogies.');
+    expect(resumed.state.conversation).toContainEqual(questionMessage);
+  });
+
+  it('carries notebook intent through a natural clarification reply in a greeting-started task', async () => {
+    const provider = new ScriptedProvider([
+      {
+        name: 'finish_conversation',
+        args: {
+          answer: 'Lions are social big cats that live together in prides.',
+          citedUnitIds: [],
+        },
+      },
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          question: 'Should I turn the lion explanation into a notebook page?',
+        },
+      },
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'requirements',
+          question: 'Would you like a short recap box as well?',
+        },
+      },
+    ]);
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const greeted = await runtime.start({
+      taskId: 'task-greeting-to-notebook',
+      threadId: 'thread-greeting-to-notebook',
+      runId: 'run-greeting-to-notebook',
+      bookId: 'book-1',
+      goal: 'hi',
+    });
+    expect(greeted.state.lifecycle).toBe('completed');
+    expect(provider.requests).toHaveLength(0);
+
+    await runtime.sendUserMessage('explain lions');
+    const waiting = await runtime.sendUserMessage('add into my book');
+    expect(waiting.interrupt).toMatchObject({
+      kind: 'requirements',
+      questions: [{ prompt: 'Should I turn the lion explanation into a notebook page?' }],
+    });
+    const question = waiting.state.conversation.at(-1);
+
+    const resumed = await runtime.sendUserMessage('yes', { userMessageId: 'reader-yes' });
+    expect(provider.requests).toHaveLength(3);
+    const resumedRequest = provider.requests[2]!;
+    const advertisedTools = resumedRequest.tools.map((tool) => tool.name);
+    expect(advertisedTools).toContain('submit_notebook_script');
+    expect(advertisedTools).toContain('finish_conversation');
+    const resumedProviderHistory = JSON.stringify(resumedRequest.messages);
+    expect(resumedProviderHistory).not.toMatch(/response\s*:\s*yes/iu);
+    const readerReplyResult = resumedRequest.messages.find((message) =>
+      message.role === 'tool' && message.toolName === 'ask_user'
+    );
+    const readerReplyText = readerReplyResult?.role === 'tool'
+      ? readerReplyResult.content.find((part) => part.type === 'text')?.text
+      : undefined;
+    expect(readerReplyText === undefined ? undefined : JSON.parse(readerReplyText))
+      .toMatchObject({ kind: 'reader_reply', response: 'yes' });
+    expect(resumed.state.conversation.filter((message) => message.text === 'yes'))
+      .toEqual([expect.objectContaining({ id: 'reader-yes', role: 'user' })]);
+    expect(resumed.state.conversation).toContainEqual(question);
   });
 
   it('cannot miss an immediate Stop while start is still hydrating source setup', async () => {
@@ -457,8 +664,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
       name: 'ask_user',
       args: {
         kind: 'requirements',
-        title: 'Retry reached the provider',
-        questions: [],
+        question: 'Retry reached the provider?',
       },
     }]);
     const { adapters } = fakeAdapters();
@@ -490,7 +696,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(retried.state.lifecycle).toBe('waiting_for_user');
     expect(retried.interrupt).toMatchObject({
       kind: 'requirements',
-      title: 'Retry reached the provider',
+      questions: [{ prompt: 'Retry reached the provider?' }],
     });
   });
 
@@ -516,8 +722,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
       name: 'ask_user',
       args: {
         kind: 'requirements',
-        title: 'Sources prepared before provider',
-        questions: [],
+        question: 'Were the sources prepared before this question?',
       },
     }]);
     const originalStream = provider.streamTurn.bind(provider);
@@ -574,16 +779,14 @@ describe('Alcove autonomous notebook agent runtime', () => {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Add any evidence',
-          questions: [{ id: 'evidence', prompt: 'Anything else?' }],
+          question: 'Would you like to add any other evidence?',
         },
       },
       {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Evidence received',
-          questions: [],
+          question: 'Is there anything else I should know about that evidence?',
         },
       },
     ]);
@@ -627,8 +830,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Add another source',
-          questions: [{ id: 'source', prompt: 'Any more evidence?' }],
+          question: 'Do you have any more evidence to add?',
         },
       },
     ]);
@@ -704,16 +906,14 @@ describe('Alcove autonomous notebook agent runtime', () => {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Add the failing source',
-          questions: [{ id: 'source', prompt: 'Ready?' }],
+          question: 'Are you ready to add the source?',
         },
       },
       {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Recovered evidence reached the model',
-          questions: [],
+          question: 'Did the recovered evidence look right?',
         },
       },
     ]);
@@ -762,7 +962,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(userTexts.filter((text) => text === followUp)).toHaveLength(1);
     expect(result.interrupt).toMatchObject({
       kind: 'requirements',
-      title: 'Recovered evidence reached the model',
+      questions: [{ prompt: 'Did the recovered evidence look right?' }],
     });
   });
 
@@ -789,8 +989,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
             name: 'ask_user',
             arguments: {
               kind: 'requirements',
-              title: 'Choose a direction',
-              questions: [{ id: 'direction', prompt: 'Which direction?' }],
+              question: 'Which direction should I take?',
             },
           };
           yield {
@@ -809,8 +1008,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
             name: 'ask_user',
             arguments: {
               kind: 'requirements',
-              title: 'Answer observed',
-              questions: [],
+              question: 'Would you like anything else adjusted?',
             },
           };
         }
@@ -859,8 +1057,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
         name: 'ask_user',
         args: {
           kind: 'requirements',
-          title: 'Both results observed',
-          questions: [],
+          question: 'Should I continue after inspecting and planning?',
         },
       },
     ]);
@@ -1224,8 +1421,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
           name: 'ask_user',
           arguments: {
             kind: 'requirements',
-            title: 'Restored Retry reached the provider',
-            questions: [],
+            question: 'Did the restored retry reach the provider?',
           },
         };
         yield { type: 'finish', reason: 'tool_calls' };
@@ -1257,7 +1453,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(retried.state.lifecycle).toBe('waiting_for_user');
     expect(retried.interrupt).toMatchObject({
       kind: 'requirements',
-      title: 'Restored Retry reached the provider',
+      questions: [{ prompt: 'Did the restored retry reach the provider?' }],
     });
   });
 
@@ -1303,8 +1499,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
           name: 'ask_user',
           arguments: {
             kind: 'requirements',
-            title: 'Follow-up reached the provider',
-            questions: [],
+            question: 'Did the follow-up reach the provider?',
           },
         };
         yield { type: 'finish', reason: 'tool_calls' };
@@ -1351,7 +1546,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(continued.state.pendingUserTurns).toBeUndefined();
     expect(continued.interrupt).toMatchObject({
       kind: 'requirements',
-      title: 'Follow-up reached the provider',
+      questions: [{ prompt: 'Did the follow-up reach the provider?' }],
     });
 
     const durable = await persistence.loadTask('task-follow-up-after-stop');
@@ -1515,7 +1710,7 @@ describe('source and visual coverage gates', () => {
     };
     const base = createInitialAgentState({
       identity,
-      goal: 'Use the source accurately',
+      goal: 'Add the source accurately to notebook pages',
       now: NOW,
       userMessageId: 'message-source-observation',
     });

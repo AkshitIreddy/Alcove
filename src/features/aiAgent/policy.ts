@@ -9,7 +9,11 @@ import {
 } from './coverage';
 import { imagePromptHandoffMatchesDraft } from './imageHandoff';
 import { explicitImageRequest } from './imageIntent';
-import { readerRequestsNotebookMutation } from './intent';
+import {
+  readerRequestsNotebookMutation,
+  readerRequiresCompleteSourceCoverage,
+  readerRequiresSourceEvidence,
+} from './intent';
 
 export interface PolicyDecision {
   readonly allowed: boolean;
@@ -96,7 +100,10 @@ export function canCompleteConversation(
     };
   }
   const coverage = state.sourceCoverage;
+  const sourceEvidenceRequired = readerRequiresSourceEvidence(state);
+  const sourceAuthorityUsed = sourceEvidenceRequired || citedUnitIds.length > 0;
   if (
+    sourceAuthorityUsed &&
     state.sourceManifest !== undefined &&
     coverage !== undefined &&
     coverage.manifestDigest !== state.sourceManifest.digest
@@ -114,6 +121,7 @@ export function canCompleteConversation(
     readerSources.flatMap((source) => source.units.map((unit) => unit.id)),
   );
   if (
+    sourceEvidenceRequired &&
     readerUnitIds.size > 0 &&
     !citedUnitIds.some((unitId) => readerUnitIds.has(unitId))
   ) {
@@ -131,7 +139,7 @@ export function canCompleteConversation(
     };
   }
   if (
-    state.taskBrief.preserveAllSourceInformation &&
+    readerRequiresCompleteSourceCoverage(state) &&
     (coverage === undefined || !coverage.complete)
   ) {
     return {
@@ -140,7 +148,7 @@ export function canCompleteConversation(
       reason: 'complete source coverage is required before answering',
     };
   }
-  if (coverage?.staleSourceIds.length) {
+  if (sourceAuthorityUsed && coverage?.staleSourceIds.length) {
     return {
       allowed: false,
       code: 'stale',
@@ -154,7 +162,7 @@ export function canCompleteConversation(
       reason: 'read source evidence before citing it',
     };
   }
-  if (coverage !== undefined) {
+  if (sourceAuthorityUsed && coverage !== undefined) {
     const read = new Set(coverage.readUnitIds);
     if (citedUnitIds.some((unitId) => !read.has(unitId))) {
       return {
@@ -163,7 +171,7 @@ export function canCompleteConversation(
         reason: 'conversation citations must name source units read in this task',
       };
     }
-    if (state.taskBrief.preserveAllSourceInformation) {
+    if (readerRequiresCompleteSourceCoverage(state)) {
       const cited = new Set(citedUnitIds);
       const uncited = coverage.requiredUnitIds.filter((unitId) => !cited.has(unitId));
       if (uncited.length > 0) {
@@ -307,8 +315,11 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       reason: 'current preview pages are not fully reviewed or have blocking findings',
     };
   }
+  const sourceEvidenceRequired = readerRequiresSourceEvidence(state);
+  const sourceAuthorityUsed = sourceEvidenceRequired ||
+    (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0;
   if (
-    (state.taskBrief.preserveAllSourceInformation ||
+    (readerRequiresCompleteSourceCoverage(state) ||
       state.retrievalPlan?.requiresCompleteCoverage === true) &&
     (state.sourceCoverage === undefined || !state.sourceCoverage.complete)
   ) {
@@ -318,7 +329,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       reason: 'complete source coverage is required and still has unread units',
     };
   }
-  if (state.sourceCoverage?.staleSourceIds.length) {
+  if (sourceAuthorityUsed && state.sourceCoverage?.staleSourceIds.length) {
     return {
       allowed: false,
       code: 'stale',
@@ -330,7 +341,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       .filter((source) => source.kind !== 'notebook_script_spec')
       .flatMap((source) => source.units.map((unit) => unit.id)) ?? [],
   );
-  if (readerUnitIds.size > 0) {
+  if (sourceEvidenceRequired && readerUnitIds.size > 0) {
     const read = state.sourceCoverage?.readUnitIds.some((id) => readerUnitIds.has(id)) === true;
     const cited = state.sourceCoverage?.citedUnitIds.some((id) => readerUnitIds.has(id)) === true;
     if (!read || !cited) {
@@ -341,7 +352,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       };
     }
   }
-  if (state.sourceCoverage !== undefined) {
+  if (sourceAuthorityUsed && state.sourceCoverage !== undefined) {
     const observationRequired = [
       ...state.sourceCoverage.requiredUnitIds,
       ...state.sourceCoverage.readUnitIds,
@@ -401,6 +412,7 @@ export function buildUserPreviewContract(input: {
     layoutHash: previewGeneration.layoutHash,
     bookId: notebookSnapshot.bookId,
     expectedBookRevision: notebookSnapshot.bookRevision,
+    expectedPageIds: [...notebookSnapshot.pageIds],
     insertionTarget,
     expectedPageCount: previewGeneration.pageCount,
     pages: previewGeneration.pages,
@@ -441,7 +453,9 @@ export function buildPatchProposal(input: {
   }
   if (
     input.preview.draftHash !== draft.draftHash ||
-    input.preview.expectedBookRevision !== snapshot.bookRevision
+    input.preview.expectedBookRevision !== snapshot.bookRevision ||
+    (input.preview.expectedPageIds !== undefined &&
+      JSON.stringify(input.preview.expectedPageIds) !== JSON.stringify(snapshot.pageIds))
   ) {
     throw new Error('cannot build a patch from a stale preview');
   }
@@ -453,6 +467,7 @@ export function buildPatchProposal(input: {
     draftHash: draft.draftHash,
     script: draft.script,
     expectedBookRevision: snapshot.bookRevision,
+    expectedPageIds: [...snapshot.pageIds],
     insertionTarget: target,
     preview: input.preview,
     status: 'waiting_for_approval',

@@ -10,6 +10,7 @@ import type {
   AiAgentController as CoreAiAgentController,
   DraftPreviewGeneration,
   NotebookInsertionTarget,
+  NotebookPatchProposal,
   SourceAttachmentRef,
   UserPreviewContract,
 } from '../src/features/aiAgent';
@@ -23,6 +24,7 @@ import {
   recordVisualImageExposures,
   recordVisualInspection,
   recordSourceCitations,
+  canCompleteConversation,
   canSubmitNotebookPatch,
   availableAgentToolNames,
 } from '../src/features/aiAgent';
@@ -247,6 +249,65 @@ function citationReadyState() {
   };
 }
 
+function panelApplyFixture() {
+  const generation = reviewedGeneration('panel-apply-generation', 'panel-apply-draft', 'panel-apply-layout');
+  const ready = reviewReadyState(generation);
+  const preview: UserPreviewContract = {
+    previewId: 'panel-apply-preview',
+    generationId: generation.generationId,
+    draftHash: generation.draftHash,
+    layoutHash: generation.layoutHash,
+    bookId: ready.identity.bookId,
+    expectedBookRevision: ready.notebookSnapshot.bookRevision,
+    insertionTarget: ready.insertionTarget,
+    expectedPageCount: generation.pageCount,
+    pages: generation.pages,
+    assumptions: [],
+    citations: [],
+    imageGenerationPrompts: [],
+    sourceCoverage: {
+      manifestDigest: '',
+      mode: 'relevant',
+      requiredUnitIds: [],
+      readUnitIds: [],
+      citedUnitIds: [],
+      omittedUnitIds: [],
+      staleSourceIds: [],
+      complete: true,
+      updatedAt: NOW,
+    },
+    visualReview: {
+      ...ready.visualReview,
+      imageExposures: generation.pages.map((page) => ({
+        generationId: generation.generationId,
+        pageId: page.pageId,
+        imageDigest: page.image.digest,
+        layoutDigest: page.layoutDigest,
+        readRequestedAtProviderCall: 1,
+        exposedAt: NOW,
+      })),
+      inspectedPageIds: generation.pages.map((page) => page.pageId),
+      complete: true,
+      passed: true,
+    },
+    validation: ready.validation,
+  };
+  const proposal: NotebookPatchProposal = {
+    patchId: 'panel-apply-patch',
+    idempotencyKey: 'panel-apply-idempotency',
+    runId: ready.identity.runId,
+    draftVersion: ready.draft.version,
+    draftHash: ready.draft.draftHash,
+    script: ready.draft.script,
+    expectedBookRevision: ready.notebookSnapshot.bookRevision,
+    insertionTarget: ready.insertionTarget,
+    preview,
+    status: 'waiting_for_approval',
+    createdAt: NOW,
+  };
+  return { ready, preview, proposal };
+}
+
 describe('AI insertion target boundaries', () => {
   it('advertises notebook capabilities broadly while retaining hard preview gates', () => {
     const ready = citationReadyState();
@@ -430,6 +491,149 @@ describe('AI insertion target boundaries', () => {
 
     expect(tools.has('finish_conversation')).toBe(true);
     expect(tools.has('submit_notebook_script')).toBe(true);
+  });
+
+  it('does not force an unrelated later chat turn through an old attachment index', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-unrelated-source',
+        threadId: 'thread-unrelated-source',
+        runId: 'run-unrelated-source',
+        bookId: 'current-book',
+      },
+      goal: 'Summarize the attached PDF',
+      now: NOW,
+      userMessageId: 'reader-source-old',
+    });
+    const manifest = citationManifest();
+    const state = {
+      ...initial,
+      sourceManifest: manifest,
+      sourceCoverage: {
+        manifestDigest: 'older-manifest-digest',
+        mode: 'relevant' as const,
+        requiredUnitIds: ['trusted-unit-1'],
+        readUnitIds: ['trusted-unit-1'],
+        citedUnitIds: ['trusted-unit-1'],
+        omittedUnitIds: [],
+        staleSourceIds: ['trusted-source'],
+        complete: false,
+        updatedAt: NOW,
+      },
+      conversation: [
+        ...initial.conversation,
+        {
+          id: 'agent-source-old',
+          role: 'assistant' as const,
+          text: 'The PDF explains prefix coding.',
+          citations: [{
+            sourceId: 'trusted-source',
+            sourceTitle: 'Trusted Lecture Notes',
+            unitId: 'trusted-unit-1',
+            label: 'Prefix-code theorem',
+          }],
+          createdAt: NOW,
+        },
+        { id: 'reader-math-new', role: 'user' as const, text: 'What is mathematics?', createdAt: NOW },
+      ],
+      budgetWindow: {
+        ...initial.budgetWindow!,
+        readerMessageId: 'reader-math-new',
+      },
+    };
+
+    const tools = availableAgentToolNames(state);
+    // The old attachment remains durable, but an unrelated current turn does
+    // not even advertise source/RAG capabilities to the model.
+    expect([...tools]).not.toEqual(expect.arrayContaining([
+      'list_source_manifest',
+      'plan_source_retrieval',
+      'read_full_source',
+      'read_source_range',
+      'search_source_index',
+      'rerank_source_hits',
+    ]));
+    expect(canCompleteConversation(state, [])).toEqual({ allowed: true });
+  });
+
+  it('keeps retrieval available and required when the current request names its source', async () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-current-source',
+        threadId: 'thread-current-source',
+        runId: 'run-current-source',
+        bookId: 'current-book',
+      },
+      goal: 'Find the prefix-code explanation in the attached PDF',
+      now: NOW,
+      userMessageId: 'reader-current-source',
+    });
+    const manifest = citationManifest();
+    const state = {
+      ...initial,
+      sourceManifest: manifest,
+      sourceCoverage: {
+        manifestDigest: manifest.digest,
+        mode: 'relevant' as const,
+        requiredUnitIds: [],
+        readUnitIds: [],
+        citedUnitIds: [],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: false,
+        updatedAt: NOW,
+      },
+    };
+    const ensureIndexed = vi.fn(async () => []);
+    const search = vi.fn(async () => [{
+      sourceId: 'trusted-source',
+      unitId: 'trusted-unit-1',
+      anchor: manifest.sources[0]!.units[0]!.anchor,
+      text: 'A prefix code assigns decodable bit strings.',
+      digest: 'trusted-unit-digest-1',
+      lexicalScore: 1,
+    }]);
+    const adapters = {
+      ...toolAdapters(),
+      retrieval: {
+        ensureIndexed,
+        search,
+        rerank: async () => [],
+      },
+    } satisfies AgentAdapters;
+    const catalog = new AgentToolCatalog(
+      adapters,
+      new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+
+    expect([...availableAgentToolNames(state)]).toEqual(expect.arrayContaining([
+      'list_source_manifest',
+      'plan_source_retrieval',
+      'read_full_source',
+      'read_source_range',
+      'search_source_index',
+      'rerank_source_hits',
+      'inspect_source_coverage',
+    ]));
+    expect(canCompleteConversation(state, [])).toMatchObject({
+      allowed: false,
+      reason: expect.stringMatching(/read and cite the attached source/i),
+    });
+
+    const result = await catalog.execute(state, {
+      id: 'search-current-source',
+      name: 'search_source_index',
+      arguments: {
+        query: 'prefix code',
+        sourceIds: ['trusted-source'],
+        limit: 4,
+      },
+    }, new AbortController().signal);
+    expect(result.result).toMatchObject({ hits: [expect.objectContaining({
+      unitId: 'trusted-unit-1',
+    })] });
+    expect(ensureIndexed).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a paraphrased second clarification after the reader already answered', async () => {
@@ -764,6 +968,260 @@ describe('AI insertion target boundaries', () => {
         'book-start',
       ]);
       expect(changePlacement).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it('applies one approved preview exactly once before marking the task complete', async () => {
+    const { ready, preview, proposal } = panelApplyFixture();
+    let snapshot: AgentRuntimeSnapshot = {
+      state: {
+        ...ready,
+        lifecycle: 'waiting_for_preview_decision',
+        phase: 'waiting_for_preview_decision',
+        patchProposal: proposal,
+      },
+      interrupt: {
+        kind: 'final_preview',
+        title: 'Review the finished notebook draft',
+        preview,
+        decisions: ['approve', 'reject', 'feedback', 'change_location'],
+      },
+      busy: false,
+    };
+    let runtimeListener: ((value: AgentRuntimeSnapshot) => void) | undefined;
+    const approvePreview = vi.fn(async () => {
+      const approved = { ...proposal, status: 'approved_pending_apply' as const };
+      snapshot = {
+        state: { ...snapshot.state!, patchProposal: approved },
+        interrupt: null,
+        busy: false,
+      };
+      runtimeListener?.(snapshot);
+      return approved;
+    });
+    const onApprovedProposal = vi.fn(async () => undefined);
+    const finalizeApprovedPatch = vi.fn(async (
+      _patchId: string,
+      outcome: { readonly applied: boolean },
+    ) => {
+      expect(outcome).toEqual({ applied: true });
+      snapshot = {
+        state: {
+          ...snapshot.state!,
+          lifecycle: 'completed',
+          phase: 'finished',
+          patchProposal: { ...snapshot.state!.patchProposal!, status: 'applied' },
+        },
+        interrupt: null,
+        busy: false,
+      };
+      runtimeListener?.(snapshot);
+      return { state: snapshot.state! };
+    });
+    const sendUserMessage = vi.fn();
+    const refreshFailedPreview = vi.fn();
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: AgentRuntimeSnapshot) => void) => {
+        runtimeListener = listener;
+        return () => { runtimeListener = undefined; };
+      },
+      subscribeEvents: () => () => undefined,
+      approvePreview,
+      finalizeApprovedPatch,
+      refreshFailedPreview,
+      sendUserMessage,
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: ready.identity.bookId,
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [{ id: 'book-end', label: 'At the end', target: { kind: 'book_end' } }],
+      renderUrlFor: (image) => `asset://${image.resourceId}`,
+      onApprovedProposal,
+    });
+
+    try {
+      controller.approveInsert?.(preview.previewId);
+      await vi.waitFor(() => expect(finalizeApprovedPatch).toHaveBeenCalledWith(
+        proposal.patchId,
+        { applied: true },
+      ));
+      expect(approvePreview).toHaveBeenCalledTimes(1);
+      expect(onApprovedProposal).toHaveBeenCalledTimes(1);
+      expect(onApprovedProposal).toHaveBeenCalledWith(expect.objectContaining({
+        patchId: proposal.patchId,
+        status: 'approved_pending_apply',
+      }));
+      expect(finalizeApprovedPatch).toHaveBeenCalledTimes(1);
+      expect(snapshot.state?.patchProposal?.status).toBe('applied');
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      expect(refreshFailedPreview).not.toHaveBeenCalled();
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it('routes a failed Insert through dedicated preview recovery instead of a synthetic chat turn', async () => {
+    const generation = reviewedGeneration('apply-generation', 'apply-draft', 'apply-layout');
+    const ready = reviewReadyState(generation);
+    const preview: UserPreviewContract = {
+      previewId: 'apply-preview',
+      generationId: generation.generationId,
+      draftHash: generation.draftHash,
+      layoutHash: generation.layoutHash,
+      bookId: ready.identity.bookId,
+      expectedBookRevision: ready.notebookSnapshot.bookRevision,
+      insertionTarget: ready.insertionTarget,
+      expectedPageCount: generation.pageCount,
+      pages: generation.pages,
+      assumptions: [],
+      citations: [],
+      imageGenerationPrompts: [],
+      sourceCoverage: {
+        manifestDigest: '',
+        mode: 'relevant',
+        requiredUnitIds: [],
+        readUnitIds: [],
+        citedUnitIds: [],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+      visualReview: {
+        ...ready.visualReview,
+        imageExposures: generation.pages.map((page) => ({
+          generationId: generation.generationId,
+          pageId: page.pageId,
+          imageDigest: page.image.digest,
+          layoutDigest: page.layoutDigest,
+          readRequestedAtProviderCall: 1,
+          exposedAt: NOW,
+        })),
+        inspectedPageIds: generation.pages.map((page) => page.pageId),
+        complete: true,
+        passed: true,
+      },
+      validation: ready.validation,
+    };
+    const proposal: NotebookPatchProposal = {
+      patchId: 'apply-patch',
+      idempotencyKey: 'apply-idempotency',
+      runId: ready.identity.runId,
+      draftVersion: ready.draft.version,
+      draftHash: ready.draft.draftHash,
+      script: ready.draft.script,
+      expectedBookRevision: ready.notebookSnapshot.bookRevision,
+      insertionTarget: ready.insertionTarget,
+      preview,
+      status: 'waiting_for_approval',
+      createdAt: NOW,
+    };
+    let snapshot: AgentRuntimeSnapshot = {
+      state: {
+        ...ready,
+        lifecycle: 'waiting_for_preview_decision',
+        phase: 'waiting_for_preview_decision',
+        patchProposal: proposal,
+      },
+      interrupt: {
+        kind: 'final_preview',
+        title: 'Review the finished notebook draft',
+        preview,
+        decisions: ['approve', 'reject', 'feedback', 'change_location'],
+      },
+      busy: false,
+    };
+    let runtimeListener: ((value: AgentRuntimeSnapshot) => void) | undefined;
+    const sendUserMessage = vi.fn();
+    const refreshFailedPreview = vi.fn(async () => ({ state: snapshot.state! }));
+    const approvePreview = vi.fn(async () => {
+      const approved = { ...proposal, status: 'approved_pending_apply' as const };
+      snapshot = {
+        state: { ...snapshot.state!, patchProposal: approved },
+        interrupt: null,
+        busy: false,
+      };
+      runtimeListener?.(snapshot);
+      return approved;
+    });
+    const finalizeApprovedPatch = vi.fn(async (
+      _patchId: string,
+      outcome: { readonly applied: boolean; readonly message?: string },
+    ) => {
+      if (!outcome.applied) {
+        snapshot = {
+          state: {
+            ...snapshot.state!,
+            patchProposal: { ...snapshot.state!.patchProposal!, status: 'apply_failed' },
+            lastError: {
+              code: 'stale_context',
+              message: outcome.message ?? 'apply failed',
+              retryable: true,
+            },
+            lastApplyFailure: {
+              patchId: proposal.patchId,
+              previewId: preview.previewId,
+              message: outcome.message ?? 'apply failed',
+              failedAt: NOW,
+            },
+          },
+          interrupt: null,
+          busy: false,
+        };
+        runtimeListener?.(snapshot);
+      }
+      return { state: snapshot.state! };
+    });
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: AgentRuntimeSnapshot) => void) => {
+        runtimeListener = listener;
+        return () => { runtimeListener = undefined; };
+      },
+      subscribeEvents: () => () => undefined,
+      approvePreview,
+      finalizeApprovedPatch,
+      refreshFailedPreview,
+      sendUserMessage,
+    } as unknown as CoreAiAgentController;
+    const applyError = new Error('The notebook changed after this preview was reviewed.');
+    const onError = vi.fn();
+    const controller = createAiAgentPanelController(core, {
+      bookId: 'current-book',
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [{
+        id: 'book-end',
+        label: 'At the end',
+        target: { kind: 'book_end' },
+      }],
+      renderUrlFor: (image) => `asset://${image.resourceId}`,
+      onApprovedProposal: async () => { throw applyError; },
+      onError,
+    });
+
+    try {
+      controller.approveInsert?.(preview.previewId);
+      await vi.waitFor(() => expect(finalizeApprovedPatch).toHaveBeenCalledWith(
+        proposal.patchId,
+        { applied: false, message: applyError.message },
+      ));
+      expect(snapshot.state?.patchProposal?.status).toBe('apply_failed');
+
+      controller.refreshAfterConflict?.(preview.previewId);
+      await vi.waitFor(() => expect(refreshFailedPreview).toHaveBeenCalledTimes(1));
+      expect(sendUserMessage).not.toHaveBeenCalled();
+      expect(JSON.stringify(snapshot.state?.conversation)).not.toMatch(
+        /Refresh the final preview against the notebook/i,
+      );
+      expect(buildAiAgentDiagnosticLog(
+        snapshot,
+        [],
+        { status: 'connected', provider: 'Cohere', keyKind: 'trial' },
+        [],
+      )).toContain(applyError.message);
     } finally {
       controller.dispose();
     }
@@ -1799,7 +2257,21 @@ describe('AI source citation provenance', () => {
   });
 
   it('requires a current read and citation from noncanonical task sources', () => {
-    const ready = citationReadyState();
+    const base = citationReadyState();
+    const ready = {
+      ...base,
+      taskBrief: { ...base.taskBrief, goal: 'Turn the attached PDF into notebook pages' },
+      conversation: [{
+        id: 'reader-current-pdf-pages',
+        role: 'user' as const,
+        text: 'Turn the attached PDF into notebook pages',
+        createdAt: NOW,
+      }],
+      budgetWindow: {
+        ...base.budgetWindow!,
+        readerMessageId: 'reader-current-pdf-pages',
+      },
+    };
     const withoutReaderEvidence = {
       ...ready,
       sourceCoverage: {

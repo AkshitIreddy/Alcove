@@ -68,14 +68,34 @@ function liveDoc(page: Page, deps: ProductionNotebookDependencies): PageDoc {
   return editorDoc(deps.getPageEditor(page.id)) ?? page.doc;
 }
 
+function revisionNodeHasInk(node: unknown): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  const { type, text, content } = node as {
+    readonly type?: unknown;
+    readonly text?: unknown;
+    readonly content?: unknown;
+  };
+  if (typeof text === 'string' && text.trim() !== '') return true;
+  // Match the spread's blank-page contract: an empty paragraph is stock, but
+  // any other block (media, table, callout, rule, diagram...) is authored ink.
+  if (typeof type === 'string' && type !== 'paragraph' && type !== 'text') {
+    return true;
+  }
+  return Array.isArray(content) && content.some(revisionNodeHasInk);
+}
+
+function revisionDocHasContent(doc: PageDoc): boolean {
+  return Array.isArray(doc.content) && doc.content.some(revisionNodeHasInk);
+}
+
 /**
- * Revision used both by the read adapter and the proposal apply gate.
+ * Full structural revision used by durable whole-book restore/Undo receipts.
  *
  * Page order, identity and exact current JSON participate. `updatedAt` is
  * deliberately excluded: an autosave may persist the already-inspected live
  * JSON while the agent works, changing only the write clock. Treating that as
- * a conflict would reject an unchanged proposal. Callers may pass live editor
- * documents in place of stored documents.
+ * a conflict would reject an unchanged restore receipt. Callers may pass live
+ * editor documents in place of stored documents.
  */
 export function computeNotebookRevision(
   pages: readonly NotebookRevisionPage[],
@@ -90,6 +110,53 @@ export function computeNotebookRevision(
         doc: page.doc,
       })),
   );
+}
+
+/**
+ * Content authority used while the Agent drafts and while an Insert click is
+ * checked. BookView keeps empty leaves stocked ahead of the reader, so a pure
+ * trailing blank suffix must not stale an otherwise exact reviewed render.
+ *
+ * This is deliberately separate from `computeNotebookRevision`: durable
+ * whole-book history and Ctrl+Z receipts use the full structural digest. The
+ * Agent also retains the inspected page-id sequence and requires it to remain
+ * an exact prefix, so existing/intentional blank anchors cannot move or vanish
+ * merely because their documents contain no ink.
+ */
+export function computeNotebookContentRevision(
+  pages: readonly NotebookRevisionPage[],
+  hash: AgentHashAdapter = webCryptoAgentHash,
+): Promise<string> {
+  const ordered = [...pages].sort(
+    (left, right) => left.ord - right.ord || left.id.localeCompare(right.id),
+  );
+  let authoredLength = ordered.length;
+  while (
+    authoredLength > 0 &&
+    !revisionDocHasContent(ordered[authoredLength - 1]!.doc)
+  ) {
+    authoredLength -= 1;
+  }
+  return hash.digestJson(
+    ordered.slice(0, authoredLength).map((page) => ({
+      id: page.id,
+      ord: page.ord,
+      doc: page.doc,
+    })),
+  );
+}
+
+/**
+ * Auto-stock may append blank leaves, but it may never rewrite the inspected
+ * structure. Requiring the reviewed sequence to remain an exact prefix keeps
+ * explicit blank-page anchors authoritative without rejecting a safe suffix.
+ */
+export function notebookPageOrderExtendsSnapshot(
+  expectedPageIds: readonly string[],
+  currentPageIds: readonly string[],
+): boolean {
+  return currentPageIds.length >= expectedPageIds.length &&
+    expectedPageIds.every((pageId, index) => currentPageIds[index] === pageId);
 }
 
 export function computeNotebookPageRevision(
@@ -169,7 +236,7 @@ export function createProductionNotebookReadAdapter(
       const revisions = await Promise.all(
         livePages.map((page) => computeNotebookPageRevision(page, deps.hash)),
       );
-      const bookRevision = await computeNotebookRevision(livePages, deps.hash);
+      const bookRevision = await computeNotebookContentRevision(livePages, deps.hash);
       abortIfNeeded(signal);
 
       return {

@@ -5,10 +5,12 @@ import type {
 } from '../src/data/aiAgent';
 import type { NotebookReadAdapter } from '../src/features/aiAgent/adapters';
 import {
+  computeNotebookContentRevision,
   computeNotebookRevision,
   createSourceCoverageLedger,
   createProductionSourceAdapters,
   detectPromptInjectionWarnings,
+  notebookPageOrderExtendsSnapshot,
   recordSourceReads,
   scoreLexicalText,
   splitCanonicalSpec,
@@ -55,6 +57,85 @@ describe('AI agent production read/source adapters', () => {
       first,
       { ...second, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Changed' }] }] } },
     ], hash)).not.toBe(expected);
+  });
+
+  it('separates Agent content freshness from full structural history authority', async () => {
+    const authored = {
+      id: 'page-authored',
+      ord: 0,
+      updatedAt: '2026-08-12T08:00:00.000Z',
+      doc: {
+        type: 'doc' as const,
+        attrs: { pageStyle: 'grid' },
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Reader content' }] }],
+      },
+    };
+    const blank = (id: string, ord: number) => ({
+      id,
+      ord,
+      updatedAt: '2026-08-12T08:00:01.000Z',
+      doc: {
+        type: 'doc' as const,
+        attrs: { pageStyle: ord % 2 === 0 ? 'ruled' : 'grid' },
+        content: [{ type: 'paragraph' }],
+      },
+    });
+    const expectedContent = await computeNotebookContentRevision([authored], hash);
+    const expectedStructure = await computeNotebookRevision([authored], hash);
+
+    // READY_SPREADS_AHEAD may add differently styled/id'd empty stock before
+    // the reader clicks Insert; it is not an authored notebook change.
+    const stocked = [
+      authored,
+      blank('stock-1', 1),
+      blank('stock-2', 2),
+      blank('stock-3', 3),
+      blank('stock-4', 4),
+    ];
+    expect(await computeNotebookContentRevision(stocked, hash)).toBe(expectedContent);
+    expect(await computeNotebookRevision(stocked, hash)).not.toBe(expectedStructure);
+
+    // A blank page within the authored range is structural content authority.
+    const laterContent = {
+      ...authored,
+      id: 'page-later',
+      ord: 2,
+      doc: {
+        type: 'doc' as const,
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Later content' }] }],
+      },
+    };
+    expect(await computeNotebookContentRevision([
+      authored,
+      blank('intentional-middle-blank', 1),
+      laterContent,
+    ], hash)).not.toBe(
+      await computeNotebookContentRevision([authored, laterContent], hash),
+    );
+
+    // As soon as a stocked page receives any non-paragraph block it becomes
+    // authored and must invalidate an older preview.
+    expect(await computeNotebookContentRevision([
+      authored,
+      {
+        ...blank('stock-now-authored', 1),
+        doc: { type: 'doc', content: [{ type: 'horizontalRule' }] },
+      },
+    ], hash)).not.toBe(expectedContent);
+
+    const reviewedOrder = ['authored-1', 'intentional-blank', 'authored-2'];
+    expect(notebookPageOrderExtendsSnapshot(
+      reviewedOrder,
+      [...reviewedOrder, 'auto-stock-1', 'auto-stock-2'],
+    )).toBe(true);
+    expect(notebookPageOrderExtendsSnapshot(
+      reviewedOrder,
+      ['authored-1', 'authored-2', 'intentional-blank', 'auto-stock-1'],
+    )).toBe(false);
+    expect(notebookPageOrderExtendsSnapshot(
+      reviewedOrder,
+      ['authored-1', 'authored-2'],
+    )).toBe(false);
   });
 
   it('keeps local-only retrieval off provider embedding and reranking', async () => {
@@ -732,6 +813,7 @@ describe('AI agent production read/source adapters', () => {
   it('discards an embedding response that arrives after Stop and never persists it', async () => {
     const sources = new Map<string, StoredAiAgentSource<unknown>>();
     const chunks = new Map<string, StoredAiAgentChunk[]>();
+    const embeddingCache = new Map<string, readonly number[]>();
     let chunkCounter = 0;
     let finishEmbedding: ((value: { id: string; embeddings: { float: number[][] } }) => void) | null = null;
     let embedStarted!: () => void;
@@ -762,6 +844,21 @@ describe('AI agent production read/source adapters', () => {
       async listChunks(sourceId: string) { return [...(chunks.get(sourceId) ?? [])]; },
       async forgetSource(sourceId: string) { sources.delete(sourceId); chunks.delete(sourceId); },
       chunkId() { chunkCounter += 1; return `cancel-chunk-${chunkCounter}`; },
+      async listCachedEmbeddings(indexVersion: string, digests: readonly string[]) {
+        return digests.flatMap((contentDigest) => {
+          const embedding = embeddingCache.get(`${indexVersion}:${contentDigest}`);
+          return embedding === undefined ? [] : [{ contentDigest, embedding }];
+        });
+      },
+      async saveCachedEmbeddings(indexVersion: string, entries: readonly {
+        contentDigest: string;
+        embedding: readonly number[];
+      }[]) {
+        for (const entry of entries) embeddingCache.set(`${indexVersion}:${entry.contentDigest}`, entry.embedding);
+      },
+      async forgetCachedEmbeddings(indexVersion: string, digests: readonly string[]) {
+        for (const digest of digests) embeddingCache.delete(`${indexVersion}:${digest}`);
+      },
     };
     const notebook: NotebookReadAdapter = {
       async inspectNotebook(bookId) {
@@ -818,6 +915,7 @@ describe('AI agent production read/source adapters', () => {
     });
     await expect(indexing).rejects.toMatchObject({ name: 'AbortError' });
     expect((await store.listChunks(source.id)).every((chunk) => chunk.embedding === null)).toBe(true);
+    expect(embeddingCache.size).toBe(0);
 
     // Adversarial second race: Stop arrives after the pre-write check while a
     // multi-statement index replacement is already in flight. The adapter must
@@ -841,5 +939,153 @@ describe('AI agent production read/source adapters', () => {
     releaseEmbeddedReplacement();
     await expect(writeRace).rejects.toMatchObject({ name: 'AbortError' });
     expect((await store.listChunks(source.id)).every((chunk) => chunk.embedding === null)).toBe(true);
+    expect(embeddingCache.size).toBe(0);
+  });
+
+  it('reuses exact-content embeddings across turns, adapter restarts and tasks, then embeds only changed pages', async () => {
+    const now = '2026-08-12T08:00:00.000Z';
+    const sources = new Map<string, StoredAiAgentSource<unknown>>();
+    const chunks = new Map<string, StoredAiAgentChunk[]>();
+    const embeddingCache = new Map<string, readonly number[]>();
+    const embeddingRequests: string[][] = [];
+    let chunkCounter = 0;
+    let pageTexts = ['Alpha page stays unchanged.', 'Beta page changes later.'];
+    const store = {
+      async saveSource<Meta>(source: StoredAiAgentSource<Meta>) {
+        sources.set(source.id, source as StoredAiAgentSource<unknown>);
+      },
+      async listSources<Meta>(threadId: string) {
+        return [...sources.values()].filter((source) => source.threadId === threadId) as Array<StoredAiAgentSource<Meta>>;
+      },
+      async replaceChunks(sourceId: string, next: readonly StoredAiAgentChunk[]) {
+        chunks.set(sourceId, [...next]);
+      },
+      async listChunks(sourceId: string) { return [...(chunks.get(sourceId) ?? [])]; },
+      async forgetSource(sourceId: string) { sources.delete(sourceId); chunks.delete(sourceId); },
+      chunkId() { chunkCounter += 1; return `durable-cache-chunk-${chunkCounter}`; },
+      async listCachedEmbeddings(indexVersion: string, digests: readonly string[]) {
+        return digests.flatMap((contentDigest) => {
+          const embedding = embeddingCache.get(`${indexVersion}:${contentDigest}`);
+          return embedding === undefined ? [] : [{ contentDigest, embedding }];
+        });
+      },
+      async saveCachedEmbeddings(indexVersion: string, entries: readonly {
+        contentDigest: string;
+        embedding: readonly number[];
+      }[]) {
+        for (const entry of entries) {
+          embeddingCache.set(`${indexVersion}:${entry.contentDigest}`, entry.embedding);
+        }
+      },
+      async forgetCachedEmbeddings(indexVersion: string, digests: readonly string[]) {
+        for (const digest of digests) embeddingCache.delete(`${indexVersion}:${digest}`);
+      },
+    };
+    const pageInspection = async (ordinal: number) => ({
+      pageId: `page-${ordinal + 1}`,
+      ordinal,
+      revision: await hash.digestText(pageTexts[ordinal]!),
+      title: `Page ${ordinal + 1}`,
+      plainText: pageTexts[ordinal]!,
+      scriptSource: pageTexts[ordinal]!,
+      documentDigest: await hash.digestText(`doc:${pageTexts[ordinal]}`),
+    });
+    const notebook: NotebookReadAdapter = {
+      async inspectNotebook(bookId) {
+        const pages = await Promise.all([pageInspection(0), pageInspection(1)]);
+        return {
+          title: 'Durable cache book',
+          snapshot: {
+            bookId,
+            bookRevision: await hash.digestJson(pages.map((page) => page.revision)),
+            pageIds: pages.map((page) => page.pageId),
+            pageRevisions: Object.fromEntries(pages.map((page) => [page.pageId, page.revision])),
+            capturedAt: now,
+          },
+          pages: pages.map((page) => ({
+            pageId: page.pageId,
+            ordinal: page.ordinal,
+            revision: page.revision,
+            title: page.title,
+            estimatedTokens: 8,
+          })),
+        };
+      },
+      async inspectPage(pageId) { return pageInspection(pageId === 'page-1' ? 0 : 1); },
+      async inspectPageRange(_bookId, startOrdinal, endOrdinal) {
+        const pages = await Promise.all([pageInspection(0), pageInspection(1)]);
+        return pages.filter((page) => page.ordinal >= startOrdinal && page.ordinal <= endOrdinal);
+      },
+      async inspectSelection() { return null; },
+    };
+    const gateway = {
+      async readAttachment(): Promise<never> { throw new Error('unused'); },
+      async extractPdf(): Promise<never> { throw new Error('unused'); },
+      async embedTexts(input: { texts: readonly string[] }) {
+        embeddingRequests.push([...input.texts]);
+        return {
+          id: `embedding-${embeddingRequests.length}`,
+          embeddings: {
+            float: input.texts.map((text, index) => [text.length, index + 1]),
+          },
+        };
+      },
+      async rerankTexts(): Promise<never> { throw new Error('unused'); },
+    };
+    const createBundle = () => createProductionSourceAdapters({
+      notebook,
+      hash,
+      canonicalSpec: '# Spec\nCurrent.',
+      now: () => now,
+      store,
+      gateway,
+      semanticIndex: true,
+      providerRerank: false,
+      localIndex: null,
+    });
+    const bookRef = {
+      kind: 'notebook_book' as const,
+      bookId: 'durable-cache-book',
+      title: 'Durable cache book',
+    };
+
+    const firstBundle = createBundle();
+    const firstManifest = await firstBundle.ingestion.ingest([bookRef], {
+      taskId: 'cache-task-1', signal: idleSignal(),
+    });
+    const firstBook = firstManifest.sources.find((source) => source.kind === 'notebook')!;
+    await firstBundle.retrieval.ensureIndexed([firstBook], idleSignal());
+    await firstBundle.retrieval.ensureIndexed([firstBook], idleSignal());
+    expect(embeddingRequests).toEqual([pageTexts]);
+
+    // A new adapter instance represents a WebView/app restart. Durable chunk
+    // embeddings are reused without touching the provider.
+    const restartedBundle = createBundle();
+    const restoredManifest = await restartedBundle.sources.getManifest('cache-task-1', idleSignal());
+    const restoredBook = restoredManifest.sources.find((source) => source.kind === 'notebook')!;
+    const restored = await restartedBundle.retrieval.ensureIndexed([restoredBook], idleSignal());
+    expect(restored[0]?.reusedUnits).toBe(2);
+    expect(embeddingRequests).toHaveLength(1);
+
+    // A separate task gets different source/chunk ids, but the exact content
+    // digests recover the same vectors from the shared durable cache.
+    const secondManifest = await restartedBundle.ingestion.ingest([bookRef], {
+      taskId: 'cache-task-2', signal: idleSignal(),
+    });
+    const secondBook = secondManifest.sources.find((source) => source.kind === 'notebook')!;
+    const crossTask = await restartedBundle.retrieval.ensureIndexed([secondBook], idleSignal());
+    expect(crossTask[0]?.reusedUnits).toBe(2);
+    expect(embeddingRequests).toHaveLength(1);
+
+    pageTexts = ['Alpha page stays unchanged.', 'Beta page is now revised.'];
+    const changedBundle = createBundle();
+    const changedManifest = await changedBundle.ingestion.ingest([bookRef], {
+      taskId: 'cache-task-3', signal: idleSignal(),
+    });
+    const changedBook = changedManifest.sources.find((source) => source.kind === 'notebook')!;
+    const changed = await changedBundle.retrieval.ensureIndexed([changedBook], idleSignal());
+    expect(changed[0]?.reusedUnits).toBe(1);
+    expect(embeddingRequests).toHaveLength(2);
+    expect(embeddingRequests[1]).toEqual(['Beta page is now revised.']);
   });
 });

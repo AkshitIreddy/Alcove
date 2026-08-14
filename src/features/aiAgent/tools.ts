@@ -22,7 +22,12 @@ import {
   extractPortableImageSlots,
 } from './imageHandoff';
 import { assertPortableImagesRequested } from './imageIntent';
-import { readerRequestsNotebookMutation } from './intent';
+import {
+  latestReaderText,
+  readerRequestsNotebookMutation,
+  readerRequiresCompleteSourceCoverage,
+  readerRequiresSourceEvidence,
+} from './intent';
 import type { AgentToolDescriptor } from './provider';
 import {
   buildPatchProposal,
@@ -33,6 +38,7 @@ import {
   repairPassesInBudgetWindow,
 } from './policy';
 import { planAdaptiveRetrieval } from './retrieval';
+import { notebookPageOrderExtendsSnapshot } from './productionNotebook';
 import {
   assertPrivatePlaceholdersRestorable,
   obfuscatePageDocument,
@@ -461,6 +467,14 @@ async function assertSubmissionInputsFresh(
   if (notebook.snapshot.bookRevision !== state.notebookSnapshot.bookRevision) {
     throw new Error(
       'The notebook changed after it was inspected. Inspect it again, then rerender and review the draft.',
+    );
+  }
+  if (!notebookPageOrderExtendsSnapshot(
+    state.notebookSnapshot.pageIds,
+    notebook.snapshot.pageIds,
+  )) {
+    throw new Error(
+      'The notebook page order changed after it was inspected. Inspect it again, then rerender and review the draft.',
     );
   }
   if (manifest.digest !== state.sourceManifest.digest) {
@@ -932,7 +946,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             ? state.sourceCoverage
             : createSourceCoverageLedger(
                 manifest,
-                state.taskBrief.preserveAllSourceInformation ? 'complete' : 'relevant',
+                readerRequiresCompleteSourceCoverage(state) ? 'complete' : 'relevant',
                 context.adapters.clock.now(),
               );
         return {
@@ -954,12 +968,13 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
       schema: planRetrievalSchema,
       async execute(state, args, context) {
         if (state.sourceManifest === undefined) throw new Error('list the source manifest first');
+        const requestedSourceIds = args.sourceIds ?? state.sourceManifest.sources.map((source) => source.id);
         const retrievalPlan = planAdaptiveRetrieval({
           manifest: state.sourceManifest,
-          goal: state.taskBrief.goal,
+          goal: latestReaderText(state),
           preserveAllSourceInformation:
-            args.preserveAllInformation ?? state.taskBrief.preserveAllSourceInformation,
-          sourceIds: args.sourceIds,
+            args.preserveAllInformation ?? readerRequiresCompleteSourceCoverage(state),
+          sourceIds: requestedSourceIds,
         });
         let coverage = currentCoverage(state, context.adapters.clock.now());
         if (coverage !== undefined && retrievalPlan.requiresCompleteCoverage) {
@@ -1932,6 +1947,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             runId: state.identity.runId,
             draftHash: proposalDraft.draftHash,
             bookRevision: state.notebookSnapshot!.bookRevision,
+            pageIds: state.notebookSnapshot!.pageIds,
             insertionTarget: state.insertionTarget,
           });
           const previewId = `preview_${idempotencyKey.slice(0, 24)}`;
@@ -2041,7 +2057,6 @@ export interface ToolCallResult {
 
 const ALWAYS_AVAILABLE_TOOLS = new Set([
   'inspect_notebook',
-  'list_source_manifest',
 ]);
 
 /**
@@ -2054,7 +2069,9 @@ const ALWAYS_AVAILABLE_TOOLS = new Set([
 export function availableAgentToolNames(state: AgentState): ReadonlySet<string> {
   const available = new Set(ALWAYS_AVAILABLE_TOOLS);
   if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
-  if (state.sourceManifest !== undefined) {
+  const sourceEvidenceRequired = readerRequiresSourceEvidence(state);
+  if (sourceEvidenceRequired) available.add('list_source_manifest');
+  if (sourceEvidenceRequired && state.sourceManifest !== undefined) {
     available.add('plan_source_retrieval');
     available.add('read_source_range');
     available.add('read_full_source');

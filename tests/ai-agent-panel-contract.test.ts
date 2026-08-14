@@ -178,6 +178,27 @@ describe('AI agent conversational transcript', () => {
     expect(styles).toContain('.nb-ai-full-preview-nav');
   });
 
+  it('captures reviewed pages on the live book stock and uses a quiet preview mat', () => {
+    const capture = readFileSync(resolve(ROOT, 'src/editor/script/exporters/capture.ts'), 'utf8');
+    const mount = readFileSync(resolve(ROOT, 'src/features/aiAgent/draftSandboxMount.tsx'), 'utf8');
+    const sandbox = readFileSync(resolve(ROOT, 'src/features/aiAgent/draftSandbox.ts'), 'utf8');
+    const styles = readFileSync(resolve(ROOT, 'src/styles/ai-agent.css'), 'utf8');
+
+    // File exports retain house parchment, but the approval image is evidence
+    // about this open book and therefore supplies the mounted leaf's resolved
+    // stock explicitly. The renderer identity prevents stale cream previews
+    // from hydrating after this capture contract changes.
+    expect(capture).toContain('readonly backgroundColor?: string');
+    expect(capture).toContain('backgroundColor: options.backgroundColor ?? PAPER_CREAM');
+    expect(mount).toContain('backgroundColor: getComputedStyle(sheet).backgroundColor');
+    expect(sandbox).toContain("DRAFT_SANDBOX_RENDERER_VERSION = 'alcove-page-editor-v4'");
+
+    expect(styles).toMatch(/\.nb-ai-preview-stage\s*\{[^}]*background:\s*var\(--nb-ai-preview-mat\)/s);
+    expect(styles).toMatch(/\.nb-ai-full-preview-body\s*\{[^}]*background:\s*var\(--nb-ai-preview-mat-deep\)/s);
+    expect(styles).toMatch(/\.nb-ai-full-preview-canvas\s*\{[^}]*background:\s*var\(--nb-ai-preview-mat-deep\)/s);
+    expect(styles).not.toMatch(/\.nb-ai-full-preview-body\s*\{[^}]*background:\s*var\(--recess\)/s);
+  });
+
   it('shows friendly latency copy only when no concrete live action is already visible', () => {
     const panel = readFileSync(resolve(ROOT, 'src/views/rail/AiAgentPanel.tsx'), 'utf8');
     const adapter = readFileSync(resolve(ROOT, 'src/views/rail/aiAgentControllerAdapter.ts'), 'utf8');

@@ -62,7 +62,11 @@ import type {
   NotebookSnapshotRef,
 } from './types';
 
-export const DRAFT_SANDBOX_RENDERER_VERSION = 'alcove-page-editor-v3';
+// v4 makes the approval raster inherit the currently resolved page stock
+// instead of the file exporter's fixed house parchment. Keeping this in the
+// render identity prevents a pre-upgrade cream preview from being hydrated
+// after the reader has moved to the faithful capture path.
+export const DRAFT_SANDBOX_RENDERER_VERSION = 'alcove-page-editor-v4';
 
 const MAX_SCRIPT_CHARACTERS = 2_000_000;
 const MAX_AUTHORED_PAGES = 96;

@@ -82,7 +82,21 @@ export function isCapturable(element: HTMLElement | null): boolean {
   );
 }
 
-async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
+export interface PageCaptureOptions {
+  /**
+   * Flat colour painted behind the captured sheet.
+   *
+   * Whole-book/file exports intentionally keep the house parchment fallback,
+   * while an in-app reviewed preview passes the live sheet's computed paper
+   * colour so the decision image cannot disagree with the destination book.
+   */
+  readonly backgroundColor?: string;
+}
+
+async function captureCanvas(
+  element: HTMLElement,
+  options: PageCaptureOptions = {},
+): Promise<HTMLCanvasElement> {
   if (!isCapturable(element)) {
     throw new Error(
       `capture: element has no layout (${element.clientWidth}×${element.clientHeight})`,
@@ -94,7 +108,7 @@ async function captureCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
   try {
     return await toCanvas(element, {
       pixelRatio: EXPORT_PIXEL_RATIO,
-      backgroundColor: PAPER_CREAM,
+      backgroundColor: options.backgroundColor ?? PAPER_CREAM,
       fontEmbedCSS,
       imagePlaceholder: TRANSPARENT_PX,
       filter: snapshotFilter,
@@ -138,8 +152,9 @@ function canvasToBytes(
 /** Rasterize a mounted page sheet to PNG bytes at 2x. */
 export async function capturePagePng(
   element: HTMLElement,
+  options: PageCaptureOptions = {},
 ): Promise<CapturedImage> {
-  const canvas = await captureCanvas(element);
+  const canvas = await captureCanvas(element, options);
   return {
     bytes: await canvasToBytes(canvas, 'image/png'),
     width: canvas.width,

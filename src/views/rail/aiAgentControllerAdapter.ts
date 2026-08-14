@@ -252,6 +252,7 @@ export function buildAiAgentDiagnosticLog(
       budget: state.budget,
       cancellation: state.cancellation,
       lastError: state.lastError ?? null,
+      lastApplyFailure: state.lastApplyFailure ?? null,
       pendingToolCalls: state.pendingToolCalls.map((call) => call.name),
       draftVersion: state.draft?.version ?? null,
       validationValid: state.validation?.valid ?? null,
@@ -866,9 +867,7 @@ export function createAiAgentPanelController(
     requestChanges: (_previewId) => undefined,
     refreshAfterConflict: () => safely(() => {
       if (snapshot().state?.patchProposal?.status === 'apply_failed') {
-        return core.sendUserMessage(
-          'Refresh the final preview against the notebook as it exists now, then ask me to approve it again.',
-        );
+        return core.refreshFailedPreview();
       }
       return core.retry();
     }),

@@ -19,12 +19,16 @@ import {
 } from '../../data/aiGateway';
 import {
   countAiAgentAttachmentReferences,
+  forgetAiAgentCachedEmbeddings,
   forgetAiAgentSource,
+  listAiAgentCachedEmbeddings,
   listAiAgentSourceChunks,
   listAiAgentSources,
   newAiAgentChunkId,
   replaceAiAgentSourceChunks,
+  saveAiAgentCachedEmbeddings,
   saveAiAgentSource,
+  type StoredAiAgentEmbedding,
   type StoredAiAgentChunk,
   type StoredAiAgentSource,
 } from '../../data/aiAgent';
@@ -96,6 +100,9 @@ interface ProductionSourceStore {
   readonly forgetSource: typeof forgetAiAgentSource;
   readonly chunkId: typeof newAiAgentChunkId;
   readonly countAttachmentReferences?: typeof countAiAgentAttachmentReferences;
+  readonly listCachedEmbeddings?: typeof listAiAgentCachedEmbeddings;
+  readonly saveCachedEmbeddings?: typeof saveAiAgentCachedEmbeddings;
+  readonly forgetCachedEmbeddings?: typeof forgetAiAgentCachedEmbeddings;
 }
 
 interface ProductionSourceGateway {
@@ -161,6 +168,9 @@ const DEFAULT_STORE: ProductionSourceStore = {
   forgetSource: forgetAiAgentSource,
   chunkId: newAiAgentChunkId,
   countAttachmentReferences: countAiAgentAttachmentReferences,
+  listCachedEmbeddings: listAiAgentCachedEmbeddings,
+  saveCachedEmbeddings: saveAiAgentCachedEmbeddings,
+  forgetCachedEmbeddings: forgetAiAgentCachedEmbeddings,
 };
 
 const DEFAULT_GATEWAY: ProductionSourceGateway = {
@@ -1076,6 +1086,11 @@ function cosine(left: readonly number[], right: readonly number[]): number {
   return leftNorm > 0 && rightNorm > 0 ? dot / Math.sqrt(leftNorm * rightNorm) : 0;
 }
 
+function usableProviderEmbedding(value: unknown): value is readonly number[] {
+  return Array.isArray(value) && value.length > 0 &&
+    value.every((part) => typeof part === 'number' && Number.isFinite(part));
+}
+
 let providerRunCounter = 0;
 function providerRunId(prefix: 'embed' | 'rerank'): string {
   providerRunCounter += 1;
@@ -1434,26 +1449,65 @@ export function createProductionSourceAdapters(
       for (const descriptor of descriptors) {
         abortIfNeeded(signal);
         let chunks = await deps.store.listChunks(descriptor.id);
-        const reusable = chunks.filter((chunk) => chunk.embedding !== null).length;
-        const missing = chunks
-          .map((chunk, index) => ({ chunk, index }))
-          .filter(({ chunk }) => chunk.embedding === null && chunk.text.trim() !== '');
+        const next = [...chunks];
+        const alreadyEmbedded = chunks.filter((chunk) => chunk.embedding !== null).length;
+        const missingByDigest = new Map<string, {
+          readonly text: string;
+          readonly indexes: number[];
+        }>();
+        chunks.forEach((chunk, index) => {
+          if (chunk.embedding !== null || chunk.text.trim() === '') return;
+          const group = missingByDigest.get(chunk.digest) ?? {
+            text: chunk.text,
+            indexes: [],
+          };
+          group.indexes.push(index);
+          missingByDigest.set(chunk.digest, group);
+        });
+
+        let cacheReusedUnits = 0;
+        if (deps.store.listCachedEmbeddings !== undefined && missingByDigest.size > 0) {
+          try {
+            const cached = await deps.store.listCachedEmbeddings(
+              INDEX_VERSION,
+              [...missingByDigest.keys()],
+            );
+            abortIfNeeded(signal);
+            for (const entry of cached) {
+              if (!usableProviderEmbedding(entry.embedding)) continue;
+              const group = missingByDigest.get(entry.contentDigest);
+              if (group === undefined) continue;
+              for (const index of group.indexes) {
+                next[index] = { ...next[index]!, embedding: entry.embedding };
+                cacheReusedUnits += 1;
+              }
+            }
+          } catch (error) {
+            if (isAbort(error, signal)) throw error;
+            // A broken/missing cache never disables lexical or fresh indexing.
+          }
+        }
+
+        const providerMissing = [...missingByDigest.entries()]
+          .filter(([, group]) => group.indexes.some((index) => next[index]?.embedding === null))
+          .map(([contentDigest, group]) => ({ contentDigest, ...group }));
+        let producedCacheEntries: StoredAiAgentEmbedding[] = [];
         if (
           deps.semanticIndex &&
           options?.providerTextMode !== 'local_only' &&
-          missing.length > 0
+          providerMissing.length > 0
         ) {
+          const beforeProvider = [...next];
           try {
             if (!deps.providerPrivacyReady()) {
               throw new Error('Provider-derived indexing is unavailable until privacy setup is complete');
             }
-            const next = [...chunks];
-            for (let offset = 0; offset < missing.length; offset += EMBED_BATCH_SIZE) {
+            for (let offset = 0; offset < providerMissing.length; offset += EMBED_BATCH_SIZE) {
               abortIfNeeded(signal);
-              const batch = missing.slice(offset, offset + EMBED_BATCH_SIZE);
+              const batch = providerMissing.slice(offset, offset + EMBED_BATCH_SIZE);
               const response = await deps.gateway.embedTexts({
                 runId: providerRunId('embed'),
-                texts: batch.map(({ chunk }) => chunk.text),
+                texts: batch.map(({ text }) => text),
                 inputType: 'search_document',
               }, signal);
               abortIfNeeded(signal);
@@ -1461,35 +1515,68 @@ export function createProductionSourceAdapters(
               if (embeddings === undefined || embeddings.length !== batch.length) {
                 throw new Error('The embedding provider returned an incomplete index batch');
               }
-              batch.forEach(({ chunk, index }, batchIndex) => {
-                next[index] = { ...chunk, embedding: embeddings[batchIndex] ?? null };
+              batch.forEach(({ contentDigest, indexes }, batchIndex) => {
+                const embedding = embeddings[batchIndex];
+                if (!usableProviderEmbedding(embedding)) {
+                  throw new Error('The embedding provider returned an unusable index vector');
+                }
+                for (const index of indexes) {
+                  next[index] = { ...next[index]!, embedding };
+                }
+                producedCacheEntries.push({ contentDigest, embedding });
               });
             }
-            abortIfNeeded(signal);
-            try {
-              await deps.store.replaceChunks(descriptor.id, next);
-              abortIfNeeded(signal);
-            } catch (error) {
-              if (isAbort(error, signal)) {
-                // Stop can race the multi-statement chunk replacement after
-                // the last pre-write signal check. Restore the pre-run index
-                // before propagating cancellation so a late embedding never
-                // remains durable once the Stop barrier resolves.
-                await deps.store.replaceChunks(descriptor.id, chunks);
-              }
-              throw error;
-            }
-            chunks = next;
           } catch (error) {
             if (isAbort(error, signal)) throw error;
             // Lexical search is the deliberate offline/trial-quota fallback.
+            next.splice(0, next.length, ...beforeProvider);
+            producedCacheEntries = [];
+          }
+        }
+
+        const changed = next.some((chunk, index) => chunk.embedding !== chunks[index]?.embedding);
+        if (changed) {
+          let wroteChunks = false;
+          try {
+            abortIfNeeded(signal);
+            await deps.store.replaceChunks(descriptor.id, next);
+            wroteChunks = true;
+            abortIfNeeded(signal);
+            if (
+              producedCacheEntries.length > 0 &&
+              deps.store.saveCachedEmbeddings !== undefined
+            ) {
+              await deps.store.saveCachedEmbeddings(INDEX_VERSION, producedCacheEntries);
+              abortIfNeeded(signal);
+            }
+            chunks = next;
+          } catch (error) {
+            if (isAbort(error, signal)) {
+              // Stop can race either durable write. Restore this task's prior
+              // chunks and remove only embeddings produced by this run.
+              if (wroteChunks) await deps.store.replaceChunks(descriptor.id, chunks);
+              if (
+                producedCacheEntries.length > 0 &&
+                deps.store.forgetCachedEmbeddings !== undefined
+              ) {
+                await deps.store.forgetCachedEmbeddings(
+                  INDEX_VERSION,
+                  producedCacheEntries.map((entry) => entry.contentDigest),
+                );
+              }
+              throw error;
+            }
+            // Cache publication is acceleration only. The canonical chunk rows
+            // remain the working index and future turns can retry cache fill.
+            if (!wroteChunks) throw error;
+            chunks = next;
           }
         }
         statuses.push({
           sourceId: descriptor.id,
           sourceDigest: descriptor.digest,
           indexedUnits: chunks.length,
-          reusedUnits: reusable,
+          reusedUnits: alreadyEmbedded + cacheReusedUnits,
           indexVersion: INDEX_VERSION,
         });
       }

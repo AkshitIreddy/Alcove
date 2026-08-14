@@ -1194,6 +1194,16 @@
 /* ------------------------------ final draft ------------------------------- */
 
 .nb-ai-final-preview {
+  --nb-ai-preview-mat: color-mix(
+    in srgb,
+    var(--wash-sky-light) 64%,
+    var(--paper-aged)
+  );
+  --nb-ai-preview-mat-edge: color-mix(
+    in srgb,
+    var(--ink-blue) 30%,
+    var(--paper-edge)
+  );
   display: grid;
   gap: var(--space-8);
   margin-top: var(--space-8);
@@ -1295,8 +1305,8 @@
   min-height: 226px;
   padding: 10px 10px 30px;
   overflow: hidden;
-  background: var(--recess);
-  border: var(--stroke-ink);
+  background: var(--nb-ai-preview-mat);
+  border: 1.5px solid var(--nb-ai-preview-mat-edge);
   border-radius: 13px 17px 14px 19px / 18px 13px 19px 14px;
   box-shadow: var(--shadow-inset-paper);
 }
@@ -2659,6 +2669,21 @@
 /* ---------------------------- full page preview --------------------------- */
 
 .nb-ai-full-preview {
+  --nb-ai-preview-mat: color-mix(
+    in srgb,
+    var(--wash-sky-light) 64%,
+    var(--paper-aged)
+  );
+  --nb-ai-preview-mat-deep: color-mix(
+    in srgb,
+    var(--wash-sky-light) 46%,
+    var(--paper-deep)
+  );
+  --nb-ai-preview-mat-edge: color-mix(
+    in srgb,
+    var(--ink-blue) 30%,
+    var(--paper-edge)
+  );
   width: min(1180px, calc(100vw - 48px));
   height: min(820px, calc(100vh - 48px));
 }
@@ -2714,7 +2739,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: 96px minmax(0, 1fr);
-  background: var(--recess);
+  background: var(--nb-ai-preview-mat-deep);
 }
 
 .nb-ai-full-preview-body > aside {
@@ -2724,7 +2749,7 @@
   gap: var(--space-8);
   overflow-y: auto;
   padding: var(--space-8);
-  background: var(--paper-aged);
+  background: var(--nb-ai-preview-mat);
   border-right: var(--stroke-ink-thin);
   scrollbar-width: thin;
 }
@@ -2771,7 +2796,9 @@
   align-items: flex-start;
   justify-content: center;
   padding: var(--space-24);
-  scrollbar-color: var(--paper-edge) var(--recess);
+  background: var(--nb-ai-preview-mat-deep);
+  scrollbar-color: var(--nb-ai-preview-mat-edge, var(--paper-edge))
+    var(--nb-ai-preview-mat-deep);
   scrollbar-width: thin;
 }
 

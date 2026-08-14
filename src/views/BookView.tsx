@@ -246,6 +246,7 @@ import {
 import {
   computeNotebookRevision,
   createProductionNotebookReadAdapter,
+  notebookPageOrderExtendsSnapshot,
 } from '../features/aiAgent/productionNotebook';
 import { computeNotebookSelectionDigest } from '../features/aiAgent/selectionDigest';
 import { createProductionSourceAdapters } from '../features/aiAgent/productionSources';
@@ -3198,7 +3199,9 @@ export default function BookView(): JSX.Element {
     }
   };
 
-  const currentBookRevision = async (bookId: string): Promise<string> => {
+  /** Full structure is the durable Ctrl+Z authority; unlike Agent freshness,
+   * later blank-page actions must invalidate a whole-book restore receipt. */
+  const currentFullBookRevision = async (bookId: string): Promise<string> => {
     const ordered = (await listPages(bookId)).map((page) => {
       const live = getPageEditor(page.id);
       return {
@@ -3257,10 +3260,24 @@ export default function BookView(): JSX.Element {
     setAiPatchApplying(true);
 
     const assertFresh = async (): Promise<void> => {
-      const revision = await currentBookRevision(bookId);
-      if (revision !== proposal.expectedBookRevision) {
+      const snapshot = (
+        await notebookForAiApply.inspectNotebook(
+          bookId,
+          new AbortController().signal,
+        )
+      ).snapshot;
+      if (snapshot.bookRevision !== proposal.expectedBookRevision) {
         throw new Error(
           'The notebook changed after this preview was reviewed. Ask the agent to refresh it before inserting.',
+        );
+      }
+      const expectedPageIds = proposal.expectedPageIds ?? proposal.preview.expectedPageIds;
+      if (
+        expectedPageIds !== undefined &&
+        !notebookPageOrderExtendsSnapshot(expectedPageIds, snapshot.pageIds)
+      ) {
+        throw new Error(
+          'The notebook page order changed after this preview was reviewed. Ask the agent to refresh it before inserting.',
         );
       }
     };
@@ -3505,7 +3522,7 @@ export default function BookView(): JSX.Element {
       ) {
         throw new Error('The reviewed draft did not settle into a valid page order');
       }
-      const resultRevision = await currentBookRevision(bookId);
+      const resultRevision = await currentFullBookRevision(bookId);
       await completeAiPatchApplication(
         proposal.idempotencyKey,
         resultRevision,

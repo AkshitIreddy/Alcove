@@ -574,6 +574,11 @@ export interface UserPreviewContract {
   readonly layoutHash: string;
   readonly bookId: string;
   readonly expectedBookRevision: string;
+  /**
+   * Exact inspected order. Current pages may add a trailing blank suffix, but
+   * every inspected page must remain the same ordered prefix at apply time.
+   */
+  readonly expectedPageIds?: readonly string[];
   readonly insertionTarget: NotebookInsertionTarget;
   readonly expectedPageCount: number;
   readonly pages: readonly DraftPreviewPage[];
@@ -607,6 +612,7 @@ export interface NotebookPatchProposal {
   readonly draftHash: string;
   readonly script: string;
   readonly expectedBookRevision: string;
+  readonly expectedPageIds?: readonly string[];
   readonly insertionTarget: NotebookInsertionTarget;
   readonly preview: UserPreviewContract;
   readonly status: PatchProposalStatus;
@@ -678,6 +684,19 @@ export interface AgentPublicError {
   readonly status?: number;
 }
 
+/**
+ * Durable forensic receipt for the most recent local BookView apply failure.
+ * `lastError` is intentionally cleared when recovery begins; this receipt is
+ * not, so a later copied diagnostic still contains the error that caused the
+ * original Insert click to fail.
+ */
+export interface AgentApplyFailureReceipt {
+  readonly patchId: string;
+  readonly previewId: string;
+  readonly message: string;
+  readonly failedAt: IsoTimestamp;
+}
+
 export interface AgentState {
   readonly schemaVersion: AgentStateVersion;
   readonly identity: AgentRunIdentity;
@@ -721,6 +740,7 @@ export interface AgentState {
   readonly retry: AgentRetryState;
   readonly cancellation: AgentCancellationState;
   readonly lastError?: AgentPublicError;
+  readonly lastApplyFailure?: AgentApplyFailureReceipt;
   readonly checkpointStep: number;
   readonly createdAt: IsoTimestamp;
   readonly updatedAt: IsoTimestamp;

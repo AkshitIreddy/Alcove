@@ -123,6 +123,9 @@ try {
       );
       await page.evaluate(() => globalThis.__aiAgentDemo.advance('ready'));
       await page.waitForSelector('.nb-ai-final-preview', { state: 'visible' });
+      await page.locator('.nb-ai-final-preview').screenshot({
+        path: resolve(QA_DIR, `agent-${size.label}-final-preview-card.png`),
+      });
       const evidence = await page.evaluate(async () => {
         const state = globalThis.__aiAgentDemo.state();
         const badge = [...document.querySelectorAll('.nb-ai-check-badge')]

@@ -44,6 +44,11 @@ export interface AiAgentController {
   deleteTask(taskId?: string): Promise<void>;
   requestSelectionRewrite(input: SelectionRewriteRequest): Promise<AgentRunResult>;
   approvePreview(previewId: string): Promise<NotebookPatchProposal>;
+  /**
+   * Rebuild an apply-failed preview against the current notebook without
+   * turning the recovery action into a synthetic reader chat turn.
+   */
+  refreshFailedPreview(): Promise<AgentRunResult>;
   finalizeApprovedPatch(
     patchId: string,
     outcome: { readonly applied: boolean; readonly message?: string },
@@ -84,6 +89,7 @@ export function createAiAgentController(runtime: AgentRuntime): AiAgentControlle
       }
       return proposal;
     },
+    refreshFailedPreview: () => runtime.refreshFailedPreview(),
     finalizeApprovedPatch: (patchId, outcome) =>
       runtime.finalizeApprovedPatch(patchId, outcome),
     rejectPreview: (previewId, feedback) =>

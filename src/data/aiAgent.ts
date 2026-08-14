@@ -65,6 +65,17 @@ export interface StoredAiAgentChunk {
   readonly embedding: readonly number[] | null;
 }
 
+/**
+ * Provider embeddings are derived, local-only acceleration data. They are
+ * keyed by the embedding/index contract plus the exact chunk digest so the
+ * same unchanged page can be reused by another Agent task without weakening
+ * task/source capability boundaries.
+ */
+export interface StoredAiAgentEmbedding {
+  readonly contentDigest: string;
+  readonly embedding: readonly number[];
+}
+
 interface ThreadRow {
   id: string;
   book_id: string;
@@ -152,6 +163,12 @@ async function ensureTables(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_ai_agent_chunks_source_ord ' +
         'ON ai_agent_chunks (source_id, ordinal)',
+    );
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS ai_agent_embedding_cache (' +
+        'index_version TEXT NOT NULL, content_digest TEXT NOT NULL, ' +
+        'embedding_json TEXT NOT NULL, created_at TEXT NOT NULL, ' +
+        'PRIMARY KEY (index_version, content_digest))',
     );
     // Ordinary SQLite revision ledger: unlike vec0/FTS this is safe even when
     // the optional extension is unavailable. Triggers catch writes from every
@@ -254,6 +271,10 @@ function finiteEmbedding(raw: string | null): readonly number[] | null {
   return Array.isArray(parsed) && parsed.every((value) => typeof value === 'number' && Number.isFinite(value))
     ? parsed
     : null;
+}
+
+function finiteEmbeddingValue(value: readonly number[]): boolean {
+  return value.length > 0 && value.every((part) => Number.isFinite(part));
 }
 
 function chunkFromRow(row: ChunkRow): StoredAiAgentChunk {
@@ -366,6 +387,7 @@ export async function deleteAiAgentThread(id: string): Promise<void> {
   await db.execute('DELETE FROM ai_agent_threads WHERE id = $1', [id]);
   // Derived index cleanup is fail-open and may be repaired lazily later.
   await purgeAiAgentRetrievalThread(id);
+  await pruneUnreferencedAiAgentEmbeddings();
 }
 
 export async function saveAiAgentSource<Meta>(
@@ -484,6 +506,7 @@ export async function replaceAiAgentSourceChunks(
     );
   }
   await refreshAiAgentRetrievalSource(sourceId);
+  await pruneUnreferencedAiAgentEmbeddings();
 }
 
 export async function listAiAgentSourceChunks(
@@ -498,6 +521,80 @@ export async function listAiAgentSourceChunks(
   return rows.map(chunkFromRow);
 }
 
+/** Load exact-content embedding hits without exposing any source text. */
+export async function listAiAgentCachedEmbeddings(
+  indexVersion: string,
+  contentDigests: readonly string[],
+): Promise<StoredAiAgentEmbedding[]> {
+  await ensureTables();
+  const digests = [...new Set(contentDigests.filter(Boolean))];
+  if (digests.length === 0) return [];
+  const db = await getDb();
+  const placeholders = digests.map((_, index) => `$${index + 2}`).join(', ');
+  const rows = await db.select<Array<{
+    content_digest: string;
+    embedding_json: string;
+  }>>(
+    'SELECT content_digest, embedding_json FROM ai_agent_embedding_cache ' +
+      `WHERE index_version = $1 AND content_digest IN (${placeholders})`,
+    [indexVersion, ...digests],
+  );
+  return rows.flatMap((row) => {
+    const embedding = finiteEmbedding(row.embedding_json);
+    return embedding === null
+      ? []
+      : [{ contentDigest: row.content_digest, embedding }];
+  });
+}
+
+/** Publish provider results only after the owning task's chunk write settles. */
+export async function saveAiAgentCachedEmbeddings(
+  indexVersion: string,
+  entries: readonly StoredAiAgentEmbedding[],
+): Promise<void> {
+  await ensureTables();
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const unique = new Map(entries.map((entry) => [entry.contentDigest, entry] as const));
+  for (const entry of unique.values()) {
+    if (entry.contentDigest === '' || !finiteEmbeddingValue(entry.embedding)) continue;
+    await db.execute(
+      'INSERT OR REPLACE INTO ai_agent_embedding_cache ' +
+        '(index_version, content_digest, embedding_json, created_at) VALUES ($1, $2, $3, $4)',
+      [indexVersion, entry.contentDigest, JSON.stringify(entry.embedding), now],
+    );
+  }
+}
+
+/** Cancellation cleanup for provider results that must not survive Stop. */
+export async function forgetAiAgentCachedEmbeddings(
+  indexVersion: string,
+  contentDigests: readonly string[],
+): Promise<void> {
+  await ensureTables();
+  const db = await getDb();
+  for (const digest of new Set(contentDigests.filter(Boolean))) {
+    await db.execute(
+      'DELETE FROM ai_agent_embedding_cache WHERE index_version = $1 AND content_digest = $2',
+      [indexVersion, digest],
+    );
+  }
+}
+
+/**
+ * Forget-source remains truthful: an embedding is retained only while at
+ * least one durable source chunk with the same exact digest still exists.
+ */
+async function pruneUnreferencedAiAgentEmbeddings(): Promise<void> {
+  await ensureTables();
+  const db = await getDb();
+  await db.execute(
+    'DELETE FROM ai_agent_embedding_cache WHERE NOT EXISTS (' +
+      'SELECT 1 FROM ai_agent_chunks c ' +
+      'WHERE c.digest = ai_agent_embedding_cache.content_digest)',
+  );
+}
+
 /** Forget one source's index. The caller removes its durable asset separately. */
 export async function forgetAiAgentSource(sourceId: string): Promise<void> {
   await ensureTables();
@@ -505,6 +602,7 @@ export async function forgetAiAgentSource(sourceId: string): Promise<void> {
   await db.execute('DELETE FROM ai_agent_chunks WHERE source_id = $1', [sourceId]);
   await db.execute('DELETE FROM ai_agent_sources WHERE id = $1', [sourceId]);
   await purgeAiAgentRetrievalSource(sourceId);
+  await pruneUnreferencedAiAgentEmbeddings();
 }
 
 /** Test/dev helper: a collision-resistant chunk id without leaking text. */

@@ -368,7 +368,14 @@ async function renderOnePage(
       pageNumber,
       overflowBlocks.length > 0,
     );
-    const captured = await capturePagePng(sheet);
+    // Unlike a file export, the approval preview is a promise about what the
+    // reader will receive inside THIS book. `capturePagePng` keeps a house-
+    // parchment default for exported files; explicitly hand it the mounted
+    // leaf's resolved stock here so a pink, olive, night or custom sheet does
+    // not turn cream while the reader is deciding whether to insert it.
+    const captured = await capturePagePng(sheet, {
+      backgroundColor: getComputedStyle(sheet).backgroundColor,
+    });
     throwIfAborted(signal);
     return {
       doc: currentDoc,

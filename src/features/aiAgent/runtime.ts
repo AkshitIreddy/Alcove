@@ -148,6 +148,21 @@ function cloneSourceAttachmentRefs(
   );
 }
 
+function insertionTargetPageId(
+  target: NotebookInsertionTarget | undefined,
+): string | undefined {
+  if (target === undefined) return undefined;
+  if (
+    target.kind === 'caret' ||
+    target.kind === 'replace_selection' ||
+    target.kind === 'before_page' ||
+    target.kind === 'after_page'
+  ) {
+    return target.pageId;
+  }
+  return target.kind === 'new_pages' ? target.afterPageId : undefined;
+}
+
 const OUT_OF_GRAPH_PATCH_STATUSES = new Set([
   'approved_pending_apply',
   'apply_failed',
@@ -948,6 +963,104 @@ export class AgentRuntime {
     return this.resumePreviewDecision(previewId, 'approve');
   }
 
+  /**
+   * Recover from a BookView apply conflict through workflow state, not chat.
+   *
+   * The old path called sendUserMessage("Refresh the final preview..."). That
+   * made a local recovery button look like a new reader request, discarded the
+   * failed proposal without invalidating its render, and allowed the provider
+   * to finish conversationally without ever producing another approvable
+   * patch. Keep the original reader-turn anchor instead, refresh the notebook
+   * snapshot locally, destroy every render derived from the old revision, and
+   * give the model one private recovery observation before it resumes tools.
+   */
+  async refreshFailedPreview(): Promise<AgentRunResult> {
+    const active = this.requireActive();
+    if (active.invocation !== null || active.busy) {
+      throw new Error('wait for the current agent invocation to settle');
+    }
+    const failedProposal = active.state.patchProposal;
+    if (failedProposal?.status !== 'apply_failed') {
+      throw new Error('there is no failed preview application to refresh');
+    }
+
+    active.abort = new AbortController();
+    active.bus.resume();
+    active.busy = true;
+    this.notify();
+
+    try {
+      const notebook = await this.adapters.notebook.inspectNotebook(
+        active.state.identity.bookId,
+        active.abort.signal,
+      );
+      for (const generationId of generationIdsOwnedByState(active.state)) {
+        await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
+      }
+
+      const now = this.adapters.clock.now();
+      const targetPageId = insertionTargetPageId(active.state.insertionTarget);
+      const targetStillExists = targetPageId === undefined ||
+        notebook.snapshot.pageIds.includes(targetPageId);
+      const recoveryTurn = {
+        id: this.adapters.ids.create('local_apply_recovery'),
+        role: 'user' as const,
+        content: [
+          'The reader already approved this notebook insertion, but the local apply did not commit.',
+          'The local notebook state or apply receipt changed after review.',
+          'Rebuild and visually review a fresh final preview against the current notebook. Never claim that pages were inserted; only a later local Insert approval can perform the write.',
+        ].join('\n'),
+        createdAt: now,
+      };
+      const previousWindow = active.state.budgetWindow;
+      const state: AgentState = {
+        ...active.state,
+        lifecycle: 'running',
+        phase: 'checking_script',
+        notebookSnapshot: notebook.snapshot,
+        insertionTarget: targetStillExists
+          ? active.state.insertionTarget
+          : undefined,
+        previewGeneration: undefined,
+        visualReview: undefined,
+        patchProposal: undefined,
+        localRestoredFinal: undefined,
+        pendingToolCalls: [],
+        lastError: undefined,
+        modelHistory: [...active.state.modelHistory, recoveryTurn],
+        budgetWindow: {
+          providerCallsAtStart: active.state.usage.providerCalls,
+          toolCallsAtStart: active.state.usage.toolCalls,
+          repairPassesAtStart: active.state.usage.repairPasses,
+          startedAt: now,
+          // This remains the real reader request (for example “add to my
+          // book”), not either of the old synthetic approval/recovery labels.
+          readerMessageId: previousWindow?.readerMessageId,
+        },
+        checkpointStep: active.state.checkpointStep + 1,
+        updatedAt: now,
+      };
+      active.state = state;
+      await active.bus.emit({
+        type: 'status.changed',
+        phase: 'checking_script',
+        summary: 'Refreshing the reviewed pages against the current notebook',
+      });
+      await this.persistence.saveTask(state);
+      this.notify();
+      return this.invoke({
+        agent: state,
+        pendingInterrupt: null,
+        pendingInterruptCall: null,
+        resumeValue: null,
+      });
+    } catch (error) {
+      active.busy = false;
+      this.notify();
+      throw error;
+    }
+  }
+
   /** Complete or reopen the durable approval only after BookView settles. */
   async finalizeApprovedPatch(
     patchId: string,
@@ -996,6 +1109,14 @@ export class AgentRuntime {
           lifecycle: 'waiting_for_preview_decision',
           phase: 'waiting_for_preview_decision',
           patchProposal: { ...proposal, status: 'apply_failed' },
+          lastApplyFailure: {
+            patchId: proposal.patchId,
+            previewId: proposal.preview.previewId,
+            message:
+              outcome.message ??
+              'The notebook could not accept the reviewed pages. The final preview was kept so you can retry safely.',
+            failedAt: now,
+          },
           lastError: {
             code: 'stale_context',
             message:

@@ -1141,6 +1141,26 @@ describe('Alcove autonomous notebook agent runtime', () => {
           },
         }],
       },
+      // A local BookView apply conflict must invalidate the old render and
+      // return to the real render/review/proposal tools. It must never become
+      // an ordinary "refresh this" chat turn that can finish without a patch.
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: {
+          generationId: 'generation-1',
+          pageIds: ['preview-page-1'],
+        },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
     ]);
     const { adapters, ingested } = fakeAdapters(manifestWithUnits(1));
     const persistence = new InMemoryAgentPersistence();
@@ -1306,21 +1326,50 @@ describe('Alcove autonomous notebook agent runtime', () => {
     });
     expect(keptPreview.state.lifecycle).toBe('waiting_for_preview_decision');
     expect(keptPreview.state.lastError?.message).toContain('target changed');
+    expect(keptPreview.state.lastApplyFailure).toMatchObject({
+      patchId: approved.state.patchProposal!.patchId,
+      previewId,
+      message: 'target changed during apply',
+      failedAt: NOW,
+    });
     await afterApplyCrash.clearActiveTask();
     const afterFailedApplyCrash = new AgentRuntime(provider, adapters, persistence);
     const restoredFailure = await afterFailedApplyCrash.restore('task-1');
     expect(restoredFailure.state?.patchProposal).toMatchObject({ status: 'apply_failed' });
     expect(restoredFailure.state?.lastError?.message).toContain('target changed');
-    const retryPending = await afterFailedApplyCrash.approvePreview(previewId);
-    expect(retryPending.state.patchProposal).toMatchObject({
-      status: 'approved_pending_apply',
+    const displayedConversationBeforeRefresh = restoredFailure.state?.conversation ?? [];
+    const refreshed = await afterFailedApplyCrash.refreshFailedPreview();
+    expect(refreshed.interrupt?.kind).toBe('final_preview');
+    expect(refreshed.state.patchProposal).toMatchObject({
+      status: 'waiting_for_approval',
     });
+    expect(refreshed.state.conversation).toEqual(displayedConversationBeforeRefresh);
+    expect(refreshed.state.conversation.filter((message) =>
+      /refresh the final preview/i.test(message.text)
+    )).toHaveLength(0);
+    expect(refreshed.state.modelHistory.some((turn) =>
+      turn.role === 'user' && /local apply did not commit/i.test(turn.content)
+    )).toBe(true);
+    const recoveryRequest = provider.requests.at(-5);
+    expect(recoveryRequest?.systemPrompt).toMatch(/"intent":"notebook_change"/);
+    expect(recoveryRequest?.tools.map((tool) => tool.name)).toContain('render_draft_preview');
+    expect(recoveryRequest?.tools.map((tool) => tool.name)).not.toContain('get_draft_preview_manifest');
+
+    const refreshedPreviewId = refreshed.interrupt?.kind === 'final_preview'
+      ? refreshed.interrupt.preview.previewId
+      : '';
+    const retryPending = await afterFailedApplyCrash.approvePreview(refreshedPreviewId);
+    expect(retryPending.state.patchProposal).toMatchObject({ status: 'approved_pending_apply' });
     const finalized = await afterFailedApplyCrash.finalizeApprovedPatch(
-      approved.state.patchProposal!.patchId,
+      retryPending.state.patchProposal!.patchId,
       { applied: true },
     );
     expect(finalized.state.patchProposal).toMatchObject({ status: 'applied' });
     expect(finalized.state.lifecycle).toBe('completed');
+    // Recovery clears the active error but retains the original local failure
+    // for a diagnostic copied after the replacement preview succeeds.
+    expect(finalized.state.lastError).toBeUndefined();
+    expect(finalized.state.lastApplyFailure?.message).toBe('target changed during apply');
     await afterFailedApplyCrash.clearActiveTask();
     const afterAppliedCrash = new AgentRuntime(provider, adapters, persistence);
     const restoredApplied = await afterAppliedCrash.restore('task-1');

@@ -19,6 +19,51 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.0 — an Agent that writes real notebook pages
+
+**The AI Agent now lives inside every open book.** Ask a normal question, attach
+material when it matters, or ask Alcove to turn the current conversation into
+pages. The Agent can inspect the active notebook, search relevant sources,
+compose with the native page catalogue, render the result through Alcove's real
+editor and review that render before presenting one immutable preview. Nothing
+enters the live book until the reader presses **Insert into book**.
+
+**Conversation and notebook work share one durable thread without becoming the
+same thing.** Ordinary questions receive ordinary answers and do not trigger
+retrieval merely because an old source exists. A later “add that to my book”
+receives the settled chat history, while clarifying questions and exact replies
+remain visible once answered. Tool loops, repeated repairs and provider retries
+are bounded and accounted; Retry resumes from the durable failed checkpoint
+instead of silently doing nothing.
+
+**Grounded work is explicit and privacy remains local-first.** Exact-content
+embeddings are cached across tasks and restarts, changed pages alone are
+re-embedded, and source capabilities stay scoped to the current task. A local
+Text veil can replace recognizable private text before a provider call and
+restore it only after review. Preserve-all PDF work remains fail-closed when a
+page cannot be visually verified; embedded JPEG figures are supporting evidence
+and there is no OCR.
+
+**Reviewed page insertion is fast, exact and recoverable.** The approved render,
+target and page documents travel together as a durable receipt. Large books
+settle only the affected run, so inserting reviewed pages no longer freezes the
+whole notebook or falls into an apply/refresh loop. One book-level undo restores
+the exact pre-insertion structure, and provider or renderer failures cannot
+overwrite a cancellation or manufacture a successful mutation.
+
+**Editing near a page boundary now behaves as one book operation.** `Ctrl+Z`
+returns blocks displaced by pagination as well as removing the edit that pushed
+them forward. Multi-block moves remain ordered and atomic, the writing caret
+stays clear of ruled lines, inline art uses its own baseline contract, and maths
+and special blocks keep their geometry across page movement and fitted scales.
+
+**Contents are searchable and recovery is protected by default.** The open-book
+Contents panel filters headings and page aliases from the keyboard, while page
+history keeps dense recent versions plus progressively spaced recovery points
+and whole-book checkpoints. The first-run tour, public screenshots and complete
+demo now cover the native Agent without making provider setup an onboarding
+requirement.
+
 ## 0.6.6 — safer pictures and whole-import undo
 
 **One undo can put back an entire book before a script import.** Alcove now

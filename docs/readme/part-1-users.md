@@ -51,17 +51,16 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.6_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.6_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 <!-- /gen -->
 
-> **The linked v0.6.6 downloads do not contain the native AI Agent described
-> later on this page.** They contain the key-free outside-assistant Notebook
-> Script workflow. The Agent exists only in the current unreleased source tree
-> until a later version is explicitly approved and published.
+Version 0.7.0 includes the native AI Agent described later on this page. Its
+provider connection is optional: the original key-free, outside-assistant
+Notebook Script workflow remains available beside it.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
 page after launch and offers newer signed versions in the app. If you installed
@@ -436,10 +435,9 @@ a template is a way of starting a book rather than a thing you do to one.
 ## Written with an AI
 <!--nav: The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant-->
 
-> **Development note:** the native in-book Agent described below is in the
-> current source tree and is not part of the linked v0.6.6 installers. Those
-> installers keep the external Notebook Script workflow. No Agent release has
-> been versioned or published yet.
+> **New in 0.7.0:** the native in-book Agent described below now ships with
+> Alcove. The external Notebook Script workflow remains available without a
+> connected provider.
 
 Most assistants hand you plain text. Alcove is built so an assistant can write
 the **whole page** — paper, sticky notes, callouts, diagrams, pictures and all —

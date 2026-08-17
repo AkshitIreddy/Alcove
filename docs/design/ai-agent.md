@@ -1,7 +1,7 @@
 # In-book AI Agent
 
-Status: unreleased implementation authority, 2026-08-12. The linked v0.6.6
-installers do not contain this feature.
+Status: implementation authority for the Agent shipped in 0.7.0, updated
+2026-08-17.
 
 The AI Agent is an Alcove book tool, not a generic chat window. It lives on
 the open book's left rail, works against an explicit notebook/source scope,

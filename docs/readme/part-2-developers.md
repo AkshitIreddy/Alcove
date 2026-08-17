@@ -363,7 +363,7 @@ are the bounded everyday gate; broader suites are targeted or release-only.
 The fast suite is the explicit file allow-list in
 [`vitest.smoke.config.ts`](../../vitest.smoke.config.ts), including but no
 longer limited to [`tests/smoke.test.ts`](../../tests/smoke.test.ts). The
-unreleased Agent's focused suites are not silently included by that command;
+Agent-focused suites are not silently included by that command;
 they must be run explicitly until the release gate deliberately adds them. The
 fast suite does not boot a browser, capture pixels, occupy port 1420 or claim
 anything about what the app looks or sounds like.
@@ -1014,10 +1014,8 @@ ramp and warned).
 ## The in-book AI Agent
 <!--nav: Provider-neutral LangGraph orchestration, source policy, native-render self-review and the approval-only mutation seam-->
 
-> **Unreleased:** this section documents the current source tree. The linked
-> v0.6.6 installers do not contain the native Agent; they contain the external,
-> key-free Notebook Script workflow. No Agent version or release has been
-> published.
+> **Shipped in 0.7.0:** this section documents the native Agent now included in
+> Alcove. The external, key-free Notebook Script workflow remains supported.
 
 The sparkle glyph on the open book's ordinary left rail mounts
 [`AiAgentPanel.tsx`](../../src/views/rail/AiAgentPanel.tsx). The panel is a Solid
@@ -1916,7 +1914,7 @@ this document stays true*.
 The repository retains a deliberately bounded, explicit high-signal allow-list
 in [`vitest.smoke.config.ts`](../../vitest.smoke.config.ts). `npm test` runs
 exactly that `include` list; it does not discover every test file, and the
-unreleased Agent's focused suites are currently run explicitly. `npx tsc
+Agent-focused suites are currently run explicitly. `npx tsc
 --noEmit` runs beside it. Broader unit, visual and E2E suites are targeted or
 release gates. Visual and audio quality are owner-reviewed rather than inferred
 from automated harnesses.

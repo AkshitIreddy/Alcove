@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.6.6-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.6.6"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.0"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -184,10 +184,9 @@ in a marker `npx vitest run` recomputes — see
 ## Written with an AI
 <!--nav: The in-book AI Agent plans, builds and reviews real Alcove pages; Notebook Script still works with any outside assistant-->
 
-> **Development note:** the native in-book Agent described below is in the
-> current source tree and is not part of the linked v0.6.6 installers. Those
-> installers keep the external Notebook Script workflow. No Agent release has
-> been versioned or published yet.
+> **New in 0.7.0:** the native in-book Agent described below now ships with
+> Alcove. The external Notebook Script workflow remains available without a
+> connected provider.
 
 Most assistants hand you plain text. Alcove is built so an assistant can write
 the **whole page** — paper, sticky notes, callouts, diagrams, pictures and all —
@@ -399,16 +398,15 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.6.6_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.6.6_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 
-> **The linked v0.6.6 downloads do not contain the native AI Agent described
-> later on this page.** They contain the key-free outside-assistant Notebook
-> Script workflow. The Agent exists only in the current unreleased source tree
-> until a later version is explicitly approved and published.
+Version 0.7.0 includes the native AI Agent described later on this page. Its
+provider connection is optional: the original key-free, outside-assistant
+Notebook Script workflow remains available beside it.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
 page after launch and offers newer signed versions in the app. If you installed
@@ -1489,7 +1487,7 @@ are the bounded everyday gate; broader suites are targeted or release-only.
 The fast suite is the explicit file allow-list in
 [`vitest.smoke.config.ts`](vitest.smoke.config.ts), including but no
 longer limited to [`tests/smoke.test.ts`](tests/smoke.test.ts). The
-unreleased Agent's focused suites are not silently included by that command;
+Agent-focused suites are not silently included by that command;
 they must be run explicitly until the release gate deliberately adds them. The
 fast suite does not boot a browser, capture pixels, occupy port 1420 or claim
 anything about what the app looks or sounds like.
@@ -1752,8 +1750,8 @@ is already on this page, plus the corners this page does not go into.
 <!-- /gen -->
 
 The canonical records in [`docs/design/`](docs/design/) cover the shelf
-renderer, page flip, block editor, script language, art pipeline and unreleased
-AI Agent; several older documents there carry a superseded banner and are kept
+renderer, page flip, block editor, script language, art pipeline and AI Agent;
+several older documents there carry a superseded banner and are kept
 on purpose. [`CLAUDE.md`](CLAUDE.md) is the binding rules file for agents
 working in this repo — it states the constraints and deliberately does not
 restate this page.

@@ -1,12 +1,12 @@
 # Alcove — running TODO
 
-## 🚧 ACTIVE — 2026-08-17 release preparation
+## 🚀 0.7.0 — release authorised (2026-08-17)
 
-The rebuilt README images and WebP/MP4 demo are ready for owner review. No
-version bump, tag, push or publication is authorised until the owner gives the
-explicit release go-ahead. Local atomic commits are authorised as recovery and
-review checkpoints. Keep this list as the source of truth for the current
-working tree rather than relying on the long development chat.
+The owner approved the rebuilt README images and demo and authorised release as
+0.7.0. Versioning, the release commit, a normal fast-forward push, annotated tag
+and tag-driven publication are now authorised. Keep this list as the source of
+truth for the current working tree rather than relying on the long development
+chat.
 
 Release-prep checkpoint: TypeScript, the 147-test fast gate, the 642-test broad
 Vitest suite, all 53 Rust tests plus `cargo check`, Notebook Script generation,

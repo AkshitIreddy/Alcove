@@ -63,6 +63,12 @@ import {
 } from '../system/backup';
 import { exportDiagnostics } from '../system/diagnostics';
 import {
+  canCheckForUpdates,
+  checkForUpdates,
+  installedAppVersion,
+} from '../system/updater';
+import { APP_VERSION } from '../../version';
+import {
   FAMILY_NAMES,
   SOUNDSCAPE_BLURBS,
   SOUNDSCAPE_NAMES,
@@ -2132,6 +2138,30 @@ export default function SettingsPanel(props: {
   const [backupBusy, setBackupBusy] = createSignal(false);
   const [backupNote, setBackupNote] = createSignal<string | null>(null);
 
+  // Updates: the automatic check is deliberately quiet, but this reader-
+  // initiated path reports every outcome and bypasses the startup delay.
+  const [appVersion] = createResource(installedAppVersion);
+  const [updateBusy, setUpdateBusy] = createSignal(false);
+  const [updateNote, setUpdateNote] = createSignal<string | null>(null);
+
+  const checkUpdatesNow = async (): Promise<void> => {
+    if (!canCheckForUpdates() || updateBusy()) return;
+    setUpdateBusy(true);
+    setUpdateNote('Checking the signed release shelf…');
+    try {
+      const result = await checkForUpdates();
+      if (result.status === 'available') {
+        setUpdateNote(`Version ${result.version} is ready.`);
+      } else if (result.status === 'current') {
+        setUpdateNote(`Alcove ${appVersion() ?? APP_VERSION} is current.`);
+      } else {
+        setUpdateNote(`Could not check: ${result.message}`);
+      }
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
   const backupNow = async (): Promise<void> => {
     if (!inTauri || backupBusy()) return;
     setBackupBusy(true);
@@ -3774,6 +3804,30 @@ export default function SettingsPanel(props: {
           words="machine desktop windows app"
         >
           <Row
+            label="check for updates"
+            words="update updater version latest release upgrade new edition"
+            hint={
+              updateNote() ??
+              (canCheckForUpdates()
+                ? `installed: ${appVersion() ?? APP_VERSION} · also checks after launch`
+                : `installed: ${appVersion() ?? APP_VERSION} · available in the desktop app`)
+            }
+            holdControl
+          >
+            <button
+              type="button"
+              class="nbs-action-btn"
+              disabled={!canCheckForUpdates() || updateBusy()}
+              aria-describedby="nbs-update-check-status"
+              onClick={() => void checkUpdatesNow()}
+            >
+              {updateBusy() ? 'checking…' : 'check now'}
+            </button>
+            <span id="nbs-update-check-status" class="nb-sr-only" role="status">
+              {updateNote() ?? ''}
+            </span>
+          </Row>
+          <Row
             label="start with Windows"
             words="autostart startup boot login launch on start"
             hint={
@@ -4210,7 +4264,7 @@ export default function SettingsPanel(props: {
         </Section>
 
         <p class="nbs-footnote font-ui">
-          everything saves itself, instantly · telemetry: never
+          Alcove {appVersion() ?? APP_VERSION} · everything saves itself, instantly · telemetry: never
         </p>
       </div>
       <AppScrollbar

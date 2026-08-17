@@ -1,11 +1,19 @@
 # Alcove — running TODO
 
-## 🚧 ACTIVE — 2026-08-13 owner review and regression ledger
+## 🚧 ACTIVE — 2026-08-17 release preparation
 
-No release, version, tag, push or publication is authorised until the owner
-reviews the rebuilt README images and WebP/MP4 demo. Local atomic commits are
-authorised as recovery/review checkpoints. Keep this list as the source-of-truth
-for the current working tree rather than relying on the long development chat.
+The rebuilt README images and WebP/MP4 demo are ready for owner review. No
+version bump, tag, push or publication is authorised until the owner gives the
+explicit release go-ahead. Local atomic commits are authorised as recovery and
+review checkpoints. Keep this list as the source of truth for the current
+working tree rather than relying on the long development chat.
+
+Release-prep checkpoint: TypeScript, the 147-test fast gate, the 642-test broad
+Vitest suite, all 53 Rust tests plus `cargo check`, Notebook Script generation,
+and strict README composition are green. The atomic README capture produced 25
+current stills; its sabotage control failed without modifying the accepted set.
+The accepted 178.57-second demo contains 2,656 source frames, and its dense
+transition boards were inspected before the WebP/MP4 pair was promoted.
 
 ### Editor correctness
 
@@ -53,7 +61,7 @@ for the current working tree rather than relying on the long development chat.
 - [x] Remove the owner-rejected Agent context-scope explainer from the panel,
       replace the Agent's open-book mark with an original Alcove toy-robot
       face, and verify every small/large icon context before recapturing.
-- [ ] Regenerate and inspect the full seekable demo plus README screenshots
+- [x] Regenerate and inspect the full seekable demo plus README screenshots
       only after the editor, emoji, Agent copy and robot mark changes settle.
 
 - [x] Keep ruled-paper lines continuous through the canonical centre gutter

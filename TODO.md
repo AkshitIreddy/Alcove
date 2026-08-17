@@ -238,10 +238,11 @@ tagging and publication still require a later explicit go-ahead.
 
 A redacted live-provider compatibility smoke exercised both supplied key classes
 against the production catalogue. It found and removed the unsupported
-citation-mode request field. Cohere's current V2 contract supports
-`tool_choice: REQUIRED` for Command A+ and distinguishes it from the separate,
-experimental `strict_tools` schema mode. Alcove forces notebook/source tool
-selection without enabling that incompatible mode and lets ordinary source-free
+citation-mode and `tool_choice` request fields. The generic Cohere V2 contract
+advertises `tool_choice: REQUIRED`, but the live Command A+ trial and production
+endpoints rejected it for Alcove's production catalogue. Alcove keeps mandatory
+notebook/source call selection as a local graph invariant, retains the accepted
+`strict_tools` request over sanitized schemas, and lets ordinary source-free
 conversation answer naturally.
 One rejected conversational envelope gets one counted, tool-free prose
 recovery attempt; a second failure pauses behind one visible recovery card,

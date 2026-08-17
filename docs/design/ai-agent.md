@@ -358,16 +358,17 @@ thinking with an 8,000-token budget and the normal output allowance. This
 optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
 durable state still expose no reasoning channel.
 
-Notebook mutation and current-source grounding catalogues are sent with Cohere
-`tool_choice: REQUIRED`, which requires a call. Alcove deliberately omits the
-experimental `strict_tools` switch: the real catalogue uses optional nested
-fields and range constraints outside that stricter subset, and trial accounts
-can reject the entire request before the model runs. The complete local Zod
-parse still rejects malformed or invented arguments before execution. An
-ordinary source-free conversation uses automatic tool choice, so Command A+ may answer naturally and
-Alcove wraps a complete prose `STOP` into the local `finish_conversation`
-boundary. If that optional-tool envelope itself is unusable, the graph counts
-it and makes one bounded tool-free prose request; a second failure pauses.
+The Cohere wire request deliberately omits `tool_choice`, including for
+notebook mutation and current-source grounding. The generic V2 contract lists
+`REQUIRED`, but live Command A+ trial and production compatibility probes
+rejected that field with Alcove's production catalogue. Alcove instead keeps
+mandatory call selection as a local graph invariant and sends
+`strict_tools: true` with its sanitized required/nullable schemas. The complete
+local Zod parse still rejects malformed or invented arguments before execution.
+An ordinary source-free conversation may answer naturally and Alcove wraps a
+complete prose `STOP` into the local `finish_conversation` boundary. If that
+optional-tool envelope itself is unusable, the graph counts it and makes one
+bounded tool-free prose request; a second failure pauses.
 
 Alcove still treats every provider stream as untrusted. If a well-formed empty
 completion or malformed tool stream occurs in one of the four singleton,

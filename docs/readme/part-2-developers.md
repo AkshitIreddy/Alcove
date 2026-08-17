@@ -1139,15 +1139,17 @@ events are separate streams: prose becomes the reader-visible conversation;
 goals, plan steps, tool summaries, coverage, diagnostics and observed visual
 findings become the audit timeline. Neither contract has a raw reasoning field.
 
-For notebook mutation and current-source grounding, the Cohere request uses
-`tool_choice: REQUIRED` to prevent a prose-only completion. It deliberately
-does not enable Cohere's experimental `strict_tools` mode: the production
-catalogue contains optional nested fields and range constraints outside that
-subset, while Alcove's complete local Zod parse still guards every returned
-call. An ordinary source-free conversation uses automatic choice. A complete direct prose
-answer is wrapped locally into `finish_conversation`; if the optional-tool
-envelope is rejected or malformed, Alcove counts it and makes one bounded
-tool-free prose request before pausing.
+Alcove intentionally omits Cohere's wire-level `tool_choice` field. Although
+the generic V2 reference advertises `REQUIRED` for newer Command models, the
+live Command A+ trial and production endpoints rejected that control with
+Alcove's production catalogue. Mandatory notebook/source progress therefore
+remains a local graph invariant: prose-only output is hidden and repaired or
+rejected before any tool can execute. The provider request retains
+`strict_tools: true` over a sanitized required/nullable schema, and every call
+still passes Alcove's complete local Zod parse. A complete direct prose answer
+for ordinary source-free conversation is wrapped locally into
+`finish_conversation`; if the optional-tool envelope is rejected or malformed,
+Alcove counts it and makes one bounded tool-free prose request before pausing.
 
 Alcove still validates every stream and call locally. An empty completion or a
 malformed call in one of the four singleton argument-free routing phases is
@@ -1155,7 +1157,9 @@ counted and replaced by that sole locally authorized transition; other
 judgment-bearing or multi-tool work is never guessed this way. A terminal
 failure appears once in the panel's persistent recovery card—the diagnostic
 `run.failed` event is retained for copied logs but not duplicated in the visible
-transcript.
+transcript. Provider protocol failures with no gateway verdict remain
+retryable from the durable checkpoint; a normalized non-retryable HTTP 4xx does
+not expose a Retry action that would merely resend the rejected request.
 
 The Cohere adapter also spends reasoning budget according to the advertised
 surface. When exactly one deterministic routing tool is available—validation,

@@ -4,9 +4,11 @@
  *
  * Unlike the Agent-loop QA bridge, this mounts BookView's real controller,
  * CohereTauriAgentProvider and browser gateway. Playwright intercepts only the
- * external Cohere endpoints, supplies Cohere-shaped SSE, and fails the request
- * if Alcove sends the experimental strict_tools flag. No credential or book
- * mutation leaves the browser, and the final Insert action is not clicked.
+ * external Cohere endpoints, supplies Cohere-shaped SSE, and rejects the exact
+ * incompatible field (`tool_choice`) caught by the live provider smoke. It
+ * also requires the strict schema flag that the same live trial/production
+ * smoke accepted. No credential or book mutation leaves the browser, and the
+ * final Insert action is not clicked.
  *
  *   node shots-now/probe-agent-cohere-authoring.mjs
  *   node shots-now/probe-agent-cohere-authoring.mjs --sabotage
@@ -245,19 +247,22 @@ try {
       const body = JSON.parse(route.request().postData() ?? '{}');
       const sanitized = {
         toolChoice: body.tool_choice ?? null,
-        hasStrictTools: Object.hasOwn(body, 'strict_tools'),
+        strictTools: body.strict_tools ?? null,
         tools: (body.tools ?? []).map((tool) => tool.function?.name),
       };
       run.chatBodies.push(sanitized);
-      if (sanitized.hasStrictTools || (sabotage && body.tool_choice === 'REQUIRED')) {
+      if (body.tool_choice !== undefined || body.strict_tools !== true) {
         await route.fulfill({
           status: 400,
           contentType: 'application/json',
-          body: '{"message":"strict_tools rejected this catalogue"}',
+          body: '{"message":"tool_choice is not accepted for this Command A+ request"}',
         });
         return;
       }
-      if (body.tool_choice === undefined) {
+      const offered = sanitized.tools;
+      const conversationOnly = offered.includes('finish_conversation') &&
+        offered.includes('ask_user') && !offered.includes('inspect_notebook');
+      if (conversationOnly) {
         await route.fulfill({
           status: 200,
           headers: { 'content-type': 'text/event-stream' },
@@ -265,7 +270,14 @@ try {
         });
         return;
       }
-      const offered = sanitized.tools;
+      if (sabotage && run.selectedTools.length === 0) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: '{"message":"deliberate provider rejection"}',
+        });
+        return;
+      }
       const priority = [
         'inspect_notebook',
         'propose_insertion',
@@ -350,7 +362,7 @@ try {
           horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
         };
       });
-      const mutationBodies = run.chatBodies.filter((body) => body.toolChoice === 'REQUIRED');
+      const mutationBodies = run.chatBodies.slice(1);
       const expectedOrder = [
         'inspect_notebook',
         'submit_notebook_script',
@@ -362,8 +374,8 @@ try {
         'submit_notebook_patch',
       ];
       const commonAssertions = {
-        onePlainConversationRequest: run.chatBodies.filter((body) => body.toolChoice === null).length === 1,
-        noExperimentalStrictTools: run.chatBodies.every((body) => !body.hasStrictTools),
+        noRejectedToolChoiceField: run.chatBodies.every((body) => body.toolChoice === null),
+        strictSchemaOnEveryToolEnvelope: run.chatBodies.every((body) => body.strictTools === true),
         noStaleBars: run.ui.staleBars === 0,
         panelContained: run.ui.insideViewport && !run.ui.horizontalOverflow,
         notebookUnchangedBeforeApproval:
@@ -374,7 +386,7 @@ try {
       run.assertions = sabotage
         ? {
             ...commonAssertions,
-            rejectedFirstForcedToolRequest: mutationBodies.length === 1 && run.selectedTools.length === 0,
+            rejectedFirstMutationRequest: mutationBodies.length === 1 && run.selectedTools.length === 0,
             expectedHttp400ConsoleWitness:
               run.consoleErrors.length === 1 && /status of 400/u.test(run.consoleErrors[0]),
             oneVisibleProviderFailure:
@@ -383,7 +395,7 @@ try {
           }
         : {
             ...commonAssertions,
-            allMutationRequestsForceTools: mutationBodies.length === expectedOrder.length,
+            exactMutationRequestCount: mutationBodies.length === expectedOrder.length,
             exactProductionToolOrder: JSON.stringify(run.selectedTools) === JSON.stringify(expectedOrder),
             previewReadyToInsert: run.ui.previewCards === 1 && run.ui.insertEnabled,
             noFailureUi: run.ui.errorCards === 0 && !/provider returned an unusable response/i.test(run.ui.text),
@@ -412,5 +424,5 @@ try {
 report.ok = report.runs.every((run) => run.status === 'passed');
 await writeFile(resolve(out, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 if (!report.ok) process.exitCode = 1;
-else if (sabotage) console.log('GATE ALIVE · rejected forced-tool request produced one visible provider failure');
-else console.log('agent Cohere authoring: PASS · real provider/gateway reached reviewed preview at both sizes');
+else if (sabotage) console.log('GATE ALIVE · rejected first mutation request produced one visible provider failure');
+else console.log('agent Cohere authoring: PASS · production provider/gateway reached reviewed preview at both sizes');

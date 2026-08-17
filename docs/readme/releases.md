@@ -19,6 +19,20 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.1 — a larger open book without page reflow
+
+**Open books make better use of roomy displays.** The reader camera can now
+magnify the complete bound book beyond its old ceiling, filling more of the
+desk on high-resolution windows instead of leaving a wide unused border. The
+redundant visible title strip above the book is gone; the name remains available
+to screen readers.
+
+**The pages themselves do not resize or reflow.** This is a camera-only fit over
+the same canonical cover, paper and editor geometry, so changing window size,
+opening a rail panel, or returning to a larger viewport cannot move writing,
+change pagination or persist a different document. The 0.7.0 screenshots and
+demo still accurately represent this patch release and remain the release media.
+
 ## 0.7.0 — an Agent that writes real notebook pages
 
 **The AI Agent now lives inside every open book.** Ask a normal question, attach

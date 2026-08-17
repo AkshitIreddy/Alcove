@@ -1,6 +1,6 @@
 {
   "name": "alcove",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers. Offline. Windows, macOS, Linux.",
   "type": "module",
   "scripts": {

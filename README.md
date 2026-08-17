@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.0-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.0"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.1-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.1"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -398,13 +398,13 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.0_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.7.0_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 
-Version 0.7.0 includes the native AI Agent described later on this page. Its
+Version 0.7.1 includes the native AI Agent described later on this page. Its
 provider connection is optional: the original key-free, outside-assistant
 Notebook Script workflow remains available beside it.
 

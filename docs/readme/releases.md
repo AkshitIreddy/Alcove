@@ -19,6 +19,28 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.2 — a softer writing desk around the book
+
+**The open book can now sit on a writing desk chosen by the reader.** Settings
+and first-run onboarding share 25 light, individually authored colours, with
+Linen presented first and soft blush, coral and rose choices close beside it.
+The colour belongs only to the field around the book: it never changes the
+paper, stored page geometry, wrapping or pagination.
+
+**The empty desk is also a camera control.** A plain wheel over the field makes
+the complete bound book larger or smaller while a wheel over the paper remains
+available to the editor. The familiar back arrow stays compact on hover instead
+of growing a redundant “back to shelf” label.
+
+**Cohere connection checks are more reliable and more useful when they fail.**
+The native empty POST now declares its body length, matching the localhost path,
+and safe serialized desktop errors reach the setup panel instead of collapsing
+into a generic connection message.
+
+The 0.7.0 screenshots and demo still accurately represent the book, Agent and
+library. They are intentionally reused for this small patch rather than being
+regenerated.
+
 ## 0.7.1 — a larger open book without page reflow
 
 **Open books make better use of roomy displays.** The reader camera can now

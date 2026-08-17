@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.1-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.1"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.2-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.2"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -398,13 +398,13 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.1_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.7.1_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.2_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.2_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 
-Version 0.7.1 includes the native AI Agent described later on this page. Its
+Version 0.7.2 includes the native AI Agent described later on this page. Its
 provider connection is optional: the original key-free, outside-assistant
 Notebook Script workflow remains available beside it.
 
@@ -1197,7 +1197,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7758<!--/f--> lines.
+<!--f:rustLines-->7780<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1523,7 +1523,7 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->385<!--/f--> source files
+<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->386<!--/f--> source files
 open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
@@ -1713,8 +1713,8 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->385<!--/f--> TypeScript files, <!--f:srcDocstrings-->348<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
-| Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7758<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
+| Frontend source | <!--f:srcFiles-->386<!--/f--> TypeScript files, <!--f:srcDocstrings-->348<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7780<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |
 | Generated and checked in | <!--f:generatorScripts-->7<!--/f--> `gen-*` scripts, two of which are gated on regeneration | [The generated artefacts](docs/readme/part-2-developers.md#the-generated-artefacts) |

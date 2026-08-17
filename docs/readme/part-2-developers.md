@@ -73,7 +73,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7758<!--/f--> lines.
+<!--f:rustLines-->7780<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -399,7 +399,7 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->385<!--/f--> source files
+<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->386<!--/f--> source files
 open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted

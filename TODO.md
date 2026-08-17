@@ -1,5 +1,45 @@
 # Alcove — running TODO
 
+## 🚢 0.7.2 — personal writing desks (release authorised 2026-08-17)
+
+The owner authorised a 0.7.2 patch release for the soft writing-desk palette,
+field-only book zoom, quiet back arrow and reliable Cohere connection check.
+Linen is the first onboarding choice. Page geometry and stored notebook content
+remain unchanged. Existing README pictures and the demo remain accurate and
+must not be regenerated for this patch.
+
+- [x] Feature Linen among the first eight onboarding writing desks.
+- [x] Verify all 25 desks, wide and narrow layouts, field-only wheel zoom and
+      unchanged canonical page geometry in Playwright.
+- [x] Watch the deliberate white-desk sabotage fail.
+- [ ] Pass the complete release gates, push and verify the 0.7.2 release.
+
+## ✅ Post-0.7.1 writing-desk palette expansion (completed 2026-08-17)
+
+- [x] Grow the writing-desk vocabulary to 25 individually authored pigments,
+      rebalanced around soft roses, pinks, garden greens, clear blues and sunny
+      yellows instead of dull browns, greys or over-saturated fields.
+- [x] Keep Linen plus seven clear everyday tints first and place the remaining 17
+      behind the app's truthful “more writing desks” disclosure in Settings
+      and onboarding.
+- [x] Preserve legible bare chrome on every desk without changing page or book
+      geometry.
+- [x] Drive the compact and expanded choices in Playwright, inspect the
+      rendered palette, and watch a deliberate colour sabotage fail.
+
+## ✅ Post-0.7.1 reader follow-up (completed 2026-08-17)
+
+- [x] Reproduce and fix Cohere key connection failures in localhost and the
+      native app, with useful redacted error text instead of a generic message.
+- [x] Add a persisted writing-desk colour choice in Settings and the first-run
+      taste questionnaire.
+- [x] Let a plain wheel over the empty writing desk zoom the whole book without
+      changing page geometry, wrapping or pagination.
+- [x] Keep the back arrow quiet on hover: no enlargement and no expanding
+      “back to shelf” label.
+- [x] Drive all changed states in Playwright, inspect the screenshots, and run
+      focused tests plus TypeScript before reporting completion.
+
 ## ✅ 0.7.1 — larger open-book camera (released 2026-08-17)
 
 The owner authorised a 0.7.1 patch release for the larger camera-fitted open

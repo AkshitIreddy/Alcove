@@ -51,21 +51,23 @@ nothing left running when you close the window.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.2_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.7.2_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.3_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.3_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 <!-- /gen -->
 
-Version 0.7.2 includes the native AI Agent described later on this page. Its
+Version 0.7.3 includes the native AI Agent described later on this page. Its
 provider connection is optional: the original key-free, outside-assistant
 Notebook Script workflow remains available beside it.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
-page after launch and offers newer signed versions in the app. If you installed
-v0.4.0, install the next release manually once; v0.4.0 predates the updater, so
-it cannot discover that first upgrade by itself.
+page after launch and offers newer signed versions in the app. A transient
+startup failure is retried twice, and **Settings → System → check for updates**
+checks immediately with an explicit result. If you installed v0.4.0, install
+the next release manually once; v0.4.0 predates the updater, so it cannot
+discover that first upgrade by itself.
 
 **[What is new in this version](releases.md)**
 

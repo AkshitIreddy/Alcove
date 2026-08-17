@@ -19,6 +19,22 @@ against the previous one. This page is the human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.3 — update checks that answer back
+
+**A brief startup failure no longer makes an update disappear for the whole
+session.** Alcove retries the signed release check twice on a bounded schedule,
+and coming back online accelerates only a retry that was already pending.
+Background failures are retained in diagnostics instead of being silently
+indistinguishable from “already current.”
+
+**Settings now has a manual update check.** The System section shows the
+installed version and a **check now** action that reports whether Alcove is
+current, a newer signed edition is ready, or the release service could not be
+reached. The installed version also appears in the Settings footer.
+
+The existing screenshots and demo remain representative. They are intentionally
+reused for this updater-only patch rather than being regenerated.
+
 ## 0.7.2 — a softer writing desk around the book
 
 **The open book can now sit on a writing desk chosen by the reader.** Settings

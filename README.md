@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.2-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.2"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.3-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.3"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -398,20 +398,22 @@ nothing left running when you close the window.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.2_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.7.2_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.3_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.3_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 An MSI, an offline installer and a `SHA256SUMS.txt` are on the [Release page](https://github.com/AkshitIreddy/Alcove/releases/latest) too, along with what each one is for.
 
-Version 0.7.2 includes the native AI Agent described later on this page. Its
+Version 0.7.3 includes the native AI Agent described later on this page. Its
 provider connection is optional: the original key-free, outside-assistant
 Notebook Script workflow remains available beside it.
 
 Starting with the first updater-enabled release, Alcove checks that same Release
-page after launch and offers newer signed versions in the app. If you installed
-v0.4.0, install the next release manually once; v0.4.0 predates the updater, so
-it cannot discover that first upgrade by itself.
+page after launch and offers newer signed versions in the app. A transient
+startup failure is retried twice, and **Settings → System → check for updates**
+checks immediately with an explicit result. If you installed v0.4.0, install
+the next release manually once; v0.4.0 predates the updater, so it cannot
+discover that first upgrade by itself.
 
 **[What is new in this version](docs/readme/releases.md)**
 
@@ -1524,7 +1526,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->386<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->7350<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1713,7 +1715,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->386<!--/f--> TypeScript files, <!--f:srcDocstrings-->348<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->386<!--/f--> TypeScript files, <!--f:srcDocstrings-->348<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7350<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7780<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |

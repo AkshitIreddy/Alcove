@@ -1,5 +1,19 @@
 # Alcove — running TODO
 
+## 🚢 0.7.3 — resilient update checks (release authorised 2026-08-17)
+
+The owner authorised a 0.7.3 patch release after the 0.7.1 desktop missed the
+0.7.2 update offer. The signed feed is live and the updater implementation did
+not change between 0.7.0 and 0.7.1; the fragile part was one delayed attempt
+whose failure was swallowed for the remainder of the session.
+
+- [x] Return current, available and failed outcomes from one shared updater.
+- [x] Retry transient startup failures twice and retain them in diagnostics.
+- [x] Add a manual System settings action and installed-version footer.
+- [x] Verify startup recovery plus available/current/error Settings states at
+      wide and compact sizes, and watch deliberate broken controls fail.
+- [ ] Pass the release gates, push and verify the signed 0.7.3 release.
+
 ## ✅ 0.7.2 — personal writing desks (released 2026-08-17)
 
 The owner authorised a 0.7.2 patch release for the soft writing-desk palette,

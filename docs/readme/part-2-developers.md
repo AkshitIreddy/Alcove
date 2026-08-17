@@ -400,7 +400,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->386<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7345<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->7350<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.

@@ -109,7 +109,9 @@ describe('fresh ordinary-book recipes', () => {
 
     expect(failures.slice(0, 25)).toEqual([]);
     expect(formats).toEqual(new Set(['folio', 'quarto', 'octavo', 'duodecimo', 'pocket']));
-    expect(furniture).toEqual(new Set(['none', 'bands', 'emblem', 'charm', 'corners']));
+    // Loose charms and corner hardware were retired from fresh-book recipes:
+    // a new binding may stay bare or add one restrained cord/emblem programme.
+    expect(furniture).toEqual(new Set(['none', 'bands', 'emblem']));
     expect(presets.size).toBeGreaterThan(30);
   });
 

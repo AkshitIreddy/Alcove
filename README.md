@@ -1370,7 +1370,7 @@ an idempotency key or skip the reader's approval.
 
 Every tool starts as a strict Zod object in
 [`tools.ts`](src/features/aiAgent/tools.ts). The same definition becomes a
-sanitised Cohere strict-tool JSON Schema, and returned arguments are parsed again
+sanitised Cohere tool-use JSON Schema, and returned arguments are parsed again
 against the full local schema before execution. Optional values travel through
 Cohere as required-but-nullable fields, then null sentinels are removed locally;
 unknown fields remain errors. Tool effects are labelled `read`, `draft`,
@@ -1448,7 +1448,7 @@ in [The in-book AI Agent](docs/readme/part-2-developers.md#the-in-book-ai-agent)
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](src/art/wobble.ts). |
 | `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](src/views/Tooltip.tsx). |
 | `@langchain/langgraph` + `@langchain/langgraph-checkpoint` | ^1.4 / ^1.1 | A resumable provider-neutral `StateGraph` and saver contract for the Agent's model/tool/interrupt loop. The saver is implemented against Alcove's browser-safe async SQLite surface; no LangGraph service or remote checkpoint store is involved. |
-| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive Cohere's strict-tool JSON Schema and then applied again to returned arguments before a capability executes. |
+| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive its conservative Cohere tool-use JSON Schema and then applied again to returned arguments before a capability executes. |
 | Vitest | ^4.1 | Runs an explicit high-signal Node allow-list through [`vitest.smoke.config.ts`](vitest.smoke.config.ts); the broad suite remains opt-in. |
 
 There is deliberately no state-management library, no CSS framework, no icon

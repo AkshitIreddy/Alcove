@@ -244,7 +244,7 @@ an idempotency key or skip the reader's approval.
 
 Every tool starts as a strict Zod object in
 [`tools.ts`](../../src/features/aiAgent/tools.ts). The same definition becomes a
-sanitised Cohere strict-tool JSON Schema, and returned arguments are parsed again
+sanitised Cohere tool-use JSON Schema, and returned arguments are parsed again
 against the full local schema before execution. Optional values travel through
 Cohere as required-but-nullable fields, then null sentinels are removed locally;
 unknown fields remain errors. Tool effects are labelled `read`, `draft`,
@@ -322,7 +322,7 @@ in [The in-book AI Agent](#the-in-book-ai-agent) below and
 | `simplex-noise`, `svg-path-properties` | ^4.0 / ^1.3 | Seeded noise for the drawing vocabulary; path resampling for the pre-distorted vector chrome in [`art/wobble.ts`](../../src/art/wobble.ts). |
 | `@floating-ui/dom` | ^1.8 | Anchoring for the slash menu, the link suggestions, the block context menu, the drag handle and the selection toolbar. The app's *own* delegated tooltip deliberately does not use it — see [`Tooltip.tsx`](../../src/views/Tooltip.tsx). |
 | `@langchain/langgraph` + `@langchain/langgraph-checkpoint` | ^1.4 / ^1.1 | A resumable provider-neutral `StateGraph` and saver contract for the Agent's model/tool/interrupt loop. The saver is implemented against Alcove's browser-safe async SQLite surface; no LangGraph service or remote checkpoint store is involved. |
-| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive Cohere's strict-tool JSON Schema and then applied again to returned arguments before a capability executes. |
+| Zod | ^4.4 | One strict local schema per Agent tool, reused to derive its conservative Cohere tool-use JSON Schema and then applied again to returned arguments before a capability executes. |
 | Vitest | ^4.1 | Runs an explicit high-signal Node allow-list through [`vitest.smoke.config.ts`](../../vitest.smoke.config.ts); the broad suite remains opt-in. |
 
 There is deliberately no state-management library, no CSS framework, no icon
@@ -1139,11 +1139,12 @@ events are separate streams: prose becomes the reader-visible conversation;
 goals, plan steps, tool summaries, coverage, diagnostics and observed visual
 findings become the audit timeline. Neither contract has a raw reasoning field.
 
-For notebook mutation and current-source grounding, the Cohere request pairs
-`tool_choice: REQUIRED` with `strict_tools: true`. They solve different
-problems: REQUIRED prevents a prose-only completion, while strict tools
-constrain the chosen call to its schema. An ordinary source-free conversation
-uses automatic choice without strict-schema mode. A complete direct prose
+For notebook mutation and current-source grounding, the Cohere request uses
+`tool_choice: REQUIRED` to prevent a prose-only completion. It deliberately
+does not enable Cohere's experimental `strict_tools` mode: the production
+catalogue contains optional nested fields and range constraints outside that
+subset, while Alcove's complete local Zod parse still guards every returned
+call. An ordinary source-free conversation uses automatic choice. A complete direct prose
 answer is wrapped locally into `finish_conversation`; if the optional-tool
 envelope is rejected or malformed, Alcove counts it and makes one bounded
 tool-free prose request before pausing.
@@ -1164,7 +1165,7 @@ conversation and rendered-image judgment retain the enabled 8,000-token
 thinking allowance. This is an adapter optimization, not provider-neutral
 state: reasoning tokens never become a graph event or a stored chain-of-thought.
 
-### Strict tools are derived once and checked twice
+### Tool schemas are derived once and checked locally
 
 The catalog currently exposes notebook and selection inspection; source
 manifest, bounded/full reads, local search and optional rerank; coverage and
@@ -1175,8 +1176,8 @@ and final proposal/preview submission. None is a generic shell, SQL, HTTP,
 filesystem or editor API.
 
 Each definition owns a strict Zod schema and a coarse `read`, `draft`,
-`interrupt` or `propose` effect. `tools.ts` converts that schema into the small
-JSON-Schema subset Cohere strict tools accept. Constraints Cohere does not
+`interrupt` or `propose` effect. `tools.ts` converts that schema into a small,
+conservative Cohere tool-use JSON-Schema subset. Constraints Cohere does not
 support are removed; optional properties become required and nullable for
 transport; and local normalization removes null sentinels before the original
 schema applies defaults, discriminated-union rules and `.strict()` unknown-key

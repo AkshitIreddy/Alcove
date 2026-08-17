@@ -261,11 +261,12 @@ in a later reader turn fails open to normal execution.
 ### Tool schemas and capabilities
 
 Each capability in `tools.ts` owns one `.strict()` Zod schema. That schema is
-converted to Cohere's supported strict-tool JSON-Schema subset; optional
+converted to a conservative Cohere tool-use JSON-Schema subset; optional
 properties become required-but-nullable for transport. Returned null sentinels
 are stripped and the original Zod schema parses the arguments again, including
 defaults, discriminated unions and unknown-key rejection. Schema conversion is
-wire compatibility, not authority.
+wire compatibility, not authority, and Alcove does not rely on Cohere's
+experimental `strict_tools` switch.
 
 Tools are grouped as `read`, `draft`, `interrupt` and `propose`, but execution
 also checks lifecycle, budgets, source manifest capability, current book/page,
@@ -304,7 +305,7 @@ hard proposal policy require a materially revised or re-cited submission. The
 same old script/citations cannot merely stamp the newer read set. The system
 prompt names the derived
 `nextRequiredAction`, while `descriptorsForState` sends only the phase-valid
-strict schemas. Most importantly, `AgentToolCatalog.execute` derives the set
+schemas. Most importantly, `AgentToolCatalog.execute` derives the set
 again against current state before parsing/executing a call, so stale queued
 calls and provider-invented transitions fail even if they once appeared in a
 prompt.
@@ -358,10 +359,12 @@ optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
 durable state still expose no reasoning channel.
 
 Notebook mutation and current-source grounding catalogues are sent with Cohere
-`tool_choice: REQUIRED` and `strict_tools: true`. The first control requires a
-call; the second constrains its arguments to the advertised schema. An ordinary
-source-free conversation instead uses automatic tool choice without the
-experimental strict-schema switch, so Command A+ may answer naturally and
+`tool_choice: REQUIRED`, which requires a call. Alcove deliberately omits the
+experimental `strict_tools` switch: the real catalogue uses optional nested
+fields and range constraints outside that stricter subset, and trial accounts
+can reject the entire request before the model runs. The complete local Zod
+parse still rejects malformed or invented arguments before execution. An
+ordinary source-free conversation uses automatic tool choice, so Command A+ may answer naturally and
 Alcove wraps a complete prose `STOP` into the local `finish_conversation`
 boundary. If that optional-tool envelope itself is unusable, the graph counts
 it and makes one bounded tool-free prose request; a second failure pauses.

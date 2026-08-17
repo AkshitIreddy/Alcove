@@ -237,11 +237,12 @@ commits as safety checkpoints. Versioning, release-note finalisation, pushing,
 tagging and publication still require a later explicit go-ahead.
 
 A redacted live-provider compatibility smoke exercised both supplied key classes
-against the exact 23-tool production catalogue. It found and removed the
-unsupported citation-mode request field. Cohere's current V2 contract now
-supports `tool_choice: REQUIRED` for Command A+ and distinguishes it from
-`strict_tools`; Alcove sends both for notebook/source-authority work and lets
-ordinary source-free conversation answer naturally without strict-schema mode.
+against the production catalogue. It found and removed the unsupported
+citation-mode request field. Cohere's current V2 contract supports
+`tool_choice: REQUIRED` for Command A+ and distinguishes it from the separate,
+experimental `strict_tools` schema mode. Alcove forces notebook/source tool
+selection without enabling that incompatible mode and lets ordinary source-free
+conversation answer naturally.
 One rejected conversational envelope gets one counted, tool-free prose
 recovery attempt; a second failure pauses behind one visible recovery card,
 without duplicating `run.failed` in the transcript. The desktop and localhost

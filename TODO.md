@@ -1,6 +1,6 @@
 # Alcove — running TODO
 
-## 🚢 0.7.1 — larger open-book camera (release authorised 2026-08-17)
+## ✅ 0.7.1 — larger open-book camera (released 2026-08-17)
 
 The owner authorised a 0.7.1 patch release for the larger camera-fitted open
 book and removal of the redundant visible title band. Page, cover and editor
@@ -8,13 +8,20 @@ geometry remain canonical; only the whole-book camera scale changes. The
 existing README screenshots and demo remain accurate and must not be
 regenerated for this patch.
 
+Commits `ac9d7c4` and `6c36460` plus annotated tag `v0.7.1` were pushed normally.
+GitHub Actions run `32012560268` passed the shared gate, Windows, Linux and
+universal macOS builds, then publication. The live non-draft Release contains
+13 assets; all 12 checksum-manifest entries match GitHub's uploaded SHA-256
+digests, and `latest.json` names signed updater packages for all four supported
+platform targets.
+
 - [x] Verify large → small → large and rail-panel open/close with exact page
       IDs, stored documents, block positions and wrapping unchanged.
 - [x] Run the normal Playwright visual gate and watch its deliberate cramped-
       camera/title sabotage fail.
 - [x] Pass the release type, fast-test, Notebook Script and strict README gates,
       plus all 53 Rust tests.
-- [ ] Publish and verify the signed 0.7.1 release assets and checksum manifest.
+- [x] Publish and verify the signed 0.7.1 release assets and checksum manifest.
 
 ## ✅ 0.7.0 — native Agent and resilient notebook editing (2026-08-17)
 

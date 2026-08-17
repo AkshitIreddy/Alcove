@@ -1,12 +1,13 @@
 # Alcove — running TODO
 
-## 🚀 0.7.0 — release authorised (2026-08-17)
+## ✅ 0.7.0 — native Agent and resilient notebook editing (2026-08-17)
 
 The owner approved the rebuilt README images and demo and authorised release as
-0.7.0. Versioning, the release commit, a normal fast-forward push, annotated tag
-and tag-driven publication are now authorised. Keep this list as the source of
-truth for the current working tree rather than relying on the long development
-chat.
+0.7.0. Commit `ffba36a` and annotated tag `v0.7.0` were pushed normally without
+rewriting history. GitHub Actions run `32007389408` passed the gate, Windows,
+Linux and universal macOS builds, and publication. The live non-draft Release
+has 13 assets: installers/packages, four-platform signed updater metadata and a
+12-entry checksum manifest whose hashes match the uploaded assets.
 
 Release-prep checkpoint: TypeScript, the 147-test fast gate, the 642-test broad
 Vitest suite, all 53 Rust tests plus `cargo check`, Notebook Script generation,

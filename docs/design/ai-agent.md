@@ -207,7 +207,15 @@ results retain the originating `toolCallId`.
 Checkpoint history and provider context are deliberately different views.
 `AgentState.modelHistory` remains a complete durable forensic/restart record;
 no compaction mutates it. `modelHistoryToProviderProjection` creates an
-ephemeral transport view only after it can find a successful
+ephemeral transport view. Completed conversation boundaries are normalized
+there: a successful `finish_conversation` answer becomes an ordinary assistant
+message, while an answered `ask_user` pair becomes an ordinary assistant
+question followed by the reader's exact reply. The raw calls and receipts stay
+unchanged in durable history. This gives deictic follow-ups such as “add that to
+my book” the same visible transcript the reader saw instead of hiding the
+antecedent inside tool arguments.
+
+Draft-pipeline compaction begins only after the projector can find a successful
 `submit_notebook_script` receipt matching the current durable draft. It retains
 all reader/assistant conversation, notebook/source reads, exact tool pairing
 and one byte-for-byte complete current script. Superseded and unchanged draft

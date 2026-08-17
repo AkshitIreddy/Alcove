@@ -1105,7 +1105,11 @@ The durable `modelHistory` is never compacted in place. It remains the complete
 restart/debugging transcript, including exact reader turns, assistant tool
 plans, call arguments and paired results. Immediately before transport,
 [`modelHistoryToProviderProjection`](../../src/features/aiAgent/provider.ts)
-builds a smaller provider-only view. Once a successful receipt proves the
+builds a smaller provider-only view. Settled `finish_conversation` calls are
+projected as ordinary assistant answers, and answered `ask_user` pairs become
+ordinary assistant/user turns; their raw tool records remain durable locally.
+Consequently, “add that to my book” can resolve the preceding visible answer
+without asking the reader to restate it. Once a successful receipt proves the
 current draft, that view keeps exactly one complete authoritative current
 Notebook Script and every call id/name pairing, while replacing superseded or
 duplicate draft payloads and their old validation/render/review products with

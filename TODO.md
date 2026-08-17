@@ -62,6 +62,11 @@ for the current working tree rather than relying on the long development chat.
 - [x] Keep the first conversational Agent reply contained inside its message
       card at every supported panel width, with long unbroken and formatted
       content wrapping safely.
+- [x] Project settled conversational tool boundaries as ordinary chat turns for
+      Cohere while retaining the complete raw audit history locally, so “add to
+      book” uses the immediately preceding explanation without asking for it
+      again. Gate the exact production-panel flow twice at both supported QA
+      sizes and keep a deliberate provider-rejection witness alive.
 - [x] Start the frozen Agent demonstration with an empty attachment tray. The
       kitten image may enter only as explicit task evidence when the study-page
       request begins, and must not remain as a pre-attached source.

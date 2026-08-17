@@ -130,6 +130,12 @@ for the current working tree rather than relying on the long development chat.
       must not recreate an invariant apply/rollback loop. Prove the real
       48-page Insert button path in Playwright, including timing and rollback
       sabotage, before marking this complete.
+- [x] Keep that localhost Insert transaction responsive: coalesce the browser
+      MemoryDb's row-by-row `localStorage` rewrites into one task-level flush,
+      preserve immediate-reload durability through `pagehide`, and gate real
+      48-page clicks on animation-frame gaps and Chrome long tasks. Three fresh
+      runs completed in 355–903 ms with 100–150 ms maximum frame gaps, versus
+      the reproduced 817–1,117 ms stall before the fix.
 
 - [x] Keep the typing caret/indicator optically inside the ruled text line at
       native and fitted page scales; it must not cut through either adjacent

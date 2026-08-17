@@ -345,7 +345,10 @@ npm run dev            # frontend only, in a browser, on :1420
 in-memory database stub outside Tauri — the same `select`/`execute` surface,
 persisted to `localStorage`, degrading to empty results rather than throwing on
 SQL it does not understand. A book created in the browser survives a reload. It
-is a convenient development path, not a substitute for the Tauri host.
+coalesces each JavaScript task's mutation burst into one storage snapshot, then
+flushes a still-pending snapshot on `pagehide`; renumbering a large book must
+not synchronously rewrite the complete browser library once per page. It is a
+convenient development path, not a substitute for the Tauri host.
 
 ### The everyday gate
 

@@ -710,6 +710,52 @@ describe('Alcove autonomous notebook agent runtime', () => {
     )).toHaveLength(1);
   });
 
+  it('does not offer a useless Retry for a non-retryable provider request rejection', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'non-retryable-provider-request',
+      capabilities: async () => ({
+        providerId: 'non-retryable-provider-request',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        throw new AgentProviderError({
+          code: 'invalid_response',
+          message: 'scripted HTTP 400 request rejection',
+          status: 400,
+          retryable: false,
+        });
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+    const result = await runtime.start({
+      taskId: 'task-non-retryable-provider-request',
+      threadId: 'thread-non-retryable-provider-request',
+      runId: 'run-non-retryable-provider-request',
+      bookId: 'book-1',
+      goal: 'Add the cookie explanation to my book.',
+      insertionTarget: { kind: 'book_end' },
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(result.state).toMatchObject({
+      lifecycle: 'failed',
+      lastError: {
+        code: 'provider_invalid_response',
+        retryable: false,
+        status: 400,
+      },
+    });
+  });
+
   it('repairs one empty provider turn before pausing an ordinary conversation', async () => {
     let calls = 0;
     const provider: AgentProvider = {

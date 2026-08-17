@@ -115,7 +115,7 @@ describe('Cohere AI agent provider', () => {
     });
   });
 
-  it('allows ordinary conversation prose without forcing Cohere strict-tool mode', async () => {
+  it('keeps ordinary conversation optional while validating any returned tool call strictly', async () => {
     gateway.requests.length = 0;
     const provider = new CohereTauriAgentProvider(() => true);
     const stream = provider.streamTurn({
@@ -142,10 +142,10 @@ describe('Cohere AI agent provider', () => {
     }
 
     expect(gateway.requests[0]?.toolChoice).toBeUndefined();
-    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+    expect(gateway.requests[0]?.strictTools).toBe(true);
   });
 
-  it('forces notebook tools without opting into Cohere strict-schema constraints', async () => {
+  it('omits Cohere tool_choice on notebook turns and keeps strict schema validation', async () => {
     gateway.requests.length = 0;
     const provider = new CohereTauriAgentProvider(() => true);
     const stream = provider.streamTurn({
@@ -178,8 +178,12 @@ describe('Cohere AI agent provider', () => {
       // drain the provider turn
     }
 
-    expect(gateway.requests[0]?.toolChoice).toBe('REQUIRED');
-    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+    // The graph still requires a notebook capability and rejects prose-only
+    // turns locally. The wire shape deliberately omits tool_choice because the
+    // live Command A+ trial/production endpoint rejects that field for this
+    // catalogue even though the generic V2 reference advertises it.
+    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
+    expect(gateway.requests[0]?.strictTools).toBe(true);
   });
 
   it('accepts two complete sequential tool calls and preserves their identities', async () => {
@@ -525,13 +529,13 @@ describe('Cohere AI agent provider', () => {
     }
 
     const sent = gateway.requests[0]?.messages ?? [];
-    // REQUIRED still forces an autonomous transition. Cohere's experimental
-    // strict schema subset is deliberately omitted; Alcove validates the call
-    // locally against the complete Zod contract instead.
+    // Call selection remains a local graph invariant. The proven Command A+
+    // wire contract omits tool_choice while strict_tools keeps generated calls
+    // inside the sanitized provider schema before local Zod validation.
     expect(gateway.requests[0]).toMatchObject({
-      toolChoice: 'REQUIRED',
+      strictTools: true,
     });
-    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
     expect(gateway.requests[0]?.citationMode).toBeUndefined();
     expect(gateway.requests[0]?.safetyMode).toBeUndefined();
     expect(sent.map((message) => message.role)).toEqual([

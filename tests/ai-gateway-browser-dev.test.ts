@@ -46,7 +46,6 @@ describe('AI gateway localhost development transport', () => {
           additionalProperties: false,
         },
       }],
-      toolChoice: 'REQUIRED',
       strictTools: true,
     }, (event) => events.push(event));
 
@@ -56,9 +55,9 @@ describe('AI gateway localhost development transport', () => {
       stream: true,
       model: 'command-a-plus-05-2026',
       messages: [{ role: 'user', content: 'Hello' }],
-      tool_choice: 'REQUIRED',
       strict_tools: true,
     });
+    expect(JSON.parse(String(requests[0]?.body))).not.toHaveProperty('tool_choice');
     expect(events.map((event) => event.type)).toEqual([
       'providerEvent', 'providerEvent', 'providerEvent', 'completed',
     ]);

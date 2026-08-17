@@ -468,17 +468,17 @@ export class CohereTauriAgentProvider implements AgentProvider {
       thinking: deterministicRouting
         ? { type: 'disabled' }
         : { type: 'enabled', tokenBudget: 8_000 },
-      // REQUIRED prevents a prose-only completion when Alcove has exposed an
-      // autonomous tool transition. Do not also enable Cohere's experimental
-      // strict_tools mode: Alcove's real catalogue deliberately contains
-      // optional nested fields and range constraints that are valid for normal
-      // tool use but outside Cohere's strict-schema subset. Every returned call
-      // is still parsed by the local Zod schema before any tool can execute.
-      toolChoice:
-        request.toolChoice === 'required' && request.tools.length > 0
-          ? 'REQUIRED'
-          : undefined,
-      strictTools: undefined,
+      // Keep these two concerns separate. `request.toolChoice` is Alcove's
+      // local graph invariant: a notebook/source turn must advance through a
+      // tool and prose-only output is repaired or rejected below the provider
+      // boundary. Do not serialize Cohere's tool_choice control here. The live
+      // Command A+ trial and production endpoints rejected that field for the
+      // production catalogue even though the generic V2 reference advertises
+      // it. The same compatibility smoke accepted strict_tools with the
+      // sanitized schemas below, so retain strict argument generation and let
+      // the graph remain authoritative for call selection.
+      toolChoice: undefined,
+      strictTools: request.tools.length > 0 ? true : undefined,
     };
 
     const queued: AgentProviderStreamEvent[] = [];

@@ -534,7 +534,12 @@ function publicErrorFromProvider(error: unknown): AgentPublicError {
       return {
         code: 'provider_invalid_response',
         message: 'The AI provider returned an unusable response.',
-        retryable: true,
+        // A malformed/incomplete stream has no gateway retry verdict and may
+        // succeed when the reader tries again. A normalized HTTP 4xx request
+        // is different: the gateway explicitly marks it non-retryable, so do
+        // not offer a Retry button that can only resend the same rejected
+        // envelope.
+        retryable: error.retryable ?? true,
         status: error.status,
       };
     case 'cancelled':

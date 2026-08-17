@@ -221,10 +221,16 @@ function sortRows(rows: SqlRow[], orderBy: string): SqlRow[] {
 
 export class MemoryDb implements Db {
   private readonly tables = new Map<string, SqlRow[]>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     const storage = stubStorage();
     if (storage === null) return;
+    // A reload/close may happen before the coalesced task below. Flush the
+    // latest in-memory tables synchronously at that browser durability edge.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', () => this.flushPersist());
+    }
     try {
       const raw = storage.getItem(STUB_STORAGE_KEY);
       if (raw === null) return;
@@ -248,11 +254,32 @@ export class MemoryDb implements Db {
   }
 
   /**
-   * Write every table back to localStorage after a mutation. Immediate (not
-   * debounced) on purpose: the blob is small in dev and a reload must never
-   * lose the book that was created a frame ago.
+   * Coalesce one JavaScript task's SQL burst into one localStorage snapshot.
+   *
+   * Browser-dev page insertion renumbers many rows. Persisting the complete
+   * library after every row turns that safe SQL sequence into dozens of
+   * synchronous JSON.stringify/localStorage writes and freezes localhost for
+   * seconds. All MemoryDb mutations are already visible synchronously through
+   * this instance, so one following-task flush preserves their final state.
+   * `pagehide` above closes the only durability gap when a reload wins the
+   * race with that scheduled flush.
    */
   private persist(): void {
+    if (stubStorage() === null || this.persistTimer !== null) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistNow();
+    }, 0);
+  }
+
+  private flushPersist(): void {
+    if (this.persistTimer === null) return;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+    this.persistNow();
+  }
+
+  private persistNow(): void {
     const storage = stubStorage();
     if (storage === null) return;
     try {

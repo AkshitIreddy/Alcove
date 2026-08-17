@@ -125,6 +125,35 @@ try {
   }
   await page.screenshot({ path: resolve(out, `ready${suffix}.png`), fullPage: true });
 
+  await page.evaluate(() => {
+    const samples = [];
+    const longTasks = [];
+    let previous = performance.now();
+    let running = true;
+    const tick = (now) => {
+      samples.push(now - previous);
+      previous = now;
+      if (running) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    const observer = typeof PerformanceObserver === 'undefined'
+      ? null
+      : new PerformanceObserver((entries) => {
+          for (const entry of entries.getEntries()) longTasks.push(entry.duration);
+        });
+    try {
+      observer?.observe({ type: 'longtask', buffered: false });
+    } catch {
+      // Frame gaps remain the portable responsiveness witness.
+    }
+    globalThis.__aiApplyResponsiveness = {
+      finish() {
+        running = false;
+        observer?.disconnect();
+        return { samples: [...samples], longTasks: [...longTasks] };
+      },
+    };
+  });
   const startedAt = Date.now();
   await page.locator('.nb-ai-approve-action').click();
   let lastKey = '';
@@ -154,6 +183,8 @@ try {
     if (Date.now() - startedAt > 60_000) break;
     await page.waitForTimeout(100);
   }
+  const responsiveness = await page.evaluate(() =>
+    globalThis.__aiApplyResponsiveness?.finish() ?? { samples: [], longTasks: [] });
   report.after = await bookSnapshot();
   const finalUi = await uiSnapshot();
   const elapsedMs = Date.now() - startedAt;
@@ -166,6 +197,8 @@ try {
     0,
     ...report.observations.filter((item) => item.settling).map((item) => item.elapsedMs),
   );
+  const maxFrameGapMs = Math.max(0, ...responsiveness.samples);
+  const maxLongTaskMs = Math.max(0, ...responsiveness.longTasks);
   const cleanupReported = await page.evaluate(async ({ sabotage }) => {
     if (sabotage) {
       await globalThis.__aiAgentDemo.reset('study-notes');
@@ -196,12 +229,17 @@ try {
     exactPageDelta: report.after.pageIds.length - report.before.pageIds.length === expected,
     exactNewPageCount: addedIds.length === expected,
     boundedApplyLatency: elapsedMs < 10_000 && maxSettlingObservation < 9_000,
+    responsiveMainThread: maxFrameGapMs < 250 && maxLongTaskMs < 250,
     noPageErrors: pageErrors.length === 0,
     noConsoleErrors: consoleErrors.length === 0,
     cleanupRestored,
   };
   report.metrics = {
     elapsedMs,
+    maxFrameGapMs,
+    frameSamples: responsiveness.samples.length,
+    maxLongTaskMs,
+    longTaskCount: responsiveness.longTasks.length,
     maxSettlingObservation,
     beforePageCount: report.before.pageIds.length,
     afterPageCount: report.after.pageIds.length,

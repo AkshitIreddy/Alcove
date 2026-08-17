@@ -306,6 +306,81 @@ function recordValue(value: AgentJsonValue): Readonly<Record<string, AgentJsonVa
     : undefined;
 }
 
+/**
+ * Conversation tools are an execution/audit boundary, not the semantic shape
+ * of the next chat turn. Once their result exists, project the validated answer
+ * or question as an ordinary assistant message and omit the paired receipt.
+ * This lets references such as “add that to my book” resolve against the same
+ * visible transcript the reader sees instead of asking the model to recover an
+ * answer from a nested historical tool argument.
+ *
+ * The durable model history is untouched. Only this ephemeral provider view is
+ * normalized, and only an exact one-call assistant/result pair is eligible.
+ */
+function normalizeSettledConversationTools(
+  messages: readonly ProviderMessage[],
+): readonly ProviderMessage[] {
+  const resultByCallId = new Map<string, ProviderMessage>();
+  for (const message of messages) {
+    if (
+      message.role === 'tool' && message.toolCallId !== undefined &&
+      message.isError !== true
+    ) resultByCallId.set(message.toolCallId, message);
+  }
+  const normalized = new Map<string, {
+    readonly assistantText: string;
+    readonly readerReply?: string;
+  }>();
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.toolCalls?.length !== 1) continue;
+    const call = message.toolCalls[0]!;
+    const result = resultByCallId.get(call.id);
+    if (result === undefined) continue;
+    const args = recordValue(call.arguments);
+    if (call.name === 'finish_conversation') {
+      const answer = stringField(args, 'answer')?.trim();
+      if (answer) normalized.set(call.id, { assistantText: answer });
+      continue;
+    }
+    if (call.name === 'ask_user') {
+      const question = stringField(args, 'question')?.trim();
+      const resultValue = recordValue(parsedToolResult(result) ?? null);
+      const readerReply = stringField(resultValue, 'response')?.trim();
+      // Do not erase the tool pair until the reader actually answered it.
+      if (question && readerReply) {
+        normalized.set(call.id, { assistantText: question, readerReply });
+      }
+    }
+  }
+  const projected: ProviderMessage[] = [];
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.toolCalls?.length === 1) {
+      const replacement = normalized.get(message.toolCalls[0]!.id);
+      if (replacement !== undefined) {
+        projected.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: replacement.assistantText }],
+        });
+        continue;
+      }
+    }
+    if (message.role === 'tool' && message.toolCallId !== undefined) {
+      const replacement = normalized.get(message.toolCallId);
+      if (replacement !== undefined) {
+        if (replacement.readerReply !== undefined) {
+          projected.push({
+            role: 'user',
+            content: [{ type: 'text', text: replacement.readerReply }],
+          });
+        }
+        continue;
+      }
+    }
+    projected.push(message);
+  }
+  return projected;
+}
+
 function textPart(message: ProviderMessage): string {
   return message.content
     .filter((part): part is Extract<ProviderContentPart, { type: 'text' }> =>
@@ -541,9 +616,10 @@ function redactLegacyCanonicalSourceResults(
  * Checkpoints retain the complete forensic transcript. Transport does not:
  * every successful repair used to resend every earlier full Notebook Script,
  * so a five-repair task could pay for the same pages dozens of times. This
- * projection keeps all reader/assistant conversation, every source/notebook
- * read result, every tool id/name pair, and exactly one complete authoritative
- * current script. Older draft payloads become small paired receipts.
+ * projection converts settled conversation tools into ordinary assistant
+ * messages, keeps every source/notebook read result and remaining tool id/name
+ * pair, and retains exactly one complete authoritative current script. Older
+ * draft payloads become small paired receipts.
  */
 export function modelHistoryToProviderProjection(
   history: readonly AgentModelTurn[],
@@ -552,12 +628,13 @@ export function modelHistoryToProviderProjection(
 ): ProviderHistoryProjection {
   const original = modelHistoryToProviderMessages(history);
   const originalCharacters = JSON.stringify(original).length;
+  const conversationallyNormalized = normalizeSettledConversationTools(original);
   // Old checkpoints may contain provider-visible reads of the former
   // Notebook Script specification source. Redact those paired results before
   // any fail-open draft decision: local authoring authority is never reader
   // evidence and must not re-enter Cohere through historical continuity.
   const canonicalRedaction = redactLegacyCanonicalSourceResults(
-    original,
+    conversationallyNormalized,
     sourceManifest,
   );
   const providerBase = canonicalRedaction.messages;

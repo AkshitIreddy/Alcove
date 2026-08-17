@@ -69,6 +69,48 @@ function callPairs(messages: ReturnType<typeof modelHistoryToProviderMessages>) 
 }
 
 describe('provider-only agent history compaction', () => {
+  it('projects completed chat answers as ordinary assistant history for later references', () => {
+    const greeting = call('finish-greeting', 'finish_conversation', {
+      answer: 'Hi! What would you like to explore, explain, or add to this notebook?',
+      citedUnitIds: [],
+    });
+    const catAnswer = call('finish-cat', 'finish_conversation', {
+      answer: 'A cat is a small carnivorous mammal with retractable claws and keen senses.',
+      citedUnitIds: [],
+    });
+    const history: AgentModelTurn[] = [
+      { id: 'user-hi', role: 'user', content: 'hi', createdAt: NOW },
+      { ...assistant(greeting, 1), content: '' },
+      tool(greeting, { completed: true, outcome: 'conversation' }, 2),
+      { id: 'user-cat', role: 'user', content: 'what is cat', createdAt: NOW },
+      { ...assistant(catAnswer, 3), content: '' },
+      tool(catAnswer, { completed: true, outcome: 'conversation' }, 4),
+      { id: 'user-add', role: 'user', content: 'add to book', createdAt: NOW },
+    ];
+
+    const projection = modelHistoryToProviderProjection(history);
+    expect(projection.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'Hi! What would you like to explore, explain, or add to this notebook?',
+        }],
+      },
+      { role: 'user', content: [{ type: 'text', text: 'what is cat' }] },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'A cat is a small carnivorous mammal with retractable claws and keen senses.',
+        }],
+      },
+      { role: 'user', content: [{ type: 'text', text: 'add to book' }] },
+    ]);
+    expect(JSON.stringify(projection.messages)).not.toContain('finish_conversation');
+  });
+
   it('retains one exact current script and cuts repeated repair transport dramatically', () => {
     const sourceFact = `Grounded source fact: cats use their whiskers as tactile sensors.\n${'source-evidence '.repeat(700)}`;
     const history: AgentModelTurn[] = [

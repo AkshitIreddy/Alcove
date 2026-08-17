@@ -245,10 +245,19 @@ try {
       route.fulfill({ status: 200, contentType: 'application/json', body: '{"valid":true}' }));
     await page.route('https://api.cohere.com/v2/chat', async (route) => {
       const body = JSON.parse(route.request().postData() ?? '{}');
+      const messages = Array.isArray(body.messages) ? body.messages : [];
       const sanitized = {
         toolChoice: body.tool_choice ?? null,
         strictTools: body.strict_tools ?? null,
         tools: (body.tools ?? []).map((tool) => tool.function?.name),
+        priorCakeAnswerAsAssistant: messages.some((message) =>
+          message.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content.includes('Cake is a baked dessert made from flour')),
+        replaysSettledFinishTool: messages.some((message) =>
+          message.role === 'assistant' &&
+          Array.isArray(message.tool_calls) &&
+          message.tool_calls.some((call) => call.function?.name === 'finish_conversation')),
       };
       run.chatBodies.push(sanitized);
       if (body.tool_choice !== undefined || body.strict_tools !== true) {
@@ -363,6 +372,7 @@ try {
         };
       });
       const mutationBodies = run.chatBodies.slice(1);
+      const firstMutationBody = mutationBodies[0];
       const expectedOrder = [
         'inspect_notebook',
         'submit_notebook_script',
@@ -382,6 +392,9 @@ try {
           run.before.revision === run.after.revision &&
           JSON.stringify(run.before.pageIds) === JSON.stringify(run.after.pageIds),
         noPageOrRequestFailures: run.pageErrors.length === 0 && run.failedRequests.length === 0,
+        precedingAnswerProjectedAsChat:
+          firstMutationBody?.priorCakeAnswerAsAssistant === true &&
+          firstMutationBody?.replaysSettledFinishTool === false,
       };
       run.assertions = sabotage
         ? {

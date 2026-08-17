@@ -1350,14 +1350,20 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(advertisedTools).not.toContain('finish_conversation');
     const resumedProviderHistory = JSON.stringify(resumedRequest.messages);
     expect(resumedProviderHistory).not.toMatch(/response\s*:\s*yes/iu);
-    const readerReplyResult = resumedRequest.messages.find((message) =>
+    expect(resumedRequest.messages).toContainEqual({
+      role: 'assistant',
+      content: [{
+        type: 'text',
+        text: 'Should I turn the lion explanation into a notebook page?',
+      }],
+    });
+    expect(resumedRequest.messages).toContainEqual({
+      role: 'user',
+      content: [{ type: 'text', text: 'yes' }],
+    });
+    expect(resumedRequest.messages.some((message) =>
       message.role === 'tool' && message.toolName === 'ask_user'
-    );
-    const readerReplyText = readerReplyResult?.role === 'tool'
-      ? readerReplyResult.content.find((part) => part.type === 'text')?.text
-      : undefined;
-    expect(readerReplyText === undefined ? undefined : JSON.parse(readerReplyText))
-      .toMatchObject({ kind: 'reader_reply', response: 'yes' });
+    )).toBe(false);
     expect(resumed.state.conversation.filter((message) => message.text === 'yes'))
       .toEqual([expect.objectContaining({ id: 'reader-yes', role: 'user' })]);
     expect(resumed.state.conversation).toContainEqual(question);

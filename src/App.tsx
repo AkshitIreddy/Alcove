@@ -119,7 +119,7 @@ function preloadBookView(): () => void {
 function BookOpening(): JSX.Element {
   const fit = (): number => {
     if (typeof window === "undefined") return 1;
-    return Math.min(1, (window.innerWidth - 108) / 1334, (window.innerHeight - 20) / 920);
+    return Math.min(1.15, (window.innerWidth - 108) / 1334, (window.innerHeight - 20) / 869);
   };
   const [scale, setScale] = createSignal(Math.max(0.3, fit()));
   onMount(() => {

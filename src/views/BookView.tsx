@@ -4892,9 +4892,10 @@ export default function BookView(): JSX.Element {
                 data-book-ink={pageDefaults()?.ink ?? 'inherit'}
               >
               <div class="nb-spread-fit-frame" ref={attachStage}>
-              <header class="nb-spread-header">
-                <h1 class="nb-book-title-plate">{loaded.book.title}</h1>
-              </header>
+                {/* Keep the book name in the document outline without spending
+                    a visible band above the pages. The shelf and book menus
+                    already provide the reader-facing title. */}
+                <h1 class="nb-book-title-accessible">{loaded.book.title}</h1>
 
                 <div
                   class="nb-book-cover"

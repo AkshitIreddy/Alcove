@@ -3,7 +3,7 @@
    The opened book fills the desk: ~92% of the viewport height, all the width
    freed by the left tool rail. Cream leaves rest on real procedural cover
    art (art/covers baked to a background image), spine gutter shadow down the
-   middle, a small Caveat title plate floats above.
+   middle. The book title stays accessible but does not consume a top band.
    All colors from tokens.css. Nothing here animates layout — hover feedback
    is transform/opacity only, with durations from the token scale (global.css
    zeroes those and --motion-scale under prefers-reduced-motion).
@@ -25,7 +25,7 @@
 }
 
 /* ----------------------------------------------------------------------------
-   Stage — title plate above the spread; the cover fills all remaining height
+   Stage — the cover fills the camera-fitted canonical frame
    -------------------------------------------------------------------------- */
 .nb-spread-stage {
   flex: 1 1 auto;
@@ -55,8 +55,8 @@
 /*
  * THE PAGE LAYOUT IS A DOCUMENT CONSTANT, NOT A WINDOW BREAKPOINT.
  *
- * 1334 × 920 is the settled open-book canvas used by the authored Welcome
- * book and native Agent previews. A window resize, a panel opening, or a move
+ * 1334 × 869 is the settled open-book board used by the authored Welcome book
+ * and native Agent previews. A window resize, a panel opening, or a move
  * to a monitor with another resolution/DPI may only transform this frame; it
  * must never alter the CSS-pixel box that wraps prose or feeds pagination.
  * `BookView.fitSpread` fits this complete frame in both axes. Keeping the
@@ -64,11 +64,11 @@
  * compose independently without ever relaying out a leaf.
  */
 .nb-spread-fit-frame {
-  flex: 0 0 920px;
+  flex: 0 0 869px;
   width: 1334px;
-  height: 920px;
+  height: 869px;
   min-width: 1334px;
-  min-height: 920px;
+  min-height: 869px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -243,31 +243,16 @@
   }
 }
 
-.nb-spread-header {
-  flex: 0 0 auto;
-  align-self: center;
-  text-align: center;
-  margin-bottom: var(--space-8);
-}
-
-/* Small Caveat title plate (replaces the old 40px underlined heading). */
-.nb-book-title-plate {
-  display: inline-block;
-  font-family: var(--font-heading);
-  font-size: 23px; /* Caveat floor is 20px — stay above it */
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--ink-sepia);
-  background: var(--paper-aged);
-  border: var(--stroke-ink-thin);
-  border-radius: var(--radius-hand);
-  padding: 2px var(--space-16) 3px;
-  box-shadow: var(--shadow-xs);
-  transform: rotate(-0.5deg);
-  max-width: 60vw;
+.nb-book-title-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
+  border: 0;
 }
 
 /* ----------------------------------------------------------------------------
@@ -678,7 +663,7 @@
 
 /* ----------------------------------------------------------------------------
    Focus mode (roadmap #12) — F9 / rail icon. Chrome melts away (rail, back
-   arrow, title plate, thumbnails), the wall dims behind the book, and the
+   arrow and thumbnails), the wall dims behind the book, and the
    spread takes the freed room. Opacity/transform only; the elements stay
    mounted so state survives.
    -------------------------------------------------------------------------- */
@@ -688,16 +673,14 @@
 }
 
 .nb-book-view.is-focus-mode .nb-rail,
-.nb-book-view.is-focus-mode .nb-back-button,
-.nb-book-view.is-focus-mode .nb-spread-header {
+.nb-book-view.is-focus-mode .nb-back-button {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-sm) var(--ease-out);
 }
 
 .nb-book-view .nb-rail,
-.nb-book-view .nb-back-button,
-.nb-book-view .nb-spread-header {
+.nb-book-view .nb-back-button {
   transition: opacity var(--dur-sm) var(--ease-out);
 }
 

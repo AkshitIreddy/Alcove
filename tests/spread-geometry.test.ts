@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_SPREAD_SCALE,
   MIN_SPREAD_SCALE,
   fitSpreadToRoom,
   retainInitialPageCapacity,
@@ -13,6 +14,8 @@ describe('canonical book geometry', () => {
       .toEqual({ shift: 34, scale: 0.6386 });
     expect(fitSpreadToRoom({ left: 83, right: 1417 }, { left: 88, right: 1480 }, 420, 16, 0.71))
       .toEqual({ shift: 208, scale: 0.71 });
+    expect(fitSpreadToRoom({ left: 186, right: 1520 }, { left: 88, right: 1686 }, 0, 16, 1.2))
+      .toEqual({ shift: 34, scale: MAX_SPREAD_SCALE });
   });
 
   it('fails safely for hidden or degenerate rooms', () => {

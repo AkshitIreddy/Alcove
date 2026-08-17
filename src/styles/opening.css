@@ -64,11 +64,11 @@
 
 /* Canonical live-book canvas, camera-fitted by BookOpening without relayout. */
 .nb-opening-fit-frame {
-  flex: 0 0 920px;
+  flex: 0 0 869px;
   width: 1334px;
-  height: 920px;
+  height: 869px;
   min-width: 1334px;
-  min-height: 920px;
+  min-height: 869px;
   transform: scale(var(--nb-opening-fit, 1));
   transform-origin: 50% 50%;
 }
@@ -79,27 +79,31 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
   /* The one entrance. Transform + opacity only; it is over long before the
      first long task, and if it is not, it finishes on the compositor anyway. */
   animation: nb-opening-settle 380ms var(--ease-out) both;
 }
 
 /* ----------------------------------------------------------------------------
-   The plate — where the book's title plate is about to be.
+   The transient opening status, over the already-sized paper.
 
    The caption used to sit dead centre of the window, which is precisely where
    the pointer is left standing after clicking a book cover: in the demo
    recording (`qa/demo/frames/f0428.png`) the cursor parks on top of it and the
-   only text on screen reads "openin  the book…". Up here it is clear of the
-   press, and it is replaced in place by the real title when the spread lands.
+   only text on screen reads "openin  the book…". It remains clear of the
+   press, but is absolutely overlaid so it never reserves a permanent band or
+   changes the board geometry that the live book inherits.
    -------------------------------------------------------------------------- */
 .nb-opening-header {
-  flex: 0 0 auto;
-  align-self: center;
-  margin-bottom: var(--space-8);
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-/* Restates .nb-book-title-plate. 23px: the Caveat floor is 20px. */
+/* Temporary status plate. 23px keeps Caveat above its 20px floor. */
 .nb-opening-plate {
   display: inline-flex;
   align-items: baseline;

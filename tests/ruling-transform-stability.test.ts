@@ -39,7 +39,7 @@ describe('ruled paper under the canonical camera transform', () => {
 
     const frame = block(spread, '.nb-spread-fit-frame');
     expect(frame).toContain('width: 1334px;');
-    expect(frame).toContain('height: 920px;');
+    expect(frame).toContain('height: 869px;');
     expect(frame).not.toMatch(/\b(?:max-)?width\s*:\s*(?:min|clamp)\(/);
     expect(frame).not.toMatch(/\b(?:max-)?height\s*:\s*(?:min|clamp)\(/);
 

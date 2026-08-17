@@ -339,7 +339,7 @@ export interface Span {
 export interface SpreadFit {
   /** Whole-px horizontal translate, applied before the scale. */
   readonly shift: number;
-  /** Uniform scale about the piece's own centre; never above 1. */
+  /** Uniform camera scale about the piece's own centre. */
   readonly scale: number;
 }
 
@@ -369,6 +369,15 @@ export function retainInitialPageCapacity(current: number, measured: number): nu
  */
 export const MIN_SPREAD_SCALE = 0.3;
 
+/**
+ * Let a high-resolution desk use its room without turning the canonical page
+ * box into a responsive layout. This magnifies the complete 1334px book as a
+ * camera transform; it never changes paper width, wrapping or pagination.
+ * 1.15 keeps a quiet edge around the boards at the owner's 1706x1066 CSS-pixel
+ * workspace while making the spread materially larger than the old 1x cap.
+ */
+export const MAX_SPREAD_SCALE = 1.15;
+
 /** Whole px in, so a scaled leaf is never resampled onto a half pixel. */
 const roundShift = (n: number): number => Math.round(n);
 
@@ -377,7 +386,7 @@ const roundShift = (n: number): number => Math.round(n);
  * exactly to the window edge ends up a hair past it.
  */
 const roundScale = (n: number): number =>
-  n >= 0.9999 ? 1 : Math.floor(n * 10_000) / 10_000;
+  Math.abs(n - 1) < 0.0001 ? 1 : Math.floor(n * 10_000) / 10_000;
 
 /**
  * Where the book must sit, and how big, for the whole spread — curl corner
@@ -422,7 +431,7 @@ export function fitSpreadToRoom(
   const scale = roundScale(
     Math.max(
       MIN_SPREAD_SCALE,
-      Math.min(1, lane / width, Math.max(0, scaleCeiling)),
+      Math.min(MAX_SPREAD_SCALE, lane / width, Math.max(0, scaleCeiling)),
     ),
   );
   const shift = roundShift(

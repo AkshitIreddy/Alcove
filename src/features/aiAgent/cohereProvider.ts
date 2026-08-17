@@ -468,21 +468,17 @@ export class CohereTauriAgentProvider implements AgentProvider {
       thinking: deterministicRouting
         ? { type: 'disabled' }
         : { type: 'enabled', tokenBudget: 8_000 },
-      // Cohere treats these as separate guarantees: strict tools validate the
-      // selected call against its schema, while REQUIRED prevents a prose-only
-      // completion when Alcove has exposed an autonomous tool transition.
+      // REQUIRED prevents a prose-only completion when Alcove has exposed an
+      // autonomous tool transition. Do not also enable Cohere's experimental
+      // strict_tools mode: Alcove's real catalogue deliberately contains
+      // optional nested fields and range constraints that are valid for normal
+      // tool use but outside Cohere's strict-schema subset. Every returned call
+      // is still parsed by the local Zod schema before any tool can execute.
       toolChoice:
         request.toolChoice === 'required' && request.tools.length > 0
           ? 'REQUIRED'
           : undefined,
-      // Ordinary source-free conversation deliberately allows a direct prose
-      // answer. Local Zod validation still guards any optional tool call; the
-      // provider's experimental strict schema mode is reserved for turns
-      // where Alcove requires a concrete notebook/source capability.
-      strictTools:
-        request.toolChoice === 'required' && request.tools.length > 0
-          ? true
-          : undefined,
+      strictTools: undefined,
     };
 
     const queued: AgentProviderStreamEvent[] = [];

@@ -750,7 +750,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       tools: tools.descriptorsForState(providerState),
       // An ordinary source-free explanation is allowed to arrive as natural
       // prose and is wrapped into Alcove's local finish tool below. Notebook
-      // work and grounded source work remain forced, strict tool turns.
+      // work and grounded source work remain forced tool turns.
       toolChoice: strictToolTurn ? 'required' : 'auto',
     };
     if (providerState.textPrivacy !== undefined) {

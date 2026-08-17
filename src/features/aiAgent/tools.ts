@@ -191,11 +191,12 @@ async function exactSandboxTarget(
 function schemaJson(schema: z.ZodType): Readonly<Record<string, AgentJsonValue>> {
   const raw = z.toJSONSchema(schema) as Record<string, unknown>;
   /**
-   * Cohere strict tools accept a deliberately small JSON-Schema vocabulary
-   * and require every declared object property to appear in `required`.
-   * Optional/defaulted local fields therefore travel as required-but-nullable
-   * fields; `transportArguments` removes those null sentinels before the full
-   * local Zod schema applies defaults and kind-specific validation.
+   * Keep the provider-facing schema inside Cohere's conservative tool-use
+   * vocabulary. Optional/defaulted local fields travel as required-but-nullable
+   * fields so Command A has one unambiguous shape; `transportArguments` removes
+   * those null sentinels before the complete local Zod schema applies defaults
+   * and kind-specific validation. Alcove does not enable Cohere's experimental
+   * `strict_tools` switch—the local parse remains the authority boundary.
    */
   const nullable = (value: unknown): unknown => {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -599,9 +600,8 @@ function visualReviewLedgerIsDerivedConsistently(
   return ledger.complete === complete && ledger.passed === passed;
 }
 
-// Cohere strict tool schemas require at least one required parameter. A
-// required literal keeps no-input actions strict and self-documenting without
-// weakening local Zod validation.
+// A required literal gives no-input actions one unambiguous provider shape and
+// keeps them self-documenting without weakening local Zod validation.
 const emptySchema = z.object({ request: z.literal('current') }).strict();
 const inspectPageSchema = z.object({ pageId: z.string().min(1) }).strict();
 const inspectPageRangeSchema = z

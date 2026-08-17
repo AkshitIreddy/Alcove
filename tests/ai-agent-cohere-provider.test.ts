@@ -145,6 +145,43 @@ describe('Cohere AI agent provider', () => {
     expect(gateway.requests[0]?.strictTools).toBeUndefined();
   });
 
+  it('forces notebook tools without opting into Cohere strict-schema constraints', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-notebook-tool',
+      runId: 'run-notebook-tool',
+      threadId: 'thread-notebook-tool',
+      systemPrompt: 'Add the requested material to the notebook.',
+      tools: [{
+        name: 'submit_notebook_script',
+        description: 'Submit the composed Notebook Script.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            script: { type: 'string', minLength: 1 },
+            citedUnitIds: {
+              type: 'array',
+              items: { type: 'string' },
+              default: [],
+            },
+          },
+          required: ['script'],
+          additionalProperties: false,
+        },
+        effect: 'draft',
+      }],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]?.toolChoice).toBe('REQUIRED');
+    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+  });
+
   it('accepts two complete sequential tool calls and preserves their identities', async () => {
     gateway.scriptedEvents.push(
       {
@@ -488,13 +525,13 @@ describe('Cohere AI agent provider', () => {
     }
 
     const sent = gateway.requests[0]?.messages ?? [];
-    // Schema strictness and call selection are separate Cohere controls. The
-    // Agent requires a tool on autonomous turns and still validates the
-    // returned protocol locally.
+    // REQUIRED still forces an autonomous transition. Cohere's experimental
+    // strict schema subset is deliberately omitted; Alcove validates the call
+    // locally against the complete Zod contract instead.
     expect(gateway.requests[0]).toMatchObject({
       toolChoice: 'REQUIRED',
-      strictTools: true,
     });
+    expect(gateway.requests[0]?.strictTools).toBeUndefined();
     expect(gateway.requests[0]?.citationMode).toBeUndefined();
     expect(gateway.requests[0]?.safetyMode).toBeUndefined();
     expect(sent.map((message) => message.role)).toEqual([

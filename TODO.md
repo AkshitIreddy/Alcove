@@ -1,6 +1,6 @@
 # Alcove — running TODO
 
-## 🚢 0.7.2 — personal writing desks (release authorised 2026-08-17)
+## ✅ 0.7.2 — personal writing desks (released 2026-08-17)
 
 The owner authorised a 0.7.2 patch release for the soft writing-desk palette,
 field-only book zoom, quiet back arrow and reliable Cohere connection check.
@@ -8,11 +8,18 @@ Linen is the first onboarding choice. Page geometry and stored notebook content
 remain unchanged. Existing README pictures and the demo remain accurate and
 must not be regenerated for this patch.
 
+Commits `78e0739`, `c4a2aed` and `96c034b` plus annotated tag `v0.7.2` were
+pushed normally. GitHub Actions run `32026243461` passed the shared gate,
+Windows, Linux and universal macOS builds, then publication. The live
+non-draft Release contains 13 assets; all 12 checksum entries match GitHub's
+uploaded SHA-256 digests, and `latest.json` names signed updater packages for
+Windows, Linux and both macOS architectures.
+
 - [x] Feature Linen among the first eight onboarding writing desks.
 - [x] Verify all 25 desks, wide and narrow layouts, field-only wheel zoom and
       unchanged canonical page geometry in Playwright.
 - [x] Watch the deliberate white-desk sabotage fail.
-- [ ] Pass the complete release gates, push and verify the 0.7.2 release.
+- [x] Pass the complete release gates, push and verify the 0.7.2 release.
 
 ## ✅ Post-0.7.1 writing-desk palette expansion (completed 2026-08-17)
 

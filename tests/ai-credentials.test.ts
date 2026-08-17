@@ -16,6 +16,15 @@ describe('AI credential browser boundary', () => {
     const credentials = await import('../src/data/aiCredentials');
 
     await expect(credentials.testAiCredential('trial_key_that_is_long_enough')).resolves.toEqual({ valid: true });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.cohere.com/v1/check-api-key',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'X-Client-Name': 'Alcove localhost',
+        }),
+      }),
+    );
     await credentials.saveAiCredential('trial_key_that_is_long_enough', 'secure');
     expect(credentials.browserDevAiCredential()).toBe('trial_key_that_is_long_enough');
     expect(await credentials.aiCredentialStatus()).toMatchObject({
@@ -44,6 +53,19 @@ describe('AI credential browser boundary', () => {
 
     await expect(testAiCredential('contains whitespace')).rejects.toThrow(
       'enter a valid Cohere API key',
+    );
+  });
+
+  it('surfaces serialized native failures without exposing request data', async () => {
+    const { aiCredentialErrorMessage } = await import('../src/data/aiCredentials');
+    expect(
+      aiCredentialErrorMessage(
+        { code: 'network', message: 'Cohere rejected the request (HTTP 411)' },
+        'fallback',
+      ),
+    ).toBe('Cohere rejected the request (HTTP 411)');
+    expect(aiCredentialErrorMessage({ apiKey: 'must-not-surface' }, 'fallback')).toBe(
+      'fallback',
     );
   });
 });

@@ -267,6 +267,7 @@ import {
   type AgentTaskSummary,
 } from '../data/aiAgentPersistence';
 import {
+  aiCredentialErrorMessage,
   aiCredentialStatus,
   saveAiCredential,
   testAiCredential,
@@ -3025,7 +3026,7 @@ export default function BookView(): JSX.Element {
         provider: 'Cohere',
         firstUse: !settings.aiAgentSetupSeen,
         keyKind: input.kind,
-        message: error instanceof Error ? error.message : 'Could not connect to Cohere',
+        message: aiCredentialErrorMessage(error, 'Could not connect to Cohere'),
       });
       throw error;
     }
@@ -4051,7 +4052,7 @@ export default function BookView(): JSX.Element {
           provider: 'Cohere',
           firstUse: !settings.aiAgentSetupSeen,
           keyKind: settings.aiAgentKeyKind,
-          message: error instanceof Error ? error.message : 'Could not read the AI connection',
+          message: aiCredentialErrorMessage(error, 'Could not read the AI connection'),
         });
       });
     };

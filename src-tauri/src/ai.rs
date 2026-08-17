@@ -2302,15 +2302,7 @@ async fn test_api_key(
 ) -> Result<bool, AiError> {
     for attempt in 1..=MAX_ATTEMPTS {
         let response = control
-            .wait(
-                state
-                    .client
-                    .post(format!("{COHERE_ORIGIN}/v1/check-api-key"))
-                    .header(header::ACCEPT, "application/json")
-                    .header("X-Client-Name", CLIENT_NAME)
-                    .bearer_auth(key.expose())
-                    .send(),
-            )
+            .wait(credential_test_request(state, key).send())
             .await?;
         match response {
             Ok(response) => {
@@ -2358,6 +2350,19 @@ async fn test_api_key(
         }
     }
     Err(AiError::internal())
+}
+
+fn credential_test_request(state: &AiState, key: &SecretString) -> reqwest::RequestBuilder {
+    state
+        .client
+        .post(format!("{COHERE_ORIGIN}/v1/check-api-key"))
+        .header(header::ACCEPT, "application/json")
+        // Browsers add this automatically. Reqwest may omit it for a bodyless
+        // POST, which some Windows/native network paths reject with HTTP 411
+        // before Cohere ever sees the credential.
+        .header(header::CONTENT_LENGTH, "0")
+        .header("X-Client-Name", CLIENT_NAME)
+        .bearer_auth(key.expose())
 }
 
 #[tauri::command]
@@ -4179,6 +4184,23 @@ mod tests {
         assert_eq!(
             encoded,
             r#"{"configured":true,"source":"session","secureStoreAvailable":false,"persistent":false}"#
+        );
+    }
+
+    #[test]
+    fn native_key_check_declares_its_empty_post_body() {
+        let state = AiState::new().expect("AI state should initialize");
+        let key = normalize_api_key("cohere_test_key_123456".to_string())
+            .expect("fixture key should be valid");
+        let request = credential_test_request(&state, &key)
+            .build()
+            .expect("key-test request should build");
+
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(request.url().path(), "/v1/check-api-key");
+        assert_eq!(
+            request.headers().get(header::CONTENT_LENGTH),
+            Some(&header::HeaderValue::from_static("0"))
         );
     }
 

@@ -14,6 +14,18 @@ export interface AiCredentialTestResult {
   readonly valid: boolean;
 }
 
+/** Tauri failures cross IPC as plain objects, not `Error` instances. */
+export function aiCredentialErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim() !== '') return error.message;
+  if (error !== null && typeof error === 'object' && !Array.isArray(error)) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim() !== '') {
+      return message.trim().slice(0, 400);
+    }
+  }
+  return fallback;
+}
+
 const UNCONFIGURED: AiCredentialStatus = {
   configured: false,
   source: null,

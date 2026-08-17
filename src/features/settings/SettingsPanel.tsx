@@ -45,6 +45,7 @@ import { DEFAULT_KEYBINDINGS } from '../../data/defaults';
 import { ariaKeyshortcuts, formatBinding } from '../../data/keybindings';
 import { isTauri } from '../../data/db';
 import {
+  aiCredentialErrorMessage,
   aiCredentialStatus,
   deleteAiCredential,
   saveAiCredential,
@@ -1699,7 +1700,7 @@ export default function SettingsPanel(props: {
       );
     } catch (error) {
       setAiKeyFeedback(
-        error instanceof Error ? error.message : 'The connection test failed.',
+        aiCredentialErrorMessage(error, 'The connection test failed.'),
       );
     } finally {
       setAiKeyBusy(false);
@@ -1739,7 +1740,7 @@ export default function SettingsPanel(props: {
       );
     } catch (error) {
       setAiKeyFeedback(
-        error instanceof Error ? error.message : 'The key could not be connected.',
+        aiCredentialErrorMessage(error, 'The key could not be connected.'),
       );
     } finally {
       setAiKeyBusy(false);
@@ -1762,7 +1763,7 @@ export default function SettingsPanel(props: {
       setAiKeyFeedback('Cohere disconnected. Agent history remains on this device.');
     } catch (error) {
       setAiKeyFeedback(
-        error instanceof Error ? error.message : 'The key could not be removed.',
+        aiCredentialErrorMessage(error, 'The key could not be removed.'),
       );
     } finally {
       setAiKeyBusy(false);

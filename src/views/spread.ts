@@ -378,6 +378,30 @@ export const MIN_SPREAD_SCALE = 0.3;
  */
 export const MAX_SPREAD_SCALE = 1.15;
 
+/** Reader-controlled camera scale used only over the empty writing desk. */
+export const MIN_DESK_ZOOM = 0.72;
+export const MAX_DESK_ZOOM = 1.12;
+export const DESK_ZOOM_REST = 1;
+
+export function stepDeskZoom(
+  current: number,
+  deltaY: number,
+  sensitivity = 1,
+): number {
+  const safeCurrent = Number.isFinite(current) ? current : DESK_ZOOM_REST;
+  if (!Number.isFinite(deltaY) || deltaY === 0) return safeCurrent;
+  const safeSensitivity = Number.isFinite(sensitivity)
+    ? Math.max(0.1, Math.min(3, sensitivity))
+    : 1;
+  // Trackpad deltas may arrive in tiny packets while a mouse wheel often
+  // arrives near 100–180. This curve keeps one notch gentle (about 6–10%) and
+  // remains symmetric, so the opposite motion returns to the same size.
+  const next = safeCurrent * Math.exp(-deltaY * 0.00055 * safeSensitivity);
+  return Math.round(
+    Math.max(MIN_DESK_ZOOM, Math.min(MAX_DESK_ZOOM, next)) * 10_000,
+  ) / 10_000;
+}
+
 /** Whole px in, so a scaled leaf is never resampled onto a half pixel. */
 const roundShift = (n: number): number => Math.round(n);
 

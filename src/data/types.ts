@@ -218,6 +218,32 @@ export const PAGE_STYLES = [
 export type PageStyle = (typeof PAGE_STYLES)[number];
 
 export type AnimationLevel = 'full' | 'reduced' | 'off';
+export type WritingDeskId =
+  | 'linen'
+  | 'buttercup'
+  | 'blush'
+  | 'mint'
+  | 'sky'
+  | 'clay'
+  | 'plum'
+  | 'cobalt'
+  | 'marigold'
+  | 'honey'
+  | 'apricot'
+  | 'rosewood'
+  | 'coral'
+  | 'raspberry'
+  | 'seafoam'
+  | 'fern'
+  | 'peony'
+  | 'emerald'
+  | 'periwinkle'
+  | 'rose'
+  | 'teal'
+  | 'lavender'
+  | 'mulberry'
+  | 'cranberry'
+  | 'midnight';
 
 /**
  * All user-facing options. Persisted as a single JSON blob in the
@@ -235,6 +261,8 @@ export interface Settings {
   pageStyleDefault: PageStyle;
   /** Ink token or CSS color for body text (e.g. 'sepia', 'graphite'). */
   inkColor: string;
+  /** Flat colour of the field around an open book. */
+  writingDeskColor: WritingDeskId;
   animationLevel: AnimationLevel;
   minimalistMode: boolean;
   showMarginDoodles: boolean;

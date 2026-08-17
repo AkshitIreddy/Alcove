@@ -167,6 +167,13 @@ import {
   type CodeThemeSpec,
 } from './codeAppearance';
 import { codeLook, loadCodeLook, saveCodeLook } from './codeAppearancePrefs';
+import {
+  WRITING_DESKS,
+  WRITING_DESK_FAMILIES,
+  WRITING_DESK_FAMILY_BLURBS,
+  WRITING_DESK_FAMILY_LABELS,
+  WRITING_DESK_SHORTLIST,
+} from './writingDesk';
 /* The parcel desk is reached by `import()` in the two handlers below, not from
    here. It reads and writes whole books, so it reaches
    `editor/script/fromTiptap` and from there TipTap and ProseMirror — 300kB
@@ -382,6 +389,26 @@ const AUTO_PAPER_OPTION: SegOption = {
   ariaLabel: 'paper as the room',
   title: 'whatever the theme is printed on',
 };
+
+const WRITING_DESK_OPTIONS: readonly SegOption[] = WRITING_DESKS.map((desk) => ({
+  value: desk.id,
+  label: desk.label,
+  ariaLabel: `${desk.label} writing desk`,
+  title: desk.line,
+  swatch: desk.color,
+}));
+const WRITING_DESK_OPTIONS_BY_ID = new Map(
+  WRITING_DESK_OPTIONS.map((option) => [String(option.value), option] as const),
+);
+const WRITING_DESK_GROUPS: readonly ChipGroup[] = WRITING_DESK_FAMILIES.map(
+  (family) => ({
+    title: WRITING_DESK_FAMILY_LABELS[family],
+    blurb: WRITING_DESK_FAMILY_BLURBS[family],
+    options: WRITING_DESKS.filter((desk) => desk.family === family).map(
+      (desk) => WRITING_DESK_OPTIONS_BY_ID.get(desk.id) as SegOption,
+    ),
+  }),
+);
 
 const THEME_OPTIONS = new Map(APP_THEMES.map((s) => [s.id, themeOption(s)] as const));
 const HAND_OPTIONS = new Map(HANDS.map((s) => [s.id, handOption(s)] as const));
@@ -1364,6 +1391,8 @@ function Section(props: {
 function Picker(props: {
   /** Row label; also the group's accessible name. */
   label: string;
+  /** Optional grammatical form for the disclosure row (for example, plural). */
+  moreLabel?: string;
   hint: string;
   /**
    * What a reader types when they want this vocabulary — "dark mode" for the
@@ -1455,7 +1484,7 @@ function Picker(props: {
           </Row>
           <Show when={props.total > props.shortlist.length}>
             <Row
-              label={`more ${props.label}`}
+              label={props.moreLabel ?? `more ${props.label}`}
               hint={`${props.total - props.shortlist.length} more, in ${props.groups.length} shelves`}
               words={props.words}
               holdControl
@@ -1804,6 +1833,7 @@ export default function SettingsPanel(props: {
   const [allHandsOpen, setAllHandsOpen] = createSignal(false);
   const [allInksOpen, setAllInksOpen] = createSignal(false);
   const [allPapersOpen, setAllPapersOpen] = createSignal(false);
+  const [allWritingDesksOpen, setAllWritingDesksOpen] = createSignal(false);
   const [allCodeThemesOpen, setAllCodeThemesOpen] = createSignal(false);
   void loadPaperStock();
   void loadCodeLook();
@@ -1877,6 +1907,15 @@ export default function SettingsPanel(props: {
       ],
       paperStock(),
       paperOptions(),
+    ),
+  );
+  const writingDeskShortlist = createMemo(() =>
+    withCurrent(
+      WRITING_DESK_SHORTLIST.map(
+        (desk) => WRITING_DESK_OPTIONS_BY_ID.get(desk.id) as SegOption,
+      ),
+      settings.writingDeskColor,
+      WRITING_DESK_OPTIONS_BY_ID,
     ),
   );
 
@@ -2655,7 +2694,7 @@ export default function SettingsPanel(props: {
           words="look style skin decoration"
         >
           {/*
-            The five questions the tour opens with, offered again.
+            The six questions the tour opens with, offered again.
 
             It sits at the TOP of Appearance rather than beside "replay the
             tour" in Help because of what it writes: the room, the case, the
@@ -2764,6 +2803,23 @@ export default function SettingsPanel(props: {
             region="nbs-papers"
             onOpen={setAllPapersOpen}
             onSelect={(v) => void savePaperStock(v)}
+          />
+          <Picker
+            label="writing desk"
+            moreLabel="more writing desks"
+            hint="the colour around an open book"
+            words="desk background behind book workspace writing colour"
+            searching={searching()}
+            shortlist={writingDeskShortlist()}
+            groups={WRITING_DESK_GROUPS}
+            total={WRITING_DESKS.length}
+            value={settings.writingDeskColor}
+            open={allWritingDesksOpen()}
+            region="nbs-writing-desks"
+            onOpen={setAllWritingDesksOpen}
+            onSelect={(v) =>
+              put({ writingDeskColor: v as Settings['writingDeskColor'] })
+            }
           />
           {/* The RULING, which is a different question from the stock above:
               four of them, because four is what the editor draws

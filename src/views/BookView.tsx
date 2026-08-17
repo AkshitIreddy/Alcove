@@ -200,6 +200,7 @@ import {
 } from './bookmarks';
 import { panelEdge } from './rail/panelPush';
 import {
+  DESK_ZOOM_REST,
   SPREAD_FIT_REST,
   retainInitialPageCapacity,
   appendBlocksToDoc,
@@ -213,6 +214,7 @@ import {
   prependBlocksToDoc,
   spreadOfSlot,
   spreadPageIds,
+  stepDeskZoom,
   type SpreadFit,
   type SpreadIds,
 } from './spread';
@@ -2395,6 +2397,7 @@ export default function BookView(): JSX.Element {
   // -------------------------------------------------------------------------
   const [focusLevel, setFocusLevel] = createSignal<FocusLevel>('off');
   const [focusZoom, setFocusZoom] = createSignal(ZOOM_REST);
+  const [deskZoom, setDeskZoom] = createSignal(DESK_ZOOM_REST);
   const [focusPan, setFocusPan] = createSignal({ x: 0, y: 0 });
   /** Which leaf survives at the `leaf` rung. */
   const [soloLeaf, setSoloLeaf] = createSignal<LeafSide>('left');
@@ -2792,13 +2795,29 @@ export default function BookView(): JSX.Element {
   };
 
   // -------------------------------------------------------------------------
-  // Zoom by wheel, and pan by drag — the two gestures the reader already knows
-  // from the shelf (CLAUDE.md: plain wheel zooms out there). In here plain
-  // wheel belongs to the page, so the zoom takes the modifier and nothing else
-  // changes for someone who never enters focus mode.
+  // Wheel on PAPER belongs to writing and is left alone. Wheel on the flat
+  // field around the book changes only the camera scale: the canonical
+  // 1334×869 layout box and pagination capacity never move.
   // -------------------------------------------------------------------------
   const onWheel = (event: WheelEvent): void => {
-    if (!focusMode()) return;
+    if (!focusMode()) {
+      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target === null ||
+        target.closest('.nb-book-view') === null ||
+        target.closest(
+          '.nb-book-cover, .nb-rail, .nb-back-button, .nbs-layer, dialog, button, input, textarea, select, [contenteditable="true"]',
+        ) !== null
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setDeskZoom((current) =>
+        stepDeskZoom(current, event.deltaY, settings.zoomSensitivity),
+      );
+      return;
+    }
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
       changeZoom(event.deltaY < 0 ? 1 : -1);
@@ -4760,6 +4779,7 @@ export default function BookView(): JSX.Element {
       data-focus-level={focusLevel()}
       data-solo-leaf={focusLevel() === 'leaf' ? soloLeaf() : undefined}
       data-cursor={settings.cursorStyle}
+      data-desk-zoom={deskZoom()}
       style={{
         '--nb-focus-zoom': String(clampZoom(focusZoom())),
         '--nb-focus-pan-x': `${focusPan().x}px`,
@@ -4769,7 +4789,7 @@ export default function BookView(): JSX.Element {
            rather than on <html> so the fit cannot re-trigger the observer that
            computes it — and so it dies with the view. */
         '--nb-spread-shift': `${spreadFit().shift}px`,
-        '--nb-spread-fit': String(spreadFit().scale),
+        '--nb-spread-fit': String(spreadFit().scale * deskZoom()),
       }}
       onPointerDown={onPanDown}
     >
@@ -4779,8 +4799,8 @@ export default function BookView(): JSX.Element {
           removed when it recedes — a control you cannot Tab to is not a way
           out — it just stops being ink you have to look past.
 
-          The label keeps "back to shelf" as its leading words: that is the
-          accessible name the e2e suite and the tour both find it by. */}
+          Its `aria-label` keeps the name available without growing visible
+          copy beside the universally familiar arrow. */}
       <button
         type="button"
         class="nb-back-button font-accent"
@@ -4793,7 +4813,6 @@ export default function BookView(): JSX.Element {
         onClick={requestClose}
       >
         <BackArrowIcon />
-        <span class="nb-back-label">back to shelf</span>
       </button>
 
       {/* One focus-only rail owns every control the mode leaves on screen:

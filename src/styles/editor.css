@@ -35,7 +35,6 @@
 
 .nb-back-button:hover {
   background: var(--wash-amber-light);
-  transform: translateX(-2px);
 }
 
 .nb-back-arrow {

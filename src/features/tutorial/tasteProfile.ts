@@ -90,6 +90,13 @@ import {
   type SoundSetId,
 } from '../../sound/soundSets';
 import type { ThemeName } from '../../data/types';
+import type { WritingDeskId } from '../../data/types';
+import {
+  DEFAULT_WRITING_DESK_ID,
+  WRITING_DESKS,
+  WRITING_DESK_SHORTLIST,
+  writingDesk,
+} from '../settings/writingDesk';
 import {
   ROOM_PRESETS,
   type RoomLook,
@@ -142,7 +149,10 @@ export type TastePaletteId = ThemeId;
 /** Question four: what is on the wall behind the case. */
 export type TastePaperId = 'bare' | 'ruled' | 'growing' | 'figured' | 'gilded';
 
-/** Question five: what the app sounds like under their hands. */
+/** Question five: the flat field around an open book. */
+export type TasteDeskId = WritingDeskId;
+
+/** Question six: what the app sounds like under their hands. */
 export type TasteSoundId = SoundSetGroupId;
 
 export interface TasteAnswers {
@@ -151,11 +161,12 @@ export interface TasteAnswers {
   /** Chosen by pressing a card. Absent means "the one the steer picked". */
   palette?: TastePaletteId;
   paper?: TastePaperId;
+  desk?: TasteDeskId;
   sound?: TasteSoundId;
 }
 
-/** The five question ids, in the order they are asked. */
-export const TASTE_AXES = ['room', 'pitch', 'palette', 'paper', 'sound'] as const;
+/** The six question ids, in the order they are asked. */
+export const TASTE_AXES = ['room', 'pitch', 'palette', 'paper', 'desk', 'sound'] as const;
 export type TasteAxis = (typeof TASTE_AXES)[number];
 
 /**
@@ -169,7 +180,7 @@ export type TasteAxis = (typeof TASTE_AXES)[number];
  * question by pressing a dot would find "dress my library" greyed out with no
  * visibly unanswered question to fix it.
  */
-export const TASTE_REQUIRED_AXES = ['room', 'pitch', 'paper', 'sound'] as const;
+export const TASTE_REQUIRED_AXES = ['room', 'pitch', 'paper', 'desk', 'sound'] as const;
 
 /* ========================================================================== *
  *  What each answer means to each vocabulary
@@ -364,9 +375,10 @@ export interface TasteQuestion<Id extends string = string> {
    *  - `palettes`— the whole vocabulary as small drawn swatches, capped with an
    *                "N more" control. The one shape whose option list is longer
    *                than a screenful, and the only one the panel caps.
+   *  - `desks`   — a flat field with a tiny open book on it.
    *  - `sounds`  — a list with a mark, for the one axis with nothing to draw.
    */
-  shape: 'rooms' | 'palettes' | 'sounds';
+  shape: 'rooms' | 'palettes' | 'desks' | 'sounds';
   options: readonly TasteOption<Id>[];
 }
 
@@ -461,12 +473,30 @@ const SOUND_QUESTION: TasteQuestion<TasteSoundId> = {
   })),
 };
 
-/** The five questions, in the order they are asked. */
+const DESK_QUESTION: TasteQuestion<TasteDeskId> = {
+  axis: 'desk',
+  title: 'What should sit behind the open book?',
+  body: 'Choose the flat colour around the pages. It changes the writing desk, never the paper or your layout.',
+  shape: 'desks',
+  options: [
+    ...WRITING_DESK_SHORTLIST,
+    ...WRITING_DESKS.filter(
+      (desk) => !WRITING_DESK_SHORTLIST.some((featured) => featured.id === desk.id),
+    ),
+  ].map((desk) => ({
+    id: desk.id,
+    label: desk.label,
+    line: desk.line,
+  })),
+};
+
+/** The six questions, in the order they are asked. */
 export const TASTE_QUESTIONS: readonly TasteQuestion[] = [
   ROOM_QUESTION as TasteQuestion,
   PITCH_QUESTION as TasteQuestion,
   PALETTE_QUESTION as TasteQuestion,
   PAPER_QUESTION as TasteQuestion,
+  DESK_QUESTION as TasteQuestion,
   SOUND_QUESTION as TasteQuestion,
 ];
 
@@ -547,6 +577,7 @@ export interface TasteOutcome {
   /** The interface: `data-theme` and `data-ink` on <html>. */
   uiTheme: ThemeName;
   ink: string;
+  writingDesk: WritingDeskId;
 }
 
 /** Count how many of `wanted` appear in `has`, weighted per hit. */
@@ -1059,6 +1090,7 @@ export function resolveTaste(answers: TasteAnswers): TasteOutcome {
     soundGroup: sound.group,
     uiTheme: ui.uiTheme,
     ink: ui.ink,
+    writingDesk: answers.desk ?? DEFAULT_WRITING_DESK_ID,
   };
 }
 
@@ -1073,6 +1105,7 @@ export function describeTaste(outcome: TasteOutcome): string {
     : room.from.name;
   return (
     `${name}, bound in ${outcome.binding.label.toLowerCase()}, ` +
+    `on a ${writingDesk(outcome.writingDesk).label} writing desk, ` +
     `sounding like ${SOUND_SET_GROUPS[outcome.soundGroup].name.toLowerCase()}`
   );
 }
@@ -1103,5 +1136,6 @@ export function tasteOutcomeKey(outcome: TasteOutcome): string {
     outcome.soundSet,
     outcome.uiTheme,
     outcome.ink,
+    outcome.writingDesk,
   ].join('|');
 }

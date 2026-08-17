@@ -4,6 +4,9 @@ import {
   MIN_SPREAD_SCALE,
   fitSpreadToRoom,
   retainInitialPageCapacity,
+  stepDeskZoom,
+  MIN_DESK_ZOOM,
+  MAX_DESK_ZOOM,
 } from '../src/views/spread';
 
 describe('canonical book geometry', () => {
@@ -29,5 +32,13 @@ describe('canonical book geometry', () => {
     expect(retainInitialPageCapacity(0, 777.8)).toBe(777);
     expect(retainInitialPageCapacity(777, 540)).toBe(777);
     expect(retainInitialPageCapacity(777, 920)).toBe(777);
+  });
+
+  it('zooms the writing-desk camera without changing layout geometry', () => {
+    expect(stepDeskZoom(1, -120, 1)).toBeGreaterThan(1);
+    expect(stepDeskZoom(1, 120, 1)).toBeLessThan(1);
+    expect(stepDeskZoom(1, -100_000, 3)).toBe(MAX_DESK_ZOOM);
+    expect(stepDeskZoom(1, 100_000, 3)).toBe(MIN_DESK_ZOOM);
+    expect(stepDeskZoom(0.9, 0, 1)).toBe(0.9);
   });
 });

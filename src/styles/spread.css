@@ -20,6 +20,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  background: var(--nb-writing-desk, #efe8d9);
   /* left padding clears the fixed rail (56px) + breathing room */
   padding: var(--space-8) var(--space-20) var(--space-12) 88px;
 }
@@ -699,11 +700,9 @@
    2. "it should ALWAYS be on top left, maybe do a check." The `left` anchor
       is inherited from editor.css; tests/top-left-exits.test.ts is the check.
 
-   Paint only — opacity, colour, the plate. Nothing here animates a layout
-   property or a filter, which is why the receded label keeps its box and only
-   loses its ink: collapsing the words would relayout a fixed element on every
-   pointer trip through the corner, and the pagination pass measures leaf
-   geometry on those same frames. The button's `transform` belongs to rail.css
+   Paint only — opacity, colour, the plate. The arrow has no hover label and
+   never changes size; its accessible name remains on the button. The button's
+   `transform` belongs to rail.css
    (it steps aside for an open sheet) — this rule must only ever ADD to that
    transition list, never own it.
    -------------------------------------------------------------------------- */
@@ -749,7 +748,6 @@
  * chrome rather than a mark:
  *
  *   the paper plate    goes  (background, border and lift all off)
- *   the words          go    (`.nb-back-label` below)
  *   the arrow          STAYS, redrawn in the quieter ink at a lighter stroke
  *
  * which lands at 6.1:1 on the wall against the summoned tab's 9.5:1 — plainly
@@ -790,25 +788,19 @@
   color: var(--ink-sepia-soft);
 }
 
+/* Deep desks need the inverse pencil. The arrow is the only bare chrome drawn
+   directly on the field; its summoned paper plate keeps the ordinary dark ink.
+   This is keyed by the authored desk tone, not guessed from the room theme. */
+:root[data-writing-desk-tone='dark'] .nb-book-view .nb-back-button.is-away .nb-back-arrow {
+  color: var(--paper-aged);
+}
+
 .nb-book-view .nb-back-button.is-away .nb-back-arrow path {
   stroke-width: 1.9;
 }
 
-.nb-back-label {
-  transition: opacity var(--dur-xs) var(--ease-out);
-}
-
-.nb-book-view .nb-back-button.is-away .nb-back-label {
-  opacity: 0;
-}
-
-/* Hover and keyboard focus both mean intent, and both outrank the recede.
-   They have to say so part by part now that the recede is a change of dress:
-   the plate and the words come back on their own selectors, and so does the
-   mark's full-strength ink. Same specificity as the `is-away` rules above,
-   and later in the file, which is how they win — and they have to, because
-   `is-away` is still on the button while the pointer is over it whenever an
-   open sheet has carried the button out of the corner BookView watches. */
+/* Hover and keyboard focus restore the flat plate, without resizing the arrow
+   or growing explanatory copy beside it. */
 .nb-book-view .nb-back-button:hover,
 .nb-book-view .nb-back-button:focus-visible {
   opacity: 1;
@@ -816,19 +808,9 @@
   border-color: var(--ink-line);
 }
 
-.nb-book-view .nb-back-button:hover .nb-back-label,
-.nb-book-view .nb-back-button:focus-visible .nb-back-label {
-  opacity: 1;
-}
-
 .nb-book-view .nb-back-button:hover .nb-back-arrow,
 .nb-book-view .nb-back-button:focus-visible .nb-back-arrow {
   color: var(--ink-sepia);
-}
-
-.nb-book-view .nb-back-button:hover .nb-back-arrow path,
-.nb-book-view .nb-back-button:focus-visible .nb-back-arrow path {
-  stroke-width: 2.2;
 }
 
 /* Focus mode dims the whole room behind the book. A zero-blur spread of

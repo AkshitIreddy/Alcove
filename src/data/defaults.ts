@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bodyFontSize: 18,
   pageStyleDefault: 'ruled',
   inkColor: 'sepia',
+  writingDeskColor: 'linen',
   animationLevel: 'full',
   minimalistMode: false,
   showMarginDoodles: true,

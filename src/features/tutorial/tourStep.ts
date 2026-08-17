@@ -13,7 +13,7 @@
  *
  * THE REPORTED BUG, and the whole reason this file exists: the panel polled the
  * attribute to OPEN itself and never to close. Reach the taste step, answer one
- * question, press next — and the tour walked on to the shelf while all five
+ * question, press next — and the tour walked on to the shelf while all six
  * questions stayed up, its card over the tour's own next and skip, its scrim
  * eating the shelf drag the following steps ask for. A watcher that can only
  * ever open is half a watcher; `stepWatchVerdict` below is the whole one.

@@ -42,6 +42,7 @@ import {
   subscribeCodeLook,
   type CodeLook,
 } from './codeAppearancePrefs';
+import { writingDeskColor, writingDeskTone } from './writingDesk';
 import {
   muteAll as engineMuteAll,
   setHourlyChime as engineSetHourlyChime,
@@ -279,6 +280,8 @@ export function applySettingsTo(
   root.setAttribute('data-theme', themeBase(s.theme));
   root.setAttribute('data-ink', s.inkColor);
   root.setAttribute('data-appearance', s.theme);
+  root.setAttribute('data-writing-desk-tone', writingDeskTone(s.writingDeskColor));
+  root.style.setProperty('--nb-writing-desk', writingDeskColor(s.writingDeskColor));
 
   // The appearance vocabulary's own tokens, on top of the room. Written for
   // EVERY key on every apply, including the empty ones: setting a custom

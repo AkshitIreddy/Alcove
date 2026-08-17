@@ -61,7 +61,7 @@ export const DISMISSIBLE: readonly Dismissible[] = [
   // tour STEP puts up rather than the reader.
   //
   // The reported bug: answer one question, press next, and the tour walks on to
-  // shelf-dock with all five questions still standing. Its card covered the
+  // shelf-dock with all six questions still standing. Its card covered the
   // tour's own next and skip, so there was no way forward, and `.nbq-scrim`
   // takes pointer events — so the drag the following steps ask for never
   // reached the shelf at all and the first-book nudge could never fire either.

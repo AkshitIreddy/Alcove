@@ -178,18 +178,18 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     // dressed it" marker, which `applyTaste` writes last; "I'll pick later"
     // leaves it outstanding and the reader walks on with next, exactly as they
     // can on any other step.
-    // FIVE, AND THE PANEL COUNTS THEM OUT LOUD. The questionnaire's own header
-    // reads "question 1 of 5" off `TASTE_QUESTIONS.length`, so a number typed
+    // SIX, AND THE PANEL COUNTS THEM OUT LOUD. The questionnaire's own header
+    // reads its count off `TASTE_QUESTIONS.length`, so a number typed
     // here is a number that goes stale the moment an axis is added — and it
     // did: this said "four" in three places while the panel said five.
     // `tests/tutorial.test.ts` now pins every count in this step against
     // `TASTE_AXES.length`.
     id: 'taste',
-    title: 'Five questions first',
-    body: 'Before the walk proper: five questions, and the answers dress the whole library at once — the colours of the room, how the bookcase is built, the paper on the wall behind it, the binding on your first book, and the sounds the app makes. Every option is the real drawing you would get rather than a word for it. None of it is settled afterwards — the studio repaints the room, the book studio rebinds any book, and Settings holds the sound. Say "I\'ll pick later" and the library stays as it came.',
+    title: 'Six questions first',
+    body: 'Before the walk proper: six questions, and the answers dress the whole library at once — the room colours, bookcase, wall, first binding, writing desk and sounds. Every option is the real drawing you would get rather than a word for it. None of it is settled afterwards: Settings includes the writing desk. Say "I\'ll pick later" and the library stays as it came.',
     hint: 'press a card in each · or "I\'ll pick later"',
     task: {
-      ask: 'Answer the five questions, then press "dress my library".',
+      ask: 'Answer the six questions, then press "dress my library".',
       fact: 'taste-chosen',
       done: 'Dressed. The rest of the tour is your own room.',
     },

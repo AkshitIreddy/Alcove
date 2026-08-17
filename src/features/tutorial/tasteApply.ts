@@ -4,9 +4,9 @@
  *
  * ## It makes the same calls the panels make, and nothing else
  *
- * Six things get dressed — the room's colours, its carpentry, its paper, the
- * welcome book's binding, the sound set, and the interface's own colour scheme
- * and ink — and every one of them goes through the module that already owns
+ * Seven things get dressed — the room's colours, its carpentry, its paper, the
+ * welcome book's binding, the sound set, the writing desk, and the interface's
+ * own colour scheme and ink — and every one goes through the module that owns
  * that choice:
  *
  *   colours .......... `saveLibraryPrefs`  (features/bookshelf/libraryPrefs)
@@ -164,7 +164,11 @@ export async function applyTasteWith(
     // The interface: `data-theme` and `data-ink` on <html>, which is what the
     // rail icons, the settings sheet and every panel take their colour from.
     attempt('interface', () =>
-      sink.saveSettings({ theme: outcome.uiTheme, inkColor: outcome.ink }),
+      sink.saveSettings({
+        theme: outcome.uiTheme,
+        inkColor: outcome.ink,
+        writingDeskColor: outcome.writingDesk,
+      }),
     ),
     attempt('sound', () => sink.saveSoundSet(outcome.soundSet)),
   ]);

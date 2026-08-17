@@ -14,6 +14,7 @@ import { getDb } from './db';
 import { CURSOR_SET_IDS } from '../art/cursors';
 import { SOUNDSCAPE_NAMES } from '../sound/engine';
 import { APP_THEME_IDS } from '../features/settings/appearance';
+import { WRITING_DESK_IDS } from '../features/settings/writingDesk';
 import { DEFAULT_KEYBINDINGS, DEFAULT_SETTINGS } from './defaults';
 import {
   FIXED_BINDING_REASONS,
@@ -128,6 +129,11 @@ function mergeStored(raw: unknown): MutableSettings {
     bodyFontSize: takeNumber(s.bodyFontSize, d.bodyFontSize),
     pageStyleDefault: takeEnum(s.pageStyleDefault, PAGE_STYLES, d.pageStyleDefault),
     inkColor: takeString(s.inkColor, d.inkColor),
+    writingDeskColor: takeEnum(
+      s.writingDeskColor,
+      WRITING_DESK_IDS,
+      d.writingDeskColor,
+    ),
     animationLevel: takeEnum(s.animationLevel, ANIMATION_LEVELS, d.animationLevel),
     minimalistMode: takeBoolean(s.minimalistMode, d.minimalistMode),
     showMarginDoodles: takeBoolean(s.showMarginDoodles, d.showMarginDoodles),

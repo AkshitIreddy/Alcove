@@ -227,12 +227,6 @@
   transform: translate3d(var(--nb-back-clear), 0, 0);
 }
 
-/* The arrow's own hover nudge, rewritten so it composes with the clearance
-   instead of replacing it. */
-.nb-book-view .nb-back-button:hover {
-  transform: translate3d(calc(var(--nb-back-clear) - 2px), 0, 0);
-}
-
 /*
  * The settings seal is a fixed bottom-left FAB, which is exactly where a side
  * panel lands. It used to DROP OFF the bottom edge while any panel was out —

@@ -1,5 +1,5 @@
 /**
- * src/features/tutorial/tasteQuestionnaire.tsx — five questions, asked once,
+ * src/features/tutorial/tasteQuestionnaire.tsx — six questions, asked once,
  * that dress the reader's whole library.
  *
  * ## The rule this panel is built on: no adjectives about the reader
@@ -52,7 +52,7 @@
  *
  * Riding it means BOTH directions. The watcher used to open the panel and never
  * close it, so a reader who answered one question and pressed next walked on
- * with all five questions still standing: the card covered the tour's own next
+ * with all six questions still standing: the card covered the tour's own next
  * and skip, and `.nbq-scrim` swallowed the shelf gesture the new step was
  * asking for. `./tourStep.ts` holds the open/close verdict and the reasoning;
  * `./dismiss.ts` does the same job from the tour's side, on the frame the step
@@ -97,6 +97,11 @@ import { cancelSoundSetPreview, previewSoundSet } from '../../sound/preview';
 import { snapshotSoundSetId } from '../../sound/soundSetPrefs';
 import { SOUND_SET_GROUPS, type SoundSetGroupId } from '../../sound/soundSets';
 import { motionScale } from '../../styles/motion';
+import {
+  WRITING_DESK_SHORTLIST,
+  writingDesk,
+  writingDeskColor,
+} from '../settings/writingDesk';
 import { usePanelKeys } from '../../state/panelKeys';
 import { DesignCanvas, drawInScheme } from '../../views/rail/designArt';
 import { drawBindingCard, drawRoomCard } from '../../views/rail/designOptions';
@@ -413,7 +418,7 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
    *
    * BOTH DIRECTIONS, and the second one is the reported bug. The watcher used
    * to open the panel and never close it, so answering one question and
-   * pressing next left all five standing over the next step — card over the
+   * pressing next left all six standing over the next step — card over the
    * tour's own next and skip, scrim over the shelf control the new step was
    * asking for. `./tourStep.ts` holds the verdict and says why it takes five
    * inputs to get right; everything here is the DOM around it.
@@ -711,6 +716,69 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
     />
   );
 
+  const deskCard = (option: TasteOption): JSX.Element => (
+    <span
+      class="nbq-desk-art"
+      style={{
+        '--nbq-desk': writingDeskColor(
+          option.id as NonNullable<TasteAnswers['desk']>,
+        ),
+      }}
+      aria-hidden="true"
+    >
+      <span class="nbq-desk-book">
+        <i />
+        <i />
+      </span>
+    </span>
+  );
+
+  /** One real choice card, shared by the ordinary list and the capped desks. */
+  const optionCard = (option: TasteOption): JSX.Element => {
+    const picked = (): boolean => chosen(question().axis) === option.id;
+    return (
+      <button
+        type="button"
+        class="nbq-option"
+        classList={{ 'is-picked': picked() }}
+        role="radio"
+        aria-checked={picked()}
+        onClick={() => pick(question().axis, option)}
+      >
+        <Show
+          when={question().shape === 'rooms'}
+          fallback={
+            <Show
+              when={question().shape === 'desks'}
+              fallback={
+                <span class="nbq-mark" aria-hidden="true">
+                  <svg viewBox="0 0 32 32">
+                    {soundMark(option.id as SoundSetGroupId)}
+                  </svg>
+                </span>
+              }
+            >
+              {deskCard(option)}
+            </Show>
+          }
+        >
+          {roomCard(question().axis, option)}
+        </Show>
+        <span class="nbq-option-text">
+          <span class="nbq-option-name">{option.label}</span>
+          <span class="nbq-option-line font-ui">{option.line}</span>
+        </span>
+        <Show when={picked()}>
+          <span class="nbq-picked" aria-hidden="true">
+            <svg viewBox="0 0 20 20">
+              <path d="M 4.4 10.4 L 8.2 14.6 L 15.6 5.2" />
+            </svg>
+          </span>
+        </Show>
+      </button>
+    );
+  };
+
   const finalRoom = () => outcome().room;
 
   /** The welcome book, rebound the way the answers would rebind it. */
@@ -834,6 +902,10 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                       <dd>{SOUND_SET_GROUPS[outcome().soundGroup].name}</dd>
                     </div>
                     <div>
+                      <dt>writing desk</dt>
+                      <dd>{writingDesk(outcome().writingDesk).label}</dd>
+                    </div>
+                    <div>
                       <dt>interface</dt>
                       <dd>
                         {outcome().uiTheme} · {outcome().ink.replace('-', ' ')} ink
@@ -844,7 +916,7 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                   <p class="nbq-note font-ui">
                     None of this is settled. The studio in the left rail repaints
                     the room, rebuilds the case and rehangs the wall; the book
-                    studio rebinds any book; settings holds the sound and the ink.
+                    studio rebinds any book; settings holds the desk, sound and ink.
                   </p>
                 </div>
               }
@@ -948,45 +1020,21 @@ export default function TasteQuestionnaire(props: TasteQuestionnaireProps): JSX.
                   role="radiogroup"
                   aria-label={question().title}
                 >
-                  <For each={question().options}>
-                    {(option) => {
-                      const picked = (): boolean => chosen(question().axis) === option.id;
-                      return (
-                        <button
-                          type="button"
-                          class="nbq-option"
-                          classList={{ 'is-picked': picked() }}
-                          role="radio"
-                          aria-checked={picked()}
-                          onClick={() => pick(question().axis, option)}
-                        >
-                          <Show
-                            when={question().shape === 'rooms'}
-                            fallback={
-                              <span class="nbq-mark" aria-hidden="true">
-                                <svg viewBox="0 0 32 32">
-                                  {soundMark(option.id as SoundSetGroupId)}
-                                </svg>
-                              </span>
-                            }
-                          >
-                            {roomCard(question().axis, option)}
-                          </Show>
-                          <span class="nbq-option-text">
-                            <span class="nbq-option-name">{option.label}</span>
-                            <span class="nbq-option-line font-ui">{option.line}</span>
-                          </span>
-                          <Show when={picked()}>
-                            <span class="nbq-picked" aria-hidden="true">
-                              <svg viewBox="0 0 20 20">
-                                <path d="M 4.4 10.4 L 8.2 14.6 L 15.6 5.2" />
-                              </svg>
-                            </span>
-                          </Show>
-                        </button>
-                      );
-                    }}
-                  </For>
+                  <Show
+                    when={question().shape === 'desks'}
+                    fallback={<For each={question().options}>{optionCard}</For>}
+                  >
+                    <Capped
+                      each={question().options}
+                      limit={WRITING_DESK_SHORTLIST.length}
+                      isActive={(option) => chosen(question().axis) === option.id}
+                      label="writing desks"
+                      moreClass="nbq-desk-more"
+                      resetKey={question().axis}
+                    >
+                      {(option) => optionCard(option())}
+                    </Capped>
+                  </Show>
                 </div>
                 </Show>
               </div>

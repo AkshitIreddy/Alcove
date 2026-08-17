@@ -2145,7 +2145,11 @@ const tl = timeline((t) => {
     );
     await writeQaStill(page, 'ai-agent-pages-settling');
   }, { name: 'Agent begins inserting after approval', seconds: 0.55 });
-  t.hold(1.15);
+  // The real application still owns this state until native page verification
+  // finishes, but an extra documentary hold made the book look frozen after
+  // the approval click. Keep enough time to read the status, then let the
+  // actual insertion callback determine the remainder of the wait.
+  t.hold(0.45);
   t.call(async function waitForReviewedPagesToLand(page, ctx) {
     await settleScene(
       ctx,

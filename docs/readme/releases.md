@@ -21,6 +21,31 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.4 — reliable image-led Agent pages
+
+**An attached picture now stays authoritative from the request through the
+reviewed preview.** The Agent accepts files dropped onto either composer,
+grounds a vague “add to my book” request in the staged picture, corrects common
+image-script mistakes, and refuses to present a blank, receipt-only or
+missing-media page. A compact image request defaults to one useful page instead
+of turning a dense infographic into a chapter.
+
+**The Agent now spends model calls on judgment rather than bookkeeping.** Safe,
+deterministic inspection, source reading, validation, rendering and preview
+presentation remain audited tools but run locally. Cohere authors the page and
+reviews its native pixels; malformed routing receives bounded recovery with
+structured diagnostics. Final insertion still requires the reader's explicit
+approval.
+
+**Writing-desk zoom is deliberate.** A wheel gesture changes the book scale
+only immediately after a click on the empty desk. Hover, panel scrolling,
+typing, pointer travel, focus changes and expired clicks cannot resize the book
+in the background, and the stored page geometry remains unchanged.
+
+Release messages are now written for each completed version rather than
+generated from commit subjects. The workflow validates that authored note
+before building installers.
+
 ## 0.7.3 — update checks that answer back
 
 **A brief startup failure no longer makes an update disappear for the whole

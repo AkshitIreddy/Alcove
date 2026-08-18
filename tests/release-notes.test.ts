@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   changelogForTag,
   requiredChangelogForTag,
@@ -109,11 +109,16 @@ describe('authored release-note order', () => {
     expect(output).toMatch(/verified authored release note/i);
   });
 
-  it('keeps the current unreleased note substantive and ready to version', () => {
-    const body = readFileSync('release-notes/unreleased.md', 'utf8');
+  it('keeps the current authored note substantive before and after versioning', () => {
+    const version = JSON.parse(readFileSync('package.json', 'utf8')).version as string;
+    const draftPath = 'release-notes/unreleased.md';
+    const notePath = existsSync(draftPath)
+      ? draftPath
+      : `release-notes/v${version}.md`;
+    const body = readFileSync(notePath, 'utf8');
     const output = execFileSync(
       process.execPath,
-      ['scripts/release-notes.mjs', 'v0.7.4', '--check'],
+      ['scripts/release-notes.mjs', `v${version}`, '--check'],
       {
         cwd: process.cwd(),
         encoding: 'utf8',

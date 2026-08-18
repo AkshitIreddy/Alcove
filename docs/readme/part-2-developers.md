@@ -399,7 +399,7 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->386<!--/f--> source files
+<!--f:srcDocstrings-->348<!--/f--> of <!--f:srcFiles-->388<!--/f--> source files
 open with a module docstring — <!--f:docstringLines-->7350<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
@@ -1149,9 +1149,11 @@ the generic V2 reference advertises `REQUIRED` for newer Command models, the
 live Command A+ trial and production endpoints rejected that control with
 Alcove's production catalogue. Mandatory notebook/source progress therefore
 remains a local graph invariant: prose-only output is hidden and repaired or
-rejected before any tool can execute. The provider request retains
-`strict_tools: true` over a sanitized required/nullable schema, and every call
-still passes Alcove's complete local Zod parse. A complete direct prose answer
+rejected before any tool can execute. Compact authoring requests retain
+`strict_tools: true` over a sanitized required/nullable schema. Source/RAG
+catalogues and multimodal image turns omit that optional wire hint because the
+live endpoint rejected those combinations; every call still passes Alcove's
+complete local Zod parse. A complete direct prose answer
 for ordinary source-free conversation is wrapped locally into
 `finish_conversation`; if the optional-tool envelope is rejected or malformed,
 Alcove counts it and makes one bounded tool-free prose request before pausing.
@@ -1193,11 +1195,15 @@ schema applies defaults, discriminated-union rules and `.strict()` unknown-key
 rejection. Schema derivation is a wire compatibility step, never a replacement
 for local validation.
 
-The catalog is state-derived as well as schema-derived.
-`availableAgentToolNames` exposes only capabilities that can advance the
-current reader turn and phase: conversation and notebook mutation never expose
-each other's terminal action; source tools appear only for explicitly grounded
-work; an inspected target leads to drafting; a stored draft leads to
+The catalog is state-derived as well as schema-derived. Each reader turn starts
+with a durable `undecided` objective. At that boundary Command A+ sees safe
+conversation and notebook entry points plus `set_task_mode`; a local language
+classifier supplies only an advisory hint. The first successful mode-specific
+action settles the objective. If the model chooses against the hint, Alcove
+returns an `intent_conflict` tool result and the model can confirm or override
+the hint with a reason. Once settled, `availableAgentToolNames` exposes only
+capabilities that can advance the current phase: source tools appear only for
+grounded work; an inspected target leads to drafting; a stored draft leads to
 validation; a valid draft leads to rendering; exposed pixels lead to visual
 review; and a passed review leads to immutable proposal. Draft submission
 reopens only for a changed source context, failed validation, a blocking visual
@@ -1209,6 +1215,20 @@ catalogue to Cohere, and `AgentToolCatalog.execute` recomputes the same set
 immediately before execution. A stale queued call or invented unavailable name
 therefore receives a phase error and the useful next action; hiding a tool in
 the prompt is never the enforcement boundary.
+
+Every failed local call returns `errorCode`, `failedTool`, `stateChanged`, the
+current `availableTools`, bounded `suggestedTools` and `nextAction`. Those fields
+are appended under the original tool-call id, so the next model turn can repair
+arguments, call a prerequisite or correct task mode. Provider transport,
+authentication, protocol and budget failures remain deterministic kernel work:
+the model cannot analyse an HTTP request rejected before it receives a turn.
+
+Relevant-source intake does not advertise `inspect_source_coverage` before a
+selection or read, because an empty relevant set is not evidence that the
+attachment was covered. Direct planning marks all selected units required and
+notebook drafting remains unavailable until a real read completes. A malformed
+source-routing stream with no HTTP 4xx receives one counted corrective provider
+turn; the second failure pauses at the durable checkpoint.
 
 The model also does not manufacture capabilities embedded in arguments. Source
 reads receive a task id plus manifest digest from trusted state, notebook reads

@@ -119,6 +119,55 @@ export async function cancelAiGatewayRun(runId: string): Promise<boolean> {
 
 const browserDevRuns = new Map<string, AbortController>();
 
+const COHERE_PROVIDER_EVENT_TYPES = new Set<
+  Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType']
+>([
+  'message-start', 'content-start', 'content-delta', 'content-end',
+  'tool-plan-delta', 'tool-call-start', 'tool-call-delta', 'tool-call-end',
+  'citation-start', 'citation-end', 'message-end', 'debug',
+]);
+const COHERE_AUXILIARY_EVENT_TYPES = new Set(['ping', 'heartbeat', 'keepalive']);
+
+function safeProviderEventLabel(value: string): string {
+  return /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : 'unlabelled';
+}
+
+/**
+ * Known semantic frames remain exact and fail closed on header/payload drift.
+ * A bounded unknown frame is ignored only when its own payload identifies the
+ * same extension type (or when it is a conventional heartbeat), so it cannot
+ * masquerade as content, a tool call, usage, or message completion.
+ */
+function cohereProviderEventType(
+  eventName: string,
+  data: Record<string, unknown>,
+): Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'] | null {
+  const payloadType = typeof data.type === 'string' ? data.type : undefined;
+  if (eventName !== '' && payloadType !== undefined && payloadType !== eventName) {
+    throw new Error('Cohere stream event type did not match its payload');
+  }
+  const effectiveType = eventName || payloadType || '';
+  if (COHERE_PROVIDER_EVENT_TYPES.has(
+    effectiveType as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'],
+  )) {
+    if (payloadType !== effectiveType) {
+      throw new Error('Cohere stream event type did not match its payload');
+    }
+    return effectiveType as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'];
+  }
+  if (
+    COHERE_AUXILIARY_EVENT_TYPES.has(effectiveType) &&
+    (payloadType === undefined || payloadType === effectiveType)
+  ) return null;
+  if (
+    effectiveType !== '' && payloadType === effectiveType &&
+    /^[A-Za-z0-9_-]{1,64}$/.test(effectiveType)
+  ) return null;
+  throw new Error(
+    `Cohere sent an unsupported stream event (${safeProviderEventLabel(effectiveType)})`,
+  );
+}
+
 function browserDevKey(): string {
   const key = browserDevAiCredential();
   if (key === null) throw new Error('Connect a Cohere key for this localhost session');
@@ -263,7 +312,7 @@ async function streamBrowserDevChat(
         if (rawLine.startsWith('event:')) eventName = rawLine.slice(6).trim();
         else if (rawLine.startsWith('data:')) data.push(rawLine.slice(5).trimStart());
       }
-      if (data.length === 0 || eventName === '') return;
+      if (data.length === 0) return;
       if (eventName === 'error') {
         onEvent({
           type: 'error',
@@ -272,21 +321,19 @@ async function streamBrowserDevChat(
         });
         return;
       }
-      const allowed = new Set<Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType']>([
-        'message-start', 'content-start', 'content-delta', 'content-end',
-        'tool-plan-delta', 'tool-call-start', 'tool-call-delta', 'tool-call-end',
-        'citation-start', 'citation-end', 'message-end', 'debug',
-      ]);
-      if (!allowed.has(eventName as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'])) {
-        throw new Error('Cohere sent an unknown stream event');
-      }
-      const parsed = JSON.parse(data.join('\n')) as Record<string, unknown>;
-      if (parsed.type !== eventName) throw new Error('Cohere stream event type did not match its payload');
+      const payload = data.join('\n').trim();
+      // Cohere may append the conventional SSE terminator after its real
+      // message-end event. It carries no model content or authority. Ignore
+      // only the exact sentinel; completion below still requires message-end.
+      if (payload === '[DONE]') return;
+      const parsed = JSON.parse(payload) as Record<string, unknown>;
+      const eventType = cohereProviderEventType(eventName, parsed);
+      if (eventType === null) return;
       onEvent({
         type: 'providerEvent',
         runId: request.runId,
         sequence: sequence += 1,
-        eventType: eventName as Extract<AiGatewayStreamEvent, { type: 'providerEvent' }>['eventType'],
+        eventType,
         data: parsed,
       });
     };

@@ -758,6 +758,48 @@ describe('Alcove autonomous notebook agent runtime', () => {
     });
   });
 
+  it('keeps a bounded redacted transport detail when the provider is unavailable', async () => {
+    const provider: AgentProvider = {
+      id: 'provider-network-detail',
+      capabilities: async () => ({
+        providerId: 'provider-network-detail',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn() {
+        throw new AgentProviderError({
+          code: 'unavailable',
+          message: 'browser fetch aborted for Bearer trial-secret-value',
+          retryable: true,
+        });
+      },
+    };
+    const runtime = new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      new InMemoryAgentPersistence(),
+    );
+    const failed = await runtime.start({
+      taskId: 'task-provider-network-detail',
+      threadId: 'thread-provider-network-detail',
+      runId: 'run-provider-network-detail',
+      bookId: 'book-1',
+      goal: 'Explain cookies.',
+      budget: { maxProviderRetries: 0 },
+    });
+
+    expect(failed.state.lastError).toMatchObject({
+      code: 'provider_unavailable',
+      diagnosticDetail: 'browser fetch aborted for Bearer [redacted]',
+      retryable: true,
+    });
+  });
+
   it('repairs one empty provider turn before pausing an ordinary conversation', async () => {
     let calls = 0;
     const provider: AgentProvider = {

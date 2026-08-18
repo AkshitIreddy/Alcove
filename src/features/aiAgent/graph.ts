@@ -776,6 +776,9 @@ function publicErrorFromProvider(error: unknown): AgentPublicError {
       return {
         code: 'provider_unavailable',
         message: 'The AI provider is temporarily unavailable. Alcove kept the last safe checkpoint.',
+        diagnosticDetail: error.message
+          .replace(/\bBearer\s+[^\s"']+/giu, 'Bearer [redacted]')
+          .slice(0, 1_200),
         retryable: true,
         status: error.status,
       };

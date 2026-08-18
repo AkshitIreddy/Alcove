@@ -73,7 +73,7 @@ Vite. Almost everything interesting happens in the frontend. The Rust side is
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7780<!--/f--> lines.
+<!--f:rustLines-->7879<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -1642,7 +1642,11 @@ The TypeScript adapter treats the SSE stream as a protocol, not arbitrary JSON:
 it rejects nested or duplicate tool starts, deltas without an active call,
 invalid argument JSON, unfinished calls, duplicate `message-end`, data after
 end, a finish reason inconsistent with emitted calls, and native completion
-before a valid message end. Rust independently constrains message/tool/schema/
+before a valid message end. A known event may recover its name from the matching
+validated payload when Cohere omits the optional SSE `event:` header. Exact
+`[DONE]` sentinels, heartbeats and safe self-identifying extension frames carry
+no authority and are ignored; they can never substitute for `message-end`.
+Rust independently constrains message/tool/schema/
 image/request sizes and JSON depth/node count, accepts only the fixed Cohere
 origin, verifies the SSE content type, caps individual and total event bytes,
 and maps bounded public errors. Chat has one retry owner: the graph counts and

@@ -63,6 +63,45 @@ describe('AI gateway localhost development transport', () => {
     ]);
   });
 
+  it('ignores self-identifying provider extensions and accepts a missing SSE event header', async () => {
+    const body = [
+      'event: ping',
+      'data: {}',
+      '',
+      'event: transport-metadata',
+      'data: {"type":"transport-metadata","region":"test"}',
+      '',
+      'data: {"type":"message-start","id":"message-extension"}',
+      '',
+      'event: message-end',
+      'data: {"type":"message-end","delta":{"finish_reason":"COMPLETE","usage":{"tokens":{}}}}',
+      '',
+      'data: [DONE]',
+      '',
+      '',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })));
+    const credentials = await import('../src/data/aiCredentials');
+    await credentials.saveAiCredential('trial_key_that_is_long_enough', 'session');
+    const gateway = await import('../src/data/aiGateway');
+    const events: AiGatewayStreamEvent[] = [];
+    await gateway.streamAiGatewayChat({
+      runId: 'browser-chat-extension',
+      model: 'command-a-plus-05-2026',
+      messages: [{ role: 'user', content: 'Hello' }],
+      tools: [],
+    }, (event) => events.push(event));
+
+    expect(events).toMatchObject([
+      { type: 'providerEvent', eventType: 'message-start' },
+      { type: 'providerEvent', eventType: 'message-end' },
+      { type: 'completed' },
+    ]);
+  });
+
   it('keeps localhost image attachments content-addressed and byte-private', async () => {
     const gateway = await import('../src/data/aiGateway');
     const png = new Uint8Array([

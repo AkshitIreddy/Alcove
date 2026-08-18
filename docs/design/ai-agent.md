@@ -464,7 +464,10 @@ to the original bytes.
 
 The adapter rejects malformed stream ordering, incomplete/duplicate calls,
 invalid argument JSON, mismatched finish reasons and completion without a valid
-message end. Rust independently fixes the outbound origin to Cohere, validates
+message end. Known frames may derive a missing SSE header from the matching
+validated payload; exact `[DONE]`, heartbeat and self-identifying extension
+frames are non-authoritative and ignored, while a real `message-end` remains
+mandatory. Rust independently fixes the outbound origin to Cohere, validates
 the request vocabulary and JSON/tool/image/stream bounds, verifies SSE content
 type and returns typed public errors. The graph is the single chat-retry owner:
 one counted provider call is one Cohere `/v2/chat` HTTP attempt, including on

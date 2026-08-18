@@ -2103,6 +2103,74 @@ impl AiProviderEventType {
     }
 }
 
+fn safe_provider_event_label(value: &str) -> &str {
+    if !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        value
+    } else {
+        "unlabelled"
+    }
+}
+
+fn is_provider_stream_terminator(data: &str) -> bool {
+    data.trim() == "[DONE]"
+}
+
+fn resolve_provider_event_type(
+    event_name: &str,
+    value: &JsonValue,
+) -> Result<Option<AiProviderEventType>, AiError> {
+    let payload_type = value.get("type").and_then(JsonValue::as_str);
+    if !event_name.is_empty() && payload_type.is_some_and(|kind| kind != event_name) {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere stream event type did not match its payload",
+            false,
+        ));
+    }
+    let effective_type = if event_name.is_empty() {
+        payload_type.unwrap_or_default()
+    } else {
+        event_name
+    };
+    if let Some(event_type) = AiProviderEventType::parse(effective_type) {
+        if payload_type != Some(event_type.as_str()) {
+            return Err(AiError::new(
+                AiErrorCode::ProviderProtocol,
+                "Cohere stream event type did not match its payload",
+                false,
+            ));
+        }
+        return Ok(Some(event_type));
+    }
+
+    // Cohere may add transport metadata or keepalive events independently of
+    // the semantic Chat event union. Ignore a bounded extension only when the
+    // payload identifies the same safe type, or when it is a conventional
+    // heartbeat with no payload type. Unknown data can never become content,
+    // a tool call, usage, or message completion through this path.
+    let conventional_heartbeat = matches!(effective_type, "ping" | "heartbeat" | "keepalive")
+        && payload_type.is_none_or(|kind| kind == effective_type);
+    let self_identifying_extension = !effective_type.is_empty()
+        && payload_type == Some(effective_type)
+        && safe_provider_event_label(effective_type) == effective_type;
+    if conventional_heartbeat || self_identifying_extension {
+        return Ok(None);
+    }
+    Err(AiError::new(
+        AiErrorCode::ProviderProtocol,
+        format!(
+            "Cohere sent an unsupported stream event ({})",
+            safe_provider_event_label(effective_type)
+        ),
+        false,
+    ))
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AiStreamEvent {
@@ -2568,13 +2636,13 @@ async fn consume_chat_stream(
                     true,
                 ));
             }
-            let event_type = AiProviderEventType::parse(&event_name).ok_or_else(|| {
-                AiError::new(
-                    AiErrorCode::ProviderProtocol,
-                    "Cohere sent an unknown stream event",
-                    false,
-                )
-            })?;
+            // Cohere may append the conventional SSE terminator after its
+            // semantic message-end event. It carries no model content or
+            // authority. Ignore only the exact token; saw_message_end remains
+            // mandatory below, so the sentinel cannot complete a turn.
+            if is_provider_stream_terminator(&data) {
+                continue;
+            }
             let value: JsonValue = serde_json::from_str(&data).map_err(|_| {
                 AiError::new(
                     AiErrorCode::ProviderProtocol,
@@ -2582,13 +2650,9 @@ async fn consume_chat_stream(
                     false,
                 )
             })?;
-            if value.get("type").and_then(JsonValue::as_str) != Some(event_type.as_str()) {
-                return Err(AiError::new(
-                    AiErrorCode::ProviderProtocol,
-                    "Cohere stream event type did not match its payload",
-                    false,
-                ));
-            }
+            let Some(event_type) = resolve_provider_event_type(&event_name, &value)? else {
+                continue;
+            };
             sequence = sequence.saturating_add(1);
             emit(
                 channel,
@@ -4499,6 +4563,41 @@ mod tests {
             .push(b"event: content-delta\ndata: unfinished")
             .expect("buffering is valid");
         assert!(incomplete.finish().is_err());
+    }
+
+    #[test]
+    fn provider_stream_extensions_are_bounded_and_non_authoritative() {
+        assert!(is_provider_stream_terminator(" [DONE]\r\n"));
+        assert!(!is_provider_stream_terminator("[DONE] trailing"));
+        assert_eq!(
+            resolve_provider_event_type("", &json!({"type": "message-start", "id": "message-1"}),)
+                .expect("payload type may recover a missing SSE event header"),
+            Some(AiProviderEventType::MessageStart),
+        );
+        assert_eq!(
+            resolve_provider_event_type("ping", &json!({}))
+                .expect("a conventional heartbeat is harmless"),
+            None,
+        );
+        assert_eq!(
+            resolve_provider_event_type(
+                "transport-metadata",
+                &json!({"type": "transport-metadata", "region": "test"}),
+            )
+            .expect("a self-identifying extension is non-authoritative"),
+            None,
+        );
+        assert!(resolve_provider_event_type(
+            "transport-metadata",
+            &json!({"type": "tool-call-start"}),
+        )
+        .is_err());
+        let unsupported = resolve_provider_event_type("vendor event\nsecret", &json!({}))
+            .expect_err("an ambiguous extension must fail closed");
+        assert_eq!(
+            unsupported.message,
+            "Cohere sent an unsupported stream event (unlabelled)",
+        );
     }
 
     #[test]

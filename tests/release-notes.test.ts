@@ -40,13 +40,13 @@ describe('release-note changelog embedding', () => {
 });
 
 const authoredRelease = [
-  '## A deliberately explained improvement',
+  '## A steadier Agent',
   '',
-  'This release changes the Agent boundary so a reader understands what became more reliable, why the old behavior failed, and which local safeguards still remain in control. It is written as release prose rather than copied from a commit subject.',
+  'Picture requests now recover from more provider reply variations instead of stopping before a draft appears. Alcove still checks that the exact attachment reaches the final preview.',
   '',
-  '## Recovery and compatibility',
+  '## Smoother editing',
   '',
-  'Tool failures now carry structured recovery information, while transport, revision and final approval failures remain deterministic local responsibilities. The distinction matters because the model cannot analyse an HTTP rejection that occurs before it receives a turn.',
+  'Block handles remain beside their blocks while panels open or the book changes size, avoiding the brief jump across the page.',
 ].join('\n');
 
 describe('authored release-note order', () => {
@@ -62,8 +62,8 @@ describe('authored release-note order', () => {
     );
 
     const title = output.indexOf('# Alcove v0.6.1');
-    const explanation = output.indexOf('## A deliberately explained improvement');
-    const recovery = output.indexOf('## Recovery and compatibility');
+    const explanation = output.indexOf('## A steadier Agent');
+    const recovery = output.indexOf('## Smoother editing');
     const install = output.indexOf('## Which file do I want?');
 
     expect(title).toBeGreaterThanOrEqual(0);
@@ -78,9 +78,11 @@ describe('authored release-note order', () => {
     expect(output).toContain('%APPDATA%\\com.alcove.app');
   });
 
-  it('rejects generic, tiny or placeholder-filled notes before a release build', () => {
+  it('rejects tiny, overly long or placeholder-filled notes before a release build', () => {
     for (const body of [
       '## Tiny\n\nNot enough.\n\n## Still tiny\n\nNo.',
+      `## Release essay\n\n${'Reader-facing detail repeated far past a useful summary. '.repeat(40)}`,
+      '## One\n\nA visible improvement readers can understand.\n\n## Two\n\nA second improvement.\n\n## Three\n\nA third improvement.\n\n## Four\n\nToo many release-note sections for a quick summary.',
       `${authoredRelease}\n\nTODO: describe this later.`,
     ]) {
       expect(() => execFileSync(
@@ -96,7 +98,7 @@ describe('authored release-note order', () => {
     }
   });
 
-  it('validates a substantive authored note without reading commit subjects', () => {
+  it('validates a brief substantive authored note without reading commit subjects', () => {
     const output = execFileSync(
       process.execPath,
       ['scripts/release-notes.mjs', 'v0.6.1', '--check'],
@@ -107,6 +109,24 @@ describe('authored release-note order', () => {
       },
     );
     expect(output).toMatch(/verified authored release note/i);
+  });
+
+  it('allows one useful section when the release does not need more', () => {
+    const oneSection = [
+      '## A focused fix',
+      '',
+      'Picture requests can continue when the provider uses another valid streamed reply shape. The exact attachment remains visible in the reviewed preview, so readers get the requested page without a long list of internal implementation details.',
+    ].join('\n');
+    const output = execFileSync(
+      process.execPath,
+      ['scripts/release-notes.mjs', 'v0.6.1', '--check'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: oneSection },
+      },
+    );
+    expect(output).toMatch(/1 sections/);
   });
 
   it('keeps the current authored note substantive before and after versioning', () => {
@@ -125,8 +145,8 @@ describe('authored release-note order', () => {
         env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: body },
       },
     );
-    expect(body).toContain('## An agent that can reconsider its own route');
-    expect(body).toContain('## Release notes written for the release');
+    expect(body).toContain('## More reliable picture requests');
+    expect(body).toContain('## Smoother notebook editing');
     expect(output).toMatch(/verified authored release note/i);
   });
 

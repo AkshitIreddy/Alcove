@@ -2,7 +2,7 @@
  * Assemble one GitHub Release body from a deliberately authored version note.
  *
  * Reader-facing changes are not inferred from commit subjects. Before tagging,
- * write `release-notes/vX.Y.Z.md` in plain, descriptive prose about the work
+ * write `release-notes/vX.Y.Z.md` as a brief reader-facing summary of the work
  * that actually shipped. This script validates that note, then adds only the
  * stable Alcove heading, history links and download guidance.
  *
@@ -45,11 +45,14 @@ if (authored === undefined) {
 authored = authored.replace(/^\uFEFF/, '').trim();
 const sectionHeadings = authored.match(/^##\s+\S.+$/gm) ?? [];
 const placeholder = /\b(?:TODO|TBD|PLACEHOLDER|WRITE RELEASE NOTES|FILL THIS IN)\b/i;
-if (authored.length < 320) {
+if (authored.length < 180) {
   throw new Error(`authored release note for ${tag} is too short to explain the release (${authored.length} characters)`);
 }
-if (sectionHeadings.length < 2) {
-  throw new Error(`authored release note for ${tag} needs at least two descriptive ## sections`);
+if (authored.length > 1200) {
+  throw new Error(`authored release note for ${tag} is too long for a reader-facing summary (${authored.length} characters; maximum 1200)`);
+}
+if (sectionHeadings.length < 1 || sectionHeadings.length > 3) {
+  throw new Error(`authored release note for ${tag} needs one to three descriptive ## sections`);
 }
 if (/^#\s+/m.test(authored)) {
   throw new Error('authored release content starts at ##; the assembler owns the single Alcove release title');

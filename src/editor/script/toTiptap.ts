@@ -214,6 +214,24 @@ function extraAttrs(
   return out;
 }
 
+/**
+ * Browsers decode an image/video request URL before fetching it. A stray `%`
+ * or malformed UTF-8 escape can otherwise reach Vite/Tauri as a malformed URI
+ * and replace the preview with an error page. Empty source is the editor's
+ * existing missing-media state; native validation then blocks the draft with
+ * a useful diagnostic instead of making a network request or repair loop.
+ */
+function safeRawMediaSrc(value: string): string {
+  const source = value.trim();
+  if (source === '') return '';
+  try {
+    decodeURI(source);
+    return source;
+  } catch {
+    return '';
+  }
+}
+
 /** Script image attrs translated onto the editor's media-node vocabulary. */
 function imageNodeAttrs(block: ImageBlock): Record<string, unknown> {
   const assetRelPath =
@@ -228,7 +246,7 @@ function imageNodeAttrs(block: ImageBlock): Record<string, unknown> {
   const attrs: Record<string, unknown> = {
     // A local asset's display URL is environment state, never script state.
     // Hydration/import resolves this empty source against the active root.
-    src: assetRelPath === null ? block.src : '',
+    src: assetRelPath === null ? safeRawMediaSrc(block.src) : '',
     alt: block.alt,
     ...extraAttrs(block.attrs, ['asset', 'style', 'width']),
   };

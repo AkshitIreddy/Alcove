@@ -45,6 +45,11 @@ const VAGUE_NOTEBOOK_COMMAND_WITH_IMPLICIT_ATTACHMENT = new RegExp(
   'iu',
 );
 
+const DOMINANT_ATTACHED_IMAGE_REQUEST = new RegExp(
+  String.raw`\b(?:full[- ]page|whole[- ]page|entire[- ]page|fill\s+(?:the\s+)?(?:whole\s+)?page|take\s+up\s+(?:the\s+)?(?:whole\s+)?(?:page|space)(?:\s+(?:fully|entirely))?|as\s+large\s+as\s+(?:possible|it\s+can\s+be)|large\s+on\s+(?:its|the)\s+own\s+page)\b`,
+  'iu',
+);
+
 export function latestReaderText(state: AgentState): string {
   return [...state.conversation]
     .reverse()
@@ -54,6 +59,11 @@ export function latestReaderText(state: AgentState): string {
 export function readerUsesImplicitAttachmentDefault(state: AgentState): boolean {
   const text = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   return VAGUE_NOTEBOOK_COMMAND_WITH_IMPLICIT_ATTACHMENT.test(text);
+}
+
+export function readerRequestsDominantAttachedImage(state: AgentState): boolean {
+  const text = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
+  return DOMINANT_ATTACHED_IMAGE_REQUEST.test(text);
 }
 
 function currentReaderMessages(state: AgentState): readonly string[] {

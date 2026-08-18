@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createInitialAgentState,
+  applyDominantManagedImageLayout,
   applyVagueManagedImageDefault,
   ensureRequiredManagedImagesInNotebookScript,
   missingRequiredManagedImageAssetPaths,
@@ -10,7 +11,8 @@ import {
 } from '../src/features/aiAgent';
 
 const NOW = '2026-08-18T08:00:00.000Z';
-const PATH = 'ai/attachments/managed-reader-picture.png';
+const ATTACHMENT_ALIAS = `att_${'a'.repeat(64)}`;
+const PATH = `ai/attachments/${ATTACHMENT_ALIAS}.png`;
 
 function imageReadState(goal = 'add this to my book'): AgentState {
   const initial = createInitialAgentState({
@@ -142,6 +144,87 @@ describe('reader-supplied image preservation', () => {
     expect(repaired.script).not.toContain(`](${PATH})`);
     expect(repaired.script.match(new RegExp(PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')))
       .toHaveLength(1);
+  });
+
+  it('canonicalizes an observed raw attachment-id alias and removes duplicates', () => {
+    const state = imageReadState();
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      state,
+      [
+        '# Week 6',
+        '',
+        `![model alias](/${ATTACHMENT_ALIAS})`,
+        '',
+        `![already managed](){asset="${PATH}", width=48}`,
+      ].join('\n'),
+    );
+    expect(repaired.script).toContain(`asset="${PATH}"`);
+    expect(repaired.script).not.toContain(`](/${ATTACHMENT_ALIAS})`);
+    expect(repaired.script.match(new RegExp(PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')))
+      .toHaveLength(1);
+  });
+
+  it('recovers managed image attributes mistakenly written inside URL parentheses', () => {
+    const state = imageReadState(
+      'Let the attached picture take up the full page in my book.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      state,
+      `# Week 6\n\n![diagram](asset="${PATH}", width=1024, align=center, caption="Box packing")`,
+    );
+    expect(repaired.script).toContain(
+      `![diagram](){asset="${PATH}", width=72, align=center, style=polaroid, caption="diagram"}`,
+    );
+    expect(repaired.script).not.toContain('](asset=');
+  });
+
+  it('honours an explicit full-page request with a dominant uncropped portrait width', () => {
+    const state = imageReadState(
+      'Put the picture on its own page and let it take up the space fully.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      state,
+      `# Week 6\n\n![diagram](){asset="${PATH}", width=48, align=center}`,
+    );
+    expect(repaired.script).toContain(
+      `![diagram](){asset="${PATH}", width=72, align=center}`,
+    );
+    expect(repaired.script.match(new RegExp(PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')))
+      .toHaveLength(1);
+  });
+
+  it('normalizes a dominant image into one image page and one non-empty notes page', () => {
+    const state = imageReadState(
+      'Put the picture on its own full page and add only a little write-up on other pages.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      state,
+      [
+        '---',
+        'paper: grid',
+        '---',
+        '',
+        '# Week 6 — Box packing {sticker=box}',
+        '',
+        `![diagram](){asset="${PATH}", width=48, align=center}`,
+        '',
+        '::page',
+        '',
+        '## Short notes',
+        '',
+        '- Pick boxes without exceeding capacity.',
+        '',
+        '::page',
+      ].join('\n'),
+    );
+    const normalized = applyDominantManagedImageLayout(state, repaired.script);
+    expect(normalized.relaidOut).toBe(true);
+    expect(normalized.script).toContain(
+      `# Week 6 — Box packing\n\n![diagram](){asset="${PATH}", width=72, align=center}`,
+    );
+    expect(normalized.script.match(/^::page$/gmu)).toHaveLength(1);
+    expect(normalized.script).toContain('::page\n\n## Short notes');
+    expect(normalized.script.trimEnd()).toMatch(/exceeding capacity\.$/u);
   });
 
   it('compacts an over-expanded vague image request to one image-led page', () => {

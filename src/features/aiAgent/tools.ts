@@ -51,6 +51,7 @@ import {
 import { planAdaptiveRetrieval } from './retrieval';
 import { notebookPageOrderExtendsSnapshot } from './productionNotebook';
 import {
+  applyDominantManagedImageLayout,
   applyVagueManagedImageDefault,
   ensureRequiredManagedImagesInNotebookScript,
   missingRequiredManagedImageAssetPaths,
@@ -1647,9 +1648,13 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           state,
           normalizedSubmission.script,
         );
-        const vagueImageDefault = applyVagueManagedImageDefault(
+        const dominantImageLayout = applyDominantManagedImageLayout(
           state,
           sourceAssetRepair.script,
+        );
+        const vagueImageDefault = applyVagueManagedImageDefault(
+          state,
+          dominantImageLayout.script,
         );
         const submittedScript = vagueImageDefault.script;
         const isRepair = state.draft !== undefined;

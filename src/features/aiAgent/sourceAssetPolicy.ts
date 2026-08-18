@@ -1,7 +1,10 @@
 import { parseNotebookScriptPages } from '../../editor/script/pageBoundaries';
 import type { Block } from '../../script';
 import { explicitImageRequest } from './imageIntent';
-import { readerUsesImplicitAttachmentDefault } from './intent';
+import {
+  readerRequestsDominantAttachedImage,
+  readerUsesImplicitAttachmentDefault,
+} from './intent';
 import type { AgentState } from './types';
 
 export interface ObservedManagedImageAsset {
@@ -127,9 +130,20 @@ function safeInlineText(value: string): string {
     .slice(0, 120) || 'Attached image';
 }
 
-function widthFor(asset: ObservedManagedImageAsset): number {
+function managedAttachmentAlias(path: string): string | undefined {
+  const parts = path.split('/');
+  const leaf = parts[parts.length - 1] ?? '';
+  return /^(att_[0-9a-f]{64})(?:\.[a-z0-9]+)?$/iu.exec(leaf)?.[1]?.toLowerCase();
+}
+
+function widthFor(asset: ObservedManagedImageAsset, state?: AgentState): number {
   const width = asset.width ?? 0;
   const height = asset.height ?? 0;
+  if (state !== undefined && readerRequestsDominantAttachedImage(state)) {
+    if (width > 0 && height > width * 1.18) return 72;
+    if (height > 0 && width > height * 1.18) return 92;
+    return 82;
+  }
   if (width > 0 && height > width * 1.18) return 48;
   if (height > 0 && width > height * 1.18) return 82;
   return 64;
@@ -166,14 +180,76 @@ export function ensureRequiredManagedImagesInNotebookScript(
     observedManagedImageAssets(state).map((asset) => [asset.path, asset]),
   );
   const canonicalizedPaths: string[] = [];
-  const normalizedScript = script.replace(
+  let normalizedScript = script.replace(
     /!\[([^\]]*)\]\((ai\/attachments\/[^)\s]+)\)(?:\{[^{}]*\})?/giu,
     (whole, rawAlt: string, rawPath: string) => {
       const asset = assetsByPath.get(rawPath.trim());
       if (asset === undefined) return whole;
       canonicalizedPaths.push(asset.path);
       const alt = safeInlineText(rawAlt || asset.label);
-      return `![${alt}](){asset="${asset.path}", width=${widthFor(asset)}, align=center, style=polaroid, caption="${alt}"}`;
+      return `![${alt}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${alt}"}`;
+    },
+  );
+  // Command A+ sometimes returns the attachment resource id as a raw Markdown
+  // URL (`/att_<digest>`) even though the source receipt exposed the complete
+  // managed path. Resolve only an exact 64-hex attachment alias we already
+  // observed; arbitrary paths never gain managed-asset authority here.
+  normalizedScript = normalizedScript.replace(
+    /!\[([^\]]*)\]\(\/?(att_[0-9a-f]{64})(?:\.[a-z0-9]+)?\)(?:\{[^{}]*\})?/giu,
+    (whole, rawAlt: string, rawAlias: string) => {
+      const asset = [...assetsByPath.values()].find(
+        (candidate) => managedAttachmentAlias(candidate.path) === rawAlias.toLowerCase(),
+      );
+      if (asset === undefined) return whole;
+      canonicalizedPaths.push(asset.path);
+      const alt = safeInlineText(rawAlt || asset.label);
+      return `![${alt}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${alt}"}`;
+    },
+  );
+  // A second common envelope mistake puts the image attributes themselves in
+  // Markdown's URL parentheses: `](asset="ai/attachments/...", width=...)`.
+  // The browser interprets that whole string as a URL. Recover it only when it
+  // contains an exact managed path or digest alias already observed this turn.
+  normalizedScript = normalizedScript.replace(
+    /!\[([^\]]*)\]\(([^)\r\n]*)\)(?:\{[^{}]*\})?/giu,
+    (whole, rawAlt: string, rawDestination: string) => {
+      const asset = [...assetsByPath.values()].find((candidate) => {
+        const alias = managedAttachmentAlias(candidate.path);
+        return rawDestination.includes(candidate.path) ||
+          (alias !== undefined && rawDestination.toLowerCase().includes(alias));
+      });
+      if (asset === undefined) return whole;
+      canonicalizedPaths.push(asset.path);
+      const alt = safeInlineText(rawAlt || asset.label);
+      return `![${alt}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${alt}"}`;
+    },
+  );
+  if (readerRequestsDominantAttachedImage(state)) {
+    normalizedScript = normalizedScript.replace(
+      /!\[([^\]]*)\]\(\)\{([^{}]*\basset="([^"]+)"[^{}]*)\}/giu,
+      (whole, rawAlt: string, rawAttrs: string, rawPath: string) => {
+        const asset = assetsByPath.get(rawPath.trim());
+        if (asset === undefined) return whole;
+        const width = widthFor(asset, state);
+        const attrs = /\bwidth\s*=\s*(?:\d+(?:\.\d+)?|"[^"]*")/iu.test(rawAttrs)
+          ? rawAttrs.replace(
+              /\bwidth\s*=\s*(?:\d+(?:\.\d+)?|"[^"]*")/iu,
+              `width=${width}`,
+            )
+          : `${rawAttrs.trimEnd()}, width=${width}`;
+        return `![${rawAlt}](){${attrs}}`;
+      },
+    );
+  }
+  const seenManagedPaths = new Set<string>();
+  normalizedScript = normalizedScript.replace(
+    /!\[[^\]]*\]\(\)\{[^{}]*\basset="([^"]+)"[^{}]*\}\s*/giu,
+    (whole, rawPath: string) => {
+      const path = rawPath.trim();
+      if (!assetsByPath.has(path)) return whole;
+      if (seenManagedPaths.has(path)) return '';
+      seenManagedPaths.add(path);
+      return whole;
     },
   );
   const required = new Set(requiredManagedImageAssetPaths(state));
@@ -189,7 +265,7 @@ export function ensureRequiredManagedImagesInNotebookScript(
   }
   const blocks = missing.map((asset) => {
     const label = safeInlineText(asset.label);
-    return `![${label}](){asset="${asset.path}", width=${widthFor(asset)}, align=center, style=polaroid, caption="${label}"}`;
+    return `![${label}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${label}"}`;
   }).join('\n\n');
   const offset = insertionOffsetAfterOpening(normalizedScript);
   const before = normalizedScript.slice(0, offset).trimEnd();
@@ -211,6 +287,59 @@ function firstHeading(script: string): string | undefined {
       .replace(/\s+\{[^{}]*\}\s*$/u, '')
       .replace(/[*_~=`]/g, ''),
   );
+}
+
+/**
+ * A reader asking for one supplied picture to occupy its own page has already
+ * chosen the page hierarchy. Keep Cohere's title and write-up, but normalize
+ * the structural part locally: one dedicated image page, one natural-flow
+ * notes section, and no model-authored trailing `::page` that can become an
+ * empty leaf. This is idempotent and changes no source facts.
+ */
+export function applyDominantManagedImageLayout(
+  state: AgentState,
+  script: string,
+): { readonly script: string; readonly relaidOut: boolean } {
+  if (!readerRequestsDominantAttachedImage(state)) {
+    return { script, relaidOut: false };
+  }
+  const required = new Set(requiredManagedImageAssetPaths(state));
+  const assets = observedManagedImageAssets(state).filter((asset) => required.has(asset.path));
+  if (assets.length !== 1) return { script, relaidOut: false };
+  const asset = assets[0]!;
+  let imageBlock = '';
+  let remainder = script.replace(
+    /!\[[^\]]*\]\(\)\{[^{}]*\basset="([^"]+)"[^{}]*\}\s*/giu,
+    (whole, rawPath: string) => {
+      if (rawPath.trim() !== asset.path) return whole;
+      imageBlock ||= whole.trim();
+      return '';
+    },
+  );
+  if (imageBlock === '') return { script, relaidOut: false };
+
+  let frontmatter = '';
+  const frontmatterMatch = /^\s*(---\r?\n[\s\S]*?\r?\n---)(?:\r?\n)*/u.exec(remainder);
+  if (frontmatterMatch !== null) {
+    frontmatter = frontmatterMatch[1]!;
+    remainder = remainder.slice(frontmatterMatch[0].length);
+  }
+  const headingLine = /^#{1,3}\s+.+$/mu.exec(remainder)?.[0];
+  if (headingLine !== undefined) remainder = remainder.replace(headingLine, '');
+  remainder = remainder
+    .replace(/^\s*::page\s*$/gmu, '')
+    .replace(/^:::\s+[^\n]+\n\s*:::\s*$/gmu, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const title = firstHeading(script) ?? safeInlineText(asset.label);
+  const normalized = [
+    frontmatter,
+    `# ${title}`,
+    imageBlock,
+    ...(remainder === '' ? [] : ['::page', remainder]),
+  ].filter((part) => part !== '').join('\n\n');
+  return { script: normalized, relaidOut: normalized !== script };
 }
 
 /**
@@ -238,7 +367,7 @@ export function applyVagueManagedImageDefault(
       '',
       `# ${title}`,
       '',
-      `![${label}](){asset="${asset.path}", width=${widthFor(asset)}, align=center, style=polaroid, caption="${title}"}`,
+      `![${label}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${title}"}`,
     ].join('\n'),
     compacted: true,
   };

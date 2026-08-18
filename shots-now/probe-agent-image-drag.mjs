@@ -7,6 +7,7 @@
  *   node shots-now/probe-agent-image-drag.mjs
  *   node shots-now/probe-agent-image-drag.mjs --sabotage
  *   ALCOVE_QA_COHERE_KEY=<disposable key> node shots-now/probe-agent-image-drag.mjs --live --vague --real-image
+ *   ALCOVE_QA_COHERE_KEY=<disposable key> node shots-now/probe-agent-image-drag.mjs --live --expanded-week6 --real-image
  *
  * Live mode intercepts nothing. The key exists only in this process/headless
  * page and is never written to screenshots, reports, diagnostics or storage.
@@ -27,6 +28,7 @@ const assetPreservation = process.argv.includes('--asset-preservation');
 const emptyReviewRecovery = process.argv.includes('--empty-review-recovery');
 const vagueRequest = process.argv.includes('--vague');
 const realImage = process.argv.includes('--real-image');
+const expandedWeek6Request = process.argv.includes('--expanded-week6');
 if ([sabotage, protocolRecovery, renderRecovery, draftProseRecovery, assetPreservation, emptyReviewRecovery].filter(Boolean).length > 1) {
   throw new Error('Choose sabotage, protocol recovery, render recovery or draft prose recovery, not more than one.');
 }
@@ -35,7 +37,7 @@ const allSizes = process.argv.includes('--all-sizes');
 const out = resolve(
   'qa/agent-image-drag',
   live
-    ? 'live'
+    ? expandedWeek6Request ? 'live-expanded-week6' : 'live'
     : emptyReviewRecovery
       ? 'empty-review-recovery'
     : assetPreservation
@@ -50,6 +52,8 @@ const out = resolve(
         ? 'render-recovery'
         : draftProseRecovery
           ? 'draft-prose-recovery'
+        : expandedWeek6Request
+          ? 'expanded-week6'
         : vagueRequest || realImage
           ? 'vague-real-image'
           : 'normal',
@@ -234,10 +238,23 @@ function argumentsFor(name, body) {
           `# ${title} {sticker=box}`,
           '',
           `![${title} diagram](){asset="${source.assetPath}", width=${pageWidth}, align=center, style=polaroid, caption="${caption}"}`,
-          '',
-          '::: callout {variant=tip, color=sky}',
-          `**Quick note:** ${note}`,
-          ':::',
+          ...(expandedWeek6Request
+            ? [
+                '',
+                '::page',
+                '',
+                '# Box packing — short notes',
+                '',
+                '- Choose boxes without exceeding the available capacity.',
+                '- Compare combinations to find the best total value.',
+                '- The kitten diagram keeps the constraints and choices visible.',
+              ]
+            : [
+                '',
+                '::: callout {variant=tip, color=sky}',
+                `**Quick note:** ${note}`,
+                ':::',
+              ]),
           ...(repairingRender || repairingEmptyReview
             ? ['', 'The repaired layout keeps the image and note in one compact page section.']
             : []),
@@ -353,6 +370,7 @@ try {
       consoleErrors: [],
       pageErrors: [],
       failedRequests: [],
+      httpErrors: [],
       status: 'running',
       protocolInvalidInjected: false,
       draftProtocolInvalidInjected: false,
@@ -368,6 +386,13 @@ try {
       url: request.url(),
       errorText: request.failure()?.errorText ?? 'unknown',
     }));
+    page.on('response', (response) => {
+      if (response.status() < 400) return;
+      run.httpErrors.push({
+        status: response.status(),
+        url: response.url().slice(0, 1_000),
+      });
+    });
 
     if (!live) {
       await page.route('https://api.cohere.com/v1/check-api-key', (route) =>
@@ -577,7 +602,9 @@ try {
 
       run.before = await stableNotebookSnapshot(page, run.book.id);
       await page.locator('textarea[aria-label="What should the agent do?"]').fill(
-        vagueRequest
+        expandedWeek6Request
+          ? 'hi can you add this image for week 6, its box problem something, also make sure to add some write up about it in other pages, but not much write up is needed, also you can put the picture in one page and let it take up space fully, at the beginning of week 6'
+          : vagueRequest
           ? 'add to my book'
           : 'add this picture for week 6, for box packing problem, no need for too much writeup, just a little',
       );
@@ -606,6 +633,21 @@ try {
         await fullPreview.screenshot({
           path: resolve(runOut, 'full-preview.png'), animations: 'disabled', caret: 'hide',
         });
+        const nextPreviewPage = fullPreview.getByRole('button', { name: /^Next/ });
+        let capturedPage = 1;
+        while (capturedPage < 20 && await nextPreviewPage.isEnabled()) {
+          await nextPreviewPage.click();
+          capturedPage += 1;
+          await fullPreview.getByText(
+            new RegExp(`page ${capturedPage} of \\d+`, 'i'),
+          ).waitFor({ state: 'visible' });
+          await fullPreview.screenshot({
+            path: resolve(runOut, `full-preview-page-${capturedPage}.png`),
+            animations: 'disabled',
+            caret: 'hide',
+          });
+        }
+        run.fullPreview.capturedPages = capturedPage;
         await fullPreview.locator('.nb-ai-modal-close').click();
         await fullPreview.waitFor({ state: 'hidden' });
       }
@@ -676,7 +718,8 @@ try {
         noBookMutationBeforeApproval: run.before.revision === run.after.revision &&
           JSON.stringify(run.before.pageIds) === JSON.stringify(run.after.pageIds),
         cleanBrowser: run.pageErrors.length === 0 && run.failedRequests.every((failure) =>
-          live && failure.url === 'https://api.cohere.com/v2/chat'),
+          live && failure.url === 'https://api.cohere.com/v2/chat') &&
+          run.httpErrors.length === 0,
         noOverflow: !run.ui.horizontalOverflow,
         dropHintSettled: run.ui.dropHints === 0,
       };

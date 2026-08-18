@@ -190,6 +190,29 @@ describe('AI-authored image placeholders', () => {
     });
   });
 
+  it('turns malformed raw media URLs into missing media before requesting them', () => {
+    for (const source of [
+      'week-6-100%.png',
+      'https://example.test/%E0%A4',
+    ]) {
+      const converted = scriptDocToTiptap(
+        parse(`![unsafe source](${source})`),
+        { hasNode: () => true },
+      );
+      expect(converted.content?.[0]).toMatchObject({
+        type: 'image',
+        attrs: { src: '' },
+      });
+    }
+    expect(scriptDocToTiptap(
+      parse('![safe source](images/week%206.png)'),
+      { hasNode: () => true },
+    ).content?.[0]).toMatchObject({
+      type: 'image',
+      attrs: { src: 'images/week%206.png' },
+    });
+  });
+
   it('degrades to readable instructions when the media node is unavailable', () => {
     const json = scriptDocToTiptap(parse(PLACEHOLDER), {
       hasNode: (name) => name !== 'image',

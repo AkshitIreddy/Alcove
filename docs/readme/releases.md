@@ -21,6 +21,20 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.5 — steadier picture requests
+
+**Picture requests no longer stop on harmless Cohere stream variations.** The
+Agent accepts valid headerless events and stream terminators while keeping tool
+calls, completion and approval strictly validated.
+
+**Attached images remain exact and predictable.** Common malformed attachment
+syntax is corrected locally, duplicates are removed, full-page requests produce
+one image page plus concise notes without an empty trailing page, and malformed
+extra media cannot take down localhost.
+
+The six-dot block handle also stays beside the page during panel and book-size
+changes. Release messages are shorter from this version onward.
+
 ## 0.7.4 — reliable image-led Agent pages
 
 **An attached picture now stays authoritative from the request through the

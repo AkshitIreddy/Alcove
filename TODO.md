@@ -1,6 +1,18 @@
 # Alcove — running TODO
 
-## ✅ Post-0.7.3 Agent supervisor and authored release notes (completed 2026-08-18)
+## ✅ 0.7.4 — reliable image-led Agent pages (released 2026-08-18)
+
+The owner authorised a 0.7.4 patch release after the production Cohere path
+could lose an attached picture, accept a blank native preview or spend repeated
+provider calls on deterministic workflow gates. The same release makes writing-
+desk zoom require a fresh explicit click and introduces authored release notes.
+
+Commits `316487a` through `536840e` plus annotated tag `v0.7.4` were pushed
+normally. GitHub Actions run `32127488813` passed the shared gate, Windows,
+Linux and universal macOS builds, then publication. The live non-draft Release
+contains 13 assets; all 12 checksum entries match GitHub's uploaded SHA-256
+digests, and the stable `latest.json` endpoint serves signed updater packages
+for Windows, Linux and both macOS architectures.
 
 - [x] Let the model own semantic task mode and recover from structured tool
       errors without allowing it to bypass source, revision or Insert gates.
@@ -15,15 +27,18 @@
 - [x] Prevent an unread relevant attachment from reporting coverage complete,
       make its source read exclusive before drafting, and recover one malformed
       source-routing stream with a counted corrective turn.
-
-## ✅ Post-0.7.3 Agent image intake (completed 2026-08-18)
-
 - [x] Stop Cohere source-intake requests from using an incompatible strict
       tool envelope before the first source tool can run.
 - [x] Let readers drag image/source files onto the Agent composer, with a clear
       drop affordance and the same managed-attachment path as the picker.
 - [x] Reproduce both paths in the running app, inspect their screenshots and
       watch deliberate provider/drop failures make the regression gate fail.
+- [x] Keep attached media authoritative through repair and refuse blank,
+      receipt-only, missing-media or unreadable native previews.
+- [x] Require an immediate explicit empty-desk click before wheel zoom and
+      cancel that authority on panel, keyboard, focus or pointer activity.
+- [x] Pass the complete release gates, publish all platform bundles and verify
+      the signed updater feed plus every uploaded checksum.
 
 ## ✅ 0.7.3 — resilient update checks (released 2026-08-17)
 

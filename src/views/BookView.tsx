@@ -2398,6 +2398,7 @@ export default function BookView(): JSX.Element {
   const [focusLevel, setFocusLevel] = createSignal<FocusLevel>('off');
   const [focusZoom, setFocusZoom] = createSignal(ZOOM_REST);
   const [deskZoom, setDeskZoom] = createSignal(DESK_ZOOM_REST);
+  const [deskWheelArmed, setDeskWheelArmed] = createSignal(false);
   const [focusPan, setFocusPan] = createSignal({ x: 0, y: 0 });
   /** Which leaf survives at the `leaf` rung. */
   const [soloLeaf, setSoloLeaf] = createSignal<LeafSide>('left');
@@ -2799,23 +2800,70 @@ export default function BookView(): JSX.Element {
   // field around the book changes only the camera scale: the canonical
   // 1334×869 layout box and pagination capacity never move.
   // -------------------------------------------------------------------------
+  const DESK_WHEEL_BLOCKED_SELECTOR =
+    '.nb-spread-fit-frame, .nb-book-cover, .nb-rail, .nb-rail-panel, .nb-ai-agent, .nb-back-button, .nbs-layer, dialog, [role="dialog"], button, input, textarea, select, [contenteditable="true"]';
+  const isEmptyDeskTarget = (target: EventTarget | null): boolean =>
+    target instanceof Element &&
+    target.closest('.nb-book-view') !== null &&
+    target.closest(DESK_WHEEL_BLOCKED_SELECTOR) === null;
+  const DESK_WHEEL_CLICK_WINDOW_MS = 900;
+  const DESK_WHEEL_GESTURE_WINDOW_MS = 650;
+  const DESK_WHEEL_POINTER_SLOP_PX = 8;
+  let deskWheelExpiresAt = 0;
+  let deskWheelExpiryTimer: number | undefined;
+  let deskWheelGeneration = 0;
+  let deskWheelOrigin: { x: number; y: number } | undefined;
+
+  const disarmDeskWheel = (): void => {
+    deskWheelGeneration += 1;
+    deskWheelExpiresAt = 0;
+    deskWheelOrigin = undefined;
+    if (deskWheelExpiryTimer !== undefined) {
+      window.clearTimeout(deskWheelExpiryTimer);
+      deskWheelExpiryTimer = undefined;
+    }
+    setDeskWheelArmed(false);
+  };
+
+  const armDeskWheelUntil = (
+    duration: number,
+    origin = deskWheelOrigin,
+  ): void => {
+    deskWheelGeneration += 1;
+    const generation = deskWheelGeneration;
+    deskWheelExpiresAt = performance.now() + duration;
+    deskWheelOrigin = origin;
+    setDeskWheelArmed(true);
+    if (deskWheelExpiryTimer !== undefined) window.clearTimeout(deskWheelExpiryTimer);
+    deskWheelExpiryTimer = window.setTimeout(() => {
+      if (generation !== deskWheelGeneration) return;
+      disarmDeskWheel();
+    }, duration + 16);
+  };
+
+  const deskWheelTokenIsCurrent = (): boolean => {
+    if (!deskWheelArmed()) return false;
+    if (performance.now() <= deskWheelExpiresAt) return true;
+    disarmDeskWheel();
+    return false;
+  };
+
   const onWheel = (event: WheelEvent): void => {
     if (!focusMode()) {
-      if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (
-        target === null ||
-        target.closest('.nb-book-view') === null ||
-        target.closest(
-          '.nb-book-cover, .nb-rail, .nb-back-button, .nbs-layer, dialog, button, input, textarea, select, [contenteditable="true"]',
-        ) !== null
-      ) {
+      if (event.ctrlKey || event.metaKey || event.shiftKey) {
+        disarmDeskWheel();
+        return;
+      }
+      if (!deskWheelTokenIsCurrent()) return;
+      if (!isEmptyDeskTarget(event.target)) {
+        disarmDeskWheel();
         return;
       }
       event.preventDefault();
       setDeskZoom((current) =>
         stepDeskZoom(current, event.deltaY, settings.zoomSensitivity),
       );
+      armDeskWheelUntil(DESK_WHEEL_GESTURE_WINDOW_MS);
       return;
     }
     if (event.ctrlKey || event.metaKey) {
@@ -2839,10 +2887,73 @@ export default function BookView(): JSX.Element {
       ),
     );
   };
-  onMount(() =>
-    window.addEventListener('wheel', onWheel, { passive: false }),
-  );
-  onCleanup(() => window.removeEventListener('wheel', onWheel));
+  const onDeskPointerMove = (event: PointerEvent): void => {
+    if (!deskWheelArmed()) return;
+    const movedAway = deskWheelOrigin !== undefined &&
+      Math.hypot(
+        event.clientX - deskWheelOrigin.x,
+        event.clientY - deskWheelOrigin.y,
+      ) > DESK_WHEEL_POINTER_SLOP_PX;
+    if (movedAway || !isEmptyDeskTarget(event.target)) disarmDeskWheel();
+  };
+  const onDeskPointerDownCapture = (event: PointerEvent): void => {
+    if (deskWheelArmed() && (event.button !== 0 || !isEmptyDeskTarget(event.target))) {
+      disarmDeskWheel();
+    }
+  };
+  const onDeskFocusIn = (event: FocusEvent): void => {
+    if (deskWheelArmed() && !isEmptyDeskTarget(event.target)) disarmDeskWheel();
+  };
+
+  onMount(() => {
+    window.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('pointermove', onDeskPointerMove, true);
+    window.addEventListener('pointerdown', onDeskPointerDownCapture, true);
+    window.addEventListener('focusin', onDeskFocusIn, true);
+    window.addEventListener('keydown', disarmDeskWheel, true);
+    window.addEventListener('blur', disarmDeskWheel);
+    document.addEventListener('visibilitychange', disarmDeskWheel);
+  });
+  onCleanup(() => {
+    window.removeEventListener('wheel', onWheel);
+    window.removeEventListener('pointermove', onDeskPointerMove, true);
+    window.removeEventListener('pointerdown', onDeskPointerDownCapture, true);
+    window.removeEventListener('focusin', onDeskFocusIn, true);
+    window.removeEventListener('keydown', disarmDeskWheel, true);
+    window.removeEventListener('blur', disarmDeskWheel);
+    document.removeEventListener('visibilitychange', disarmDeskWheel);
+    disarmDeskWheel();
+  });
+
+  const onViewPointerDown = (event: PointerEvent): void => {
+    if (!focusMode()) {
+      // The token is granted by the completed click below, after the browser's
+      // focus transition. Granting it on pointerdown lets that same click's
+      // focusin immediately revoke it when focus falls back to <body>.
+      if (deskWheelArmed()) disarmDeskWheel();
+      return;
+    }
+    disarmDeskWheel();
+    onPanDown(event);
+  };
+
+  const onViewClick = (event: MouseEvent): void => {
+    if (
+      !focusMode() && event.button === 0 && activePanel() === null &&
+      isEmptyDeskTarget(event.target)
+    ) {
+      armDeskWheelUntil(DESK_WHEEL_CLICK_WINDOW_MS, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      return;
+    }
+    disarmDeskWheel();
+  };
+
+  createEffect(() => {
+    if (activePanel() !== null || focusMode()) disarmDeskWheel();
+  });
 
   /**
    * Drag the zoomed book around.
@@ -4780,6 +4891,7 @@ export default function BookView(): JSX.Element {
       data-solo-leaf={focusLevel() === 'leaf' ? soloLeaf() : undefined}
       data-cursor={settings.cursorStyle}
       data-desk-zoom={deskZoom()}
+      data-desk-wheel-armed={deskWheelArmed() ? 'true' : 'false'}
       style={{
         '--nb-focus-zoom': String(clampZoom(focusZoom())),
         '--nb-focus-pan-x': `${focusPan().x}px`,
@@ -4791,7 +4903,8 @@ export default function BookView(): JSX.Element {
         '--nb-spread-shift': `${spreadFit().shift}px`,
         '--nb-spread-fit': String(spreadFit().scale * deskZoom()),
       }}
-      onPointerDown={onPanDown}
+      onPointerDown={onViewPointerDown}
+      onClick={onViewClick}
     >
       {/* Ctrl+K quick switcher (single-instance; safe if also mounted in App). */}
       <QuickSwitcher />

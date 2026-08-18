@@ -39,7 +39,6 @@ await page.keyboard.press('Escape').catch(() => {});
 const bookId = await page.evaluate(async () => {
   const books = await import('/src/data/books.ts');
   const pages = await import('/src/data/pages.ts');
-  const app = await import('/src/state/app.ts');
   const id = `qa-writing-desk-${Date.now()}`;
   await books.createBook({
     id,
@@ -75,10 +74,16 @@ const bookId = await page.evaluate(async () => {
       ],
     },
   });
-  app.appState.openBook(id);
+  const world = globalThis.__shelfWorld;
+  if (world === undefined || typeof world.refreshData !== 'function') {
+    throw new Error('live shelf QA bridge was unavailable');
+  }
+  await world.refreshData();
+  globalThis.__shelfPullOut(id);
   return id;
 });
 
+await page.getByRole('button', { name: 'Open The Writing Desk' }).click();
 await page.waitForSelector('.nb-book-view .nb-book-cover');
 await page.waitForSelector('.nb-flip-leaf-left .nb-prose');
 await page.waitForTimeout(900);
@@ -120,6 +125,10 @@ async function snapshot() {
     }));
     return {
       zoom: Number(view.dataset.deskZoom ?? 1),
+      wheelArmed: view.dataset.deskWheelArmed === 'true',
+      focusMode: view.dataset.focusMode,
+      openPanels: Array.from(document.querySelectorAll('.nb-rail-panel[aria-hidden="false"]'))
+        .map((panel) => panel.getAttribute('aria-label')),
       desk: getComputedStyle(view).backgroundColor,
       frameLayout: { width: frame.offsetWidth, height: frame.offsetHeight },
       coverLayout: { width: cover.offsetWidth, height: cover.offsetHeight },
@@ -206,37 +215,114 @@ const deskPoint = await page.evaluate(() => {
   const v = view.getBoundingClientRect();
   const c = cover.getBoundingClientRect();
   const candidates = [
-    { x: v.right - 18, y: (v.top + v.bottom) / 2 },
     { x: (v.left + v.right) / 2, y: v.bottom - 18 },
     { x: v.left + 72, y: v.bottom - 18 },
+    { x: v.right - 18, y: (v.top + v.bottom) / 2 },
   ];
   return candidates.find(({ x, y }) => {
     const hit = document.elementFromPoint(x, y);
-    return hit instanceof Element && hit.closest('.nb-book-view') && !hit.closest('.nb-book-cover');
+    return hit instanceof Element &&
+      hit.closest('.nb-book-view') &&
+      !hit.closest('.nb-spread-fit-frame, .nb-book-cover, .nb-rail, .nb-rail-panel, .nb-back-button, dialog, [role="dialog"], button, input, textarea, select, [contenteditable="true"]');
   }) ?? null;
 });
 if (deskPoint === null) throw new Error('no empty writing-desk point was available');
 await page.mouse.move(deskPoint.x, deskPoint.y);
 await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const hoverWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+const clickedDesk = await snapshot();
+if (!clickedDesk.wheelArmed) {
+  throw new Error(`explicit desk click did not arm wheel zoom at ${JSON.stringify(deskPoint)}`);
+}
+await page.waitForTimeout(1_020);
+const unusedClickExpired = await snapshot();
+await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const unusedExpiredWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+await page.mouse.wheel(0, -180);
 await page.waitForFunction(() => Number(document.querySelector('.nb-book-view')?.dataset.deskZoom) > 1);
 const zoomed = await snapshot();
 await page.screenshot({ path: `${OUT}/08-desk-zoom.png`, caret: 'hide' });
 
+await page.waitForTimeout(760);
+const expiredDesk = await snapshot();
+await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const expiredWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+await page.keyboard.down('Shift');
+await page.keyboard.up('Shift');
+const keyboardCancelled = await snapshot();
+await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const keyboardWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+const blurCancelled = await snapshot();
+await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const blurWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+await page.evaluate(({ x, y }) => {
+  document.elementFromPoint(x, y)?.dispatchEvent(
+    new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY: -180,
+    }),
+  );
+}, deskPoint);
+const modifierWheel = await snapshot();
+
+await page.mouse.click(deskPoint.x, deskPoint.y);
+await page.mouse.move(deskPoint.x + 24, deskPoint.y);
+await page.waitForTimeout(80);
+const movedAfterClick = await snapshot();
+await page.mouse.wheel(0, -180);
+await page.waitForTimeout(180);
+const movedWheel = await snapshot();
+
 const coverBox = await page.locator('.nb-book-cover').boundingBox();
 if (coverBox === null) throw new Error('book cover was not measurable');
+await page.mouse.click(deskPoint.x, deskPoint.y);
 await page.mouse.move(coverBox.x + coverBox.width / 2, coverBox.y + coverBox.height / 2);
 await page.mouse.wheel(0, -180);
 await page.waitForTimeout(250);
 const paperWheel = await snapshot();
 
-await page.evaluate(() => {
-  document.querySelector('.nb-book-view')?.dispatchEvent(
-    new WheelEvent('wheel', { deltaY: 180, bubbles: true, cancelable: true }),
-  );
-});
-await page.waitForFunction(() =>
-  Math.abs(Number(document.querySelector('.nb-book-view')?.dataset.deskZoom) - 1) < 0.002
+await page.mouse.click(deskPoint.x, deskPoint.y);
+const agentButton = page.getByRole('button', { name: /^AI agent —/ });
+await agentButton.click();
+const agentPanel = page.locator('.nb-rail-panel.is-ai-agent[aria-hidden="false"]');
+await agentPanel.waitFor({ state: 'visible' });
+const panelOpened = await snapshot();
+const agentPanelBox = await agentPanel.boundingBox();
+if (agentPanelBox === null) throw new Error('AI agent panel was not measurable');
+await page.mouse.move(
+  agentPanelBox.x + agentPanelBox.width / 2,
+  agentPanelBox.y + agentPanelBox.height * 0.65,
 );
+await page.mouse.wheel(0, 320);
+await page.mouse.wheel(0, -320);
+await page.waitForTimeout(180);
+const panelWheel = await snapshot();
+await page.screenshot({ path: `${OUT}/09-agent-panel-wheel.png`, caret: 'hide' });
+await agentPanel.getByRole('button', { name: 'Close AI agent' }).click();
+await agentPanel.waitFor({ state: 'hidden' });
+
+await page.mouse.move(deskPoint.x, deskPoint.y);
+await page.mouse.wheel(0, 180);
+await page.waitForTimeout(180);
+const hoverAfterPanel = await snapshot();
 
 await page.waitForFunction(() => globalThis.__nbTaste !== undefined);
 await page.evaluate(() => globalThis.__nbTaste.open());
@@ -244,11 +330,11 @@ const deskQuestion = page.getByRole('tab', { name: 'What should sit behind the o
 await deskQuestion.click();
 await page.getByRole('heading', { name: 'What should sit behind the open book?' }).waitFor();
 const onboardingInitialCount = await page.locator('.nbq-desk-art').count();
-await page.screenshot({ path: `${OUT}/09-onboarding-eight-first.png`, caret: 'hide' });
+await page.screenshot({ path: `${OUT}/10-onboarding-eight-first.png`, caret: 'hide' });
 const onboardingMore = page.getByRole('button', { name: 'writing desks: show 17 more' });
 await onboardingMore.click();
 await page.waitForFunction(() => document.querySelectorAll('.nbq-desk-art').length === 25);
-await page.screenshot({ path: `${OUT}/10-onboarding-all-desks.png`, caret: 'hide' });
+await page.screenshot({ path: `${OUT}/11-onboarding-all-desks.png`, caret: 'hide' });
 await page.locator('.nbq-sheet').evaluate((sheet) => {
   sheet.scrollTop = sheet.scrollHeight;
 });
@@ -256,7 +342,7 @@ await page.waitForFunction(() => {
   const sheet = document.querySelector('.nbq-sheet');
   return sheet instanceof HTMLElement && sheet.scrollTop > 0;
 });
-await page.screenshot({ path: `${OUT}/11-onboarding-all-desks-lower.png`, caret: 'hide' });
+await page.screenshot({ path: `${OUT}/12-onboarding-all-desks-lower.png`, caret: 'hide' });
 
 const layoutKey = (value) => JSON.stringify({
   stored: value.stored,
@@ -290,12 +376,43 @@ const checks = {
   backArrowOnly: hovered.back.text === '' && hovered.back.pseudo === 'none',
   backAccessible: hovered.back.aria.startsWith('back to shelf'),
   backDoesNotGrow: sameBox(backBefore, backAfter),
-  deskWheelZoomsBook: zoomed.zoom > coral.zoom && zoomed.coverDrawn.width > coral.coverDrawn.width,
-  paperWheelDoesNotZoom: paperWheel.zoom === zoomed.zoom,
+  hoverAloneNeverArmsOrZooms:
+    hoverWheel.zoom === coral.zoom && !hoverWheel.wheelArmed,
+  explicitDeskClickArms:
+    clickedDesk.zoom === coral.zoom && clickedDesk.wheelArmed,
+  unusedClickAuthorizationExpires:
+    !unusedClickExpired.wheelArmed &&
+    unusedExpiredWheel.zoom === unusedClickExpired.zoom,
+  immediateDeskWheelZoomsBook:
+    zoomed.zoom > coral.zoom && zoomed.coverDrawn.width > coral.coverDrawn.width,
+  tokenExpiresAfterGesture:
+    !expiredDesk.wheelArmed && expiredWheel.zoom === expiredDesk.zoom,
+  keyboardActivityCancelsToken:
+    !keyboardCancelled.wheelArmed && keyboardWheel.zoom === keyboardCancelled.zoom,
+  windowBlurCancelsToken:
+    !blurCancelled.wheelArmed && blurWheel.zoom === blurCancelled.zoom,
+  modifierWheelCancelsWithoutZoom:
+    !modifierWheel.wheelArmed && modifierWheel.zoom === blurWheel.zoom,
+  pointerTravelCancelsToken:
+    !movedAfterClick.wheelArmed && movedWheel.zoom === movedAfterClick.zoom,
+  paperTravelAndWheelCancelToken:
+    !paperWheel.wheelArmed && paperWheel.zoom === movedWheel.zoom,
+  openingPanelCancelsToken:
+    !panelOpened.wheelArmed,
+  panelWheelNeverZoomsBook:
+    panelWheel.zoom === panelOpened.zoom && !panelWheel.wheelArmed,
+  panelActivityDoesNotLeaveLatentToken:
+    hoverAfterPanel.zoom === panelWheel.zoom && !hoverAfterPanel.wheelArmed,
   canonicalLayoutUnchanged:
     layoutKey(baseline) === layoutKey(coral) &&
     layoutKey(coral) === layoutKey(zoomed) &&
-    layoutKey(zoomed) === layoutKey(paperWheel),
+    layoutKey(zoomed) === layoutKey(expiredWheel) &&
+    layoutKey(expiredWheel) === layoutKey(keyboardWheel) &&
+    layoutKey(keyboardWheel) === layoutKey(blurWheel) &&
+    layoutKey(blurWheel) === layoutKey(modifierWheel) &&
+    layoutKey(modifierWheel) === layoutKey(movedWheel) &&
+    layoutKey(movedWheel) === layoutKey(paperWheel) &&
+    layoutKey(paperWheel) === layoutKey(panelWheel),
   onboardingShowsEightThenAll:
     onboardingInitialCount === 8 &&
     (await page.locator('.nbq-desk-art').count()) === 25 &&
@@ -312,8 +429,24 @@ const report = {
   midnight,
   coral,
   hovered,
+  hoverWheel,
+  clickedDesk,
+  unusedClickExpired,
+  unusedExpiredWheel,
   zoomed,
+  expiredDesk,
+  expiredWheel,
+  keyboardCancelled,
+  keyboardWheel,
+  blurCancelled,
+  blurWheel,
+  modifierWheel,
+  movedAfterClick,
+  movedWheel,
   paperWheel,
+  panelOpened,
+  panelWheel,
+  hoverAfterPanel,
   consoleErrors,
   pageErrors,
 };

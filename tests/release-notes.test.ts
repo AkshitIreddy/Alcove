@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import {
   changelogForTag,
   requiredChangelogForTag,
@@ -38,62 +39,100 @@ describe('release-note changelog embedding', () => {
   });
 });
 
-describe('generated release-note order', () => {
-  it("opens with What's new and What's fixed without redundant changelog wrappers", () => {
+const authoredRelease = [
+  '## A deliberately explained improvement',
+  '',
+  'This release changes the Agent boundary so a reader understands what became more reliable, why the old behavior failed, and which local safeguards still remain in control. It is written as release prose rather than copied from a commit subject.',
+  '',
+  '## Recovery and compatibility',
+  '',
+  'Tool failures now carry structured recovery information, while transport, revision and final approval failures remain deterministic local responsibilities. The distinction matters because the model cannot analyse an HTTP rejection that occurs before it receives a turn.',
+].join('\n');
+
+describe('authored release-note order', () => {
+  it('publishes the exact authored explanation before stable download guidance', () => {
     const output = execFileSync(
       process.execPath,
       ['scripts/release-notes.mjs', 'v0.6.1'],
-      { cwd: process.cwd(), encoding: 'utf8' },
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: authoredRelease },
+      },
     );
 
     const title = output.indexOf('# Alcove v0.6.1');
-    const whatsNew = output.indexOf("## What's new");
-    const whatsFixed = output.indexOf("## What's fixed");
+    const explanation = output.indexOf('## A deliberately explained improvement');
+    const recovery = output.indexOf('## Recovery and compatibility');
     const install = output.indexOf('## Which file do I want?');
 
     expect(title).toBeGreaterThanOrEqual(0);
-    expect(whatsNew).toBeGreaterThan(title);
-    expect(whatsFixed).toBeGreaterThan(whatsNew);
-    expect(install).toBeGreaterThan(whatsFixed);
-    expect(output).not.toContain('## What changed');
-    expect(output).not.toContain('## Detailed changelog');
+    expect(explanation).toBeGreaterThan(title);
+    expect(recovery).toBeGreaterThan(explanation);
+    expect(install).toBeGreaterThan(recovery);
+    expect(output).toContain(authoredRelease);
 
-    // The release signature and install guidance stay part of the generated
-    // body even though the changelog is now the first reader-facing content.
+    // Branding and install guidance remain stable around the custom message.
     expect(output).toContain('Every Alcove release');
     expect(output).toContain('`SHA256SUMS.txt`');
     expect(output).toContain('%APPDATA%\\com.alcove.app');
   });
 
-  it('adds the first explanatory commit paragraph beneath its summary', () => {
+  it('rejects generic, tiny or placeholder-filled notes before a release build', () => {
+    for (const body of [
+      '## Tiny\n\nNot enough.\n\n## Still tiny\n\nNo.',
+      `${authoredRelease}\n\nTODO: describe this later.`,
+    ]) {
+      expect(() => execFileSync(
+        process.execPath,
+        ['scripts/release-notes.mjs', 'v0.6.1', '--check'],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: body },
+        },
+      )).toThrow();
+    }
+  });
+
+  it('validates a substantive authored note without reading commit subjects', () => {
     const output = execFileSync(
       process.execPath,
-      ['scripts/release-notes.mjs', 'HEAD'],
+      ['scripts/release-notes.mjs', 'v0.6.1', '--check'],
       {
         cwd: process.cwd(),
         encoding: 'utf8',
-        env: {
-          ...process.env,
-          ALCOVE_RELEASE_LOG_TEST: [
-            '\u001efix(editor): keep a visual unit together',
-            '',
-            'Move the heading and its short setup with the diagram so the page reads as one composed idea.',
-            '',
-            '\u001efeat(studio): add a useful control',
-            '',
-            'The control is discoverable from the existing panel and persists its value.',
-          ].join('\n'),
-        },
+        env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: authoredRelease },
       },
     );
+    expect(output).toMatch(/verified authored release note/i);
+  });
 
-    expect(output).toContain('- **editor** — Keep a visual unit together');
-    expect(output).toContain(
-      'Move the heading and its short setup with the diagram so the page reads as one composed idea.',
+  it('keeps the current unreleased note substantive and ready to version', () => {
+    const body = readFileSync('release-notes/unreleased.md', 'utf8');
+    const output = execFileSync(
+      process.execPath,
+      ['scripts/release-notes.mjs', 'v0.7.4', '--check'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: body },
+      },
     );
-    expect(output).toContain('- **studio** — Add a useful control');
-    expect(output).toContain(
-      'The control is discoverable from the existing panel and persists its value.',
-    );
+    expect(body).toContain('## An agent that can reconsider its own route');
+    expect(body).toContain('## Release notes written for the release');
+    expect(output).toMatch(/verified authored release note/i);
+  });
+
+  it('blocks the platform build before packaging when the authored note is absent', () => {
+    const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+    const noteGate = workflow.indexOf('- name: Authored release note is ready');
+    const install = workflow.indexOf('- name: Install dependencies');
+    const publish = workflow.indexOf('- name: Write release notes');
+    expect(noteGate).toBeGreaterThanOrEqual(0);
+    expect(noteGate).toBeLessThan(install);
+    expect(workflow).toContain('node scripts/release-notes.mjs "$TAG" --check');
+    expect(publish).toBeGreaterThan(noteGate);
   });
 });

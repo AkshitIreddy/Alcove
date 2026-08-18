@@ -1,276 +1,122 @@
 /**
- * Turns the commits since the previous version tag into concise release notes.
+ * Assemble one GitHub Release body from a deliberately authored version note.
  *
- * Not a raw commit dump: subjects are cleaned up, grouped into reader-facing
- * sections, and grouped again by scope so "what actually happened" reads as a
- * short changelog rather than a commit wall.
+ * Reader-facing changes are not inferred from commit subjects. Before tagging,
+ * write `release-notes/vX.Y.Z.md` in plain, descriptive prose about the work
+ * that actually shipped. This script validates that note, then adds only the
+ * stable Alcove heading, history links and download guidance.
  *
- * Usage: node scripts/release-notes.mjs [tag]   (defaults to the current HEAD tag)
+ * Usage:
+ *   node scripts/release-notes.mjs v0.8.0
+ *   node scripts/release-notes.mjs v0.8.0 --check
  */
-import { execSync } from 'node:child_process';
-const sh = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-const trySh = (cmd) => {
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const REPO = 'https://github.com/AkshitIreddy/Alcove';
+const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/Alcove/main';
+const tag = process.argv[2] ?? '';
+const checkOnly = process.argv.includes('--check');
+const sourceOverride = process.argv.find((argument) => argument.startsWith('--source='))
+  ?.slice('--source='.length);
+
+if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+  throw new Error(`expected an explicit version tag such as v0.8.0, received ${tag || '(none)'}`);
+}
+
+const notesDirectory = resolve(
+  process.env.ALCOVE_RELEASE_NOTES_DIR ?? 'release-notes',
+);
+const notePath = sourceOverride === undefined
+  ? join(notesDirectory, `${tag}.md`)
+  : resolve(sourceOverride);
+let authored = process.env.ALCOVE_RELEASE_NOTES_TEST_BODY;
+if (authored === undefined) {
   try {
-    return sh(cmd);
+    authored = readFileSync(notePath, 'utf8');
+  } catch {
+    throw new Error(
+      `missing authored release note ${notePath}; write it from the completed work before tagging ${tag}`,
+    );
+  }
+}
+
+authored = authored.replace(/^\uFEFF/, '').trim();
+const sectionHeadings = authored.match(/^##\s+\S.+$/gm) ?? [];
+const placeholder = /\b(?:TODO|TBD|PLACEHOLDER|WRITE RELEASE NOTES|FILL THIS IN)\b/i;
+if (authored.length < 320) {
+  throw new Error(`authored release note for ${tag} is too short to explain the release (${authored.length} characters)`);
+}
+if (sectionHeadings.length < 2) {
+  throw new Error(`authored release note for ${tag} needs at least two descriptive ## sections`);
+}
+if (/^#\s+/m.test(authored)) {
+  throw new Error('authored release content starts at ##; the assembler owns the single Alcove release title');
+}
+if (placeholder.test(authored)) {
+  throw new Error(`authored release note for ${tag} still contains placeholder language`);
+}
+if (/##\s+Which file do I want\?/i.test(authored)) {
+  throw new Error('download guidance is appended centrally; keep the authored note about this release');
+}
+
+if (checkOnly) {
+  console.log(`verified authored release note ${notePath} (${authored.length} characters, ${sectionHeadings.length} sections)`);
+  process.exit(0);
+}
+
+function previousTag() {
+  try {
+    return execFileSync(
+      'git',
+      ['describe', '--tags', '--abbrev=0', `${tag}~1`],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    ).trim();
   } catch {
     return '';
   }
-};
+}
 
-const label = process.argv[2] ?? trySh('git describe --tags --exact-match HEAD') ?? '';
-/*
- * Resolve to something git can actually walk — an unknown tag falls back to HEAD.
- *
- * NO `^` ANYWHERE IN THESE COMMANDS. `execSync` runs them through the platform
- * shell, and on Windows that is cmd.exe, where `^` is the escape character:
- * `git rev-parse --verify v0.3.0^{commit}` arrives as `v0.3.0{commit}`, fails,
- * and the tag argument is silently discarded. Running this locally for any tag
- * therefore described HEAD instead, and did it without a word — the notes for
- * v0.2.0 came out listing the 0.3 work. The release workflow runs on Linux, so
- * CI was right the whole time and only a human checking a tag by hand was lied
- * to. `~0` and `~1` mean the same things and survive both shells.
- */
-const rev = label && trySh(`git rev-parse --verify ${label}~0`) ? label : 'HEAD';
-const tag = label || 'unreleased';
-
-/** The tag before this one, if any — otherwise summarise the whole history. */
-const previous = trySh(`git describe --tags --abbrev=0 ${rev}~1`);
-
-const range = previous ? `${previous}..${rev}` : rev;
-// Keep the subject for scanning and the first body paragraph for the useful
-// “what and why” detail. Record separators make multiline commit bodies
-// unambiguous. The test override exercises formatting without depending on
-// whatever commits happen to follow the current release tag.
-const log =
-  process.env.ALCOVE_RELEASE_LOG_TEST ??
-  trySh(`git log ${range} --no-merges --pretty=format:%x1e%B`);
-const messages = log
-  ? log
-      .split('\x1e')
-      .map((message) => message.trim())
-      .filter(Boolean)
-  : [];
-
-// Reader-facing sections. A release opens with these two answers, in this
-// order, without wrapping them in another "What changed" heading. Performance
-// and documentation improvements are additions; fixes remain fixes. Types not
-// listed here roll into the maintenance count.
-const SECTIONS = [
-  { keys: ['feat', 'perf', 'docs'], title: "What's new", empty: 'No new additions in this release.' },
-  { keys: ['fix'], title: "What's fixed", empty: 'No fixes in this release.' },
+const previous = previousTag();
+const head = [
+  '<div align="center">',
+  '',
+  `<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`,
+  '',
+  `# Alcove ${tag}`,
+  '',
+  '**Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers.**',
+  '',
+  '</div>',
+  '',
 ];
-const READER_FACING_TYPES = new Set(SECTIONS.flatMap((section) => section.keys));
-const HIDDEN = new Set(['chore', 'ci', 'build', 'test', 'style', 'refactor', 'wip']);
 
-/*
- * Scopes that are hidden even when their TYPE is reader-facing.
- *
- * `docs(todo)` is the repository's own work list. Its subjects are written for
- * whoever picks the list up next and they are meaningless — occasionally
- * alarming — to somebody who has arrived to download an app: "restore two
- * entries lost in a bulk edit", "f225 re-checked against the running app — 51
- * canvases, 0 blank", "tick what landed — eleven items". v0.3.0 published three
- * of those under **Docs**; v0.4.0 would have published six, which is more lines
- * than the Fixed section it sits under.
- *
- * They are counted, not deleted — they roll into the "Plus N maintenance
- * changes" line at the foot, so the total still adds up and nothing is hidden
- * from anyone reading the compare view one link below.
- */
-const HIDDEN_SCOPES = new Set(['todo']);
-// Page-flip handoff commits record diagnostic checkpoints, including subjects
-// such as "unresolved" that can be superseded later in the same release. Keep
-// the reader-facing flip fixes, but leave those internal docs checkpoints out
-// of the generated GitHub summary; the linked release history carries the
-// resolved narrative instead.
-const HIDDEN_TYPE_SCOPES = new Set(['docs:flip']);
-const HIDDEN_TEXT = [/^checkpoint the owner-tested /i];
-const isHidden = (c) =>
-  HIDDEN.has(c.type) ||
-  HIDDEN_SCOPES.has(c.scope) ||
-  HIDDEN_TYPE_SCOPES.has(`${c.type}:${c.scope}`) ||
-  HIDDEN_TEXT.some((pattern) => pattern.test(c.text));
-
-const parsed = messages
-  .map((message) => {
-    const [subject = '', ...bodyLines] = message.split(/\r?\n/);
-    const match = /^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/.exec(subject);
-    const paragraphs = bodyLines
-      .join('\n')
-      .split(/\n\s*\n/)
-      .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
-      .filter(
-        (paragraph) =>
-          paragraph !== '' &&
-          !/^(?:co-authored-by|signed-off-by|breaking change):/i.test(paragraph),
-      );
-    const detail = paragraphs[0] ?? '';
-    if (!match) return { type: 'other', scope: '', text: subject, detail };
-    return {
-      type: match[1],
-      scope: match[2] ?? '',
-      text: match[3],
-      detail,
-    };
-  })
-  // Drop the noise commits and any interim "partial"/"wip" markers.
-  .filter((c) => !/\b(wip|partial)\b/i.test(c.text));
-
-/** Sentence-case, strip trailing periods, keep it scannable. */
-const tidy = (text) =>
-  text
-    .replace(/\s+/g, ' ')
-    .replace(/\.$/, '')
-    .replace(/^([a-z])/, (m) => m.toUpperCase());
-
-/*
- * The notes are composed as a branded head, the two reader-facing changelog
- * sections, then installation guidance. Keeping those parts separate makes the
- * publication order explicit instead of relying on whichever array happened
- * to be filled first.
- */
-const REPO = 'https://github.com/AkshitIreddy/Alcove';
-const RAW = 'https://raw.githubusercontent.com/AkshitIreddy/Alcove/main';
-
-const head = [];
-// Centred mark and title. GitHub release bodies do not resolve repo-relative
-// image paths, so this has to be an absolute raw URL.
-head.push('<div align="center">');
-head.push('');
-head.push(`<img src="${RAW}/assets/brand/alcove-1024.png" width="96" alt="">`);
-head.push('');
-head.push(`# Alcove ${tag}`);
-head.push('');
-head.push('**Built like a storybook library, with cozy shelves and patterned walls. Open every book into notebook pages filled with diagrams, notes, tape, and stickers.**');
-head.push('');
-head.push('</div>');
-head.push('');
-
-const lines = [];
-
-for (const section of SECTIONS) {
-  const items = parsed.filter((c) => section.keys.includes(c.type) && !isHidden(c));
-  lines.push(`## ${section.title}`);
-  // Group by scope so related work reads together.
-  const byScope = new Map();
-  for (const item of items) {
-    const scope = item.scope || 'general';
-    if (!byScope.has(scope)) byScope.set(scope, []);
-    byScope.get(scope).push({ text: tidy(item.text), detail: item.detail });
-  }
-  for (const [scope, entries] of [...byScope.entries()].sort()) {
-    const unique = [
-      ...new Map(
-        entries.map((entry) => [
-          `${entry.text}\u0000${entry.detail}`,
-          entry,
-        ]),
-      ).values(),
-    ];
-    if (scope === 'general') {
-      for (const entry of unique) {
-        lines.push(`- ${entry.text}`);
-        if (entry.detail) lines.push(`  ${entry.detail}`);
-      }
-    } else if (unique.length === 1) {
-      lines.push(`- **${scope}** — ${unique[0].text}`);
-      if (unique[0].detail) lines.push(`  ${unique[0].detail}`);
-    } else {
-      lines.push(`- **${scope}**`);
-      for (const entry of unique) {
-        lines.push(`  - ${entry.text}`);
-        if (entry.detail) lines.push(`    ${entry.detail}`);
-      }
-    }
-  }
-  if (items.length === 0) lines.push(`_${section.empty}_`);
-  lines.push('');
-}
-
-const hidden = parsed.filter(
-  (c) => isHidden(c) || !READER_FACING_TYPES.has(c.type),
-);
-if (hidden.length > 0) {
-  lines.push(`_Plus ${hidden.length} maintenance change${hidden.length === 1 ? '' : 's'}._`);
-  lines.push('');
-}
-
-/*
- * The way out of the summary and into the detail.
- *
- * These notes are deliberately short — grouped subjects, not a commit wall —
- * which is only defensible if the long version is one click away. Two links,
- * because they answer different questions: the changelog PAGE is the written
- * account of what each version changed and why, and the compare view is the
- * literal diff for anyone who would rather read the code than the prose.
- */
-lines.push(
+const history = [
+  '',
   `📖 **[Every Alcove release](${REPO}/blob/main/docs/readme/releases.md)**` +
     (previous ? ` · [every commit in ${previous}…${tag}](${REPO}/compare/${previous}...${tag})` : ''),
-);
-lines.push('');
-lines.push('---');
-lines.push('');
+  '',
+  '---',
+  '',
+];
 
-/*
- * Which file to take.
- *
- * Two of the six downloads are Windows installers that differ only in what they
- * do about the Edge WebView2 runtime, so the difference has to be stated right
- * here — a reader looking at two setup.exes 200 MB apart with no explanation
- * will pick wrong, and the wrong one is a quarter-gigabyte download they did
- * not need.
- *
- * Windows is first and says "the one to take", which is enough of an answer —
- * an earlier version put a ✔ column beside it and the reader asked what it was
- * for. A tick that decorates the row you would have read first anyway is a
- * third column of nothing.
- *
- * And no SmartScreen or administrator paragraph: *"no need to talk about
- * smartscreen admin stuff"*. It described a warning dialog before the reader
- * had downloaded anything, which is a worse first impression than the dialog.
- *
- * THE TABLE COMES AFTER the reader-facing changelog. A release page that opens
- * with a download table reads like a download page; what a release is FOR is
- * what is new and what was fixed, and the table remains immediately below.
- */
-const install = [];
-install.push('## Which file do I want?');
-install.push('');
-install.push('| You are on | Take this |');
-install.push('| --- | --- |');
-install.push(
+const install = [
+  '## Which file do I want?',
+  '',
+  '| You are on | Take this |',
+  '| --- | --- |',
   '| **Windows** | `_x64-setup.exe` — the one to take. |',
-);
-install.push(
-  '| Windows, offline | `_x64-setup-offline.exe` — the same app, about 200 MB bigger ' +
-    'because it carries the whole Edge WebView2 runtime instead of fetching it. Only if ' +
-    'the one above fails. |',
-);
-install.push('| Windows, by policy | `_x64_en-US.msi` — the same app as an MSI. |');
-install.push(
+  '| Windows, offline | `_x64-setup-offline.exe` — the same app, about 200 MB bigger because it carries the whole Edge WebView2 runtime instead of fetching it. Only if the one above fails. |',
+  '| Windows, by policy | `_x64_en-US.msi` — the same app as an MSI. |',
   '| **macOS** | `_universal.dmg` — one file for both Apple silicon and Intel. |',
-);
-install.push(
   '| **Linux** | `.deb`, `.rpm`, or `.AppImage` — the AppImage runs without installing. |',
-);
-install.push('');
-install.push(
-  'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches ' +
-    'it, and the uninstaller leaves it alone unless you tick the box that says otherwise. ' +
-    '`SHA256SUMS.txt` is attached if you would rather check a download than trust one.',
-);
-install.push('');
+  '',
+  'Your library lives in `%APPDATA%\\com.alcove.app` on Windows. Upgrading never touches it, and the uninstaller leaves it alone unless you tick the box that says otherwise. `SHA256SUMS.txt` is attached if you would rather check a download than trust one.',
+  '',
+];
 
-/* ------------------------------------------------------------------------- */
-
-const body = [...lines];
-
-/*
- * Collapse any run of blank lines the three parts leave where they meet, so
- * the seams between head, install and body are invisible in the rendered page.
- */
-const out = [...head, ...body, ...install]
+const output = [...head, authored, ...history, ...install]
   .join('\n')
   .replace(/\n{3,}/g, '\n\n');
-process.stdout.write(out + '\n');
+process.stdout.write(`${output.trim()}\n`);

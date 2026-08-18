@@ -1653,8 +1653,12 @@ produce packages that refuse to start on 22.04.
 document — the system packages Linux needs and why each one, what a first run
 should produce, and what to check when it does.
 
-Notes come from [`scripts/release-notes.mjs`](scripts/release-notes.mjs) by
-diffing against the previous tag. A tag containing `-` publishes as a prerelease.
+Reader-facing notes are written for the completed version in
+[`release-notes/vX.Y.Z.md`](release-notes/README.md). The gates reject a
+missing, tiny or placeholder-filled note before the platform builds start;
+[`scripts/release-notes.mjs`](scripts/release-notes.mjs) then adds stable
+branding, history links and download guidance. A tag containing `-` publishes
+as a prerelease.
 
 The main build receives `TAURI_SIGNING_PRIVATE_KEY` from a GitHub Actions secret
 and emits the NSIS, AppImage and universal macOS updater payloads with their

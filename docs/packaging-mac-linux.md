@@ -351,10 +351,11 @@ In order, because each one only matters if the previous passed.
    tag without the leading `v`; all four platform entries have a tag-specific
    HTTPS URL and a non-empty signature. The tag gate has already proved that
    this version is also the one embedded in the installer.
-5. **The notes read like notes.** `scripts/release-notes.mjs` diffs against the
-   previous tag; for the *first* tag there is no previous one, so it summarises
-   the entire history and will be long. That is correct behaviour and worth
-   expecting rather than debugging.
+5. **The notes read like notes.** The release commit contains
+   `release-notes/<tag>.md`, written after the work is complete. The gates prove
+   it is substantive and version-matched; `scripts/release-notes.mjs` adds only
+   the stable frame around it. Read the assembled output before tagging and
+   reject anything that sounds like a commit dump or generic template.
 6. **Then actually install one.** CI proves a bundle was produced. It proves
    nothing about whether it launches. The macOS quarantine dance above is
    expected on first open and is not a broken build.

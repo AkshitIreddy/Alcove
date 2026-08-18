@@ -12,9 +12,11 @@ anything yet and a changelog is the wrong first thing to hand them.
 
 The definitive list for a given build is the
 [GitHub Release](https://github.com/AkshitIreddy/Alcove/releases) it is attached
-to — those notes are generated at the tag by
-[`scripts/release-notes.mjs`](../../scripts/release-notes.mjs), which diffs
-against the previous one. This page is the human summary beside it.
+to. Each future release carries an explicitly authored, version-matched note
+under [`release-notes/`](../../release-notes/README.md). The tag workflow
+validates that prose and [`scripts/release-notes.mjs`](../../scripts/release-notes.mjs)
+adds only stable branding, history links and download guidance. This page is
+the longer human summary beside it.
 
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.

@@ -144,7 +144,7 @@ download; it does not remove the need for one.
   | `Alcove_0.2.0_x64-setup.exe` | Always, unless the one below applies. |
   | `Alcove_0.2.0_x64-setup-offline.exe` | The machine is offline, or a proxy blocks Microsoft's CDN, and the first one failed. |
 
-  `scripts/release-notes.mjs` writes that table into every release body, because
+  `scripts/release-notes.mjs` appends that table to every authored release body, because
   two setup.exes that differ by 200 MB and no explanation is a worse problem
   than the one being solved.
 

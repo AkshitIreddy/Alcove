@@ -273,8 +273,9 @@ converted to a conservative Cohere tool-use JSON-Schema subset; optional
 properties become required-but-nullable for transport. Returned null sentinels
 are stripped and the original Zod schema parses the arguments again, including
 defaults, discriminated unions and unknown-key rejection. Schema conversion is
-wire compatibility, not authority, and Alcove does not rely on Cohere's
-experimental `strict_tools` switch.
+wire compatibility, not authority. Alcove uses Cohere's optional
+`strict_tools` hint only on compact authoring envelopes proven compatible with
+the live endpoint; local parsing is always the authority.
 
 Tools are grouped as `read`, `draft`, `interrupt` and `propose`, but execution
 also checks lifecycle, budgets, source manifest capability, current book/page,
@@ -289,11 +290,17 @@ generation ownership and policy. The catalog exposes:
 - one high-value question/blocker interrupt, conversation-only completion, and
   final proposal/preview submission.
 
-That list is the superset, not the request sent on every turn.
-`availableAgentToolNames` is a deterministic phase gate over current reader
-intent and durable state. Conversation excludes notebook drafting/proposal;
-notebook mutation excludes `finish_conversation`; stale/missing grounded sources
-open only the relevant source capabilities; and the draft pipeline narrows from
+That list is the superset, not the request sent on every turn. One durable
+per-turn objective begins as `undecided`. At that boundary the model sees safe
+entry points for conversation and notebook work plus `set_task_mode`; the local
+reader-language detector is an advisory hint, not semantic authority. The first
+successful mode-specific action latches the objective. A conflicting action is
+returned as a structured `intent_conflict`, and the model can accept or
+explicitly override the hint with a reason. After settlement,
+`availableAgentToolNames` is again a deterministic phase gate over durable
+state. Conversation excludes notebook drafting/proposal; notebook work excludes
+`finish_conversation`; stale/missing grounded sources open only the relevant
+source capabilities; and the draft pipeline narrows from
 inspect/placement to submit, validate, render, pixel read, visual review,
 proposal and final preview submission. Repair submission reappears only for a
 changed source manifest, invalid validation, unresolved blocking visual finding
@@ -302,6 +309,13 @@ has an invalid parser/layout receipt also returns to script repair even if its
 human-style visual findings are empty. Image-slot permission revocation and a
 failed local private-text restore are durable repair phases; citation-only
 resubmission cannot clear a private-layout failure.
+
+Relevant-only intake also cannot report a vacuous success. Before any source
+selection/read, `inspect_source_coverage` is absent; a direct retrieval plan
+marks the selected source units required, making the ledger incomplete until a
+real read records them. Once notebook mode is settled, source tools are
+exclusive until that read occurs, so drafting cannot race ahead of attached
+evidence.
 
 Preserve-all tasks finish required source reads before drafting. If extracted
 PDF text is available but the required composed-page pixels are not, each unit
@@ -318,37 +332,47 @@ again against current state before parsing/executing a call, so stale queued
 calls and provider-invented transitions fail even if they once appeared in a
 prompt.
 
+Every tool failure is a model-visible recovery receipt: `errorCode`,
+`failedTool`, `stateChanged`, `availableTools`, `suggestedTools` and
+`nextAction`, beside the human-readable error. The next model turn must change
+arguments, call a prerequisite or repair task mode rather than repeating the
+same failed call. Transport/auth/protocol/budget failures remain local because
+they occur before any model tool result exists; source/revision/preview/Insert
+authority is never model-overridable.
+
 Fresh settled reader turns clear the previous notebook snapshot, disposable
 draft pipeline and prior-turn citations. Cached source read receipts may remain
 for a genuine grounded follow-up, but an unrelated chat/edit does not call
 manifest, Embed, Search or Rerank merely because an older attachment exists.
 The next notebook edit inspects the live book once before drafting, while an
 explicit current-page/default insertion target supplied by the UI is retained.
+Newly registered reader attachments carry a `sourceIntentTurnId` into the
+matching reader turn. The attachment is therefore the implicit object of a
+request such as “add to my book”; Alcove reads it instead of asking what the
+reader meant. The receipt is turn-scoped, so an old attachment still cannot
+force an unrelated later message through retrieval.
 
 There is no arbitrary HTTP request, shell, filesystem path, SQL statement or
 editor transaction. Source reads receive a task/manifest-digest capability from
 trusted state; render reads require current generation and page ids; proposal
 and idempotency identities are derived locally from current hashes.
 
-The healthy source-free, no-repair preview path is explicitly bounded and
-tested at most nine provider decisions. A targetless request uses:
+The healthy Cohere production path now spends provider calls only on semantic
+judgment. With a UI-supplied placement, a single attached image reaches preview
+in exactly two provider calls:
 
-1. inspect the notebook;
-2. choose insertion;
-3. submit one complete draft;
-4. validate;
-5. render;
-6. load the current page images;
-7. record visual review;
-8. prepare the immutable patch proposal;
-9. submit it to the final-preview interrupt.
+1. Command A+ authors the grounded draft after Alcove locally inspects the
+   notebook and reads the one bounded source;
+2. Command A+ judges the exact rendered pixels after Alcove locally validates,
+   renders and exposes them.
 
-The production panel normally supplies the focused/current-page default target,
-so its corresponding path skips step 2 and reaches preview in eight provider
-turns. The reader's Insert decision and revision-checked apply remain outside
-those model turns. Grounded source reads, additional image batches, genuine
-repairs and explicit portable-image prompt handoff add bounded work rather than
-being hidden inside this baseline.
+Proposal construction and the final-preview interrupt are local deterministic
+steps. The complete audit trail still contains nine ordinary tool receipts—
+inspect, read, draft, validate, render, expose, review, propose and present—so
+local policy and Retry retain the same observable boundaries. The reader's
+Insert decision and revision-checked apply remain outside those model turns.
+Multiple/large sources, explicit target choice and genuine semantic repairs may
+add provider decisions; mechanical workflow routing does not.
 
 ### Provider protocol
 
@@ -357,26 +381,60 @@ complete typed tool calls, citation ids, usage and finish. It deliberately has
 no credential or hidden-thinking event. `cohereProvider.ts` maps that boundary
 to Cohere V2 while preserving assistant tool plans and exact call continuity.
 
-The current Cohere adapter makes reasoning adaptive to the phase-gated request.
-If the request contains exactly one deterministic routing tool—
-`validate_notebook_script`, `render_draft_preview`, `propose_notebook_patch` or
-`submit_notebook_patch`—it disables thinking and caps output at 2,048 tokens.
-Composition, source choice, conversation and page-image judgment retain enabled
-thinking with an 8,000-token budget and the normal output allowance. This
-optimization stays in `cohereProvider.ts`; the provider-neutral protocol and
-durable state still expose no reasoning channel.
+The Cohere graph locally executes singleton deterministic routing tools,
+including preview-page exposure, without making a provider request. Composition,
+source choice, conversation and page-image judgment retain enabled thinking
+with an 8,000-token budget and the normal output allowance. Local assistant
+tool-call history deliberately omits `tool_plan`: live Command A+ rejects that
+field for synthetic history even though it accepts the complete call/result
+pair. The provider-neutral protocol and durable state expose no hidden reasoning
+channel.
 
 The Cohere wire request deliberately omits `tool_choice`, including for
 notebook mutation and current-source grounding. The generic V2 contract lists
 `REQUIRED`, but live Command A+ trial and production compatibility probes
 rejected that field with Alcove's production catalogue. Alcove instead keeps
-mandatory call selection as a local graph invariant and sends
-`strict_tools: true` with its sanitized required/nullable schemas. The complete
-local Zod parse still rejects malformed or invented arguments before execution.
+mandatory call selection as a local graph invariant. Compact authoring turns
+send `strict_tools: true` with sanitized required/nullable schemas; source/RAG
+catalogues and multimodal image turns omit that optional flag because the live
+endpoint rejected those envelope combinations. The complete local Zod parse
+still rejects malformed or invented arguments before execution.
 An ordinary source-free conversation may answer naturally and Alcove wraps a
 complete prose `STOP` into the local `finish_conversation` boundary. If that
 optional-tool envelope itself is unusable, the graph counts it and makes one
 bounded tool-free prose request; a second failure pauses.
+
+A malformed source-routing stream has the same observability limitation: no
+tool result exists for the model to analyse. When the gateway gives no
+non-retryable HTTP status, the graph makes exactly one counted corrective turn
+with the same source capability boundary and an explicit instruction to plan
+or read rather than repeat a no-op coverage check. A second failure pauses; an
+HTTP 4xx is never blindly resent.
+
+The source-to-draft handoff has one additional bounded recovery. If
+`submit_notebook_script` is the only available capability and Cohere corrupts
+that tool envelope, Alcove makes one plain, tool-less request to the same model
+for raw Notebook Script. The supervisor converts that model-authored text into
+the missing draft call and attaches the already-read unit receipts; it does not
+invent page content. Normal local validation, native rendering, visual review
+and reader approval still follow. A provider error that cannot recover retains
+its bounded protocol detail in Copy Logs while reader-facing copy stays calm.
+
+Reader-supplied image use has two local invariants that the model cannot
+override. Once an image source read exposes a `portableAssetPath`, every
+initial/repair draft for that current request must retain the exact path on a
+real parsed image block; mentioning it in prose/code, replacing it with an
+upload placeholder, or dropping it after a render failure is corrected locally.
+An attachment path mistakenly written in the Markdown URL slot is canonicalised
+to `asset=...`, and a missing block is inserted with an aspect-aware width. Before
+proposal, policy rechecks the same invariant independently. Visual findings are
+also severity-normalised locally: empty/receipt-only pages, missing media,
+unreadable output, clipping, overflow, collision and duplication are blocking
+even when the model reports them as `info` or `other`.
+For the bounded vague command “add to my book” with one dense image, Alcove
+uses a one-page image-led default: the model's accurate title, the complete
+managed picture and its caption. Detailed transcription remains model-owned
+only when the reader asks for extraction, conversion, notes or a study guide.
 
 Alcove still treats every provider stream as untrusted. If a well-formed empty
 completion or malformed tool stream occurs in one of the four singleton,
@@ -386,6 +444,15 @@ multi-tool work phase still pauses rather than guessing the model's intent.
 The panel represents a final failure once: the persistent recovery card owns
 the detail and Retry action, while `run.failed` remains diagnostic history and
 does not become a duplicate transcript activity.
+
+A native `render_draft_preview` exception creates a durable, draft-hash-bound
+render-recovery receipt. The exact failed renderer message is returned to the
+model and the phase exposes only `submit_notebook_script`; a materially changed
+draft clears the receipt and re-enters validation. The deterministic renderer
+is never repeated unchanged after its own failure. Copy Logs retains the last
+five bounded structured tool failures (`errorCode`, exact safe message,
+available tools and next action) while continuing to exclude credentials and
+attachment bytes.
 
 Images are observations for one turn, not durable repeated history. The adapter
 reattaches pixels only from the trailing unanswered tool-result group, after the
@@ -674,6 +741,14 @@ page-environment fingerprint. A cached generation is reusable only when that
 identity, its digest receipt and every content-addressed render asset still
 match. Theme/page/font/viewport changes invalidate it rather than serving pixels
 from a visually different environment.
+
+Managed Agent attachments resolve from their bounded native bytes into
+same-process blob URLs before hidden capture in both browser development and
+Tauri. A normal Tauri asset-protocol URL displays in the live editor, but
+WebView2/html-to-image may reload a cloned descendant during capture and emit a
+bare DOM error event. Blob materialisation makes that clone path deterministic;
+capture readiness and any remaining capture exception now name the affected
+managed media instead of collapsing to `{"isTrusted":true}`.
 
 Before mount, it caps script characters, authored pages, blocks and explicit
 image fetches; maps tolerant-parser diagnostics back to authored page ranges;

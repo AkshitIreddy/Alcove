@@ -1,5 +1,30 @@
 # Alcove — running TODO
 
+## ✅ Post-0.7.3 Agent supervisor and authored release notes (completed 2026-08-18)
+
+- [x] Let the model own semantic task mode and recover from structured tool
+      errors without allowing it to bypass source, revision or Insert gates.
+- [x] Keep transport/protocol/auth/budget recovery deterministic because those
+      failures occur before the model can observe a tool result.
+- [x] Replace generic commit-derived GitHub release prose with a checked-in,
+      version-matched release note authored for the actual work.
+- [x] Exercise diverse conversation, image, source, misclassification,
+      wrong-tool, provider failure, retry and release-publication cases.
+- [x] Drive the production panel in Playwright, inspect the normal and recovery
+      frames, and watch deliberate controls fail.
+- [x] Prevent an unread relevant attachment from reporting coverage complete,
+      make its source read exclusive before drafting, and recover one malformed
+      source-routing stream with a counted corrective turn.
+
+## ✅ Post-0.7.3 Agent image intake (completed 2026-08-18)
+
+- [x] Stop Cohere source-intake requests from using an incompatible strict
+      tool envelope before the first source tool can run.
+- [x] Let readers drag image/source files onto the Agent composer, with a clear
+      drop affordance and the same managed-attachment path as the picker.
+- [x] Reproduce both paths in the running app, inspect their screenshots and
+      watch deliberate provider/drop failures make the regression gate fail.
+
 ## ✅ 0.7.3 — resilient update checks (released 2026-08-17)
 
 The owner authorised a 0.7.3 patch release after the 0.7.1 desktop missed the

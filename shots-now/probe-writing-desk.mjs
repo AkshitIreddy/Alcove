@@ -6,8 +6,11 @@ import { chromium } from 'playwright';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
 const sabotage = process.argv.includes('--sabotage');
+const sabotageHandle = process.argv.includes('--sabotage-handle');
 const narrow = process.argv.includes('--narrow');
-const OUT = sabotage
+const OUT = sabotageHandle
+  ? 'qa/writing-desk/sabotage-handle'
+  : sabotage
   ? 'qa/writing-desk/sabotage'
   : narrow
     ? 'qa/writing-desk/narrow'
@@ -301,9 +304,65 @@ const paperWheel = await snapshot();
 
 await page.mouse.click(deskPoint.x, deskPoint.y);
 const agentButton = page.getByRole('button', { name: /^AI agent —/ });
-await agentButton.click();
+const handlePaper = page.locator(
+  '.nb-sheet-paper:not(.snapshotting)[data-side="left"]',
+);
+const handlePageId = await handlePaper.getAttribute('data-page-id');
+if (handlePageId === null) throw new Error('left page id was unavailable');
+const handleBlock = handlePaper.locator('.ProseMirror > *').nth(1);
+await handleBlock.hover();
+const dragHandle = page.locator(
+  `.nb-drag-handle-layer[data-page="${handlePageId}"] .nb-drag-handle`,
+);
+await dragHandle.waitFor({ state: 'visible' });
+const handleBeforePanel = await dragHandle.boundingBox();
+if (sabotageHandle) {
+  await page.addStyleTag({
+    // Deliberately reproduce the reported bad frame: a stale grip remains
+    // visible around the middle of the reflowing page instead of being
+    // invalidated until the next real pointer move. Visibility alone is not
+    // a useful control because the old viewport coordinate can land behind
+    // the newly opened panel and still satisfy the left-gutter inequality.
+    content: `
+      .nb-drag-handle {
+        visibility: visible !important;
+        left: calc(50vw - 12px) !important;
+        top: 42vh !important;
+      }
+    `,
+  });
+}
+// Keep the pointer on the block while opening the panel programmatically. This
+// is the exact stale-anchor stress: no pointermove is allowed to repair the
+// extension's cached viewport coordinates for us.
+await agentButton.evaluate((button) => button.click());
 const agentPanel = page.locator('.nb-rail-panel.is-ai-agent[aria-hidden="false"]');
 await agentPanel.waitFor({ state: 'visible' });
+const handleTransitionFrames = await page.evaluate(async (pageId) => {
+  const frames = [];
+  for (let index = 0; index < 36; index += 1) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const paper = document.querySelector(
+      `.nb-sheet-paper:not(.snapshotting)[data-page-id="${pageId}"]`,
+    );
+    const handle = document.querySelector(
+      `.nb-drag-handle-layer[data-page="${pageId}"] .nb-drag-handle`,
+    );
+    if (!(paper instanceof HTMLElement) || !(handle instanceof HTMLElement)) continue;
+    const p = paper.getBoundingClientRect();
+    const h = handle.getBoundingClientRect();
+    const visible = getComputedStyle(handle).visibility !== 'hidden' &&
+      getComputedStyle(handle).display !== 'none' && h.width > 0 && h.height > 0;
+    frames.push({
+      visible,
+      handle: { left: h.left, top: h.top, width: h.width, height: h.height },
+      paper: { left: p.left, top: p.top, width: p.width, height: p.height },
+      inLeftGutter: !visible || h.left + h.width / 2 < p.left + p.width * 0.18,
+    });
+  }
+  return frames;
+}, handlePageId);
+await page.screenshot({ path: `${OUT}/09-panel-handle-transition.png`, caret: 'hide' });
 const panelOpened = await snapshot();
 const agentPanelBox = await agentPanel.boundingBox();
 if (agentPanelBox === null) throw new Error('AI agent panel was not measurable');
@@ -318,6 +377,10 @@ const panelWheel = await snapshot();
 await page.screenshot({ path: `${OUT}/09-agent-panel-wheel.png`, caret: 'hide' });
 await agentPanel.getByRole('button', { name: 'Close AI agent' }).click();
 await agentPanel.waitFor({ state: 'hidden' });
+await handleBlock.hover();
+await dragHandle.waitFor({ state: 'visible' });
+const handleAfterPanel = await dragHandle.boundingBox();
+const handlePaperAfterPanel = await handlePaper.boundingBox();
 
 await page.mouse.move(deskPoint.x, deskPoint.y);
 await page.mouse.wheel(0, 180);
@@ -399,6 +462,13 @@ const checks = {
     !paperWheel.wheelArmed && paperWheel.zoom === movedWheel.zoom,
   openingPanelCancelsToken:
     !panelOpened.wheelArmed,
+  panelTransitionNeverPaintsHandleInPageCentre:
+    handleTransitionFrames.length > 0 &&
+    handleTransitionFrames.every((frame) => frame.inLeftGutter),
+  handleReturnsToLeftGutterAfterPanel:
+    handleBeforePanel !== null && handleAfterPanel !== null &&
+    handlePaperAfterPanel !== null &&
+    handleAfterPanel.x < handlePaperAfterPanel.x + handlePaperAfterPanel.width * 0.18,
   panelWheelNeverZoomsBook:
     panelWheel.zoom === panelOpened.zoom && !panelWheel.wheelArmed,
   panelActivityDoesNotLeaveLatentToken:
@@ -423,6 +493,7 @@ const checks = {
 const report = {
   ok: Object.values(checks).every(Boolean),
   sabotage,
+  sabotageHandle,
   narrow,
   checks,
   baseline,
@@ -444,6 +515,10 @@ const report = {
   movedAfterClick,
   movedWheel,
   paperWheel,
+  handleBeforePanel,
+  handleTransitionFrames,
+  handleAfterPanel,
+  handlePaperAfterPanel,
   panelOpened,
   panelWheel,
   hoverAfterPanel,
@@ -453,12 +528,14 @@ const report = {
 writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 2));
 await browser.close();
 
-if (sabotage && !report.ok) {
+if (sabotageHandle && !report.ok) {
+  console.log('writing desk: GATE ALIVE · forced stale drag handle rejected');
+} else if (sabotage && !report.ok) {
   console.log('writing desk: GATE ALIVE · forced white desk/back label rejected');
 } else if (!report.ok) {
   console.error(`writing desk: FAILED\n${JSON.stringify(checks, null, 2)}`);
   process.exitCode = 1;
-} else if (sabotage) {
+} else if (sabotage || sabotageHandle) {
   console.error('writing desk: GATE INERT');
   process.exitCode = 2;
 } else {

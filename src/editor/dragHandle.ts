@@ -182,6 +182,27 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
   let editorRef: Editor | null = null;
   let session: DragSession | null = null;
   let hoistFrame: number | undefined;
+  let handleElement: HTMLElement | null = null;
+  let bookGeometryObserver: MutationObserver | undefined;
+
+  /**
+   * Floating UI caches the hovered block until pointer/editor activity changes
+   * it. A panel opening or the book camera scaling moves the page without
+   * changing that cached node, so the old viewport coordinates can paint the
+   * grip in the middle of the page for one frame. Hide and clear the cached
+   * anchor before the browser paints the new geometry; the next real hover
+   * computes a fresh position.
+   */
+  const invalidateGeometryAnchor = (): void => {
+    const editor = editorRef;
+    if (handleElement !== null) handleElement.style.visibility = 'hidden';
+    if (editor === null || editor.isDestroyed) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta('hideDragHandle', true)
+        .setMeta('addToHistory', false),
+    );
+  };
 
   /**
    * The nearest ancestor that can actually scroll, resolved ONCE per drag —
@@ -361,6 +382,7 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
   return {
     render: () => {
       const handle = buildDragHandleElement();
+      handleElement = handle;
       // The wrapper does not exist yet — the plugin creates and parents it
       // while the EditorView is built, in this same task. A microtask lands
       // right after that; the rAF is the belt-and-braces retry.
@@ -381,13 +403,34 @@ export function createDragHandleWiring(pageId: string): DragHandleWiring {
     attach: (editor: Editor) => {
       editorRef = editor;
       document.addEventListener('drop', onCrossPageDrop, true);
+      window.addEventListener('resize', invalidateGeometryAnchor);
+      const bookView = editor.view.dom.closest('.nb-book-view');
+      if (bookView !== null) {
+        bookGeometryObserver = new MutationObserver(invalidateGeometryAnchor);
+        bookGeometryObserver.observe(bookView, {
+          attributes: true,
+          attributeFilter: [
+            'style',
+            'data-desk-zoom',
+            'data-focus-mode',
+            'data-focus-level',
+          ],
+        });
+        bookView.addEventListener('transitionrun', invalidateGeometryAnchor, true);
+      }
       return () => {
         endDrag();
         document.removeEventListener('drop', onCrossPageDrop, true);
+        window.removeEventListener('resize', invalidateGeometryAnchor);
+        bookGeometryObserver?.disconnect();
+        bookGeometryObserver = undefined;
+        bookView?.removeEventListener('transitionrun', invalidateGeometryAnchor, true);
         if (hoistFrame !== undefined) {
           cancelAnimationFrame(hoistFrame);
           hoistFrame = undefined;
         }
+        if (handleElement?.isConnected) handleElement.parentElement?.remove();
+        handleElement = null;
         editorRef = null;
       };
     },

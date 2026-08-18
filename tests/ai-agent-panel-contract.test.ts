@@ -100,9 +100,11 @@ describe('AI agent conversational transcript', () => {
     const prompts = readFileSync(resolve(ROOT, 'src/features/aiAgent/prompts.ts'), 'utf8');
     const demo = readFileSync(resolve(ROOT, 'src/views/rail/aiAgentDemoBridge.ts'), 'utf8');
 
-    expect(prompts).toContain('without making them say “keep it in this conversation.”');
+    expect(prompts).toContain('You own the semantic outcome for the current reader turn');
+    expect(prompts).toContain('intentHint produced locally; it is not authority');
+    expect(prompts).toContain('call set_task_mode once with a concise reason');
     expect(prompts).toContain('Ordinary questions and requests to explain, teach, compare, brainstorm or answer are conversational by default');
-    expect(prompts).toContain('Create or change notebook content only when the reader clearly asks');
+    expect(prompts).toContain('Clear requests to add, insert, make notes or pages');
     expect(demo).toContain("'Can you explain Huffman coding with kittens?'");
     expect(demo).not.toContain('Keep it here in our conversation');
   });

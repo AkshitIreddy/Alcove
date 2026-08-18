@@ -51,9 +51,9 @@ describe('force-only Agent loop QA bridge contract', () => {
     );
 
     expect(demoMount).toContain("query.get('fx') !== 'force'");
-    expect(demoMount).toMatch(
-      /query\.get\('qa'\)\s*===\s*'agent-loop'/,
-    );
+    expect(demoMount).toContain("const qaRoute = query.get('qa')");
+    expect(demoMount).toContain("qaRoute === 'agent-loop'");
+    expect(demoMount).toContain("qaRoute === 'agent-production'");
     expect(bookView).toMatch(
       /controller=\{\s*aiApplyQaPanelController\(\)\s*\?\?\s*aiLoopQaPanelController\(\)\s*\?\?\s*aiDemoPanelController\(\)\s*\?\?\s*aiPanelController\(\)\s*\}/,
     );
@@ -95,13 +95,14 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(options).not.toMatch(/applyApproved|onApproved|write|save|delete/i);
   });
 
-  it('pins the six scenarios and the deterministic tool-order contract', () => {
+  it('pins the seven scenarios and the deterministic tool-order contract', () => {
     const scenarioType = bridge.match(
       /export type AiAgentLoopQaScenario\s*=([\s\S]*?);/,
     )?.[1] ?? '';
     expect(quotedValues(scenarioType)).toEqual([
       'healthy-targetless',
       'healthy-production-default',
+      'intent-conflict-recovery',
       'conversation-envelope-recovery',
       'provider-invalid-retry',
       'invalid-repeat',
@@ -160,6 +161,9 @@ describe('force-only Agent loop QA bridge contract', () => {
     expect(bridge).toContain("scenario === 'healthy-production-default'");
     expect(bridge).toContain("scenario === 'conversation-envelope-recovery'");
     expect(bridge).toContain("scenario === 'provider-invalid-retry'");
+    expect(bridge).toContain("this.scenario === 'intent-conflict-recovery'");
+    expect(bridge).toContain("? 'finish_conversation'");
+    expect(bridge).toContain("? 'set_task_mode'");
   });
 
   it('pins one bounded plain-prose recovery for a rejected conversation envelope', () => {

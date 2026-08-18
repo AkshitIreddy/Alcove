@@ -186,6 +186,55 @@ describe('Cohere AI agent provider', () => {
     expect(gateway.requests[0]?.strictTools).toBe(true);
   });
 
+  it('keeps source-routing catalogues out of Cohere strict schema mode', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-source-intake',
+      runId: 'run-source-intake',
+      threadId: 'thread-source-intake',
+      systemPrompt: 'Read the attached image before drafting the requested notebook page.',
+      tools: [
+        {
+          name: 'read_full_source',
+          description: 'Read the selected source.',
+          inputSchema: {
+            type: 'object',
+            properties: { sourceId: { type: 'string' } },
+            required: ['sourceId'],
+            additionalProperties: false,
+          },
+          effect: 'read',
+        },
+        {
+          name: 'search_source_index',
+          description: 'Search the selected source.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              query: { type: 'string' },
+              sourceIds: {
+                type: ['array', 'null'],
+                items: { type: 'string' },
+              },
+            },
+            required: ['query', 'sourceIds'],
+            additionalProperties: false,
+          },
+          effect: 'read',
+        },
+      ],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]?.toolChoice).toBeUndefined();
+    expect(gateway.requests[0]?.strictTools).toBeUndefined();
+  });
+
   it('accepts two complete sequential tool calls and preserves their identities', async () => {
     gateway.scriptedEvents.push(
       {
@@ -244,6 +293,80 @@ describe('Cohere AI agent provider', () => {
       },
     ]);
     expect(events).toContainEqual({ type: 'finish', reason: 'tool_calls' });
+  });
+
+  it('accepts a complete streamed tool call when Command A+ labels the finish COMPLETE', async () => {
+    gateway.scriptedEvents.push(
+      {
+        type: 'providerEvent', runId: 'provider-live-complete', sequence: 1,
+        eventType: 'tool-call-start',
+        data: {
+          delta: {
+            message: {
+              tool_calls: {
+                id: 'live-call',
+                function: { name: 'submit_notebook_script', arguments: '{"request":"current"}' },
+              },
+            },
+          },
+        },
+      },
+      {
+        type: 'providerEvent', runId: 'provider-live-complete', sequence: 2,
+        eventType: 'tool-call-end', data: {},
+      },
+      {
+        type: 'providerEvent', runId: 'provider-live-complete', sequence: 3,
+        eventType: 'message-end',
+        data: { delta: { finish_reason: 'COMPLETE', usage: { tokens: {} } } },
+      },
+    );
+    const provider = new CohereTauriAgentProvider(() => true);
+    const events = [];
+    for await (const event of provider.streamTurn({
+      requestId: 'provider-live-complete',
+      runId: 'run-live-complete',
+      threadId: 'thread-live-complete',
+      systemPrompt: 'system',
+      tools: [],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal })) events.push(event);
+
+    expect(events).toContainEqual({
+      type: 'tool_call',
+      id: 'live-call',
+      name: 'submit_notebook_script',
+      arguments: { request: 'current' },
+    });
+    expect(events).toContainEqual({ type: 'finish', reason: 'tool_calls' });
+  });
+
+  it('still rejects a TOOL_CALL finish with no streamed tool call body', async () => {
+    gateway.scriptedEvents.push({
+      type: 'providerEvent', runId: 'provider-missing-call', sequence: 1,
+      eventType: 'message-end',
+      data: { delta: { finish_reason: 'TOOL_CALL', usage: { tokens: {} } } },
+    });
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-missing-call',
+      runId: 'run-missing-call',
+      threadId: 'thread-missing-call',
+      systemPrompt: 'system',
+      tools: [],
+      messages: [],
+      toolChoice: 'required',
+    }, { signal: new AbortController().signal });
+
+    await expect(async () => {
+      for await (const _event of stream) {
+        // The finish label cannot manufacture a missing call body.
+      }
+    }).rejects.toMatchObject({
+      code: 'invalid_response',
+      message: 'Cohere finish reason does not match its streamed tool calls',
+    });
   });
 
   it.each([
@@ -529,12 +652,11 @@ describe('Cohere AI agent provider', () => {
     }
 
     const sent = gateway.requests[0]?.messages ?? [];
-    // Call selection remains a local graph invariant. The proven Command A+
-    // wire contract omits tool_choice while strict_tools keeps generated calls
-    // inside the sanitized provider schema before local Zod validation.
-    expect(gateway.requests[0]).toMatchObject({
-      strictTools: true,
-    });
+    // Call selection and schema validation remain local graph invariants. The
+    // multimodal envelope stays out of Cohere strict schema mode: the live
+    // endpoint accepts the image/tool combination only without that optional
+    // compatibility flag.
+    expect(gateway.requests[0]?.strictTools).toBeUndefined();
     expect(gateway.requests[0]?.toolChoice).toBeUndefined();
     expect(gateway.requests[0]?.citationMode).toBeUndefined();
     expect(gateway.requests[0]?.safetyMode).toBeUndefined();

@@ -18,6 +18,8 @@ export * from './productionSources';
 export * from './retrieval';
 export * from './runtime';
 export * from './selectionDigest';
+export * from './sourceAssetPolicy';
 export * from './tools';
 export * from './textPrivacy';
 export * from './types';
+export * from './visualFindingPolicy';

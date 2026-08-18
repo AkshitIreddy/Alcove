@@ -80,6 +80,28 @@ const SCENARIOS = {
     kind: 'preview',
     sourceReadUnitIds: [],
   },
+  'intent-conflict-recovery': {
+    goal: 'Create clear notebook pages explaining the water cycle.',
+    providerCalls: 10,
+    toolCalls: 10,
+    repairPasses: 0,
+    order: [
+      'finish_conversation',
+      'set_task_mode',
+      'inspect_notebook',
+      'submit_notebook_script',
+      'validate_notebook_script',
+      'render_draft_preview',
+      'read_draft_preview_pages',
+      'record_visual_review',
+      'propose_notebook_patch',
+      'submit_notebook_patch',
+    ],
+    errors: [true, false, false, false, false, false, false, false, false, false],
+    kind: 'preview',
+    objectiveMode: 'notebook_change',
+    sourceReadUnitIds: [],
+  },
   'provider-invalid-retry': {
     goal: 'Create clear notebook pages explaining the water cycle.',
     providerCalls: 9,
@@ -222,28 +244,25 @@ function targetFor(scenario) {
   return `${base.replace(/\/$/, '')}/?${query}`;
 }
 
-async function notebookSnapshot(page) {
-  return page.evaluate(async () => {
-    const { appState } = await import('/src/state/app.ts');
+async function notebookSnapshot(page, bookId) {
+  return page.evaluate(async (id) => {
     const { listPages } = await import('/src/data/pages.ts');
     const { computeNotebookRevision } = await import('/src/features/aiAgent/productionNotebook.ts');
-    const bookId = appState.openBookId();
-    if (bookId === null) throw new Error('The Agent runtime probe has no open notebook.');
-    const pages = await listPages(bookId);
+    const pages = await listPages(id);
     return {
-      bookId,
+      bookId: id,
       revision: await computeNotebookRevision(pages),
       pageIds: pages.map((page) => page.id),
     };
-  });
+  }, bookId);
 }
 
-async function stableNotebookSnapshot(page, timeoutMs = 8_000) {
+async function stableNotebookSnapshot(page, bookId, timeoutMs = 8_000) {
   const startedAt = Date.now();
   let previous = null;
   let matchingSamples = 0;
   while (Date.now() - startedAt < timeoutMs) {
-    const current = await notebookSnapshot(page);
+    const current = await notebookSnapshot(page, bookId);
     const matchesPrevious = previous !== null &&
       current.revision === previous.revision &&
       sameArray(current.pageIds, previous.pageIds);
@@ -258,15 +277,20 @@ async function stableNotebookSnapshot(page, timeoutMs = 8_000) {
 }
 
 async function openWelcome(page) {
-  return page.evaluate(async () => {
-    const { appState } = await import('/src/state/app.ts');
-    const { listBooksByFloorRange } = await import('/src/data/books.ts');
-    const books = await listBooksByFloorRange(0, 20);
+  await page.waitForFunction(() =>
+    typeof globalThis.__shelfVisibleBooks === 'function' &&
+    typeof globalThis.__shelfPullOut === 'function');
+  const book = await page.evaluate(() => {
+    const books = globalThis.__shelfVisibleBooks();
     const book = books.find((candidate) => /welcome/i.test(candidate.title)) ?? books[0];
     if (book === undefined) throw new Error('No notebook is available for the Agent runtime probe.');
-    appState.openBook(book.id);
-    return { id: book.id, title: book.title };
+    globalThis.__shelfPullOut(book.id);
+    return book;
   });
+  const held = page.locator('[data-testid="pulled-book"][role="button"]');
+  await held.waitFor({ state: 'visible' });
+  await held.click({ force: true });
+  return book;
 }
 
 async function settleAnimations(page) {
@@ -435,6 +459,8 @@ function scenarioAssertions(run, config) {
       run.ui.legacyQuestionCards === 0 && run.ui.legacyQuestionOptions === 0,
     notebookRevisionAndPageIdsUnchanged: notebookUnchanged,
     exactDraftSourceReadReceipt: expectedSourceReads,
+    expectedObjectiveMode:
+      config.objectiveMode === undefined || state?.objectiveMode === config.objectiveMode,
     normalRunHasNoSabotageReceipt: state?.sabotageEarlyDraft !== true,
   };
 
@@ -456,7 +482,9 @@ function scenarioAssertions(run, config) {
       image.complete && image.naturalWidth > 0 && image.naturalHeight > 0 && image.src !== '');
   const previewAssertions = {
     ...common,
-    allExecutedToolsSucceeded: executedErrors.every((isError) => !isError),
+    allExecutedToolsSucceeded: config.errors === undefined
+      ? executedErrors.every((isError) => !isError)
+      : sameArray(executedErrors, config.errors),
     settledAtImmutablePreview:
       state?.lifecycle === 'waiting_for_preview_decision' &&
       state?.phase === 'waiting_for_preview_decision' &&
@@ -696,7 +724,7 @@ try {
         // Let editor hydration/blank-stock normalization settle before the
         // read-only witness. Open the panel only after this poll so a long
         // stabilization pass cannot be mistaken for a disappearing sheet.
-        run.before = await stableNotebookSnapshot(page);
+        run.before = await stableNotebookSnapshot(page, run.book.id);
         await page.evaluate(() => globalThis.__aiAgentLoopQa.open());
         await page.waitForFunction(() =>
           document.querySelector('.nb-rail-panel.is-ai-agent')?.getAttribute('aria-hidden') === 'false');
@@ -707,12 +735,12 @@ try {
         await panel.waitFor({ state: 'visible' });
         await composer.waitFor({ state: 'visible', timeout: 20_000 });
         await send.waitFor({ state: 'visible', timeout: 20_000 });
-        const afterOpen = await notebookSnapshot(page);
+        const afterOpen = await notebookSnapshot(page, run.book.id);
         if (
           afterOpen.revision !== run.before.revision ||
           !sameArray(afterOpen.pageIds, run.before.pageIds)
         ) {
-          run.before = await stableNotebookSnapshot(page);
+          run.before = await stableNotebookSnapshot(page, run.book.id);
         }
 
         await composer.fill(config.goal);
@@ -861,7 +889,7 @@ try {
           run.fullPreviewAfterCapture = await fullPreviewEvidence(page, viewport);
         }
 
-        run.after = await stableNotebookSnapshot(page);
+        run.after = await stableNotebookSnapshot(page, run.book.id);
         run.assertions = sabotage
           ? sabotageAssertions(run, config)
           : scenarioAssertions(run, config);
@@ -875,7 +903,9 @@ try {
         run.failure = error instanceof Error ? error.stack ?? error.message : String(error);
         run.state = await page.evaluate(() => globalThis.__aiAgentLoopQa?.state() ?? null)
           .catch(() => null);
-        run.after = await stableNotebookSnapshot(page).catch(() => null);
+        run.after = run.book === undefined
+          ? null
+          : await stableNotebookSnapshot(page, run.book.id).catch(() => null);
         run.screenshots.failure = resolve(runOut, 'failure.png');
         await page.screenshot({ path: run.screenshots.failure, caret: 'hide' }).catch(() => undefined);
       } finally {
@@ -908,6 +938,9 @@ if (sabotage) {
     `${run.scenario}@${run.viewport.width}x${run.viewport.height} ` +
     `${run.state.providerCalls}/${run.state.toolCalls}`).join(' · ');
   console.log(`agent runtime: PASS · ${summary}`);
+  if (selectedScenarioNames.every((name) => name === 'intent-conflict-recovery')) {
+    console.log('GATE ALIVE · wrong initial completion was rejected, analysed and recovered to preview');
+  }
 } else {
   for (const run of report.runs.filter((candidate) => candidate.status !== 'passed')) {
     console.error(`${run.scenario}@${run.viewport.width}x${run.viewport.height}: ` +

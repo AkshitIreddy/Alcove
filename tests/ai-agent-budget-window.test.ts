@@ -279,7 +279,7 @@ describe('AI agent per-reader-turn budget windows', () => {
       'submit_notebook_script',
     );
     expect(provider.requests[0]?.systemPrompt).toMatch(
-      /"currentTurn"[\s\S]*"intent":\s*"conversation"/,
+      /"currentTurn"[\s\S]*"objectiveMode":\s*"undecided"[\s\S]*"intentHint":\s*"conversation"/,
     );
     expect(provider.requests[0]?.systemPrompt).not.toContain('"task":{"goal":"hi"');
   });

@@ -61,6 +61,21 @@ export interface AgentTaskBrief {
   readonly preserveAllSourceInformation: boolean;
 }
 
+export type AgentObjectiveMode = 'undecided' | 'conversation' | 'notebook_change';
+
+/**
+ * Semantic authority for one reader turn. Regexes may provide an advisory
+ * hint, but only the model's declared mode or first successful mode-specific
+ * action settles this receipt. Hard local policy remains independent.
+ */
+export interface AgentObjective {
+  readonly turnId: string;
+  readonly mode: AgentObjectiveMode;
+  readonly decidedBy?: 'model_action' | 'model_declaration';
+  readonly reason?: string;
+  readonly decidedAt?: IsoTimestamp;
+}
+
 export type AgentContextPolicy =
   | 'selection_and_page'
   | 'current_page'
@@ -691,6 +706,8 @@ export interface AgentPublicError {
   readonly message: string;
   readonly retryable: boolean;
   readonly status?: number;
+  /** Bounded provider/tool detail for Copy Logs; never shown as reader copy. */
+  readonly diagnosticDetail?: string;
 }
 
 /**
@@ -733,12 +750,24 @@ export interface AgentProposalRecoveryReceipt {
   readonly createdAt: IsoTimestamp;
 }
 
+/**
+ * A native preview failure belongs to the exact draft that caused it. Keep a
+ * durable receipt so the next provider turn repairs that draft instead of
+ * mechanically invoking the same deterministic renderer again.
+ */
+export interface AgentRenderRecoveryReceipt {
+  readonly draftHash: string;
+  readonly message: string;
+  readonly createdAt: IsoTimestamp;
+}
+
 export interface AgentState {
   readonly schemaVersion: AgentStateVersion;
   readonly identity: AgentRunIdentity;
   readonly lifecycle: AgentLifecycle;
   readonly phase: AgentPhase;
   readonly taskBrief: AgentTaskBrief;
+  readonly objective?: AgentObjective;
   readonly conversation: readonly AgentConversationMessage[];
   readonly modelHistory: readonly AgentModelTurn[];
   /**
@@ -752,6 +781,10 @@ export interface AgentState {
   readonly notebookSnapshot?: NotebookSnapshotRef;
   /** Cleared only after the complete initial manifest has been committed. */
   readonly pendingSourceAttachments?: readonly SourceAttachmentRef[];
+  /** Newly registered reader attachments should ground this exact reader turn. */
+  readonly sourceIntentTurnId?: string;
+  /** Registration happens just before the corresponding user message exists. */
+  readonly sourceIntentPending?: true;
   readonly sourceManifest?: SourceManifest;
   readonly retrievalPlan?: AdaptiveRetrievalPlan;
   readonly sourceCoverage?: SourceCoverageLedger;
@@ -779,6 +812,7 @@ export interface AgentState {
   readonly lastApplyFailure?: AgentApplyFailureReceipt;
   readonly applyRecovery?: AgentApplyRecoveryReceipt;
   readonly proposalRecovery?: AgentProposalRecoveryReceipt;
+  readonly renderRecovery?: AgentRenderRecoveryReceipt;
   readonly checkpointStep: number;
   readonly createdAt: IsoTimestamp;
   readonly updatedAt: IsoTimestamp;
@@ -995,6 +1029,10 @@ export function createInitialAgentState(input: {
     lifecycle: 'idle',
     phase: 'intake',
     taskBrief,
+    objective: {
+      turnId: input.userMessageId,
+      mode: 'undecided',
+    },
     conversation: [initialMessage],
     modelHistory: [
       {

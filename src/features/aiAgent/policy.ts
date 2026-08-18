@@ -12,10 +12,12 @@ import {
 import { imagePromptHandoffMatchesDraft } from './imageHandoff';
 import { explicitImageRequest } from './imageIntent';
 import {
-  readerRequestsNotebookMutation,
+  agentRequestsNotebookMutation,
   readerRequiresCompleteSourceCoverage,
   readerRequiresSourceEvidence,
 } from './intent';
+import { missingRequiredManagedImageAssetPaths } from './sourceAssetPolicy';
+import { visualFindingRequiresRepair } from './visualFindingPolicy';
 
 export interface PolicyDecision {
   readonly allowed: boolean;
@@ -120,7 +122,7 @@ export function canCompleteConversation(
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
   }
-  if (readerRequestsNotebookMutation(state)) {
+  if (agentRequestsNotebookMutation(state)) {
     return {
       allowed: false,
       code: 'incomplete',
@@ -244,7 +246,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
   if (state.cancellation.requested) {
     return { allowed: false, code: 'cancelled', reason: 'this run was stopped' };
   }
-  if (!readerRequestsNotebookMutation(state)) {
+  if (!agentRequestsNotebookMutation(state)) {
     return {
       allowed: false,
       code: 'incomplete',
@@ -265,6 +267,18 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       allowed: false,
       code: 'stale',
       reason: 'the draft belongs to an older source manifest',
+    };
+  }
+  const missingManagedAssets = missingRequiredManagedImageAssetPaths(
+    state,
+    state.draft.script,
+  );
+  if (missingManagedAssets.length > 0) {
+    return {
+      allowed: false,
+      code: 'incomplete',
+      reason:
+        'the current draft omitted a reader-supplied image required by this request',
     };
   }
   if (readerRequiresSourceEvidence(state) && state.sourceManifest !== undefined) {
@@ -385,7 +399,7 @@ export function canSubmitNotebookPatch(state: AgentState): PolicyDecision {
       !uniquePreviewPageIds.includes(finding.pageId),
   );
   const blockingFinding = visual.findings.some(
-    (finding) => finding.severity === 'blocking' && !finding.resolved,
+    (finding) => visualFindingRequiresRepair(finding),
   );
   if (
     !visual.complete ||

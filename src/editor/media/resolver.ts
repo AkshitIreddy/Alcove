@@ -74,6 +74,28 @@ async function tauriAssetsRoot(): Promise<string> {
 export async function resolveAssetSrc(relPath: string): Promise<string> {
   const clean = normalizeRelPath(relPath);
   if (clean.length === 0) return MISSING_ASSET_SRC;
+  const live = devObjectUrls.get(clean);
+  if (live !== undefined) return live;
+  // Agent attachments are already behind a bounded native/browser byte API.
+  // Materialize them as blob URLs in BOTH environments. Tauri's asset:// URL
+  // displays correctly in a live <img>, but html-to-image reloads cloned
+  // descendants while capturing a native Agent preview; WebView2 emits a bare
+  // error Event for that asset-protocol reload (`{"isTrusted":true}`). A blob
+  // URL is same-process, clone-safe and uses the exact managed bytes.
+  if (clean.startsWith('ai/attachments/')) {
+    try {
+      const { readAiAttachment } = await import('../../data/aiGateway');
+      const stored = await readAiAttachment(clean.slice('ai/attachments/'.length));
+      const restored = URL.createObjectURL(new Blob(
+        [new Uint8Array(stored.bytes)],
+        { type: stored.metadata.mimeType },
+      ));
+      registerDevAssetUrl(clean, restored);
+      return restored;
+    } catch {
+      return MISSING_ASSET_SRC;
+    }
+  }
   if (isTauri()) {
     try {
       const [{ convertFileSrc }, root] = await Promise.all([
@@ -85,8 +107,6 @@ export async function resolveAssetSrc(relPath: string): Promise<string> {
       return MISSING_ASSET_SRC;
     }
   }
-  const live = devObjectUrls.get(clean);
-  if (live !== undefined) return live;
   const stored = await loadDevAssetBlob(clean);
   if (stored === null) return MISSING_ASSET_SRC;
   const restored = URL.createObjectURL(stored);

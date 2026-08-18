@@ -41,6 +41,8 @@ import type { ImageGenerationPrompt } from '../../features/aiAgent/types';
 import {
   AGENT_SOURCE_FILE_ACCEPT,
   classifyAgentComposerPaste,
+  filesFromAgentComposerDrop,
+  hasAgentComposerFileDrop,
   pastedTextFile,
 } from '../../features/aiAgent/attachmentIntake';
 import { AgentIcon, CloseIcon } from './icons';
@@ -424,6 +426,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   const [directionDetailOpen, setDirectionDetailOpen] = createSignal(false);
   const [expandedComposer, setExpandedComposer] = createSignal(false);
   const [draft, setDraft] = createSignal('');
+  const [fileDropActive, setFileDropActive] = createSignal(false);
   const [previewPage, setPreviewPage] = createSignal(0);
   const [fullPreviewOpen, setFullPreviewOpen] = createSignal(false);
   const [previewZoom, setPreviewZoom] = createSignal<'fit' | number>('fit');
@@ -434,6 +437,7 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   let composerRef: HTMLTextAreaElement | undefined;
   let fileInput: HTMLInputElement | undefined;
   let transcriptWasNearEnd = true;
+  let fileDragDepth = 0;
 
   const storedDirections = loadAiSpecStyleState();
   const [directionId, setDirectionId] = createSignal(storedDirections.selectedId);
@@ -518,6 +522,26 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
   });
 
   createEffect(() => {
+    if (props.panelOpen !== true) {
+      fileDragDepth = 0;
+      setFileDropActive(false);
+      return;
+    }
+    const resetFileDrag = (): void => {
+      fileDragDepth = 0;
+      setFileDropActive(false);
+    };
+    window.addEventListener('dragend', resetFileDrag);
+    window.addEventListener('drop', resetFileDrag);
+    window.addEventListener('blur', resetFileDrag);
+    onCleanup(() => {
+      window.removeEventListener('dragend', resetFileDrag);
+      window.removeEventListener('drop', resetFileDrag);
+      window.removeEventListener('blur', resetFileDrag);
+    });
+  });
+
+  createEffect(() => {
     const viewport = transcriptRef;
     if (viewport === undefined) return;
     const extent = state().timeline.length;
@@ -544,6 +568,50 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
     action();
+  };
+
+  const fileDragEnter = (event: DragEvent): void => {
+    if (!hasAgentComposerFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepth += 1;
+    if (
+      state().connection.status === 'connected' &&
+      props.controller?.attachFiles !== undefined
+    ) setFileDropActive(true);
+  };
+
+  const fileDragOver = (event: DragEvent): void => {
+    if (!hasAgentComposerFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const fileDragLeave = (event: DragEvent): void => {
+    if (!hasAgentComposerFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepth = Math.max(0, fileDragDepth - 1);
+    if (fileDragDepth === 0) setFileDropActive(false);
+  };
+
+  const fileDrop = (event: DragEvent): void => {
+    if (!hasAgentComposerFileDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepth = 0;
+    setFileDropActive(false);
+    const files = filesFromAgentComposerDrop(event.dataTransfer);
+    if (files.length === 0) return;
+    if (
+      state().connection.status !== 'connected' ||
+      props.controller?.attachFiles === undefined
+    ) {
+      props.onNotify?.('Connect the AI agent before attaching sources.');
+      return;
+    }
+    void props.controller.attachFiles(files);
   };
 
   const copyDiagnosticLog = (): void => {
@@ -799,7 +867,21 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
       />
       </div>
 
-      <section class="nb-ai-composer-wrap" aria-label="Message the AI agent">
+      <section
+        class="nb-ai-composer-wrap"
+        aria-label="Message the AI agent"
+        data-file-drop={fileDropActive() ? 'active' : undefined}
+        onDragEnter={fileDragEnter}
+        onDragOver={fileDragOver}
+        onDragLeave={fileDragLeave}
+        onDrop={fileDrop}
+      >
+        <Show when={fileDropActive()}>
+          <div class="nb-ai-file-drop-hint" role="status" aria-live="polite">
+            <AttachIcon />
+            <span><strong>Drop to attach</strong><span class="font-ui">images or source files</span></span>
+          </div>
+        </Show>
         <div class="nb-ai-context-row" aria-label="Notebook context">
           <For each={state().context}>
             {(context) => (
@@ -945,6 +1027,11 @@ export default function AiAgentPanel(props: AiAgentPanelProps): JSX.Element {
           onClose={() => setExpandedComposer(false)}
           onSend={send}
           onAttach={() => fileInput?.click()}
+          fileDropActive={fileDropActive()}
+          onFileDragEnter={fileDragEnter}
+          onFileDragOver={fileDragOver}
+          onFileDragLeave={fileDragLeave}
+          onFileDrop={fileDrop}
         />
       </Show>
 
@@ -1574,7 +1661,9 @@ function AttachmentTray(props: {
                 <strong>{attachment.name}</strong>
                 <span class="font-ui">{attachment.kind.toUpperCase()} · {attachment.pages ? `${attachment.pages} pages · ` : ''}{attachment.sizeLabel}</span>
               </span>
-              <span class="nb-ai-attachment-state font-ui">{attachment.status}</span>
+              <span class="nb-ai-attachment-state font-ui" title={attachment.detail}>
+                {attachment.detail ?? attachment.status}
+              </span>
               <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => props.onRemove(attachment.id)}>×</button>
             </div>
           )}
@@ -1595,13 +1684,34 @@ function ExpandedComposer(props: {
   onClose(): void;
   onSend(): void;
   onAttach(): void;
+  fileDropActive: boolean;
+  onFileDragEnter(event: DragEvent): void;
+  onFileDragOver(event: DragEvent): void;
+  onFileDragLeave(event: DragEvent): void;
+  onFileDrop(event: DragEvent): void;
 }): JSX.Element {
   let area: HTMLTextAreaElement | undefined;
   queueMicrotask(() => area?.focus());
   return (
     <Portal>
       <div class="nb-ai-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-        <section class="nb-ai-expanded-composer" role="dialog" aria-modal="true" aria-labelledby="nb-ai-expanded-title">
+        <section
+          class="nb-ai-expanded-composer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="nb-ai-expanded-title"
+          data-file-drop={props.fileDropActive ? 'active' : undefined}
+          onDragEnter={props.onFileDragEnter}
+          onDragOver={props.onFileDragOver}
+          onDragLeave={props.onFileDragLeave}
+          onDrop={props.onFileDrop}
+        >
+          <Show when={props.fileDropActive}>
+            <div class="nb-ai-file-drop-hint" role="status" aria-live="polite">
+              <AttachIcon />
+              <span><strong>Drop to attach</strong><span class="font-ui">images or source files</span></span>
+            </div>
+          </Show>
           <header>
             <button type="button" class="nb-ai-modal-close" aria-label="Close large writing sheet" onClick={props.onClose}><CloseIcon /></button>
             <div><span class="nb-ai-card-kicker font-ui">a larger writing desk</span><h2 id="nb-ai-expanded-title">Tell the agent what you need</h2></div>

@@ -21,6 +21,7 @@ import {
   AgentToolCatalog,
   InMemoryAgentPersistence,
   createInitialAgentState,
+  createSourceCoverageLedger,
   createVisualReviewLedger,
   recordVisualImageExposures,
   recordVisualInspection,
@@ -28,6 +29,7 @@ import {
   canCompleteConversation,
   canSubmitNotebookPatch,
   availableAgentToolNames,
+  buildAgentSystemPrompt,
 } from '../src/features/aiAgent';
 import {
   buildAiAgentDiagnosticLog,
@@ -657,6 +659,129 @@ describe('AI insertion target boundaries', () => {
       .toEqual(['render_draft_preview']);
   });
 
+  it('hands a native render exception back to the model as a draft-repair phase', async () => {
+    const generation = reviewedGeneration('render-failure-generation', 'render-failure-draft');
+    const base = reviewReadyState(generation);
+    const state = {
+      ...base,
+      taskBrief: { ...base.taskBrief, goal: 'Add this picture to my book' },
+      conversation: [{
+        id: 'reader-render-failure',
+        role: 'user' as const,
+        text: 'Add this picture to my book',
+        createdAt: NOW,
+      }],
+      previewGeneration: undefined,
+      visualReview: undefined,
+      patchProposal: undefined,
+    };
+    const baseAdapters = toolAdapters();
+    const adapters: AgentAdapters = {
+      ...baseAdapters,
+      sandbox: {
+        ...baseAdapters.sandbox,
+        render: async () => {
+          throw { message: 'The attached image could not be decoded by the native renderer.' };
+        },
+      },
+    };
+    const catalog = new AgentToolCatalog(
+      adapters,
+      new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+
+    expect([...availableAgentToolNames(state)]).toEqual(['render_draft_preview']);
+    const failed = await catalog.execute(state, {
+      id: 'native-render-failure',
+      name: 'render_draft_preview',
+      arguments: {},
+    }, new AbortController().signal);
+
+    expect(failed.result).toMatchObject({
+      error: 'The attached image could not be decoded by the native renderer.',
+      errorCode: 'native_render_failed',
+      recovered: true,
+      availableTools: ['submit_notebook_script'],
+      suggestedTools: ['submit_notebook_script'],
+    });
+    expect(failed.state.renderRecovery).toMatchObject({
+      draftHash: state.draft.draftHash,
+      message: 'The attached image could not be decoded by the native renderer.',
+    });
+    expect([...availableAgentToolNames(failed.state)]).toEqual(['submit_notebook_script']);
+
+    const repaired = await catalog.execute(failed.state, {
+      id: 'changed-render-repair',
+      name: 'submit_notebook_script',
+      arguments: {
+        script: '# Repaired picture page\n\nThe image now uses a supported compact layout.',
+        citedUnitIds: [],
+        reason: 'repair',
+      },
+    }, new AbortController().signal);
+    expect(repaired.result).not.toMatchObject({ error: expect.anything() });
+    expect(repaired.state.renderRecovery).toBeUndefined();
+    expect([...availableAgentToolNames(repaired.state)]).toEqual(['validate_notebook_script']);
+  });
+
+  it('upgrades an empty receipt-only visual finding to a blocking repair', async () => {
+    const generation = reviewedGeneration('empty-receipt-generation', 'empty-receipt-draft');
+    const base = reviewReadyState(generation);
+    const exposed = recordVisualImageExposures(
+      base.visualReview,
+      generation,
+      generation.pages,
+      { now: NOW, providerCallCount: 2 },
+    );
+    const state = {
+      ...base,
+      taskBrief: { ...base.taskBrief, goal: 'Add this picture to my book' },
+      conversation: [{
+        id: 'reader-empty-receipt',
+        role: 'user' as const,
+        text: 'Add this picture to my book',
+        createdAt: NOW,
+      }],
+      visualReview: exposed,
+      patchProposal: undefined,
+      usage: { ...base.usage, providerCalls: 3 },
+    };
+    const catalog = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const reviewed = await catalog.execute(state, {
+      id: 'record-empty-receipt',
+      name: 'record_visual_review',
+      arguments: {
+        generationId: generation.generationId,
+        reviews: [{
+          pageId: generation.pages[0]!.pageId,
+          findings: [{
+            severity: 'info',
+            category: 'other',
+            summary: 'Page contains only the Alcove draft receipt note with no content',
+          }],
+        }],
+      },
+    }, new AbortController().signal);
+
+    expect(reviewed.state.visualReview).toMatchObject({
+      complete: true,
+      passed: false,
+      findings: [expect.objectContaining({
+        severity: 'blocking',
+        resolved: false,
+      })],
+    });
+    expect(canSubmitNotebookPatch(reviewed.state)).toMatchObject({
+      allowed: false,
+      code: 'incomplete',
+    });
+    expect([...availableAgentToolNames(reviewed.state)])
+      .toEqual(['submit_notebook_script']);
+  });
+
   it('rerenders and resets an inconsistent legacy visual-review receipt', async () => {
     const generation = reviewedGeneration('legacy-review-generation', 'legacy-review-draft');
     const base = reviewReadyState(generation);
@@ -860,9 +985,12 @@ describe('AI insertion target boundaries', () => {
         reason: 'repair',
       },
     }, new AbortController().signal);
-    expect(staleCall.result).toEqual({
+    expect(staleCall.result).toMatchObject({
       error: 'the current draft already passed validation; render it instead of submitting it again',
+      errorCode: 'tool_unavailable',
+      failedTool: 'submit_notebook_script',
       retryable: true,
+      suggestedTools: ['render_draft_preview'],
     });
     expect(staleCall.state.draft).toEqual(state.draft);
     expect(staleCall.state.usage.repairPasses).toBe(state.usage.repairPasses);
@@ -1039,9 +1167,11 @@ describe('AI insertion target boundaries', () => {
 
     expect(first.state.plan?.version).toBe(1);
     expect(repeated.state.plan).toEqual(first.state.plan);
-    expect(repeated.result).toEqual({
-      error: 'set_plan is not available in the current agent phase; use inspect_notebook instead',
+    expect(repeated.result).toMatchObject({
+      errorCode: 'tool_unavailable',
+      failedTool: 'set_plan',
       retryable: true,
+      suggestedTools: expect.arrayContaining(['inspect_notebook']),
     });
     expect(availableAgentToolNames(first.state).has('set_plan')).toBe(false);
     expect(availableAgentToolNames(first.state).has('inspect_notebook')).toBe(true);
@@ -1072,7 +1202,167 @@ describe('AI insertion target boundaries', () => {
     const tools = availableAgentToolNames(state);
 
     expect(tools.has('inspect_notebook')).toBe(true);
-    expect(tools.has('finish_conversation')).toBe(false);
+    expect(tools.has('finish_conversation')).toBe(true);
+    expect(tools.has('set_task_mode')).toBe(true);
+  });
+
+  it('treats adding an attached picture as notebook work without requiring the word book', () => {
+    const state = createInitialAgentState({
+      identity: {
+        taskId: 'task-picture-intent',
+        threadId: 'thread-picture-intent',
+        runId: 'run-picture-intent',
+        bookId: 'current-book',
+      },
+      goal: 'add this picture for week 6, for box packing problem, no need for too much writeup, just a little',
+      now: NOW,
+      userMessageId: 'reader-picture-intent',
+    });
+    const tools = availableAgentToolNames(state);
+
+    expect(tools.has('inspect_notebook')).toBe(true);
+    expect(tools.has('finish_conversation')).toBe(true);
+    expect(tools.has('set_task_mode')).toBe(true);
+  });
+
+  it('lets the model resolve an intent conflict and then narrows the tool surface', async () => {
+    const identity = {
+      taskId: 'task-objective-supervisor',
+      threadId: 'thread-objective-supervisor',
+      runId: 'run-objective-supervisor',
+      bookId: 'current-book',
+    };
+    const catalog = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'add this picture to my notes',
+      now: NOW,
+      userMessageId: 'reader-objective-supervisor',
+    });
+
+    const wrong = await catalog.execute(initial, {
+      id: 'wrong-conversation-finish',
+      name: 'finish_conversation',
+      arguments: { answer: 'Here is a chat answer.', citedUnitIds: [] },
+    }, new AbortController().signal);
+    expect(wrong.result).toMatchObject({
+      errorCode: 'intent_conflict',
+      failedTool: 'finish_conversation',
+      retryable: true,
+      stateChanged: false,
+      suggestedTools: ['set_task_mode'],
+      availableTools: expect.arrayContaining([
+        'finish_conversation', 'inspect_notebook', 'set_task_mode',
+      ]),
+    });
+    expect(wrong.state.objective?.mode).toBe('undecided');
+
+    const declared = await catalog.execute(wrong.state, {
+      id: 'declare-notebook-mode',
+      name: 'set_task_mode',
+      arguments: {
+        mode: 'notebook_change',
+        reason: 'The reader explicitly asked to add the supplied picture.',
+      },
+    }, new AbortController().signal);
+    expect(declared.state.objective).toMatchObject({
+      mode: 'notebook_change',
+      decidedBy: 'model_declaration',
+    });
+    expect(availableAgentToolNames(declared.state).has('inspect_notebook')).toBe(true);
+    expect(availableAgentToolNames(declared.state).has('finish_conversation')).toBe(false);
+
+    const readyToDraft = {
+      ...declared.state,
+      notebookSnapshot: {
+        bookId: 'current-book',
+        bookRevision: 'current-revision',
+        pageIds: ['page-1'],
+        pageRevisions: { 'page-1': 'page-revision-1' },
+        capturedAt: NOW,
+      },
+      insertionTarget: { kind: 'book_end' as const },
+    };
+    expect(availableAgentToolNames(readyToDraft).has('set_task_mode')).toBe(false);
+    const redundant = await catalog.execute(readyToDraft, {
+      id: 'redeclare-notebook-mode',
+      name: 'set_task_mode',
+      arguments: {
+        mode: 'notebook_change',
+        reason: 'Confirm the already-set notebook task before drafting.',
+      },
+    }, new AbortController().signal);
+    expect(redundant.result).not.toMatchObject({ error: expect.anything() });
+    expect(availableAgentToolNames(redundant.state))
+      .toEqual(new Set(['submit_notebook_script']));
+  });
+
+  it('lets the model explicitly override a false advisory hint before material work', async () => {
+    const identity = {
+      taskId: 'task-objective-override',
+      threadId: 'thread-objective-override',
+      runId: 'run-objective-override',
+      bookId: 'current-book',
+    };
+    const catalog = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'add this picture to the explanation you give me here in chat',
+      now: NOW,
+      userMessageId: 'reader-objective-override',
+    });
+    const declared = await catalog.execute(initial, {
+      id: 'declare-conversation-mode',
+      name: 'set_task_mode',
+      arguments: {
+        mode: 'conversation',
+        reason: 'The reader explicitly said the result belongs here in chat.',
+      },
+    }, new AbortController().signal);
+
+    expect(declared.state.objective?.mode).toBe('conversation');
+    expect(availableAgentToolNames(declared.state).has('finish_conversation')).toBe(true);
+    expect(availableAgentToolNames(declared.state).has('inspect_notebook')).toBe(false);
+  });
+
+  it('returns machine-readable recovery guidance for invalid tool arguments', async () => {
+    const identity = {
+      taskId: 'task-structured-tool-error',
+      threadId: 'thread-structured-tool-error',
+      runId: 'run-structured-tool-error',
+      bookId: 'current-book',
+    };
+    const catalog = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'make a notebook page about cats',
+      now: NOW,
+      userMessageId: 'reader-structured-tool-error',
+    });
+    const failed = await catalog.execute(initial, {
+      id: 'bad-inspect-arguments',
+      name: 'inspect_notebook',
+      arguments: { request: 'wrong' },
+    }, new AbortController().signal);
+
+    expect(failed.result).toMatchObject({
+      errorCode: 'invalid_arguments',
+      failedTool: 'inspect_notebook',
+      retryable: true,
+      stateChanged: false,
+      suggestedTools: ['inspect_notebook'],
+      availableTools: expect.arrayContaining(['inspect_notebook', 'set_task_mode']),
+      nextAction: expect.stringMatching(/correct the arguments/i),
+    });
   });
 
   it('starts a later ordinary question in conversation mode even when an old draft remains', () => {
@@ -1166,6 +1456,98 @@ describe('AI insertion target boundaries', () => {
     expect(canCompleteConversation(state, [])).toEqual({ allowed: true });
   });
 
+  it('treats a newly attached picture as the object of a vague current request', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-current-picture',
+        threadId: 'thread-current-picture',
+        runId: 'run-current-picture',
+        bookId: 'current-book',
+      },
+      goal: 'add to my book',
+      now: NOW,
+      userMessageId: 'reader-current-picture',
+    });
+    const manifest = citationManifest();
+    const state = {
+      ...initial,
+      sourceIntentTurnId: 'reader-current-picture',
+      sourceManifest: manifest,
+      sourceCoverage: createSourceCoverageLedger(manifest, 'relevant', NOW),
+    };
+
+    const tools = availableAgentToolNames(state);
+    expect(tools.has('plan_source_retrieval')).toBe(true);
+    expect(tools.has('read_full_source')).toBe(true);
+    expect(tools.has('ask_user')).toBe(false);
+    expect(tools.has('inspect_notebook')).toBe(true);
+    expect(tools.has('finish_conversation')).toBe(false);
+  });
+
+  it('does not let a staged picture hijack hi, but uses it for a later vague add command', () => {
+    const initial = createInitialAgentState({
+      identity: {
+        taskId: 'task-staged-picture',
+        threadId: 'thread-staged-picture',
+        runId: 'run-staged-picture',
+        bookId: 'current-book',
+      },
+      goal: 'hi',
+      now: NOW,
+      userMessageId: 'reader-staged-picture-hi',
+    });
+    const baseManifest = citationManifest();
+    const manifest = {
+      ...baseManifest,
+      sources: baseManifest.sources.map((source) => ({
+        ...source,
+        kind: 'image' as const,
+        mediaType: 'image/png',
+      })),
+    };
+    const staged = {
+      ...initial,
+      sourceIntentTurnId: 'reader-staged-picture-hi',
+      sourceManifest: manifest,
+      sourceCoverage: createSourceCoverageLedger(manifest, 'relevant', NOW),
+    };
+    const greetingTools = availableAgentToolNames(staged);
+    expect(greetingTools.has('finish_conversation')).toBe(true);
+    expect(greetingTools.has('read_full_source')).toBe(false);
+
+    const later = {
+      ...staged,
+      conversation: [
+        ...staged.conversation,
+        {
+          id: 'agent-staged-picture-hi',
+          role: 'assistant' as const,
+          text: 'Hi! What would you like to work on?',
+          createdAt: NOW,
+        },
+        {
+          id: 'reader-staged-picture-add',
+          role: 'user' as const,
+          text: 'add to my book',
+          createdAt: NOW,
+        },
+      ],
+      objective: {
+        turnId: 'reader-staged-picture-add',
+        mode: 'undecided' as const,
+      },
+      budgetWindow: {
+        ...staged.budgetWindow!,
+        readerMessageId: 'reader-staged-picture-add',
+      },
+    };
+    const addTools = availableAgentToolNames(later);
+    expect(addTools.has('read_full_source')).toBe(true);
+    expect(addTools.has('inspect_notebook')).toBe(true);
+    expect(addTools.has('ask_user')).toBe(false);
+    expect(addTools.has('finish_conversation')).toBe(false);
+  });
+
   it('treats the Preserve All toggle as a complete evidence gate without magic wording', () => {
     const initial = createInitialAgentState({
       identity: {
@@ -1201,6 +1583,64 @@ describe('AI insertion target boundaries', () => {
     expect(tools.has('inspect_notebook')).toBe(false);
     expect(tools.has('submit_notebook_script')).toBe(false);
     expect(tools.has('finish_conversation')).toBe(false);
+  });
+
+  it('never advertises a no-op complete coverage inspection before an attachment read', async () => {
+    const identity = {
+      taskId: 'task-unread-source-coverage',
+      threadId: 'thread-unread-source-coverage',
+      runId: 'run-unread-source-coverage',
+      bookId: 'current-book',
+    };
+    const manifest = citationManifest();
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'add this attached source to my book',
+      now: NOW,
+      userMessageId: 'reader-unread-source-coverage',
+    });
+    const state = {
+      ...initial,
+      objective: {
+        turnId: 'reader-unread-source-coverage',
+        mode: 'notebook_change' as const,
+        decidedBy: 'model_action' as const,
+      },
+      sourceManifest: manifest,
+      sourceCoverage: createSourceCoverageLedger(manifest, 'relevant', NOW),
+    };
+    const before = availableAgentToolNames(state);
+    expect(before.has('inspect_source_coverage')).toBe(false);
+    expect(before.has('plan_source_retrieval')).toBe(true);
+    expect(before.has('read_full_source')).toBe(true);
+    const prompt = buildAgentSystemPrompt(state);
+    expect(prompt).toContain('"complete":false');
+    expect(prompt).toContain('"selectionOrReadPending":true');
+    expect(prompt).toContain('no source coverage claim is complete before a real read');
+
+    const catalog = new AgentToolCatalog(
+      toolAdapters(),
+      new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW),
+    );
+    const planned = await catalog.execute(state, {
+      id: 'plan-unread-source',
+      name: 'plan_source_retrieval',
+      arguments: { request: 'plan' },
+    }, new AbortController().signal);
+
+    expect(planned.state.retrievalPlan?.strategy).toBe('direct');
+    const expectedUnits = manifest.sources.flatMap((source) =>
+      source.kind === 'notebook_script_spec' ? [] : source.units.map((unit) => unit.id));
+    expect(planned.state.sourceCoverage).toMatchObject({
+      complete: false,
+      requiredUnitIds: expectedUnits,
+      omittedUnitIds: expectedUnits,
+      readUnitIds: [],
+    });
+    const after = availableAgentToolNames(planned.state);
+    expect(after.has('plan_source_retrieval')).toBe(false);
+    expect(after.has('inspect_source_coverage')).toBe(true);
+    expect(after.has('read_full_source')).toBe(true);
   });
 
   it('keeps retrieval available and required when the current request names its source', async () => {
@@ -1258,9 +1698,9 @@ describe('AI insertion target boundaries', () => {
       'read_full_source',
       'read_source_range',
       'search_source_index',
-      'rerank_source_hits',
-      'inspect_source_coverage',
     ]));
+    expect(availableAgentToolNames(state).has('rerank_source_hits')).toBe(false);
+    expect(availableAgentToolNames(state).has('inspect_source_coverage')).toBe(false);
     expect(availableAgentToolNames(state).has('list_source_manifest')).toBe(false);
     expect(canCompleteConversation(state, [])).toMatchObject({
       allowed: false,
@@ -1328,7 +1768,7 @@ describe('AI insertion target boundaries', () => {
     );
     expect(first.interrupt?.kind).toBe('requirements');
     const resumed = await tools.completeInterrupt(
-      first.state,
+      { ...first.state, sourceIntentPending: true },
       firstCall,
       {
         kind: 'requirements_answer',
@@ -1337,6 +1777,8 @@ describe('AI insertion target boundaries', () => {
       },
       new AbortController().signal,
     );
+    expect(resumed.state.sourceIntentTurnId).toBe('reader-question-answer');
+    expect(resumed.state.sourceIntentPending).toBeUndefined();
     const stateWithAnswerReceipt = {
       ...resumed.state,
       modelHistory: [
@@ -1435,8 +1877,10 @@ describe('AI insertion target boundaries', () => {
         new AbortController().signal,
       );
 
-      expect(result.result).toEqual({
+      expect(result.result).toMatchObject({
         error: 'the insertion page does not belong to the current notebook',
+        errorCode: 'tool_execution_failed',
+        failedTool: 'propose_insertion',
         retryable: true,
       });
       expect(result.state.insertionTarget).toBeUndefined();
@@ -1884,8 +2328,25 @@ describe('AI panel queued-source handoff', () => {
     expect([...phrases].every((phrase) => phrase.endsWith('…'))).toBe(true);
 
     const state = citationReadyState();
+    const stateWithFailure = {
+      ...state,
+      modelHistory: [...state.modelHistory, {
+        id: 'render-failure-log-turn',
+        role: 'tool' as const,
+        toolCallId: 'render-failure-log-call',
+        toolName: 'render_draft_preview',
+        content: {
+          error: 'The attached image could not be decoded.',
+          errorCode: 'native_render_failed',
+          nextAction: 'Revise the Notebook Script and validate it again.',
+          availableTools: ['submit_notebook_script'],
+        },
+        isError: true,
+        createdAt: NOW,
+      }],
+    };
     const log = buildAiAgentDiagnosticLog(
-      { state, interrupt: null, busy: false },
+      { state: stateWithFailure, interrupt: null, busy: false },
       [{ id: 'reader-log', kind: 'message', role: 'reader', text: 'Add this to my book' }, {
         id: 'tool-log',
         kind: 'tool',
@@ -1899,6 +2360,9 @@ describe('AI panel queued-source handoff', () => {
     expect(log).toContain('Add this to my book');
     expect(log).toContain('validate_notebook_script');
     expect(log).toContain('providerCalls');
+    expect(log).toContain('native_render_failed');
+    expect(log).toContain('The attached image could not be decoded.');
+    expect(log).toContain('submit_notebook_script');
     expect(log).not.toContain('"apiKey"');
     expect(log).not.toContain('sourceCoverage');
   });
@@ -2625,8 +3089,10 @@ describe('AI native-page visual review authority', () => {
       },
     }, new AbortController().signal);
 
-    expect(result.result).toEqual({
+    expect(result.result).toMatchObject({
       error: 'invalid read_draft_preview_pages arguments',
+      errorCode: 'invalid_arguments',
+      failedTool: 'read_draft_preview_pages',
       retryable: true,
     });
     expect(result.imageRefs).toBeUndefined();
@@ -2666,8 +3132,10 @@ describe('AI native-page visual review authority', () => {
       },
     }, new AbortController().signal);
 
-    expect(result.result).toEqual({
+    expect(result.result).toMatchObject({
       error: 'invalid record_visual_review arguments',
+      errorCode: 'invalid_arguments',
+      failedTool: 'record_visual_review',
       retryable: true,
     });
     expect(result.state.visualReview?.findings).toEqual([]);
@@ -2935,8 +3403,10 @@ describe('AI source citation provenance', () => {
       },
     }, new AbortController().signal);
 
-    expect(result.result).toEqual({
+    expect(result.result).toMatchObject({
       error: 'the current preview must be inspected, reviewed or proposed; do not resubmit the unchanged draft',
+      errorCode: 'tool_unavailable',
+      failedTool: 'submit_notebook_script',
       retryable: true,
     });
     expect(result.state.draft).toEqual(state.draft);
@@ -3009,6 +3479,11 @@ describe('AI source citation provenance', () => {
         ...base.budgetWindow!,
         readerMessageId,
       },
+      objective: {
+        turnId: readerMessageId,
+        mode: 'notebook_change' as const,
+        decidedBy: 'model_action' as const,
+      },
       sourceCoverage: {
         ...base.sourceCoverage,
         citedUnitIds: [],
@@ -3074,6 +3549,11 @@ describe('AI source citation provenance', () => {
       budgetWindow: {
         ...base.budgetWindow!,
         readerMessageId,
+      },
+      objective: {
+        turnId: readerMessageId,
+        mode: 'notebook_change' as const,
+        decidedBy: 'model_action' as const,
       },
       sourceCoverage: {
         ...base.sourceCoverage,
@@ -3156,7 +3636,7 @@ describe('AI source citation provenance', () => {
   it.each([
     ['foreign', 'foreign-unit'],
     ['unread', 'trusted-unit-unread'],
-  ])('rejects a %s cited unit before accepting the draft', async (_kind, citedUnitId) => {
+  ])('drops a %s cited unit before accepting the grounded draft', async (_kind, citedUnitId) => {
     const base = citationReadyState();
     const state = {
       ...base,
@@ -3180,11 +3660,11 @@ describe('AI source citation provenance', () => {
       },
     }, new AbortController().signal);
 
-    expect(result.result).toEqual({
-      error: 'citations must name source units read in this task',
-      retryable: true,
+    expect(result.result).not.toHaveProperty('error');
+    expect(result.result).toMatchObject({
+      invalidCitationsDropped: [citedUnitId],
     });
-    expect(result.state.draft).toBeUndefined();
+    expect(result.state.draft).toBeDefined();
     expect(result.state.sourceCoverage?.citedUnitIds).toEqual(['trusted-unit-1']);
   });
 
@@ -3276,8 +3756,10 @@ describe('AI source citation provenance', () => {
         }],
       },
     }, new AbortController().signal);
-    expect(spoofed.result).toEqual({
+    expect(spoofed.result).toMatchObject({
       error: 'invalid propose_notebook_patch arguments',
+      errorCode: 'invalid_arguments',
+      failedTool: 'propose_notebook_patch',
       retryable: true,
     });
     expect(spoofed.state.patchProposal).toBeUndefined();

@@ -200,6 +200,33 @@ export function friendlyWorkingNote(
   return phrases[(hash >>> 0) % phrases.length]!;
 }
 
+function diagnosticToolFailure(content: unknown): {
+  readonly error: string;
+  readonly errorCode?: string;
+  readonly nextAction?: string;
+  readonly availableTools?: readonly string[];
+} {
+  const record = content !== null && typeof content === 'object' && !Array.isArray(content)
+    ? content as Record<string, unknown>
+    : {};
+  const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() !== ''
+      ? value.trim().slice(0, 1_200)
+      : undefined;
+  return {
+    error: text(record.error) ?? 'Tool execution failed without a readable message.',
+    ...(text(record.errorCode) === undefined ? {} : { errorCode: text(record.errorCode) }),
+    ...(text(record.nextAction) === undefined ? {} : { nextAction: text(record.nextAction) }),
+    ...(Array.isArray(record.availableTools)
+      ? {
+          availableTools: record.availableTools
+            .filter((value): value is string => typeof value === 'string')
+            .slice(0, 20),
+        }
+      : {}),
+  };
+}
+
 export function buildAiAgentDiagnosticLog(
   runtime: AgentRuntimeSnapshot,
   timeline: readonly AiAgentTimelineItem[],
@@ -253,6 +280,14 @@ export function buildAiAgentDiagnosticLog(
       cancellation: state.cancellation,
       lastError: state.lastError ?? null,
       lastApplyFailure: state.lastApplyFailure ?? null,
+      recentToolFailures: state.modelHistory
+        .flatMap((turn) => turn.role === 'tool' && turn.isError
+          ? [{
+              tool: turn.toolName,
+              ...diagnosticToolFailure(turn.content),
+            }]
+          : [])
+        .slice(-5),
       pendingToolCalls: state.pendingToolCalls.map((call) => call.name),
       draftVersion: state.draft?.version ?? null,
       validationValid: state.validation?.valid ?? null,

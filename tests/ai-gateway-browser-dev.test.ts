@@ -63,6 +63,34 @@ describe('AI gateway localhost development transport', () => {
     ]);
   });
 
+  it('keeps localhost image attachments content-addressed and byte-private', async () => {
+    const gateway = await import('../src/data/aiGateway');
+    const png = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d,
+    ]);
+
+    const first = await gateway.saveAiAttachment(png);
+    const second = await gateway.saveAiAttachment(png);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      id: expect.stringMatching(/^att_[0-9a-f]{64}$/),
+      kind: 'png',
+      mimeType: 'image/png',
+      sizeBytes: png.length,
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(await gateway.readAiAttachment(first.id)).toEqual({
+      metadata: first,
+      bytes: [...png],
+    });
+    const { resolveAssetSrc } = await import('../src/editor/media/resolver');
+    expect(await resolveAssetSrc(`ai/attachments/${first.id}`)).toMatch(/^blob:/);
+    expect(await gateway.deleteAiAttachment(first.id)).toBe(true);
+    await expect(gateway.readAiAttachment(first.id)).rejects.toThrow(/no longer available/i);
+    await expect(gateway.saveAiAttachment(new Uint8Array())).rejects.toThrow(/between 1 byte and 32 MB/i);
+  });
+
   it('translates embed fields to Cohere snake case without leaking the run id', async () => {
     let body: Record<string, unknown> = {};
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {

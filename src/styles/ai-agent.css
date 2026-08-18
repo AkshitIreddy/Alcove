@@ -1718,12 +1718,53 @@
 /* ------------------------------- composer --------------------------------- */
 
 .nb-ai-composer-wrap {
+  position: relative;
   flex: 0 0 auto;
   display: grid;
   gap: 2px;
   padding: 5px 10px;
   background: var(--paper-aged);
   border-top: var(--stroke-ink-thin);
+}
+
+.nb-ai-file-drop-hint {
+  position: absolute;
+  inset: 4px 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  color: var(--accent-ink);
+  background: var(--wash-sky-light);
+  border: 2px dashed var(--accent-deep);
+  border-radius: 13px 18px 12px 17px / 17px 12px 18px 13px;
+  pointer-events: none;
+}
+
+.nb-ai-file-drop-hint > .nb-ai-inline-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.nb-ai-file-drop-hint > span {
+  display: grid;
+  line-height: 1.05;
+}
+
+.nb-ai-file-drop-hint strong {
+  font-family: var(--font-label);
+  font-size: var(--text-label);
+  font-weight: 400;
+}
+
+.nb-ai-file-drop-hint span.font-ui {
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui-xs);
+}
+
+.nb-ai-composer-wrap[data-file-drop='active'] .nb-ai-composer {
+  border-color: var(--accent-deep);
 }
 
 .nb-ai-context-row {
@@ -1837,6 +1878,9 @@
 
 .nb-ai-attachment-state {
   grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nb-ai-attachment > button {
@@ -2236,8 +2280,13 @@
 }
 
 .nb-ai-expanded-composer {
+  position: relative;
   width: min(820px, calc(100vw - 48px));
   height: min(680px, calc(100vh - 48px));
+}
+
+.nb-ai-expanded-composer > .nb-ai-file-drop-hint {
+  inset: var(--space-12);
 }
 
 .nb-ai-expanded-meta {

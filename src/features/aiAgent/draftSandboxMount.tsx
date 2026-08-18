@@ -130,6 +130,45 @@ async function settleMedia(
   }
 }
 
+function captureMediaLabel(image: HTMLImageElement): string {
+  const portableHost = image.closest<HTMLElement>('[data-asset-rel-path]');
+  const portablePath = portableHost?.dataset.assetRelPath?.trim();
+  if (portablePath) return portablePath;
+  const source = image.getAttribute('src') ?? '';
+  if (source === MISSING_ASSET_SRC) return 'missing managed image';
+  if (source.startsWith('blob:')) return 'managed blob image';
+  if (source.startsWith('data:')) return 'inline image';
+  try {
+    return new URL(source, window.location.href).pathname.slice(0, 240);
+  } catch {
+    return source.slice(0, 240) || 'source-less image';
+  }
+}
+
+function assertCaptureMediaReady(sheet: HTMLElement): void {
+  const broken = [...sheet.querySelectorAll<HTMLImageElement>('img')].filter((image) =>
+    !image.classList.contains('ProseMirror-separator') &&
+    (
+      !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0 ||
+      image.getAttribute('src') === MISSING_ASSET_SRC
+    ),
+  );
+  if (broken.length === 0) return;
+  throw new Error(
+    `Native draft media did not become capture-ready: ${broken.map(captureMediaLabel).join(', ')}`,
+  );
+}
+
+function captureFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== '') return error.message.trim();
+  if (error instanceof Event) return `WebView2 emitted a ${error.type || 'media'} event`;
+  if (error !== null && typeof error === 'object') {
+    const message = Reflect.get(error, 'message');
+    if (typeof message === 'string' && message.trim() !== '') return message.trim();
+  }
+  return String(error);
+}
+
 function pageSignature(sheet: HTMLElement, doc: PageDoc, overflowCount: number): string {
   const prose = sheet.querySelector<HTMLElement>('.nb-prose');
   const blocks = prose === null
@@ -361,6 +400,7 @@ async function renderOnePage(
       signal,
     );
     throwIfAborted(signal);
+    assertCaptureMediaReady(sheet);
     const diagnostics = layoutDiagnostics(
       sheet,
       currentDoc,
@@ -373,9 +413,19 @@ async function renderOnePage(
     // parchment default for exported files; explicitly hand it the mounted
     // leaf's resolved stock here so a pink, olive, night or custom sheet does
     // not turn cream while the reader is deciding whether to insert it.
-    const captured = await capturePagePng(sheet, {
-      backgroundColor: getComputedStyle(sheet).backgroundColor,
-    });
+    let captured;
+    try {
+      captured = await capturePagePng(sheet, {
+        backgroundColor: getComputedStyle(sheet).backgroundColor,
+      });
+    } catch (error) {
+      const media = [...sheet.querySelectorAll<HTMLImageElement>('img')]
+        .filter((image) => !image.classList.contains('ProseMirror-separator'))
+        .map(captureMediaLabel);
+      throw new Error(
+        `Native page capture failed${media.length > 0 ? ` while rendering ${media.join(', ')}` : ''}: ${captureFailureMessage(error)}`,
+      );
+    }
     throwIfAborted(signal);
     return {
       doc: currentDoc,

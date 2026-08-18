@@ -30,6 +30,7 @@ import { AgentProviderError } from '../../features/aiAgent/provider';
 import { AgentRuntime } from '../../features/aiAgent/runtime';
 import type {
   AgentJsonValue,
+  AgentObjectiveMode,
   AgentSourceDescriptor,
   AgentState,
   NotebookInsertionTarget,
@@ -51,6 +52,7 @@ import {
 export type AiAgentLoopQaScenario =
   | 'healthy-targetless'
   | 'healthy-production-default'
+  | 'intent-conflict-recovery'
   | 'conversation-envelope-recovery'
   | 'provider-invalid-retry'
   | 'invalid-repeat'
@@ -156,6 +158,7 @@ const STALLED_SCRIPT = '# Cats\n\nCats use their whiskers to sense nearby surfac
 function routeScenario(): AiAgentLoopQaScenario {
   const value = new URLSearchParams(window.location.search).get('scenario');
   return value === 'healthy-production-default' ||
+    value === 'intent-conflict-recovery' ||
     value === 'conversation-envelope-recovery' ||
     value === 'provider-invalid-retry' ||
     value === 'invalid-repeat' ||
@@ -222,6 +225,16 @@ function argsForTool(
   submitCount: number,
 ): AgentJsonValue {
   switch (name) {
+    case 'set_task_mode':
+      return {
+        mode: 'notebook_change',
+        reason: 'The reader explicitly requested notebook pages.',
+      };
+    case 'finish_conversation':
+      return {
+        answer: 'I will answer only in chat.',
+        citedUnitIds: [],
+      };
     case 'list_source_manifest':
     case 'inspect_notebook':
     case 'validate_notebook_script':
@@ -345,7 +358,11 @@ class DeterministicLoopQaProvider implements AgentProvider {
     const names = new Set(request.tools.map((tool) => tool.name));
     const selected = this.sabotageEarlyDraft && !this.sabotageAttempted
       ? 'submit_notebook_script'
-      : TOOL_PRIORITY.find((name) => names.has(name));
+      : this.scenario === 'intent-conflict-recovery' && this.selectedTools.length === 0
+        ? 'finish_conversation'
+        : this.scenario === 'intent-conflict-recovery' && this.selectedTools.length === 1
+          ? 'set_task_mode'
+          : TOOL_PRIORITY.find((name) => names.has(name));
     if (selected === undefined) {
       throw new Error(`QA provider received no supported next tool: ${[...names].join(', ')}`);
     }
@@ -405,6 +422,7 @@ export interface AiAgentLoopQaState {
   }[];
   readonly retrievalCalls: number;
   readonly sourceCoverageComplete: boolean | null;
+  readonly objectiveMode: AgentObjectiveMode | null;
   readonly draftSourceReadUnitIds: readonly string[];
   readonly previewPageCount: number;
   readonly draftVersion: number | null;
@@ -538,7 +556,8 @@ export function createAiAgentLoopQaBridge(
   const placements = (): readonly AiAgentPlacementOption[] => {
     const productionDefault = options.defaultInsertionTarget();
     if (
-      (scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry') &&
+      (scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry' ||
+        scenario === 'intent-conflict-recovery') &&
       productionDefault !== undefined
     ) {
       return [{
@@ -589,7 +608,8 @@ export function createAiAgentLoopQaBridge(
     placements,
     preserveAllSourceInformation: () => scenario === 'preserve-all',
     insertionTarget: () =>
-      scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry'
+      scenario === 'healthy-production-default' || scenario === 'provider-invalid-retry' ||
+        scenario === 'intent-conflict-recovery'
       ? options.defaultInsertionTarget()
       : undefined,
     renderUrlFor: sandbox.renderUrlFor,
@@ -643,6 +663,7 @@ export function createAiAgentLoopQaBridge(
           : historyTools,
         retrievalCalls,
         sourceCoverageComplete: state?.sourceCoverage?.complete ?? null,
+        objectiveMode: state?.objective?.mode ?? null,
         draftSourceReadUnitIds: [...(state?.draft?.sourceReadUnitIds ?? [])],
         previewPageCount: state?.previewGeneration?.pageCount ?? 0,
         draftVersion: state?.draft?.version ?? null,

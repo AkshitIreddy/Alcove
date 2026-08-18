@@ -6,6 +6,8 @@ import {
   agentSourceAttachmentMediaType,
   agentSourceMediaType,
   classifyAgentComposerPaste,
+  filesFromAgentComposerDrop,
+  hasAgentComposerFileDrop,
 } from '../src/features/aiAgent/attachmentIntake';
 
 describe('AI Agent managed source intake', () => {
@@ -68,5 +70,17 @@ describe('AI Agent managed source intake', () => {
       mediaType: 'text/plain',
     });
     expect(new TextDecoder().decode(classified.bytes)).toBe(large);
+  });
+
+  it('recognizes and extracts file drags without accepting text-only drags', () => {
+    const image = { name: 'packing.png', type: 'image/png' } as File;
+    const notes = { name: 'week-6.md', type: 'text/markdown' } as File;
+    const files = { 0: image, 1: notes, length: 2 } as unknown as FileList;
+
+    expect(hasAgentComposerFileDrop({ types: ['text/plain', 'Files'] })).toBe(true);
+    expect(hasAgentComposerFileDrop({ types: ['text/plain'] })).toBe(false);
+    expect(hasAgentComposerFileDrop(null)).toBe(false);
+    expect(filesFromAgentComposerDrop({ files })).toEqual([image, notes]);
+    expect(filesFromAgentComposerDrop(null)).toEqual([]);
   });
 });

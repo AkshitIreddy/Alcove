@@ -38,6 +38,20 @@ export const AGENT_SOURCE_FILE_ACCEPT = [
   ...new Set(Object.keys(EXTENSION_MEDIA_TYPES).map((extension) => `.${extension}`)),
 ].join(',');
 
+/** True only for an operating-system file drag, never selected page text. */
+export function hasAgentComposerFileDrop(
+  transfer: Pick<DataTransfer, 'types'> | null,
+): boolean {
+  return transfer !== null && Array.from(transfer.types).includes('Files');
+}
+
+/** Preserve the browser's file order so picker and drop intake behave alike. */
+export function filesFromAgentComposerDrop(
+  transfer: Pick<DataTransfer, 'files'> | null,
+): readonly File[] {
+  return transfer === null ? [] : Array.from(transfer.files);
+}
+
 function extensionOf(name: string): string {
   return name.trim().toLowerCase().split('.').pop() ?? '';
 }

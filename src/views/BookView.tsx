@@ -3927,7 +3927,33 @@ export default function BookView(): JSX.Element {
       notebook,
       providerPrivacyReady,
     });
-    const previewSandbox = createProductionDraftSandbox();
+    let qaNativeRenderFailureRemaining =
+      import.meta.env.DEV &&
+      !('__TAURI_INTERNALS__' in window) &&
+      query.get('fx') === 'force' &&
+      query.get('qa-render-failure') === 'once';
+    const previewSandbox = createProductionDraftSandbox(
+      qaNativeRenderFailureRemaining
+        ? {
+            renderPages: async (request) => {
+              if (qaNativeRenderFailureRemaining) {
+                qaNativeRenderFailureRemaining = false;
+                // Deliberately a cross-boundary-shaped object rather than an
+                // Error instance: the production bug collapsed this exact
+                // class of renderer rejection to the useless “tool failed”.
+                throw {
+                  message:
+                    'QA native renderer rejected the first draft; revise the script and render again.',
+                };
+              }
+              const { renderDraftPagesInSandbox } = await import(
+                '../features/aiAgent/draftSandboxMount'
+              );
+              return renderDraftPagesInSandbox(request);
+            },
+          }
+        : {},
+    );
     const persistence = new SqliteAgentPersistence();
     const runtime = new AgentRuntime(
       new CohereTauriAgentProvider(providerPrivacyReady, {
@@ -4230,7 +4256,12 @@ export default function BookView(): JSX.Element {
    */
   onMount(() => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get('fx') !== 'force' || query.get('qa') === 'agent-loop') return;
+    const qaRoute = query.get('qa');
+    if (
+      query.get('fx') !== 'force' ||
+      qaRoute === 'agent-loop' ||
+      qaRoute === 'agent-production'
+    ) return;
     let cancelled = false;
     let publicBridge: Window['__aiAgentDemo'];
     let disposeBridge: (() => Promise<void>) | undefined;

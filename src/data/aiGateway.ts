@@ -225,10 +225,23 @@ async function streamBrowserDevChat(
       signal: controller.signal,
     });
     if (!response.ok || response.body === null) {
+      let providerDetail = '';
+      try {
+        const body = await response.text();
+        const parsed = JSON.parse(body) as { message?: unknown };
+        providerDetail = typeof parsed.message === 'string'
+          ? parsed.message.trim().slice(0, 800)
+          : body.trim().slice(0, 800);
+      } catch {
+        // The status remains authoritative when Cohere supplies no JSON body.
+      }
       onEvent({
         type: 'error',
         runId: request.runId,
-        error: gatewayError(response.status, `Cohere rejected the request (HTTP ${response.status})`),
+        error: gatewayError(
+          response.status,
+          `Cohere rejected the request (HTTP ${response.status})${providerDetail ? `: ${providerDetail}` : ''}`,
+        ),
       });
       return;
     }
@@ -318,10 +331,58 @@ export interface AiAttachmentData {
   readonly bytes: readonly number[];
 }
 
+const browserDevAttachments = new Map<string, AiAttachmentData>();
+const MAX_BROWSER_DEV_ATTACHMENT_BYTES = 32 * 1024 * 1024;
+
+function browserDevAttachmentKind(bytes: Uint8Array): Pick<AiAttachmentMetadata, 'kind' | 'mimeType'> {
+  const matches = (...signature: number[]): boolean =>
+    signature.every((byte, index) => bytes[index] === byte);
+  if (matches(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) {
+    return { kind: 'png', mimeType: 'image/png' };
+  }
+  if (matches(0xff, 0xd8, 0xff)) return { kind: 'jpeg', mimeType: 'image/jpeg' };
+  if (
+    matches(0x52, 0x49, 0x46, 0x46) &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) return { kind: 'webp', mimeType: 'image/webp' };
+  if (
+    matches(0x47, 0x49, 0x46, 0x38, 0x37, 0x61) ||
+    matches(0x47, 0x49, 0x46, 0x38, 0x39, 0x61)
+  ) return { kind: 'gif', mimeType: 'image/gif' };
+  throw new Error('Localhost source attachments currently support PNG, JPEG, WebP, or GIF images');
+}
+
+async function saveBrowserDevAttachment(
+  bytes: Uint8Array,
+  namespace: 'attachment' | 'preview',
+): Promise<AiAttachmentMetadata> {
+  if (bytes.length === 0 || bytes.length > MAX_BROWSER_DEV_ATTACHMENT_BYTES) {
+    throw new Error('AI attachments must be between 1 byte and 32 MB');
+  }
+  const classified = browserDevAttachmentKind(bytes);
+  const digestBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const sha256 = [...digestBytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const id = `${namespace === 'preview' ? 'preview' : 'att'}_${sha256}`;
+  const metadata: AiAttachmentMetadata = {
+    id,
+    ...classified,
+    sizeBytes: bytes.length,
+    sha256,
+  };
+  browserDevAttachments.set(id, {
+    metadata,
+    bytes: Array.from(bytes),
+  });
+  return metadata;
+}
+
 export function saveAiAttachment(
   bytes: Uint8Array,
   namespace: 'attachment' | 'preview' = 'attachment',
 ): Promise<AiAttachmentMetadata> {
+  if (import.meta.env.DEV && !isTauri()) {
+    return saveBrowserDevAttachment(bytes, namespace);
+  }
   return invoke<AiAttachmentMetadata>('ai_attachment_save', {
     request: {
       bytes: Array.from(bytes),
@@ -330,11 +391,22 @@ export function saveAiAttachment(
   });
 }
 
-export function readAiAttachment(attachmentId: string): Promise<AiAttachmentData> {
+export async function readAiAttachment(attachmentId: string): Promise<AiAttachmentData> {
+  if (import.meta.env.DEV && !isTauri()) {
+    const stored = browserDevAttachments.get(attachmentId);
+    if (stored === undefined) throw new Error('The localhost AI attachment is no longer available');
+    return {
+      metadata: { ...stored.metadata },
+      bytes: [...stored.bytes],
+    };
+  }
   return invoke<AiAttachmentData>('ai_attachment_read', { attachmentId });
 }
 
 export async function deleteAiAttachment(attachmentId: string): Promise<boolean> {
+  if (import.meta.env.DEV && !isTauri()) {
+    return browserDevAttachments.delete(attachmentId);
+  }
   const result = await invoke<{ id: string; deleted: boolean }>('ai_attachment_delete', {
     attachmentId,
   });

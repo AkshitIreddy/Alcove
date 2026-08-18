@@ -32,8 +32,10 @@ import {
   explicitImageRequest,
 } from './imageIntent';
 import {
+  agentRequestsNotebookMutation,
+  currentAgentObjectiveMode,
   latestReaderText,
-  readerRequestsNotebookMutation,
+  readerIntentHint,
   readerRequiresCompleteSourceCoverage,
   readerRequiresSourceEvidence,
 } from './intent';
@@ -49,17 +51,27 @@ import {
 import { planAdaptiveRetrieval } from './retrieval';
 import { notebookPageOrderExtendsSnapshot } from './productionNotebook';
 import {
+  applyVagueManagedImageDefault,
+  ensureRequiredManagedImagesInNotebookScript,
+  missingRequiredManagedImageAssetPaths,
+} from './sourceAssetPolicy';
+import {
   assertPrivatePlaceholdersRestorable,
   obfuscatePageDocument,
   restorePrivateJson,
   restorePrivateText,
 } from './textPrivacy';
+import {
+  normalizedVisualFindingSeverity,
+  visualFindingRequiresRepair,
+} from './visualFindingPolicy';
 import type {
   AgentConversationMessage,
   AgentImageRef,
   AgentInterrupt,
   AgentJsonValue,
   AgentModelToolCall,
+  AgentObjectiveMode,
   AgentResumeValue,
   AgentState,
   AgentToolBudget,
@@ -84,6 +96,51 @@ const SOURCE_INPUT_STALE_ERROR =
   'A live notebook source changed after it was read. List the source manifest again and repeat the required reads.';
 const PRIVATE_RESTORE_REPAIR_PREFIX =
   'The local private-text preview could not be prepared safely: ';
+
+interface ToolFailureOptions {
+  readonly errorCode?: string;
+  readonly nextAction?: string;
+  readonly suggestedTools?: readonly string[];
+  readonly stateChanged?: boolean;
+}
+
+class ToolRecoveryError extends Error {
+  constructor(
+    message: string,
+    readonly recovery: ToolFailureOptions,
+  ) {
+    super(message);
+    this.name = 'ToolRecoveryError';
+  }
+}
+
+function boundedToolFailureMessage(error: unknown): string {
+  const limit = 1_200;
+  const clean = (value: string): string => value
+    .replace(/\bBearer\s+[^\s"']+/giu, 'Bearer [redacted]')
+    .slice(0, limit);
+  if (error instanceof Error && error.message.trim() !== '') {
+    return clean(error.message.trim());
+  }
+  if (typeof error === 'string' && error.trim() !== '') return clean(error.trim());
+  if (error !== null && typeof error === 'object') {
+    const message = Reflect.get(error, 'message');
+    if (typeof message === 'string' && message.trim() !== '') {
+      return clean(message.trim());
+    }
+    try {
+      const serialized = JSON.stringify(error, (key, value) =>
+        /(?:api.?key|authorization|credential|secret|token)/iu.test(key)
+          ? '[redacted]'
+          : value,
+      );
+      if (serialized !== undefined && serialized !== '{}') return clean(serialized);
+    } catch {
+      // Fall through to the safe type-only description below.
+    }
+  }
+  return `tool failed with ${Object.prototype.toString.call(error)}`;
+}
 
 function trailingToolImageCount(state: AgentState): number {
   let count = 0;
@@ -322,6 +379,69 @@ function currentCoverage(state: AgentState, now: string) {
   );
 }
 
+const NOTEBOOK_OBJECTIVE_TOOLS = new Set([
+  'set_plan',
+  'inspect_notebook',
+  'inspect_page',
+  'inspect_page_range',
+  'inspect_selection',
+  'propose_insertion',
+  'submit_notebook_script',
+  'validate_notebook_script',
+  'render_draft_preview',
+  'read_draft_preview_pages',
+  'record_visual_review',
+  'prepare_image_generation_prompts',
+  'propose_notebook_patch',
+  'submit_notebook_patch',
+]);
+
+function objectiveModeForTool(toolName: string): Exclude<AgentObjectiveMode, 'undecided'> | undefined {
+  if (toolName === 'finish_conversation') return 'conversation';
+  return NOTEBOOK_OBJECTIVE_TOOLS.has(toolName) ? 'notebook_change' : undefined;
+}
+
+function settleObjectiveForTool(
+  state: AgentState,
+  toolName: string,
+  now: string,
+): AgentState {
+  if (currentAgentObjectiveMode(state) !== 'undecided') return state;
+  const mode = objectiveModeForTool(toolName);
+  if (mode === undefined) return state;
+  const turnId = state.budgetWindow?.readerMessageId ??
+    state.objective?.turnId ?? state.conversation[0]?.id ?? state.identity.runId;
+  return {
+    ...state,
+    objective: {
+      turnId,
+      mode,
+      decidedBy: 'model_action',
+      reason: `Selected ${toolName}`,
+      decidedAt: now,
+    },
+  };
+}
+
+function objectiveConflict(
+  state: AgentState,
+  toolName: string,
+): {
+  readonly attemptedMode: Exclude<AgentObjectiveMode, 'undecided'>;
+  readonly hintedMode: Exclude<AgentObjectiveMode, 'undecided'>;
+} | null {
+  if (currentAgentObjectiveMode(state) !== 'undecided' || toolName === 'set_task_mode') {
+    return null;
+  }
+  const attemptedMode = objectiveModeForTool(toolName);
+  const hint = readerIntentHint(state);
+  if (
+    attemptedMode === undefined || hint === 'undecided' ||
+    attemptedMode === hint
+  ) return null;
+  return { attemptedMode, hintedMode: hint };
+}
+
 /**
  * A plan may change after the reader answers or material work advances, not
  * merely because the model found new wording. Keeping this deliberately free
@@ -388,6 +508,9 @@ export function materialWorkFingerprint(state: AgentState): string {
     patch: state.patchProposal === undefined
       ? null
       : { patchId: state.patchProposal.patchId, status: state.patchProposal.status },
+    renderRecovery: state.renderRecovery === undefined
+      ? null
+      : { draftHash: state.renderRecovery.draftHash, message: state.renderRecovery.message },
   });
 }
 
@@ -603,6 +726,10 @@ function visualReviewLedgerIsDerivedConsistently(
 // required literal keeps no-input actions strict and self-documenting without
 // weakening local Zod validation.
 const emptySchema = z.object({ request: z.literal('current') }).strict();
+const taskModeSchema = z.object({
+  mode: z.enum(['conversation', 'notebook_change']),
+  reason: z.string().min(1).max(240),
+}).strict();
 const inspectPageSchema = z.object({ pageId: z.string().min(1) }).strict();
 const inspectPageRangeSchema = z
   .object({
@@ -948,6 +1075,56 @@ function verifiedConversationCitations(
 function createDefinitions(): readonly ToolDefinition<unknown>[] {
   return [
     definition({
+      name: 'set_task_mode',
+      description:
+        'Declare conversation or notebook_change when overriding the advisory intent hint or correcting an earlier semantic choice. This never grants write authority.',
+      effect: 'read',
+      schema: taskModeSchema,
+      async execute(state, args, context) {
+        if (
+          currentAgentObjectiveMode(state) === 'notebook_change' &&
+          args.mode === 'conversation' &&
+          (state.draft !== undefined || state.previewGeneration !== undefined ||
+            state.patchProposal !== undefined)
+        ) {
+          throw new Error(
+            'Notebook authoring has already produced material work. Finish or revise that work instead of silently changing the task to conversation.',
+          );
+        }
+        const turnId = state.budgetWindow?.readerMessageId ??
+          state.objective?.turnId ?? state.conversation[0]?.id ?? state.identity.runId;
+        return {
+          state: touch(state, context, {
+            objective: {
+              turnId,
+              mode: args.mode,
+              decidedBy: 'model_declaration',
+              reason: args.reason.trim(),
+              decidedAt: context.adapters.clock.now(),
+            },
+            ...(args.mode === 'conversation'
+              ? {
+                  plan: undefined,
+                  notebookSnapshot: undefined,
+                  insertionTarget: undefined,
+                }
+              : {}),
+          }),
+          result: json({
+            mode: args.mode,
+            accepted: true,
+            writeAuthorityGranted: false,
+            nextAction: args.mode === 'conversation'
+              ? 'Answer with finish_conversation.'
+              : 'Inspect the notebook and continue through reviewed preview.',
+          }),
+          summary: args.mode === 'conversation'
+            ? 'confirmed a conversational answer'
+            : 'confirmed notebook authoring',
+        };
+      },
+    }),
+    definition({
       name: 'inspect_notebook',
       description:
         'Read the current book manifest and revision before planning or proposing any insertion.',
@@ -1095,6 +1272,15 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             'complete',
             context.adapters.clock.now(),
           );
+        } else if (coverage !== undefined && retrievalPlan.strategy === 'direct') {
+          const selectedSourceIds = new Set(retrievalPlan.sourceIds);
+          coverage = recordRelevantUnits(
+            coverage,
+            state.sourceManifest.sources
+              .filter((source) => selectedSourceIds.has(source.id))
+              .flatMap((source) => source.units.map((unit) => unit.id)),
+            context.adapters.clock.now(),
+          );
         }
         return {
           state: touch(state, context, { retrievalPlan, sourceCoverage: coverage }),
@@ -1120,8 +1306,16 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           context.signal,
           sourceCapability(state),
         );
+        const currentLedger = currentCoverage(state, context.adapters.clock.now())!;
+        const selectedLedger = currentLedger.mode === 'relevant'
+          ? recordRelevantUnits(
+              currentLedger,
+              read.units.map((unit) => unit.unitId),
+              context.adapters.clock.now(),
+            )
+          : currentLedger;
         const ledger = recordSourceReads(
-          currentCoverage(state, context.adapters.clock.now())!,
+          selectedLedger,
           state.sourceManifest,
           [read],
           context.adapters.clock.now(),
@@ -1152,8 +1346,16 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           context.signal,
           sourceCapability(state),
         );
+        const currentLedger = currentCoverage(state, context.adapters.clock.now())!;
+        const selectedLedger = currentLedger.mode === 'relevant'
+          ? recordRelevantUnits(
+              currentLedger,
+              read.units.map((unit) => unit.unitId),
+              context.adapters.clock.now(),
+            )
+          : currentLedger;
         const ledger = recordSourceReads(
-          currentCoverage(state, context.adapters.clock.now())!,
+          selectedLedger,
           state.sourceManifest,
           [read],
           context.adapters.clock.now(),
@@ -1418,7 +1620,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
       effect: 'draft',
       schema: submitScriptSchema,
       async execute(state, args, context) {
-        if (!readerRequestsNotebookMutation(state)) {
+        if (!agentRequestsNotebookMutation(state)) {
           throw new Error(
             'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead',
           );
@@ -1441,7 +1643,15 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           );
         }
         const normalizedSubmission = normalizeNotebookScriptSubmission(args.script);
-        const submittedScript = normalizedSubmission.script;
+        const sourceAssetRepair = ensureRequiredManagedImagesInNotebookScript(
+          state,
+          normalizedSubmission.script,
+        );
+        const vagueImageDefault = applyVagueManagedImageDefault(
+          state,
+          sourceAssetRepair.script,
+        );
+        const submittedScript = vagueImageDefault.script;
         const isRepair = state.draft !== undefined;
         const portableImageSlots = extractPortableImageSlots(submittedScript);
         if (portableImageSlots.length > 0) assertPortableImagesRequested(state);
@@ -1449,9 +1659,6 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         const changedDraft = state.draft?.draftHash !== draftHash;
         const sourceContextChanged =
           state.draft?.sourceManifestDigest !== state.sourceManifest?.digest;
-        const priorCitations = [...(state.sourceCoverage?.citedUnitIds ?? [])].sort();
-        const nextCitations = [...new Set(args.citedUnitIds)].sort();
-        const citationsChanged = JSON.stringify(priorCitations) !== JSON.stringify(nextCitations);
         const readerUnitIds = new Set(
           state.sourceManifest === undefined
             ? []
@@ -1462,6 +1669,43 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             (unitId) => readerUnitIds.has(unitId),
           ),
         )].sort();
+        const requestedCitations = [...new Set(args.citedUnitIds)].sort();
+        const validRequestedCitations = requestedCitations.filter((unitId) =>
+          readerUnitIds.has(unitId) && sourceReadUnitIds.includes(unitId));
+        const invalidCitationsDropped = requestedCitations.filter(
+          (unitId) => !validRequestedCitations.includes(unitId),
+        );
+        const priorValidCitations = (state.sourceCoverage?.citedUnitIds ?? [])
+          .filter((unitId) => readerUnitIds.has(unitId) && sourceReadUnitIds.includes(unitId));
+        const sourceCitationsAutoAttached =
+          readerRequiresSourceEvidence(state) && sourceReadUnitIds.length > 0 &&
+          !validRequestedCitations.some((unitId) => readerUnitIds.has(unitId));
+        const nextCitations = [...new Set([
+          ...validRequestedCitations,
+          ...(sourceCitationsAutoAttached ? sourceReadUnitIds : []),
+          ...(invalidCitationsDropped.length > 0 && validRequestedCitations.length === 0 &&
+              !sourceCitationsAutoAttached
+            ? priorValidCitations
+            : []),
+        ])].sort();
+        const priorCitations = [...(state.sourceCoverage?.citedUnitIds ?? [])].sort();
+        const citationsChanged = JSON.stringify(priorCitations) !== JSON.stringify(nextCitations);
+        const coverageBeforeSubmission = currentCoverage(
+          state,
+          context.adapters.clock.now(),
+        );
+        if (
+          coverageBeforeSubmission !== undefined &&
+          sourceUnitsUnobservedBeforeProviderCall(
+            coverageBeforeSubmission,
+            coverageBeforeSubmission.readUnitIds,
+            state.usage.providerCalls,
+          ).length > 0
+        ) {
+          throw new Error(
+            'a later model turn must observe source reads before submitting a draft',
+          );
+        }
         const priorSourceReadUnitIds = [...(state.draft?.sourceReadUnitIds ?? [])].sort();
         const sourceReadsChanged =
           JSON.stringify(sourceReadUnitIds) !== JSON.stringify(priorSourceReadUnitIds);
@@ -1502,32 +1746,20 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           createdAt: now,
         };
         let ledger = currentCoverage(state, now);
-        if (
-          ledger !== undefined &&
-          sourceUnitsUnobservedBeforeProviderCall(
-            ledger,
-            ledger.readUnitIds,
-            state.usage.providerCalls,
-          ).length > 0
-        ) {
-          throw new Error(
-            'a later model turn must observe source reads before submitting a draft',
-          );
-        }
-        if (ledger !== undefined && args.citedUnitIds.length > 0) {
+        if (ledger !== undefined && nextCitations.length > 0) {
           const manifestUnitIds = new Set(
             state.sourceManifest?.sources.flatMap((source) =>
               source.units.map((unit) => unit.id),
             ) ?? [],
           );
           const readUnitIds = new Set(ledger.readUnitIds);
-          if (args.citedUnitIds.some((id) => !manifestUnitIds.has(id) || !readUnitIds.has(id))) {
+          if (nextCitations.some((id) => !manifestUnitIds.has(id) || !readUnitIds.has(id))) {
             throw new Error('citations must name source units read in this task');
           }
           if (
             sourceUnitsUnobservedBeforeProviderCall(
               ledger,
-              args.citedUnitIds,
+              nextCitations,
               state.usage.providerCalls,
             ).length > 0
           ) {
@@ -1535,7 +1767,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
               'a later model turn must observe source reads before citing them',
             );
           }
-          ledger = recordSourceCitations(ledger, args.citedUnitIds, now);
+          ledger = recordSourceCitations(ledger, nextCitations, now);
         } else if (ledger !== undefined) {
           ledger = recordSourceCitations(ledger, [], now);
         }
@@ -1563,6 +1795,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             // the exact page bytes/layout. Citations and source receipts do
             // not repair those bytes, so only changed script clears the phase.
             proposalRecovery: changedDraft ? undefined : state.proposalRecovery,
+            renderRecovery: changedDraft ? undefined : state.renderRecovery,
             localRestoredFinal:
               changedDraft || sourceContextChanged || citationsChanged
                 ? undefined
@@ -1578,10 +1811,20 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             draftVersion: draft.version,
             draftHash,
             portableImageSlots,
+            managedSourceAssetsInserted: sourceAssetRepair.insertedPaths,
+            vagueImageDraftCompacted: vagueImageDefault.compacted,
+            sourceCitationsAutoAttached,
+            invalidCitationsDropped,
             outerDocumentFenceRemoved: normalizedSubmission.outerDocumentFenceRemoved,
             mutationPerformed: false,
           }),
-          summary: isRepair ? `stored repaired draft ${draft.version}` : 'stored initial draft',
+          summary: sourceAssetRepair.insertedPaths.length > 0
+            ? isRepair
+              ? `stored repaired draft ${draft.version} with the required attached image`
+              : 'stored initial draft with the required attached image'
+            : isRepair
+              ? `stored repaired draft ${draft.version}`
+              : 'stored initial draft',
         };
       },
     }),
@@ -1895,6 +2138,10 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
               generationId: generation.generationId,
               pageId: review.pageId,
               ...item,
+              severity: normalizedVisualFindingSeverity({
+                ...item,
+                resolved: false,
+              }),
               summary: restorePrivateText(item.summary, state.textPrivacy),
               ...(item.evidence === undefined
                 ? {}
@@ -2305,7 +2552,7 @@ function explicitReaderFeedbackPending(state: AgentState): boolean {
  */
 export function availableAgentToolNames(state: AgentState): ReadonlySet<string> {
   const available = new Set(ALWAYS_AVAILABLE_TOOLS);
-  const notebookMutation = readerRequestsNotebookMutation(state);
+  const objectiveMode = currentAgentObjectiveMode(state);
   const sourceEvidenceRequired = readerRequiresSourceEvidence(state);
   const sourceAuthorityRequired = sourceEvidenceRequired ||
     (state.sourceCoverage?.citedUnitIds.length ?? 0) > 0;
@@ -2361,19 +2608,43 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
     !sourceManifestNeedsRefresh &&
     sourceWorkIncomplete
   ) {
-    available.add('plan_source_retrieval');
+    if (state.retrievalPlan === undefined) available.add('plan_source_retrieval');
     available.add('read_source_range');
     available.add('read_full_source');
-    available.add('search_source_index');
-    available.add('rerank_source_hits');
-    available.add('inspect_source_coverage');
+    if (state.retrievalPlan?.strategy === 'rag') {
+      available.add('search_source_index');
+      available.add('rerank_source_hits');
+    } else if (state.retrievalPlan === undefined) {
+      // Planning may choose RAG for a large source, so search remains a valid
+      // initial alternative. Rerank requires concrete candidates first.
+      available.add('search_source_index');
+    }
+    if (
+      state.retrievalPlan !== undefined ||
+      state.sourceCoverage !== undefined &&
+        ((state.sourceCoverage.attemptedUnitIds?.length ?? 0) > 0 ||
+          state.sourceCoverage.readUnitIds.length > 0)
+    ) {
+      available.add('inspect_source_coverage');
+    }
     if (completeSourceBeforeDraft) return available;
+    if (agentRequestsNotebookMutation(state)) {
+      if (state.notebookSnapshot === undefined) available.add('inspect_notebook');
+      return available;
+    }
   }
-  // Intent is already derived from the current reader turn. Do not advertise
-  // the opposite terminal path and ask the model to rediscover that fact on
-  // every provider call. Ambiguous requests deliberately resolve to a helpful
-  // conversational answer, as described by the system prompt.
-  if (!notebookMutation) {
+  if (objectiveMode === 'undecided') available.add('set_task_mode');
+  // Until a successful mode-specific action settles the objective, expose one
+  // safe entry point for each outcome. The model owns semantic routing; local
+  // policy still owns every prerequisite and the final Insert boundary.
+  if (objectiveMode === 'undecided') {
+    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    if (state.plan === undefined) available.add('set_plan');
+    available.add('finish_conversation');
+    available.add('inspect_notebook');
+    return available;
+  }
+  if (objectiveMode === 'conversation') {
     if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
     available.add('finish_conversation');
     return available;
@@ -2432,7 +2703,7 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
     state.visualReview.generationId === state.previewGeneration.generationId;
   const blockingReview = reviewCurrent &&
     state.visualReview.findings.some(
-      (finding) => finding.severity === 'blocking' && !finding.resolved,
+      (finding) => visualFindingRequiresRepair(finding),
     ) === true;
   const failedCompleteReview = reviewCurrent &&
     state.visualReview.complete &&
@@ -2475,12 +2746,18 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
   const privateRestoreRepairRequired =
     state.proposalRecovery?.kind === 'private_restore' &&
     state.proposalRecovery.draftHash === draft.draftHash;
+  const nativeRenderRepairRequired =
+    state.renderRecovery?.draftHash === draft.draftHash;
+  const requiredManagedAssetMissing =
+    missingRequiredManagedImageAssetPaths(state, draft.script).length > 0;
   const draftSubmissionUseful =
     sourceContextChanged ||
     sourceCitationUpdateRequired ||
     sourceReadSetUpdateRequired ||
     imagePermissionRevoked ||
     privateRestoreRepairRequired ||
+    nativeRenderRepairRequired ||
+    requiredManagedAssetMissing ||
     (validationCurrent && state.validation?.valid === false) ||
     reviewRepairRequired ||
     feedbackPending;
@@ -2595,11 +2872,11 @@ function unavailableToolMessage(
   toolName: string,
   available: ReadonlySet<string>,
 ): string {
-  if (toolName === 'finish_conversation' && readerRequestsNotebookMutation(state)) {
+  if (toolName === 'finish_conversation' && agentRequestsNotebookMutation(state)) {
     return 'the current reader turn requests a notebook change; continue the notebook workflow instead of finishing in conversation';
   }
   if (toolName === 'submit_notebook_script') {
-    if (!readerRequestsNotebookMutation(state)) {
+    if (!agentRequestsNotebookMutation(state)) {
       return 'the current reader turn asks for a conversational answer, not notebook pages; answer with finish_conversation instead';
     }
     if (state.notebookSnapshot === undefined) return 'inspect the notebook before drafting';
@@ -2660,11 +2937,35 @@ export class AgentToolCatalog {
     const tool = this.definitions.get(call.name);
     if (tool === undefined) return this.failure(state, call, `unknown tool ${call.name}`);
     const available = availableAgentToolNames(state);
-    if (!available.has(call.name)) {
+    const redundantModeDeclaration = call.name === 'set_task_mode' && (() => {
+      const parsedMode = taskModeSchema.safeParse(transportArguments(call.arguments));
+      return parsedMode.success &&
+        parsedMode.data.mode === currentAgentObjectiveMode(state);
+    })();
+    if (!available.has(call.name) && !redundantModeDeclaration) {
       return this.failure(
         state,
         call,
         unavailableToolMessage(state, call.name, available),
+        {
+          errorCode: 'tool_unavailable',
+          suggestedTools: [...available].filter((name) => name !== 'ask_user'),
+          nextAction: 'Choose one currently available tool; do not repeat the unavailable call.',
+        },
+      );
+    }
+    const conflict = objectiveConflict(state, call.name);
+    if (conflict !== null) {
+      return this.failure(
+        state,
+        call,
+        `The attempted ${conflict.attemptedMode} action conflicts with the local ${conflict.hintedMode} intent hint. The hint is advisory, so re-evaluate the reader request and declare the intended mode before continuing.`,
+        {
+          errorCode: 'intent_conflict',
+          suggestedTools: ['set_task_mode'],
+          nextAction:
+            `Call set_task_mode with ${conflict.hintedMode} if the hint is right, or explicitly override it with ${conflict.attemptedMode} and a concise reason.`,
+        },
       );
     }
     // Older durable checkpoints and deterministic test providers may carry
@@ -2681,8 +2982,17 @@ export class AgentToolCatalog {
       : transported;
     const parsed = tool.schema.safeParse(candidateArguments);
     if (!parsed.success) {
-      return this.failure(state, call, `invalid ${call.name} arguments`);
+      return this.failure(state, call, `invalid ${call.name} arguments`, {
+        errorCode: 'invalid_arguments',
+        suggestedTools: [call.name],
+        nextAction: 'Correct the arguments to match the advertised schema, then retry once with changed arguments.',
+      });
     }
+    const routedState = settleObjectiveForTool(
+      state,
+      call.name,
+      this.adapters.clock.now(),
+    );
     await this.events.emit(
       {
         type: 'tool.started',
@@ -2693,14 +3003,14 @@ export class AgentToolCatalog {
       `tool:${call.id}:started`,
     );
     try {
-      const executed = await tool.execute(state, parsed.data, {
+      const executed = await tool.execute(routedState, parsed.data, {
         adapters: this.adapters,
         events: this.events,
         signal,
         call,
       });
       const outgoingImageCount =
-        trailingToolImageCount(state) + (executed.imageRefs?.length ?? 0);
+        trailingToolImageCount(routedState) + (executed.imageRefs?.length ?? 0);
       if (outgoingImageCount > MAX_PROVIDER_IMAGES_PER_TURN) {
         throw new Error(
           `This model turn can inspect at most ${MAX_PROVIDER_IMAGES_PER_TURN} images. Continue with the remaining images in the next turn.`,
@@ -2732,10 +3042,20 @@ export class AgentToolCatalog {
       };
     } catch (error) {
       if (signal.aborted) throw error;
+      const recovery = error instanceof ToolRecoveryError
+        ? error.recovery
+        : {
+            errorCode: 'tool_execution_failed',
+            stateChanged:
+              currentAgentObjectiveMode(routedState) !== currentAgentObjectiveMode(state),
+            nextAction:
+              'Read the error and current availableTools, then change arguments or call the missing prerequisite. Do not repeat this call unchanged.',
+          } satisfies ToolFailureOptions;
       return this.failure(
-        state,
+        routedState,
         call,
-        error instanceof Error ? error.message : 'tool failed',
+        boundedToolFailureMessage(error),
+        recovery,
       );
     }
   }
@@ -2776,6 +3096,10 @@ export class AgentToolCatalog {
           conversation: alreadyRecorded
             ? state.conversation
             : [...state.conversation, message],
+          sourceIntentTurnId: state.sourceIntentPending
+            ? message.id
+            : state.sourceIntentTurnId,
+          sourceIntentPending: undefined,
           checkpointStep: state.checkpointStep + 1,
           updatedAt: this.adapters.clock.now(),
         },
@@ -2898,6 +3222,13 @@ export class AgentToolCatalog {
           userMessage === undefined
             ? state.conversation
             : [...state.conversation, userMessage],
+        sourceIntentTurnId:
+          state.sourceIntentPending && userMessage !== undefined
+            ? userMessage.id
+            : state.sourceIntentTurnId,
+        sourceIntentPending: userMessage === undefined
+          ? state.sourceIntentPending
+          : undefined,
         patchProposal: undefined,
         localRestoredFinal: undefined,
         validation:
@@ -2917,6 +3248,7 @@ export class AgentToolCatalog {
     state: AgentState,
     call: AgentModelToolCall,
     message: string,
+    options: ToolFailureOptions = {},
   ): Promise<ToolCallResult> {
     const doNotRepeat = message === UNCHANGED_DRAFT_SUBMISSION_ERROR;
     const notebookFreshnessFailure =
@@ -2924,6 +3256,10 @@ export class AgentToolCatalog {
       message === NOTEBOOK_ORDER_STALE_ERROR;
     const sourceFreshnessFailure = message === SOURCE_INPUT_STALE_ERROR;
     const privateRestoreFailure = message.startsWith(PRIVATE_RESTORE_REPAIR_PREFIX);
+    const nativeRenderFailure =
+      call.name === 'render_draft_preview' &&
+      state.draft !== undefined &&
+      options.errorCode === 'tool_execution_failed';
     const retryable = !doNotRepeat;
     const now = this.adapters.clock.now();
     let recoveredState = state;
@@ -2997,6 +3333,21 @@ export class AgentToolCatalog {
           createdAt: now,
         },
       };
+    } else if (nativeRenderFailure) {
+      recoveredState = {
+        ...state,
+        lifecycle: 'running',
+        phase: 'repairing',
+        previewGeneration: undefined,
+        visualReview: undefined,
+        patchProposal: undefined,
+        localRestoredFinal: undefined,
+        renderRecovery: {
+          draftHash: state.draft!.draftHash,
+          message,
+          createdAt: now,
+        },
+      };
     }
     await this.events.emit(
       {
@@ -3007,6 +3358,23 @@ export class AgentToolCatalog {
       },
       `tool:${call.id}:failed`,
     );
+    const availableTools = [...availableAgentToolNames(recoveredState)].sort();
+    const suggestedTools = [...new Set(
+      options.suggestedTools ?? availableTools.filter((name) => name !== 'ask_user'),
+    )].filter((name) => availableTools.includes(name));
+    const errorCode = doNotRepeat
+        ? 'no_progress'
+        : notebookFreshnessFailure
+          ? 'notebook_stale'
+          : sourceFreshnessFailure
+            ? 'source_stale'
+            : privateRestoreFailure
+              ? 'private_restore_failed'
+              : nativeRenderFailure
+                ? 'native_render_failed'
+                : options.errorCode ?? 'tool_execution_failed';
+    const stateChanged = options.stateChanged ??
+      materialWorkFingerprint(recoveredState) !== materialWorkFingerprint(state);
     return {
       state: {
         ...recoveredState,
@@ -3017,7 +3385,14 @@ export class AgentToolCatalog {
       },
       result: json({
         error: message,
+        errorCode,
+        failedTool: call.name,
         retryable,
+        stateChanged,
+        availableTools,
+        suggestedTools,
+        nextAction: options.nextAction ??
+          'Choose a suggested available tool or retry once with materially changed arguments.',
         ...(notebookFreshnessFailure
           ? {
               recovered: true,
@@ -3035,6 +3410,12 @@ export class AgentToolCatalog {
                   recovered: true,
                   nextAction:
                     'Revise the Notebook Script so restored private text keeps the same safe structure and fixed-page fit, then validate and review it again.',
+                }
+            : nativeRenderFailure
+              ? {
+                  recovered: true,
+                  nextAction:
+                    `Revise the Notebook Script to address the native renderer failure, then validate the changed draft again. Renderer error: ${message}`,
                 }
             : {}),
         ...(doNotRepeat

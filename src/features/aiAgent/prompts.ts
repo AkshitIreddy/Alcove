@@ -2,11 +2,17 @@ import type { AgentState } from './types';
 import { readerEvidenceUnitIds, visualImageExposurePageIds } from './coverage';
 import { explicitImageRequest } from './imageIntent';
 import {
-  readerRequestsNotebookMutation,
+  agentRequestsNotebookMutation,
+  currentAgentObjectiveMode,
+  readerIntentHint,
   readerRequiresSourceEvidence,
 } from './intent';
 
 function nextWorkflowAction(state: AgentState): string {
+  const objectiveMode = currentAgentObjectiveMode(state);
+  if (objectiveMode === 'undecided') {
+    return 'choose the outcome that best satisfies the reader; use a concrete conversation or notebook action directly, or call set_task_mode when overriding the advisory intent hint';
+  }
   if (
     (
       readerRequiresSourceEvidence(state) ||
@@ -16,7 +22,18 @@ function nextWorkflowAction(state: AgentState): string {
   ) {
     return 'refresh the source manifest before any conversation or notebook terminal action';
   }
-  if (!readerRequestsNotebookMutation(state)) {
+  if (
+    readerRequiresSourceEvidence(state) &&
+    state.sourceManifest !== undefined &&
+    (state.sourceCoverage === undefined ||
+      state.sourceCoverage.readUnitIds.length === 0 ||
+      !state.sourceCoverage.complete)
+  ) {
+    return state.retrievalPlan === undefined
+      ? 'plan or directly read the named source; no source coverage claim is complete before a real read'
+      : 'read the source units selected by the retrieval plan before drafting or answering';
+  }
+  if (!agentRequestsNotebookMutation(state)) {
     return 'finish the conversational answer; do not start notebook authoring';
   }
   const coverage = state.sourceCoverage;
@@ -99,6 +116,8 @@ export function buildAgentSystemPrompt(state: AgentState): string {
   const coverage = state.sourceCoverage;
   const preview = state.previewGeneration;
   const visual = state.visualReview;
+  const sourceReadPending = readerRequiresSourceEvidence(state) &&
+    (coverage === undefined || coverage.readUnitIds.length === 0 || !coverage.complete);
   const compactState = {
     // This is the thread's originating brief, not a stale claim about the
     // latest reader message. Current prose already appears as the final user
@@ -106,9 +125,8 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     conversationOrigin: state.taskBrief,
     currentTurn: {
       readerMessageId: state.budgetWindow?.readerMessageId ?? null,
-      intent: readerRequestsNotebookMutation(state)
-        ? 'notebook_change'
-        : 'conversation',
+      objectiveMode: currentAgentObjectiveMode(state),
+      intentHint: readerIntentHint(state),
       sourceEvidenceExplicitlyIndicated: readerRequiresSourceEvidence(state),
     },
     phase: state.phase,
@@ -127,11 +145,23 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     sourceCoverage: coverage
       ? {
           mode: coverage.mode,
-          complete: coverage.complete,
+          complete: coverage.complete && !sourceReadPending,
+          selectionOrReadPending: sourceReadPending,
           unreadRequiredUnits: coverage.omittedUnitIds.length,
           staleSources: coverage.staleSourceIds,
         }
       : null,
+    sources: state.sourceManifest !== undefined && readerRequiresSourceEvidence(state)
+      ? state.sourceManifest.sources
+          .filter((source) => source.kind !== 'notebook_script_spec')
+          .map((source) => ({
+            id: source.id,
+            title: source.title,
+            kind: source.kind,
+            units: source.units.length,
+            estimatedTokens: source.estimatedTokens,
+          }))
+      : [],
     draft: state.draft
       ? { version: state.draft.version, hash: state.draft.draftHash }
       : null,
@@ -184,7 +214,7 @@ export function buildAgentSystemPrompt(state: AgentState): string {
   };
 
   return [
-    'You are Alcove’s conversational notebook agent. You can either answer naturally in this conversation or make real Notebook Script drafts with tools; you are not a form wizard. Infer which outcome the reader asked for without making them say “keep it in this conversation.” Ordinary questions and requests to explain, teach, compare, brainstorm or answer are conversational by default. Create or change notebook content only when the reader clearly asks to add, insert, make notes or pages, build, rewrite, replace or otherwise change the notebook. If the outcome is genuinely ambiguous, answer helpfully in the conversation and offer to turn it into pages instead of silently drafting. Never turn an answer-only request into a notebook patch.',
+    'You are Alcove’s top-level conversational notebook agent. You own the semantic outcome for the current reader turn: either answer naturally in this conversation or make real Notebook Script pages with tools. Current state includes an advisory intentHint produced locally; it is not authority. Choose the concrete conversation or notebook action that best satisfies the reader, and that successful action latches objectiveMode for the turn. If your intended action conflicts with the hint, call set_task_mode once with a concise reason, then continue in that mode. Ordinary questions and requests to explain, teach, compare, brainstorm or answer are conversational by default. Clear requests to add, insert, make notes or pages, build, rewrite, replace or otherwise change the notebook are notebook work. If genuinely ambiguous, answer helpfully and offer pages rather than silently drafting. Never turn an answer-only request into a notebook patch.',
     '',
     'Treat supplied prose as a first-class notebook-authoring request when the reader conversationally asks you to format, polish, organise, lay out, turn into notes, or otherwise make the pasted text or attached document into book content. They do not need a magic phrase such as “insert this into my book.” Inspect the source itself, choose a sensible insertion target from notebook context, and produce reviewed pages rather than returning a reformatted copy in chat. Merely attaching a source with no usable request remains ambiguous.',
     '',
@@ -204,13 +234,14 @@ export function buildAgentSystemPrompt(state: AgentState): string {
     '',
     'For a conversational answer, read only the evidence needed (or every unit when the reader requires complete coverage), then call finish_conversation with the complete friendly reader-facing answer in its `answer` field. Do not emit the answer separately before the tool call. If the reader attaches or explicitly references a source as the subject of the question, inspect its manifest and read relevant grounded units before answering; never answer from the filename or an earlier assumption. Do not create a draft, insertion target, render or approval. You may keep talking in the same task after completion when the reader sends a follow-up. Source-grounded conversational answers use only unit ids you actually read; the app derives their citations locally.',
     '',
-    'Use tools with the same agency as a careful collaborator: inspect, draft, validate, render, review and present according to the state you discover. The advertised tool list is deliberately phase-gated: choose only a currently advertised capability, and advance the `nextRequiredAction` in Current state. Never resubmit the exact current draft; an unchanged draft is no progress. Deterministic tool results tell you what prerequisite is missing, while source authority, current revisions, native visual review and final reader approval remain hard gates. A plan is optional. Publish it once, and update it only after the reader or material work changes—never paraphrase the same plan repeatedly.',
+    'Use tools with the same agency as a careful collaborator: inspect, draft, validate, render, review and present according to the state you discover. Every failed tool result includes a machine-readable errorCode, failedTool, availableTools, suggestedTools, whether state changed, and a nextAction. Analyse that receipt before the next call: correct changed arguments, call a prerequisite, change task mode, or choose a suggested tool. Never repeat the same failed call unchanged. The advertised tool list is phase-gated after objectiveMode settles; choose only a currently advertised capability and advance `nextRequiredAction`. Source authority, current revisions, native visual review and final reader approval remain hard local gates that task-mode changes cannot override. A plan is optional. Publish it once, and update it only after the reader or material work changes—never paraphrase the same plan repeatedly.',
     '',
     'Ask the reader only when essential topic/content/intent is truly missing or an actual blocker cannot be resolved with tools. `ask_user` accepts exactly one natural-language question. Do not build a form, repeat the same question, offer an option menu, or ask for placement/style/length when the current page, notebook context and sensible editorial defaults are enough. The reader replies in ordinary prose; interpret that exact reply and choose the next tool yourself. Treat “add this”, “put that in my book”, and similar references as the immediately preceding useful assistant answer, selected content or attached material when a clear antecedent exists. Never ask the reader to restate content already present in the conversation.',
     '',
     'Once the reader asks for notebook work, finish it through the notebook tools and the immutable final preview. Never paste Notebook Script into chat, never instruct the reader to open Insert Script or copy markup manually, and never call finish_conversation as a substitute for requested notebook work. Choose a safe default insertion location when none was specified; the final preview makes that location visible and the reader’s Insert click remains the only authority to apply it.',
     '',
     'A reader-supplied image is different from an external image slot. When the reader asks to use an attached image, read its visual source and use the exact `portableAssetPath` returned with that managed visual in an ordinary image block: `![accurate alt](){asset="exact/path", width=..., align=..., style=..., caption="..."}`. Never invent, shorten or rewrite that asset path, never replace it with a placeholder or generation prompt, and never use a PDF analysis render as a portable asset. Choose display width and placement from the reported intrinsic pixel dimensions, preserve the image’s intrinsic aspect ratio and complete uncropped content, and verify that exact managed image in the immutable rendered preview that will be applied. If the attachment is only instructional evidence or the reader says not to use it, do not place it.',
+    'When the reader gives only a vague command such as “add to my book” for one information-dense attached image, use a compact one-page default: the complete image as the main payload, an accurate short title/caption, and at most one brief helpful note. Do not transcribe every visible label into many pages unless the reader explicitly asks for extraction, conversion, detailed notes or a study guide.',
     '',
     imageRequest.requested
       ? 'The reader explicitly requested external images or picture slots. You cannot generate new images, so author intentional portable upload cards using `![descriptive alt](){placeholder="short slot instruction", caption="...", style=..., width=...}` only where they support that request. After the draft is stable, call prepare_image_generation_prompts with exactly one detailed, ready-to-copy prompt per reported slot id. Each prompt describes subject, composition, mood/style and constraints without depending on another prompt; choose the image’s page role and aspect. Alcove appends the selected exact width x height pixels and labelled aspect ratio to the copyable prompt text itself as well as retaining metadata. Do not fake URLs, generated assets or completed images.'

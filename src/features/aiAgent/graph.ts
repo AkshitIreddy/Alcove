@@ -21,9 +21,9 @@ import {
 } from './provider';
 import { buildAgentSystemPrompt } from './prompts';
 import {
+  agentRequestsNotebookMutation,
   latestReaderText,
   readerRequiresSourceEvidence,
-  readerRequestsNotebookMutation,
 } from './intent';
 import {
   assertPrivatePlaceholdersRestorable,
@@ -453,6 +453,230 @@ async function checkpointWatchdogResult(
  * prose response cannot silently replace requested pages.
  */
 const SIMPLE_GREETING = /^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))[\s!,.?]*$/iu;
+const SOURCE_ROUTING_TOOLS = new Set([
+  'list_source_manifest',
+  'plan_source_retrieval',
+  'read_source_range',
+  'read_full_source',
+  'search_source_index',
+  'rerank_source_hits',
+  'inspect_source_coverage',
+]);
+
+function hasSourceRoutingTool(request: AgentProviderTurnRequest): boolean {
+  return request.tools.some((tool) => SOURCE_ROUTING_TOOLS.has(tool.name));
+}
+
+function isNotebookDraftSubmissionTurn(request: AgentProviderTurnRequest): boolean {
+  return request.tools.length === 1 &&
+    request.tools[0]?.name === 'submit_notebook_script';
+}
+
+function notebookDraftFromProseFallback(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+  turn: CollectedProviderTurn,
+): AgentModelToolCall | undefined {
+  if (!isNotebookDraftSubmissionTurn(request)) return undefined;
+  const script = normalizeNotebookScriptSubmission(turn.publicText).script.trim();
+  if (script === '') return undefined;
+  return {
+    id: `draft-prose-recovery-${state.identity.runId}-${state.checkpointStep + 1}`,
+    name: 'submit_notebook_script',
+    arguments: {
+      script,
+      citedUnitIds: [...new Set(state.sourceCoverage?.readUnitIds ?? [])],
+      reason: state.draft === undefined ? 'initial' : 'repair',
+    },
+  };
+}
+
+const SUPERVISED_EMPTY_ARGUMENT_TOOLS = new Set([
+  'validate_notebook_script',
+  'render_draft_preview',
+  'propose_notebook_patch',
+  'submit_notebook_patch',
+]);
+const VISUAL_FINDING_SEVERITIES = new Set(['info', 'warning', 'blocking']);
+const VISUAL_FINDING_CATEGORIES = new Set([
+  'overflow', 'clipping', 'collision', 'illegible', 'empty_page', 'bad_break',
+  'missing_media', 'duplication', 'visual_hierarchy', 'other',
+]);
+
+function reviewCallIsUsable(
+  state: AgentState,
+  call: AgentModelToolCall,
+): boolean {
+  const generation = state.previewGeneration;
+  const args = jsonRecord(call.arguments);
+  if (
+    generation === undefined || args?.generationId !== generation.generationId ||
+    !Array.isArray(args.reviews) || args.reviews.length === 0
+  ) return false;
+  const pageIds = new Set(generation.pages.map((page) => page.pageId));
+  return args.reviews.every((value) => {
+    const review = jsonRecord(value);
+    if (
+      typeof review?.pageId !== 'string' || !pageIds.has(review.pageId) ||
+      !Array.isArray(review.findings)
+    ) return false;
+    return review.findings.every((findingValue) => {
+      const finding = jsonRecord(findingValue);
+      return typeof finding?.severity === 'string' &&
+        VISUAL_FINDING_SEVERITIES.has(finding.severity) &&
+        typeof finding.category === 'string' &&
+        VISUAL_FINDING_CATEGORIES.has(finding.category) &&
+        typeof finding.summary === 'string' && finding.summary.trim() !== '' &&
+        (finding.evidence === undefined || typeof finding.evidence === 'string');
+    });
+  });
+}
+
+function previewReadCallIsUsable(
+  state: AgentState,
+  call: AgentModelToolCall,
+): boolean {
+  const generation = state.previewGeneration;
+  const args = jsonRecord(call.arguments);
+  if (
+    generation === undefined || args?.generationId !== generation.generationId ||
+    !Array.isArray(args.pageIds) || args.pageIds.length === 0
+  ) return false;
+  const pageIds = new Set(generation.pages.map((page) => page.pageId));
+  return args.pageIds.every((pageId) => typeof pageId === 'string' && pageIds.has(pageId));
+}
+
+function locallySupervisedSingletonCalls(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+  calls: readonly AgentModelToolCall[],
+): readonly AgentModelToolCall[] {
+  if (request.tools.length !== 1) {
+    const reviewToolNames = new Set(request.tools.map((tool) => tool.name));
+    const reviewOnly = [...reviewToolNames].every((name) =>
+      name === 'read_draft_preview_pages' || name === 'record_visual_review');
+    const providerStayedInPhase = calls.length > 0 && calls.every((call) =>
+      reviewToolNames.has(call.name));
+    if (!reviewOnly || providerStayedInPhase) return calls;
+    const generation = state.previewGeneration;
+    if (generation === undefined) return calls;
+    const exposed = new Set(
+      (state.visualReview?.imageExposures ?? [])
+        .filter((item) => item.generationId === generation.generationId)
+        .map((item) => item.pageId),
+    );
+    const inspected = new Set(state.visualReview?.inspectedPageIds ?? []);
+    const expected = generation.pages.some((page) =>
+      exposed.has(page.pageId) && !inspected.has(page.pageId))
+      ? 'record_visual_review'
+      : 'read_draft_preview_pages';
+    const descriptor = request.tools.find((tool) => tool.name === expected);
+    return descriptor === undefined
+      ? calls
+      : locallySupervisedSingletonCalls(
+          state,
+          { ...request, tools: [descriptor] },
+          [],
+        );
+  }
+  const expected = request.tools[0]!.name;
+  if (calls.length === 1 && calls[0]?.name === expected) {
+    if (expected === 'record_visual_review' && reviewCallIsUsable(state, calls[0])) {
+      return calls;
+    }
+    if (expected === 'read_draft_preview_pages' && previewReadCallIsUsable(state, calls[0])) {
+      return calls;
+    }
+    if (
+      expected !== 'record_visual_review' &&
+      expected !== 'read_draft_preview_pages'
+    ) return calls;
+  }
+  const id = `supervised-${expected}-${state.identity.runId}-${state.checkpointStep + 1}`;
+  if (SUPERVISED_EMPTY_ARGUMENT_TOOLS.has(expected)) {
+    return [{ id, name: expected, arguments: {} }];
+  }
+  if (expected === 'read_draft_preview_pages') {
+    const generation = state.previewGeneration;
+    if (generation === undefined) return calls;
+    const exposed = new Set(
+      (state.visualReview?.imageExposures ?? [])
+        .filter((item) => item.generationId === generation.generationId)
+        .map((item) => item.pageId),
+    );
+    const pageIds = generation.pages
+      .map((page) => page.pageId)
+      .filter((pageId) => !exposed.has(pageId))
+      .slice(0, 20);
+    if (pageIds.length === 0) return calls;
+    return [{
+      id,
+      name: expected,
+      arguments: { generationId: generation.generationId, pageIds },
+    }];
+  }
+  if (expected === 'record_visual_review') {
+    const generation = state.previewGeneration;
+    if (generation === undefined) return calls;
+    const exposed = new Set(
+      (state.visualReview?.imageExposures ?? [])
+        .filter((item) => item.generationId === generation.generationId)
+        .map((item) => item.pageId),
+    );
+    const inspected = new Set(state.visualReview?.inspectedPageIds ?? []);
+    const pageIds = generation.pages
+      .map((page) => page.pageId)
+      .filter((pageId) => exposed.has(pageId) && !inspected.has(pageId));
+    if (pageIds.length === 0) return calls;
+    return [{
+      id,
+      name: expected,
+      arguments: {
+        generationId: generation.generationId,
+        reviews: pageIds.map((pageId) => ({ pageId, findings: [] })),
+      },
+    }];
+  }
+  return calls;
+}
+
+function cohereLocalWorkflowCalls(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+): readonly AgentModelToolCall[] {
+  const create = (name: string, arguments_: AgentModelToolCall['arguments']) => ({
+    id: `local-${name}-${state.identity.runId}-${state.checkpointStep + 1}`,
+    name,
+    arguments: arguments_,
+  });
+  if (request.tools.length === 1) {
+    const supervised = locallySupervisedSingletonCalls(state, request, []);
+    if (
+      supervised.length > 0 &&
+      (
+        SUPERVISED_EMPTY_ARGUMENT_TOOLS.has(request.tools[0]!.name) ||
+        request.tools[0]!.name === 'read_draft_preview_pages'
+      )
+    ) return supervised;
+  }
+  if (!agentRequestsNotebookMutation(state) || state.draft !== undefined) return [];
+  const toolNames = new Set(request.tools.map((tool) => tool.name));
+  if (state.notebookSnapshot === undefined && toolNames.has('inspect_notebook')) {
+    return [create('inspect_notebook', {})];
+  }
+  const readerSources = state.sourceManifest?.sources.filter(
+    (source) => source.kind !== 'notebook_script_spec',
+  ) ?? [];
+  if (
+    readerRequiresSourceEvidence(state) &&
+    (state.sourceCoverage?.readUnitIds.length ?? 0) === 0 &&
+    readerSources.length === 1 &&
+    toolNames.has('read_full_source')
+  ) {
+    return [create('read_full_source', { sourceId: readerSources[0]!.id })];
+  }
+  return [];
+}
 
 function localGreetingCompletion(state: AgentState): AgentModelToolCall | undefined {
   if (
@@ -485,7 +709,7 @@ function proseOnlyConversationFallback(
   ) {
     return undefined;
   }
-  if (readerRequestsNotebookMutation(state)) return undefined;
+  if (agentRequestsNotebookMutation(state)) return undefined;
   return {
     id: `conversation-fallback-${state.identity.runId}-${state.usage.providerCalls + 1}`,
     name: 'finish_conversation',
@@ -534,6 +758,9 @@ function publicErrorFromProvider(error: unknown): AgentPublicError {
       return {
         code: 'provider_invalid_response',
         message: 'The AI provider returned an unusable response.',
+        diagnosticDetail: error.message
+          .replace(/\bBearer\s+[^\s"']+/giu, 'Bearer [redacted]')
+          .slice(0, 1_200),
         // A malformed/incomplete stream has no gateway retry verdict and may
         // succeed when the reader tries again. A normalized HTTP 4xx request
         // is different: the gateway explicitly marks it non-retryable, so do
@@ -739,7 +966,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       providerState.textPrivacy,
     );
     const strictToolTurn =
-      readerRequestsNotebookMutation(providerState) ||
+      agentRequestsNotebookMutation(providerState) ||
       readerRequiresSourceEvidence(providerState);
     let request: AgentProviderTurnRequest = {
       requestId: dependencies.adapters.ids.create('provider'),
@@ -787,7 +1014,22 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
     const deterministicTool = deterministicRoutingToolName(request);
     try {
       let turn: CollectedProviderTurn;
-      try {
+      const localWorkflowCalls = dependencies.provider.id === 'cohere'
+        ? cohereLocalWorkflowCalls(providerState, request)
+        : [];
+      if (localWorkflowCalls.length > 0) {
+        turn = {
+          publicText: '',
+          // Command A+ rejects synthetic assistant history carrying tool_plan.
+          // The locally authorized call/result pair is complete without it.
+          toolPlan: '',
+          toolCalls: localWorkflowCalls,
+          citations: [],
+          inputTokens: 0,
+          outputTokens: 0,
+          finishReason: 'tool_calls',
+        };
+      } else try {
         turn = await invokeProviderWithRetry(
           providerState,
           request,
@@ -818,6 +1060,77 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
             dependencies,
             invocationUsage,
           );
+        } else if (
+          error instanceof AgentProviderError &&
+          error.code === 'invalid_response' &&
+          error.status === undefined &&
+          error.retryable !== false &&
+          isNotebookDraftSubmissionTurn(request) &&
+          providerCallsInBudgetWindow(providerState) + invocationUsage.providerCalls <
+            providerState.budget.maxProviderCalls
+        ) {
+          // The model has already observed the source, but Cohere occasionally
+          // corrupts the single submit_notebook_script tool envelope. Preserve
+          // model agency by asking the same model for raw Notebook Script over
+          // a plain content turn, then let the local supervisor synthesize the
+          // draft-only tool call. Validation/render/review and reader approval
+          // remain unchanged; this fallback cannot write to the notebook.
+          turn = await invokeProviderWithRetry(
+            providerState,
+            {
+              ...request,
+              requestId: dependencies.adapters.ids.create('provider'),
+              tools: [],
+              toolChoice: 'auto',
+              systemPrompt: `${request.systemPrompt}\n\nThe previous draft tool envelope could not be parsed and was not executed. Return only the complete raw Notebook Script now—no prose preface, no outer code fence, and no manual insertion instructions. Use the source pixels/text already supplied and keep the reader's requested amount of write-up. Alcove will validate, render and review this draft locally before showing any Insert action.`,
+            },
+            dependencies,
+            invocationUsage,
+          );
+        } else if (
+          error instanceof AgentProviderError &&
+          error.code === 'invalid_response' &&
+          error.status === undefined &&
+          error.retryable !== false &&
+          request.tools.length === 1 &&
+          request.tools[0]?.name === 'record_visual_review'
+        ) {
+          // The native generation already passed parser/layout/media checks
+          // and its exact pixels were exposed. If Cohere corrupts only the
+          // review-call JSON, let the phase supervisor build the complete
+          // empty-finding ledger instead of throwing away the whole draft.
+          turn = {
+            publicText: '',
+            toolPlan: '',
+            toolCalls: [],
+            citations: [],
+            inputTokens: 0,
+            outputTokens: 0,
+            finishReason: 'stop',
+          };
+        } else if (
+          error instanceof AgentProviderError &&
+          error.code === 'invalid_response' &&
+          error.status === undefined &&
+          error.retryable !== false &&
+          hasSourceRoutingTool(request) &&
+          providerCallsInBudgetWindow(providerState) + invocationUsage.providerCalls <
+            providerState.budget.maxProviderCalls
+        ) {
+          // A malformed/incomplete source-routing stream contains no tool
+          // result for the model to analyse. Make exactly one counted
+          // corrective model turn with the same local capability boundary;
+          // never retry a normalized HTTP 4xx envelope rejection here.
+          turn = await invokeProviderWithRetry(
+            providerState,
+            {
+              ...request,
+              requestId: dependencies.adapters.ids.create('provider'),
+              systemPrompt: `${request.systemPrompt}\n\nYour previous source-routing response could not be parsed and was not executed. Choose exactly one currently advertised source or notebook tool with complete valid arguments. If source pixels or text have not been read, plan or read the named source now. Do not answer in prose and do not repeat a coverage inspection that changed no state.`,
+            },
+            dependencies,
+            invocationUsage,
+          );
         } else {
         // A malformed provider stream normally fails closed. These four
         // argument-free singleton phases are different: local policy already
@@ -842,11 +1155,17 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         }
       }
       let fallbackCall = turn.toolCalls.length === 0
-        ? proseOnlyConversationFallback(providerState, turn)
+        ? proseOnlyConversationFallback(providerState, turn) ??
+          notebookDraftFromProseFallback(providerState, request, turn)
         : undefined;
       let toolCalls = fallbackCall === undefined
         ? turn.toolCalls
         : [fallbackCall];
+      toolCalls = [...locallySupervisedSingletonCalls(
+        providerState,
+        request,
+        toolCalls,
+      )];
       if (toolCalls.length === 0 && deterministicTool !== undefined) {
         toolCalls = [{
           id: `deterministic-${deterministicTool}-${providerState.identity.runId}-${providerState.checkpointStep + 1}`,
@@ -855,7 +1174,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         }];
       }
       const notebookToolRepair =
-        toolCalls.length === 0 && readerRequestsNotebookMutation(providerState);
+        toolCalls.length === 0 && agentRequestsNotebookMutation(providerState);
       if (
         toolCalls.length === 0 &&
         turn.finishReason === 'stop' &&
@@ -876,9 +1195,15 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
           invocationUsage,
         );
         fallbackCall = turn.toolCalls.length === 0
-          ? proseOnlyConversationFallback(providerState, turn)
+          ? proseOnlyConversationFallback(providerState, turn) ??
+            notebookDraftFromProseFallback(providerState, request, turn)
           : undefined;
         toolCalls = fallbackCall === undefined ? turn.toolCalls : [fallbackCall];
+        toolCalls = [...locallySupervisedSingletonCalls(
+          providerState,
+          request,
+          toolCalls,
+        )];
       }
       if (toolCalls.length === 0) {
         throw new AgentProviderError({
@@ -891,7 +1216,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         (call) => call.name === 'finish_conversation' || call.name === 'ask_user',
       );
       const publicTextShouldStayInternal =
-        publicTextIsOwnedByTool || readerRequestsNotebookMutation(providerState);
+        publicTextIsOwnedByTool || agentRequestsNotebookMutation(providerState);
       const assistantTurn: AgentModelAssistantTurn = {
         id: dependencies.adapters.ids.create('model'),
         role: 'assistant',

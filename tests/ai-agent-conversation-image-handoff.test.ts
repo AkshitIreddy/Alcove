@@ -319,6 +319,11 @@ describe('portable generated-image handoff', () => {
         ...baseOrdinary.budgetWindow!,
         readerMessageId: 'user-pages-without-images',
       },
+      objective: {
+        turnId: 'user-pages-without-images',
+        mode: 'notebook_change' as const,
+        decidedBy: 'model_action' as const,
+      },
     };
     expect(explicitImageRequest(ordinary)).toEqual({ requested: false });
     expect(buildAgentSystemPrompt(ordinary)).toContain(
@@ -520,6 +525,11 @@ describe('portable generated-image handoff', () => {
           startedAt: NOW,
         }),
         readerMessageId: revokedMessage.id,
+      },
+      objective: {
+        turnId: revokedMessage.id,
+        mode: 'notebook_change',
+        decidedBy: 'model_action',
       },
     };
 
@@ -851,7 +861,8 @@ describe('answer-only agent completion', () => {
     expect(result.state.lifecycle).toBe('failed');
     expect(result.state.lastError?.message).toMatch(/unusable response/i);
     expect(result.state.conversation).toHaveLength(1);
-    expect(requests[0]?.tools.map((tool) => tool.name)).not.toContain('finish_conversation');
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain('finish_conversation');
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain('set_task_mode');
     expect(requests[0]?.tools.map((tool) => tool.name)).toContain('inspect_notebook');
   });
 
@@ -921,6 +932,11 @@ describe('answer-only agent completion', () => {
     const state = withCurrentAnswer({
       ...initial,
       lifecycle: 'running',
+      objective: {
+        turnId: initial.budgetWindow!.readerMessageId!,
+        mode: 'conversation',
+        decidedBy: 'model_declaration',
+      },
       draft: {
         runId: initial.identity.runId,
         version: 1,

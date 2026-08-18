@@ -700,10 +700,12 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(result.state.usage).toMatchObject({ providerCalls: 2, inputTokens: 42, outputTokens: 24 });
     expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({ toolChoice: 'auto' });
-    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+      'set_task_mode',
+      'inspect_notebook',
       'ask_user',
       'finish_conversation',
-    ]);
+    ]));
     expect(requests[1]).toMatchObject({ toolChoice: 'auto', tools: [] });
     expect(result.state.conversation.filter((message) =>
       message.role === 'assistant' && /Cookies are small pieces of data/u.test(message.text)
@@ -894,14 +896,15 @@ describe('Alcove autonomous notebook agent runtime', () => {
       'validate_notebook_script',
     ]);
     expect(waiting.state.usage).toMatchObject({ providerCalls: 8, toolCalls: 8 });
-    const locallyRouted = waiting.state.modelHistory.flatMap((turn) =>
+    const supervisedOrDeterministic = waiting.state.modelHistory.flatMap((turn) =>
       turn.role === 'assistant'
         ? turn.toolCalls
-            .filter((call) => call.id.startsWith('deterministic-'))
+            .filter((call) =>
+              call.id.startsWith('deterministic-') || call.id.startsWith('supervised-'))
             .map((call) => call.name)
         : [],
     );
-    expect(locallyRouted).toEqual([
+    expect(supervisedOrDeterministic).toEqual([
       'validate_notebook_script',
       'render_draft_preview',
     ]);
@@ -988,6 +991,9 @@ describe('Alcove autonomous notebook agent runtime', () => {
 
     expect(failed.state.lifecycle).toBe('failed');
     expect(failed.state.lastError?.code).toBe('provider_invalid_response');
+    expect(failed.state.lastError?.diagnosticDetail).toBe(
+      'scripted malformed provider stream',
+    );
     expect(failed.state.usage).toMatchObject({ providerCalls: 5, toolCalls: 4 });
     expect(failed.state.draft).toMatchObject({ version: 1 });
     const failedDraftHash = failed.state.draft?.draftHash;
@@ -1347,7 +1353,8 @@ describe('Alcove autonomous notebook agent runtime', () => {
     const resumedRequest = provider.requests[2]!;
     const advertisedTools = resumedRequest.tools.map((tool) => tool.name);
     expect(advertisedTools).toContain('inspect_notebook');
-    expect(advertisedTools).not.toContain('finish_conversation');
+    expect(advertisedTools).toContain('finish_conversation');
+    expect(advertisedTools).toContain('set_task_mode');
     const resumedProviderHistory = JSON.stringify(resumedRequest.messages);
     expect(resumedProviderHistory).not.toMatch(/response\s*:\s*yes/iu);
     expect(resumedRequest.messages).toContainEqual({
@@ -1907,15 +1914,8 @@ describe('Alcove autonomous notebook agent runtime', () => {
     const visualReviewTurns = waiting.state.modelHistory.filter(
       (turn) => turn.role === 'tool' && turn.toolName === 'record_visual_review',
     );
-    expect(visualReviewTurns).toHaveLength(2);
-    expect(visualReviewTurns[0]).toMatchObject({
-      role: 'tool',
-      isError: true,
-      content: {
-        error: expect.stringMatching(/read_draft_preview_pages/i),
-      },
-    });
-    expect(visualReviewTurns[1]).toMatchObject({ role: 'tool', isError: false });
+    expect(visualReviewTurns).toHaveLength(1);
+    expect(visualReviewTurns[0]).toMatchObject({ role: 'tool', isError: false });
     expect(waiting.state.patchProposal?.status).toBe('waiting_for_approval');
     expect(waiting.state.pendingToolCalls).toEqual([]);
     expect(waiting.state.plan?.summary).toBe('Build and review a concise note');
@@ -2275,6 +2275,417 @@ describe('Alcove autonomous notebook agent runtime', () => {
     }
   });
 
+  it('feeds an intent-conflict tool error back to the model and recovers to preview', async () => {
+    const provider = new ScriptedProvider([
+      {
+        name: 'finish_conversation',
+        args: { answer: 'I will only answer here.', citedUnitIds: [] },
+      },
+      {
+        name: 'set_task_mode',
+        args: {
+          mode: 'notebook_change',
+          reason: 'The reader explicitly asked to add the explanation to the book.',
+        },
+      },
+      { name: 'inspect_notebook', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Cat whiskers\n\nWhiskers help cats sense nearby surfaces and moving air.',
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ]);
+    const runtime = new AgentRuntime(
+      provider,
+      fakeAdapters().adapters,
+      new InMemoryAgentPersistence(),
+    );
+
+    const waiting = await runtime.start({
+      taskId: 'task-objective-recovery',
+      threadId: 'thread-objective-recovery',
+      runId: 'run-objective-recovery',
+      bookId: 'book-1',
+      goal: 'Add the cat-whisker explanation to my book.',
+      insertionTarget: { kind: 'book_end' },
+      budget: { maxProviderCalls: 12 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(waiting.state.objective).toMatchObject({
+      mode: 'notebook_change',
+      decidedBy: 'model_declaration',
+    });
+    expect(provider.requests).toHaveLength(10);
+    expect(JSON.stringify(provider.requests[1]?.messages)).toContain('intent_conflict');
+    expect(provider.requests[1]?.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['set_task_mode', 'finish_conversation', 'inspect_notebook']),
+    );
+    const conflictTurn = waiting.state.modelHistory.find(
+      (turn) => turn.role === 'tool' && turn.toolName === 'finish_conversation',
+    );
+    expect(conflictTurn).toMatchObject({
+      role: 'tool',
+      isError: true,
+      content: expect.objectContaining({
+        errorCode: 'intent_conflict',
+        suggestedTools: ['set_task_mode'],
+      }),
+    });
+  });
+
+  it('makes one counted corrective source turn after a malformed provider stream', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const decisions: ScriptedTurn[] = [
+      { name: 'inspect_notebook', args: {} },
+      { name: 'read_full_source', args: { sourceId: 'source-1' } },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Grounded source note\n\nOne fact from the attached source.',
+          citedUnitIds: ['unit-1'],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ];
+    let cursor = 0;
+    const provider: AgentProvider = {
+      id: 'source-protocol-recovery',
+      capabilities: async () => ({
+        providerId: 'source-protocol-recovery',
+        modelId: 'source-protocol-recovery',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (requests.length === 2) {
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'QA malformed source-routing stream',
+          });
+        }
+        const decision = decisions[cursor++];
+        if (decision === undefined) throw new Error('source recovery provider ran out of decisions');
+        yield {
+          type: 'tool_call',
+          id: `source-recovery-call-${requests.length}`,
+          name: decision.name,
+          arguments: decision.args,
+        };
+        yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters(manifestWithUnits(1));
+    const runtime = new AgentRuntime(
+      provider,
+      adapters,
+      new InMemoryAgentPersistence(),
+    );
+
+    const waiting = await runtime.start({
+      taskId: 'task-source-protocol-recovery',
+      threadId: 'thread-source-protocol-recovery',
+      runId: 'run-source-protocol-recovery',
+      bookId: 'book-1',
+      goal: 'Add the attached PDF to my book.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'source-protocol-attachment',
+        title: 'Source.pdf',
+        mediaType: 'application/pdf',
+        digest: 'source-digest-1',
+      }],
+      budget: { maxProviderCalls: 12 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(waiting.state.lastError).toBeUndefined();
+    expect(waiting.state.usage).toMatchObject({
+      providerCalls: 10,
+      providerRetries: 0,
+    });
+    expect(requests).toHaveLength(10);
+    expect(requests[2]?.systemPrompt).toContain(
+      'Your previous source-routing response could not be parsed',
+    );
+    expect(requests[2]?.tools.map((tool) => tool.name)).toContain('read_full_source');
+    expect(waiting.state.sourceCoverage?.readUnitIds).toEqual(['unit-1']);
+  });
+
+  it('recovers a malformed draft tool envelope through model-authored raw Notebook Script', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const decisions: ScriptedTurn[] = [
+      { name: 'inspect_notebook', args: {} },
+      { name: 'read_full_source', args: { sourceId: 'source-1' } },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ];
+    let cursor = 0;
+    let malformedDraftInjected = false;
+    let proseFallbackUsed = false;
+    let wrongPreviewReadInjected = false;
+    let wrongVisualReviewInjected = false;
+    const provider: AgentProvider = {
+      id: 'draft-prose-recovery',
+      capabilities: async () => ({
+        providerId: 'draft-prose-recovery',
+        modelId: 'draft-prose-recovery',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (
+          !malformedDraftInjected &&
+          request.tools.length === 1 &&
+          request.tools[0]?.name === 'submit_notebook_script'
+        ) {
+          malformedDraftInjected = true;
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'QA malformed submit_notebook_script envelope',
+          });
+        }
+        if (malformedDraftInjected && !proseFallbackUsed && request.tools.length === 0) {
+          proseFallbackUsed = true;
+          yield {
+            type: 'public_text_delta',
+            text: '# Grounded picture note\n\nA compact fact from the attached image.',
+          };
+          yield { type: 'usage', inputTokens: 110, outputTokens: 24 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        if (
+          !wrongPreviewReadInjected && request.tools.length === 1 &&
+          request.tools[0]?.name === 'read_draft_preview_pages'
+        ) {
+          wrongPreviewReadInjected = true;
+          yield {
+            type: 'tool_call',
+            id: 'wrong-preview-read-tool',
+            name: 'inspect_notebook',
+            arguments: {},
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        if (
+          !wrongVisualReviewInjected && request.tools.length === 1 &&
+          request.tools[0]?.name === 'record_visual_review'
+        ) {
+          wrongVisualReviewInjected = true;
+          yield {
+            type: 'tool_call',
+            id: 'wrong-visual-review-tool',
+            name: 'inspect_notebook',
+            arguments: {},
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        const decision = decisions[cursor++];
+        if (decision === undefined) throw new Error('draft recovery provider ran out of decisions');
+        yield {
+          type: 'tool_call',
+          id: `draft-recovery-call-${requests.length}`,
+          name: decision.name,
+          arguments: decision.args,
+        };
+        yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters(manifestWithUnits(1));
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+
+    const waiting = await runtime.start({
+      taskId: 'task-draft-prose-recovery',
+      threadId: 'thread-draft-prose-recovery',
+      runId: 'run-draft-prose-recovery',
+      bookId: 'book-1',
+      goal: 'Add this to my book.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'draft-prose-picture',
+        title: 'Picture.png',
+        mediaType: 'image/png',
+        digest: 'draft-prose-picture-digest',
+      }],
+      budget: { maxProviderCalls: 12 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(malformedDraftInjected).toBe(true);
+    expect(proseFallbackUsed).toBe(true);
+    expect(wrongPreviewReadInjected).toBe(true);
+    expect(wrongVisualReviewInjected).toBe(true);
+    expect(requests).toHaveLength(10);
+    expect(requests[3]?.tools).toEqual([]);
+    expect(requests[3]?.systemPrompt).toContain(
+      'previous draft tool envelope could not be parsed',
+    );
+    expect(waiting.state.draft).toMatchObject({
+      script: '# Grounded picture note\n\nA compact fact from the attached image.',
+    });
+    expect(waiting.state.sourceCoverage?.citedUnitIds).toEqual(['unit-1']);
+    expect(waiting.state.modelHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'tool',
+        toolName: 'read_draft_preview_pages',
+        isError: false,
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        toolName: 'record_visual_review',
+        isError: false,
+      }),
+    ]));
+    expect(waiting.state.modelHistory).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'tool',
+        toolName: 'inspect_notebook',
+        isError: true,
+      }),
+    ]));
+    expect(waiting.state.lastError).toBeUndefined();
+  });
+
+  it('uses Cohere only for semantic drafting and visual judgment on a single-image task', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'cohere',
+      capabilities: async () => ({
+        providerId: 'cohere',
+        modelId: 'command-a-plus-05-2026',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        const tool = request.tools[0]?.name;
+        if (tool === 'submit_notebook_script') {
+          yield {
+            type: 'tool_call',
+            id: 'cohere-semantic-draft',
+            name: tool,
+            arguments: {
+              script: '# Picture note\n\nA concise note grounded in the attached image.',
+              citedUnitIds: ['invented-unit'],
+              reason: 'initial',
+            },
+          };
+        } else if (tool === 'record_visual_review') {
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'Cohere returned invalid arguments for record_visual_review',
+          });
+        } else {
+          throw new Error(`unexpected semantic Cohere phase ${tool ?? '(none)'}`);
+        }
+        yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters(manifestWithUnits(1));
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+
+    const waiting = await runtime.start({
+      taskId: 'task-cohere-local-workflow',
+      threadId: 'thread-cohere-local-workflow',
+      runId: 'run-cohere-local-workflow',
+      bookId: 'book-1',
+      goal: 'Add this to my book.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'cohere-local-picture',
+        title: 'Picture.png',
+        mediaType: 'image/png',
+        digest: 'cohere-local-picture-digest',
+      }],
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(requests).toHaveLength(2);
+    expect(requests.map((request) => request.tools.map((tool) => tool.name))).toEqual([
+      ['submit_notebook_script'],
+      ['record_visual_review'],
+    ]);
+    expect(waiting.state.usage).toMatchObject({
+      providerCalls: 2,
+      toolCalls: 9,
+      repairPasses: 0,
+    });
+    expect(waiting.state.sourceCoverage?.citedUnitIds).toEqual(['unit-1']);
+    expect(waiting.state.modelHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'tool',
+        toolName: 'submit_notebook_script',
+        isError: false,
+        content: expect.objectContaining({
+          sourceCitationsAutoAttached: true,
+          invalidCitationsDropped: ['invented-unit'],
+        }),
+      }),
+    ]));
+    expect(waiting.state.modelHistory.filter((turn) => turn.role === 'tool' && turn.isError))
+      .toEqual([]);
+  });
+
   it('grandfathers the exact reviewed three-page headings-and-bullets log during receipt recovery', async () => {
     const failed = exactThreePageDiagnosticFailedApplyState();
     expect(notebookCraftDiagnostics(failed.patchProposal!.script, failed)).toEqual([
@@ -2472,6 +2883,32 @@ describe('Alcove autonomous notebook agent runtime', () => {
       phase: 'reviewing_preview',
       sourceManifest,
       sourceCoverage,
+      taskBrief: {
+        ...veiled.taskBrief,
+        goal: 'Revise private placeholders in my book',
+      },
+      conversation: [{
+        id: 'reader-private-repair',
+        role: 'user',
+        text: 'Revise private placeholders in my book',
+        createdAt: NOW,
+      }],
+      objective: {
+        turnId: 'reader-private-repair',
+        mode: 'notebook_change',
+        decidedBy: 'model_action',
+        decidedAt: NOW,
+      },
+      modelHistory: [{
+        id: 'reader-private-repair',
+        role: 'user',
+        content: 'Revise private placeholders in my book',
+        createdAt: NOW,
+      }],
+      budgetWindow: {
+        ...veiled.budgetWindow!,
+        readerMessageId: 'reader-private-repair',
+      },
       draft: {
         ...veiled.draft!,
         sourceManifestDigest: sourceManifest.digest,
@@ -2525,6 +2962,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
       adapters,
       new AgentEventBus(state.identity, new InMemoryAgentPersistence(), () => NOW),
     );
+    expect([...availableAgentToolNames(state)]).toEqual(['propose_notebook_patch']);
     const failed = await tools.execute(state, {
       id: 'private-proposal-fails',
       name: 'propose_notebook_patch',
@@ -3819,6 +4257,8 @@ describe('source and visual coverage gates', () => {
       unitId: 'unit-1',
       providerCallCount: 1,
     }]);
+    expect(read.state.sourceCoverage?.requiredUnitIds).toEqual(['unit-1']);
+    expect(read.state.sourceCoverage?.readUnitIds).toEqual(['unit-1']);
 
     const uncitedSameBatchDraft = await tools.execute(read.state, {
       id: 'parallel-uncited-draft',
@@ -3856,11 +4296,12 @@ describe('source and visual coverage gates', () => {
       name: 'submit_notebook_script',
       arguments: {
         script: '# Grounded note',
-        citedUnitIds: ['unit-1'],
+        citedUnitIds: [],
         reason: 'initial',
       },
     }, new AbortController().signal);
     expect(laterTurnDraft.result).not.toHaveProperty('error');
+    expect(laterTurnDraft.result).toMatchObject({ sourceCitationsAutoAttached: true });
     expect(laterTurnDraft.state.sourceCoverage?.citedUnitIds).toEqual(['unit-1']);
   });
 

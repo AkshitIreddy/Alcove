@@ -36,6 +36,37 @@ const SOURCE_IMAGE_LIMIT = { maxEdge: 1_600, maxPixels: 2_560_000, maxBytes: 1_8
 const DRAFT_IMAGE_LIMIT = { maxEdge: 2_000, maxPixels: 4_000_000, maxBytes: 2_400_000 };
 const MAX_PROVIDER_IMAGES_PER_TURN = 20;
 
+/**
+ * The live Command A+ endpoint accepts Alcove's compact authoring catalogue in
+ * strict mode, but rejects the larger source/RAG catalogue and multimodal
+ * image+tool envelopes before generation begins. The local graph and Zod
+ * parser remain authoritative in those phases, so omitting this optional wire
+ * hint changes no notebook or source permission boundary.
+ */
+const COHERE_NON_STRICT_SOURCE_TOOLS = new Set([
+  'list_source_manifest',
+  'plan_source_retrieval',
+  'read_source_range',
+  'read_full_source',
+  'search_source_index',
+  'rerank_source_hits',
+  'inspect_source_coverage',
+]);
+
+function messageHasImage(message: AiGatewayMessage): boolean {
+  return message.role === 'user' && Array.isArray(message.content) &&
+    message.content.some((part) => part.type === 'image_url');
+}
+
+function useCohereStrictTools(
+  request: AgentProviderTurnRequest,
+  messages: readonly AiGatewayMessage[],
+): boolean {
+  return request.tools.length > 0 &&
+    !request.tools.some((tool) => COHERE_NON_STRICT_SOURCE_TOOLS.has(tool.name)) &&
+    !messages.some(messageHasImage);
+}
+
 export interface ProviderImageDerivative {
   readonly bytes: readonly number[];
   readonly mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
@@ -474,11 +505,12 @@ export class CohereTauriAgentProvider implements AgentProvider {
       // boundary. Do not serialize Cohere's tool_choice control here. The live
       // Command A+ trial and production endpoints rejected that field for the
       // production catalogue even though the generic V2 reference advertises
-      // it. The same compatibility smoke accepted strict_tools with the
-      // sanitized schemas below, so retain strict argument generation and let
-      // the graph remain authoritative for call selection.
+      // it. Keep strict argument generation only for the compact authoring
+      // envelopes proven compatible by the live smoke; source/RAG and
+      // multimodal turns are excluded by useCohereStrictTools above. The graph
+      // and local Zod schemas remain authoritative for every call.
       toolChoice: undefined,
-      strictTools: request.tools.length > 0 ? true : undefined,
+      strictTools: useCohereStrictTools(request, messages) ? true : undefined,
     };
 
     const queued: AgentProviderStreamEvent[] = [];
@@ -607,17 +639,23 @@ export class CohereTauriAgentProvider implements AgentProvider {
             numberAt(data, 'delta', 'usage', 'tokens', 'outputTokens') ?? 0;
           push({ type: 'usage', inputTokens, outputTokens });
           const rawReason = stringAt(data, 'delta', 'finish_reason')?.toUpperCase();
-          if (
-            (emittedToolCalls > 0 && rawReason !== 'TOOL_CALL') ||
-            (emittedToolCalls === 0 && rawReason === 'TOOL_CALL')
-          ) {
+          if (emittedToolCalls === 0 && rawReason === 'TOOL_CALL') {
             failProtocol('Cohere finish reason does not match its streamed tool calls');
             return;
           }
+          // Command A+ occasionally labels a fully closed, valid streamed tool
+          // call as COMPLETE rather than TOOL_CALL. The actual call events and
+          // parsed JSON are stronger protocol evidence than that terminal
+          // summary field. Continue to fail closed in the inverse case: a
+          // TOOL_CALL finish with no call body cannot authorize anything.
           messageEnded = true;
           push({
             type: 'finish',
-            reason: rawReason === 'TOOL_CALL' ? 'tool_calls' : rawReason === 'MAX_TOKENS' ? 'length' : 'stop',
+            reason: emittedToolCalls > 0
+              ? 'tool_calls'
+              : rawReason === 'MAX_TOKENS'
+                ? 'length'
+                : 'stop',
           });
           break;
         }

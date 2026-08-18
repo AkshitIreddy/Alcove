@@ -474,6 +474,9 @@ export class AgentRuntime {
       // Persist byte-free ownership refs before ingestion starts. A failed or
       // interrupted extractor can then be retried after a full app restart.
       pendingSourceAttachments,
+      sourceIntentTurnId: pendingSourceAttachments.length > 0
+        ? initial.budgetWindow?.readerMessageId
+        : undefined,
       ...(input.obfuscatePrivateText
         ? {
             textPrivacy: createAgentTextPrivacyReceipt({
@@ -560,6 +563,9 @@ export class AgentRuntime {
         ...this.active.state,
         phase: 'intake',
         pendingSourceAttachments: undefined,
+        sourceIntentTurnId: pendingSourceAttachments.length > 0
+          ? initial.budgetWindow?.readerMessageId
+          : initial.sourceIntentTurnId,
         sourceManifest: manifest,
         sourceCoverage: createSourceCoverageLedger(
           manifest,
@@ -641,6 +647,7 @@ export class AgentRuntime {
       // This write is the ownership claim. It must precede ingestion's first
       // await so Stop/close/Delete and crash recovery all see the queued bytes.
       pendingSourceAttachments: pendingAttachments,
+      sourceIntentPending: true,
       updatedAt: this.adapters.clock.now(),
     };
     this.notify();
@@ -1080,6 +1087,13 @@ export class AgentRuntime {
       lifecycle: 'running',
       phase: 'intake',
       conversation: [...active.state.conversation, message],
+      sourceIntentTurnId: active.state.sourceIntentPending
+        ? message.id
+        : active.state.sourceIntentTurnId,
+      sourceIntentPending: undefined,
+      objective: startsFreshSettledTurn
+        ? { turnId: message.id, mode: 'undecided' }
+        : active.state.objective,
       modelHistory: queuedUserTurns.length === 0
         ? [...active.state.modelHistory, userTurn]
         : active.state.modelHistory,
@@ -1123,6 +1137,9 @@ export class AgentRuntime {
       proposalRecovery: startsFreshSettledTurn
         ? undefined
         : active.state.proposalRecovery,
+      renderRecovery: startsFreshSettledTurn
+        ? undefined
+        : active.state.renderRecovery,
       localRestoredFinal: undefined,
       lastError: startsFreshSettledTurn ? undefined : active.state.lastError,
       budgetWindow: {
@@ -1886,6 +1903,11 @@ export class AgentRuntime {
         : {
             phase: 'intake' as const,
             conversation: [...active.state.conversation, followUpMessage],
+            sourceIntentTurnId: active.state.sourceIntentPending
+              ? followUpMessage.id
+              : active.state.sourceIntentTurnId,
+            sourceIntentPending: undefined,
+            objective: { turnId: followUpMessage.id, mode: 'undecided' as const },
             patchProposal: undefined,
             localRestoredFinal: undefined,
           }),

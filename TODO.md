@@ -1,5 +1,33 @@
 # Alcove — running TODO
 
+## ✅ 0.7.5 — steadier picture requests (released 2026-08-18)
+
+The corrective patch follows production failures in 0.7.4: a valid Cohere
+event could omit its SSE header, `[DONE]` was parsed as JSON, attachment syntax
+variations caused repeated render repairs, and a full-page image request could
+strand an empty leaf. The block handle could also flash at stale coordinates
+while the open book resized around a panel.
+
+Commits `a980d45` through `810cd50` plus annotated tag `v0.7.5` were pushed
+normally. GitHub Actions run `32176060786` passed the shared gate, Windows,
+Linux and universal macOS builds, then publication. The live non-draft Release
+contains 13 assets; all 12 checksum entries match GitHub's uploaded SHA-256
+digests, and the stable `latest.json` endpoint serves signed updater packages
+for Windows, Linux and both macOS architectures.
+
+- [x] Accept validated headerless Cohere events and exact stream terminators
+      without weakening tool-call or message-end validation.
+- [x] Canonicalize observed attachment aliases and malformed image envelopes,
+      deduplicate them, and prevent malformed raw media from taking down dev.
+- [x] Normalize explicit full-page requests to one image page plus concise
+      non-empty notes, with no trailing blank page.
+- [x] Hide and recompute the six-dot block handle across panel, zoom, transition
+      and viewport geometry changes; prove the visual gate with sabotage.
+- [x] Repeat genuine Cohere image flows in fresh Chromium contexts: expanded
+      and vague paths finish at 2 provider calls, 9 tools, 0 repairs/retries.
+- [x] Shorten release-note policy and publish the corrective release with full
+      platform, updater-signature and checksum verification.
+
 ## ✅ 0.7.4 — reliable image-led Agent pages (released 2026-08-18)
 
 The owner authorised a 0.7.4 patch release after the production Cohere path

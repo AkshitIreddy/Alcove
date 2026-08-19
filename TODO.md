@@ -1,5 +1,27 @@
 # Alcove — running TODO
 
+## ✅ 0.7.7 — smoother notebook editing (released 2026-08-19)
+
+The patch adds ordinary Paste to the block menu, lets any fitting block move to
+the previous page, restores complete rail-panel corner outlines and stops the
+Agent from starting another clarification after the reader has answered one.
+Part 1 of the README is now a short user guide with downloads first.
+
+Commits `6b4df2e` through `072d74b` plus annotated tag `v0.7.7` were pushed
+normally. GitHub Actions run `32233277514` passed the shared gate, Linux,
+Windows and universal macOS builds, then publication. The live non-draft
+Release contains 13 assets; all 12 checksum entries match GitHub's uploaded
+SHA-256 digests, and `latest.json` names signed updater packages for Windows,
+Linux and both macOS architectures.
+
+- [x] Exercise Paste and non-first-block backward movement in the real editor.
+- [x] Keep long rail panels and nested pickers outlined, scrollable and usable.
+- [x] Allow one useful Agent clarification per reader turn and catch duplicates.
+- [x] Reduce the reader guide from 1,036 to 229 lines and surface downloads.
+- [x] Recover the release from an unhealthy Azure Ubuntu mirror with bounded,
+      retrying package setup rather than publishing partial platform assets.
+- [x] Pass full frontend, Rust, README, spec, icon and live-release checks.
+
 ## ✅ 0.7.5 — steadier picture requests (released 2026-08-18)
 
 The corrective patch follows production failures in 0.7.4: a valid Cohere

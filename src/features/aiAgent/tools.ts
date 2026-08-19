@@ -1058,6 +1058,12 @@ function answeredEquivalentQuestionExistsInCurrentReaderTurn(
   );
 }
 
+function answeredQuestionExistsInCurrentReaderTurn(state: AgentState): boolean {
+  return currentReaderModelTurns(state).some(
+    (turn) => turn.role === 'tool' && turn.toolName === 'ask_user' && !turn.isError,
+  );
+}
+
 function failedQuestionExistsInCurrentReaderTurn(state: AgentState): boolean {
   return currentReaderModelTurns(state).some(
     (turn) => turn.role === 'tool' && turn.toolName === 'ask_user' && turn.isError,
@@ -2754,14 +2760,20 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
   // safe entry point for each outcome. The model owns semantic routing; local
   // policy still owns every prerequisite and the final Insert boundary.
   if (objectiveMode === 'undecided') {
-    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    if (
+      !failedQuestionExistsInCurrentReaderTurn(state) &&
+      !answeredQuestionExistsInCurrentReaderTurn(state)
+    ) available.add('ask_user');
     if (state.plan === undefined) available.add('set_plan');
     available.add('finish_conversation');
     available.add('inspect_notebook');
     return available;
   }
   if (objectiveMode === 'conversation') {
-    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    if (
+      !failedQuestionExistsInCurrentReaderTurn(state) &&
+      !answeredQuestionExistsInCurrentReaderTurn(state)
+    ) available.add('ask_user');
     available.add('finish_conversation');
     return available;
   }
@@ -2786,7 +2798,10 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
   }
 
   if (state.notebookSnapshot === undefined) {
-    if (!failedQuestionExistsInCurrentReaderTurn(state)) available.add('ask_user');
+    if (
+      !failedQuestionExistsInCurrentReaderTurn(state) &&
+      !answeredQuestionExistsInCurrentReaderTurn(state)
+    ) available.add('ask_user');
     available.add('inspect_notebook');
     return available;
   }
@@ -3040,6 +3055,9 @@ function unavailableToolMessage(
   }
   if (toolName === 'ask_user' && state.draft !== undefined) {
     return 'ask_user is not available after concrete notebook work has begun; advance the current draft workflow instead';
+  }
+  if (toolName === 'ask_user' && answeredQuestionExistsInCurrentReaderTurn(state)) {
+    return 'the reader already answered this turn’s clarification; interpret that reply and continue with the next useful tool instead of asking again';
   }
   const next = [...available].filter((name) =>
     name !== 'set_plan' && name !== 'ask_user');

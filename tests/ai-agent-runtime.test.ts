@@ -1674,12 +1674,39 @@ describe('Alcove autonomous notebook agent runtime', () => {
         },
       },
       {
-        name: 'ask_user',
+        name: 'inspect_notebook',
+        args: {},
+      },
+      {
+        name: 'propose_insertion',
+        args: { target: { kind: 'book_end' } },
+      },
+      {
+        name: 'submit_notebook_script',
         args: {
-          kind: 'requirements',
-          question: 'Would you like a short recap box as well?',
+          script: '# Lions\n\nLions are social big cats that live together in prides.',
+          citedUnitIds: [],
+          reason: 'initial',
         },
       },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: {
+          generationId: 'generation-1',
+          pageIds: ['preview-page-1'],
+        },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
     ]);
     const { adapters } = fakeAdapters();
     const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
@@ -1702,12 +1729,14 @@ describe('Alcove autonomous notebook agent runtime', () => {
     const question = waiting.state.conversation.at(-1);
 
     const resumed = await runtime.sendUserMessage('yes', { userMessageId: 'reader-yes' });
-    expect(provider.requests).toHaveLength(3);
+    expect(provider.requests).toHaveLength(11);
+    expect(resumed.interrupt?.kind).toBe('final_preview');
     const resumedRequest = provider.requests[2]!;
     const advertisedTools = resumedRequest.tools.map((tool) => tool.name);
     expect(advertisedTools).toContain('inspect_notebook');
     expect(advertisedTools).toContain('finish_conversation');
     expect(advertisedTools).toContain('set_task_mode');
+    expect(advertisedTools).not.toContain('ask_user');
     const resumedProviderHistory = JSON.stringify(resumedRequest.messages);
     expect(resumedProviderHistory).not.toMatch(/response\s*:\s*yes/iu);
     expect(resumedRequest.messages).toContainEqual({
@@ -2091,11 +2120,11 @@ describe('Alcove autonomous notebook agent runtime', () => {
         } else {
           yield {
             type: 'tool_call',
-            id: 'ask-after-answer',
-            name: 'ask_user',
+            id: 'finish-after-answer',
+            name: 'finish_conversation',
             arguments: {
-              kind: 'requirements',
-              question: 'Would you like anything else adjusted?',
+              answer: 'I have enough direction to continue without another clarification.',
+              citedUnitIds: [],
             },
           };
         }
@@ -2115,6 +2144,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
 
     const resumed = await runtime.sendUserMessage('Use the playful direction.');
     expect(provider.requests).toHaveLength(2);
+    expect(provider.requests[1]?.tools.map((tool) => tool.name)).not.toContain('ask_user');
     expect(resumed.state.plan).toBeUndefined();
     expect(resumed.state.modelHistory.some((turn) =>
       turn.role === 'tool' && turn.toolCallId === 'stale-sibling-plan'

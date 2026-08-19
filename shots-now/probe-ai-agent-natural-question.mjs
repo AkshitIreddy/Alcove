@@ -54,17 +54,22 @@ try {
   if (await skipTour.count()) await skipTour.click({ force: true }).catch(() => {});
   await page.keyboard.press('Escape').catch(() => {});
 
-  const welcome = await page.evaluate(async () => {
-    const app = await import('/src/state/app.ts');
-    const books = await import('/src/data/books.ts');
-    const list = await books.listBooksByFloorRange(0, 20);
+  const welcome = await page.evaluate(() => {
+    const list = globalThis.__shelfVisibleBooks?.() ?? [];
     const book = list.find((candidate) => /welcome/i.test(candidate.title)) ?? list[0];
     if (book === undefined) throw new Error('No Welcome book is available for the Agent probe.');
-    app.appState.openBook(book.id);
     return { id: book.id, title: book.title };
   });
   report.book = welcome;
 
+  // Use the visible shelf's own bridge/UI rather than importing appState. On
+  // a dev server that has served HMR, a page import can resolve a second store
+  // instance and "open" a book the rendered app never observes.
+  await page.locator('.shelf-a11y button').first().dispatchEvent('click');
+  await page.getByRole('button', { name: `Open ${welcome.title}`, exact: true }).click();
+  await page.waitForTimeout(900);
+  const readButton = page.getByRole('button', { name: /^read it$/i });
+  if (await readButton.count()) await readButton.click();
   await page.waitForSelector('.nb-prose');
   await page.waitForFunction(() => typeof globalThis.__aiAgentDemo?.reset === 'function');
   await page.evaluate(async () => {

@@ -1833,6 +1833,77 @@ describe('AI insertion target boundaries', () => {
     expect(availableAgentToolNames(afterRejectedQuestion).has('ask_user')).toBe(false);
   });
 
+  it('stops showing ask_user after an answered clarification in the same reader turn', async () => {
+    const identity = {
+      taskId: 'task-question-answer-cleanup',
+      threadId: 'thread-question-answer-cleanup',
+      runId: 'run-question-answer-cleanup',
+      bookId: 'current-book',
+    };
+    const events = new AgentEventBus(identity, new InMemoryAgentPersistence(), () => NOW);
+    const tools = new AgentToolCatalog(toolAdapters(), events);
+    const initial = createInitialAgentState({
+      identity,
+      goal: 'Add something to my book',
+      now: NOW,
+      userMessageId: 'reader-question-answer-cleanup',
+    });
+    const firstCall = {
+      id: 'ask-once-answer-cleanup',
+      name: 'ask_user',
+      arguments: {
+        kind: 'requirements',
+        question: 'What topic should I include?',
+      },
+    } as const;
+    const stateWithAssistantCall = {
+      ...initial,
+      modelHistory: [
+        ...initial.modelHistory,
+        {
+          id: 'assistant-ask-once-answer-cleanup',
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [firstCall],
+          createdAt: NOW,
+        },
+      ],
+    };
+    const first = await tools.execute(
+      stateWithAssistantCall,
+      firstCall,
+      new AbortController().signal,
+    );
+    const resumed = await tools.completeInterrupt(
+      { ...first.state, sourceIntentPending: true },
+      firstCall,
+      {
+        kind: 'requirements_answer',
+        response: 'Use an image-heavy explanation.',
+        userMessageId: 'reader-answer-cleanup',
+      },
+      new AbortController().signal,
+    );
+    const toolResultState = {
+      ...resumed.state,
+      modelHistory: [
+        ...resumed.state.modelHistory,
+        {
+          id: 'tool-ask-once-answer-cleanup',
+          role: 'tool' as const,
+          toolCallId: firstCall.id,
+          toolName: firstCall.name,
+          content: resumed.result,
+          isError: false,
+          createdAt: NOW,
+        },
+      ],
+    };
+
+    expect(availableAgentToolNames(toolResultState).has('ask_user')).toBe(false);
+    expect(availableAgentToolNames(toolResultState).has('inspect_notebook')).toBe(true);
+  });
+
   it.each([
     { kind: 'before_page', pageId: 'foreign-page' },
     { kind: 'after_page', pageId: 'foreign-page' },

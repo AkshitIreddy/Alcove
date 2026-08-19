@@ -1,5 +1,35 @@
 # Alcove — running TODO
 
+## ✅ 0.7.8 — steadier image-assisted pages (released 2026-08-19)
+
+The patch makes Cohere draft recovery explicit and bounded: malformed or
+incomplete raw draft streams receive one corrected request, truncated output is
+never stored, and ordinary rate-limit, timeout and network retries remain in
+place. Brief image requests stay tied to the reader's managed attachment,
+retain the reviewed preview through follow-up questions and no longer fall
+straight into repeated clarification prompts. The reader guide again leads
+with Alcove's customizable shelves, books, pages, wallpaper, writing desks,
+sound and local-first library, followed by its complete illustrated tour.
+
+Commits `cb8dee9` through `c6b1bee` plus annotated tag `v0.7.8` were pushed to
+`main`. GitHub Actions run `32251492507` passed the shared gate, Windows, Linux
+and universal macOS builds, then publication. The live non-draft Release has 13
+assets; its signed `latest.json` reports version 0.7.8 and names updater
+packages for Windows, Linux and both macOS architectures.
+
+- [x] Recover one malformed Cohere draft stream without exposing a tool-error
+      cascade or silently accepting partial Notebook Script.
+- [x] Preserve bounded transport retries for trial-key pacing and temporary
+      provider/network failures.
+- [x] Keep one exact attached image grounded through authoring, native visual
+      review, a side question and an explicit revision.
+- [x] Prove the real browser gate catches duplicate questions and missing image
+      evidence, then inspect the native two-page preview at full size.
+- [x] Restore the complete reader feature tour without rerendering accepted
+      README pictures or the demo.
+- [x] Pass frontend, Agent, Rust, README, spec, icon and release-publication
+      gates; publish and verify all platform downloads and updater metadata.
+
 ## ✅ 0.7.7 — smoother notebook editing (released 2026-08-19)
 
 The patch adds ordinary Paste to the block menu, lets any fitting block move to

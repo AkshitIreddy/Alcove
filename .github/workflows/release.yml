@@ -238,6 +238,17 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # GitHub's ubuntu-22.04 image normally prefers Azure's regional
+          # archive mirror. If that endpoint is unhealthy, apt can spend the
+          # whole job retrying it even after the public Ubuntu mirror answers.
+          # Keep the same Jammy repositories; replace only the transport host.
+          for apt_sources in /etc/apt/apt-mirrors.txt /etc/apt/sources.list; do
+            if [ -f "$apt_sources" ]; then
+              sudo sed -i \
+                's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+                "$apt_sources"
+            fi
+          done
           sudo apt-get \
             -o Acquire::Retries=5 \
             -o Acquire::http::Timeout=30 \

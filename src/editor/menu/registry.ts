@@ -31,6 +31,7 @@ import {
   insertMediaFilesInEditor,
   pickMediaFiles,
   readClipboardImageFile,
+  readClipboardText,
 } from '../media/insert';
 import {
   copyUsefulBlock,
@@ -516,6 +517,42 @@ const INSERT_ITEMS: readonly ContextMenuItem[] = [
         );
         notify?.(count > 0 ? (count === 1 ? 'video added' : `${count} videos added`) : 'video could not be added');
       });
+    },
+  },
+  {
+    kind: 'item',
+    id: 'paste',
+    title: 'Paste',
+    glyph: '⎘',
+    run: ({ editor, pos, notify }) => {
+      void (async () => {
+        const image = await readClipboardImageFile();
+        if (image !== null) {
+          const block = editor.state.doc.nodeAt(pos);
+          const count = await insertMediaFilesInEditor(
+            editor,
+            [image],
+            block === null ? editor.state.doc.content.size : pos + block.nodeSize,
+          );
+          notify?.(count > 0 ? 'image pasted' : 'image could not be added');
+          return;
+        }
+
+        const text = await readClipboardText();
+        if (text === null) {
+          notify?.('clipboard is empty');
+          return;
+        }
+        const block = editor.state.doc.nodeAt(pos);
+        const insertPos = block === null
+          ? editor.state.doc.content.size
+          : pos + block.nodeSize;
+        // The context menu Node-selects the clicked block before it opens.
+        // Plain insertContent would replace that selected block; Paste belongs
+        // beside Copy, so it inserts after the block the reader clicked.
+        editor.chain().focus().insertContentAt(insertPos, text).run();
+        notify?.('paste completed');
+      })();
     },
   },
   {

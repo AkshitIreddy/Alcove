@@ -207,3 +207,14 @@ export async function readClipboardImageFile(): Promise<File | null> {
   }
   return null;
 }
+
+export async function readClipboardText(): Promise<string | null> {
+  if (navigator.clipboard?.readText === undefined) return null;
+  try {
+    const text = await navigator.clipboard.readText();
+    return text.length > 0 ? text : null;
+  } catch {
+    // Browser denial and transient failures are expected in editor flows.
+  }
+  return null;
+}

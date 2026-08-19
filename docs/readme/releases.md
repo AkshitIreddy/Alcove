@@ -21,6 +21,18 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.8 — steadier image-assisted pages
+
+**Picture requests recover cleanly from malformed or incomplete provider
+replies.** Alcove requests one corrected complete draft, preserves normal
+rate-limit and network retries, and never stores truncated output. Brief image
+tasks remain grounded in the supplied picture and keep their reviewed preview
+available while you ask a follow-up question.
+
+**The reader guide is complete again.** It leads with customizable shelves,
+books, pages, wallpaper, writing desks, sound and local ownership, followed by
+the full illustrated feature tour and a compact download section.
+
 ## 0.7.7 — smoother notebook editing
 
 **Everyday block actions are more dependable.** The context menu now has a

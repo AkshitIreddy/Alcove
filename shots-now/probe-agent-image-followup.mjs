@@ -17,6 +17,7 @@
  *   node shots-now/probe-agent-image-followup.mjs
  *   node shots-now/probe-agent-image-followup.mjs --sabotage
  *   node shots-now/probe-agent-image-followup.mjs --drop-image-sabotage
+ *   node shots-now/probe-agent-image-followup.mjs --raw-protocol-recovery
  *   node shots-now/probe-agent-image-followup.mjs --fresh-read
  *   ALCOVE_QA_COHERE_KEY=<disposable key> node shots-now/probe-agent-image-followup.mjs --live
  *
@@ -33,6 +34,7 @@ const base = process.argv.find((value) => value.startsWith('--url='))?.slice(6)
 const sabotage = process.argv.includes('--sabotage');
 const dropImageSabotage = process.argv.includes('--drop-image-sabotage');
 const anySabotage = sabotage || dropImageSabotage;
+const rawProtocolRecovery = process.argv.includes('--raw-protocol-recovery');
 const directFinish = process.argv.includes('--direct-finish');
 const forceFreshRead = process.argv.includes('--fresh-read');
 const live = process.argv.includes('--live');
@@ -42,6 +44,8 @@ const out = resolve(
     ? 'sabotage'
     : dropImageSabotage
       ? 'drop-image-sabotage'
+      : rawProtocolRecovery
+        ? 'raw-protocol-recovery'
     : live
       ? 'live'
     : forceFreshRead
@@ -421,6 +425,7 @@ const report = {
   target: `${base.replace(/\/$/, '')}/?fx=force&qa=agent-production&dev=0`,
   sabotage,
   dropImageSabotage,
+  rawProtocolRecovery,
   directFinish,
   forceFreshRead,
   live,
@@ -454,6 +459,7 @@ let source = null;
 let authoredScript = '';
 let initialAuthoredScript = '';
 let followupReadCompleted = false;
+let rawProtocolFailureInjected = false;
 
 if (live) {
   page.on('request', (request) => {
@@ -641,6 +647,41 @@ if (live) {
     }
     authoredScript = draftScript(source.assetPath);
     initialAuthoredScript = authoredScript;
+    if (rawProtocolRecovery && !rawProtocolFailureInjected) {
+      rawProtocolFailureInjected = true;
+      report.providerResponses.push({
+        index: requestIndex,
+        name: 'injected_malformed_raw_tool_stream',
+      });
+      await route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+        body: sse([
+          ['message-start', { id: `qa-malformed-raw-${requestIndex}` }],
+          ['tool-call-start', {
+            delta: {
+              message: {
+                tool_calls: {
+                  id: `qa-malformed-tool-${requestIndex}`,
+                  function: {
+                    name: 'submit_notebook_script',
+                    arguments: '{"script":',
+                  },
+                },
+              },
+            },
+          }],
+          ['tool-call-end', {}],
+          ['message-end', {
+            delta: {
+              finish_reason: 'TOOL_CALL',
+              usage: { tokens: { input_tokens: 90, output_tokens: 12 } },
+            },
+          }],
+        ]),
+      });
+      return;
+    }
     report.providerResponses.push({
       index: requestIndex,
       name: 'raw_notebook_script',
@@ -1080,8 +1121,14 @@ try {
       followupProviderRequests.length > 0 &&
       followupProviderRequests.some((item) => item.hasSourceImageContext),
     boundedSemanticProviderWork:
-      initialProviderRequests.length === 2 &&
+      initialProviderRequests.length === (rawProtocolRecovery ? 3 : 2) &&
       followupProviderRequests.length === 1,
+    malformedRawProtocolRecovered:
+      !rawProtocolRecovery ||
+      rawProtocolFailureInjected &&
+      report.providerResponses.some((item) =>
+        item.name === 'injected_malformed_raw_tool_stream') &&
+      report.providerResponses.some((item) => item.name === 'raw_notebook_script'),
     noFollowUpNotebookWorkflow:
       newTools.every((item) => !NOTEBOOK_WORKFLOW_TOOLS.has(item.name)),
     noFollowUpSourceWorkflow:

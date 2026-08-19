@@ -3088,6 +3088,327 @@ describe('Alcove autonomous notebook agent runtime', () => {
       .toEqual([]);
   });
 
+  it('repairs a raw Cohere image draft when its protocol stream fails before collection', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    let rawDraftTurns = 0;
+    const provider: AgentProvider = {
+      id: 'cohere',
+      capabilities: async () => ({
+        providerId: 'cohere',
+        modelId: 'command-a-plus-05-2026',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (request.tools.length === 0) {
+          rawDraftTurns += 1;
+          if (rawDraftTurns === 2) {
+            yield {
+              type: 'public_text_delta',
+              text: '# Truncated repair\n\nThis prefix must never be stored.',
+            };
+            // This is the important production boundary: Cohere framing fails
+            // before collectProviderTurn can return a parsed tool call/finish.
+            throw new AgentProviderError({
+              code: 'invalid_response',
+              message: 'Cohere finish reason does not match its streamed tool calls',
+              retryable: false,
+              providerCode: 'cohere_stream_protocol',
+            });
+          }
+          yield {
+            type: 'public_text_delta',
+            text: rawDraftTurns === 1
+              ? '# Picture note\n\nInitial draft that needs one repair.'
+              : '# Picture note\n\nRepaired note grounded in the attached image.',
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        if (request.tools[0]?.name === 'record_visual_review') {
+          yield {
+            type: 'tool_call',
+            id: 'review-repaired-raw-draft',
+            name: 'record_visual_review',
+            arguments: {
+              generationId: 'generation-1',
+              reviews: [{ pageId: 'preview-page-1', findings: [] }],
+            },
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        throw new Error(`unexpected Cohere phase ${request.tools[0]?.name ?? '(none)'}`);
+      },
+    };
+    const baseManifest = manifestWithUnits(1);
+    const imageManifest: SourceManifest = {
+      ...baseManifest,
+      sources: baseManifest.sources.map((source) => ({
+        ...source,
+        kind: 'image' as const,
+        mediaType: 'image/png',
+        units: source.units.map((unit) => ({
+          ...unit,
+          hasVisual: true,
+          visualEvidence: 'available' as const,
+        })),
+      })),
+    };
+    const { adapters: baseAdapters } = fakeAdapters(imageManifest);
+    let validations = 0;
+    const adapters: AgentAdapters = {
+      ...baseAdapters,
+      sandbox: {
+        ...baseAdapters.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: validations++ === 0
+            ? [{ code: 'qa.needs-repair', message: 'repair once', severity: 'error' as const }]
+            : [],
+          staticDiagnostics: [],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: validations > 1,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+
+    const waiting = await runtime.start({
+      taskId: 'task-raw-repair-envelope',
+      threadId: 'thread-raw-repair-envelope',
+      runId: 'run-raw-repair-envelope',
+      bookId: 'book-1',
+      goal: 'Add this picture to my book with a short explanation.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'raw-repair-picture',
+        title: 'Picture.png',
+        mediaType: 'image/png',
+        digest: 'raw-repair-picture-digest',
+      }],
+      budget: { maxProviderCalls: 8 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(rawDraftTurns).toBe(3);
+    expect(requests.map((request) => request.tools.map((tool) => tool.name))).toEqual([
+      [],
+      [],
+      [],
+      ['record_visual_review'],
+    ]);
+    expect(waiting.state.draft).toMatchObject({
+      version: 2,
+      script: '# Picture note\n\nRepaired note grounded in the attached image.',
+    });
+    expect(waiting.state.usage.repairPasses).toBe(1);
+    expect(waiting.state.usage.providerCalls).toBe(4);
+    expect(waiting.state.usage.providerRetries).toBe(0);
+    expect(requests[2]?.systemPrompt).toContain(
+      'previous raw-draft response was incomplete or used an unauthorized tool envelope',
+    );
+    expect(waiting.state.modelHistory.filter((turn) =>
+      turn.role === 'tool' && turn.toolName === 'submit_notebook_script' && turn.isError,
+    )).toEqual([]);
+  });
+
+  it('never stores a raw Cohere draft that stopped because its output was truncated', async () => {
+    const requests: AgentProviderTurnRequest[] = [];
+    let rawDraftTurns = 0;
+    const provider: AgentProvider = {
+      id: 'cohere',
+      capabilities: async () => ({
+        providerId: 'cohere',
+        modelId: 'command-a-plus-05-2026',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        if (request.tools.length === 0) {
+          rawDraftTurns += 1;
+          yield {
+            type: 'public_text_delta',
+            text: rawDraftTurns === 1
+              ? '# Partial page\n\nThis prefix is syntactically valid but incomplete.'
+              : '# Complete page\n\nThe corrected draft reached a real stop.',
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: rawDraftTurns === 1 ? 'length' : 'stop' };
+          return;
+        }
+        if (request.tools[0]?.name === 'record_visual_review') {
+          yield {
+            type: 'tool_call',
+            id: 'review-complete-raw-draft',
+            name: 'record_visual_review',
+            arguments: {
+              generationId: 'generation-1',
+              reviews: [{ pageId: 'preview-page-1', findings: [] }],
+            },
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        throw new Error(`unexpected Cohere phase ${request.tools[0]?.name ?? '(none)'}`);
+      },
+    };
+    const manifest = manifestWithUnits(1);
+    const { adapters } = fakeAdapters({
+      ...manifest,
+      sources: manifest.sources.map((source) => ({
+        ...source,
+        kind: 'image' as const,
+        mediaType: 'image/png',
+        units: source.units.map((unit) => ({
+          ...unit,
+          hasVisual: true,
+          visualEvidence: 'available' as const,
+        })),
+      })),
+    });
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+
+    const waiting = await runtime.start({
+      taskId: 'task-truncated-raw-draft',
+      threadId: 'thread-truncated-raw-draft',
+      runId: 'run-truncated-raw-draft',
+      bookId: 'book-1',
+      goal: 'Add this picture to my book with one short page of notes.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'truncated-picture',
+        title: 'Picture.png',
+        mediaType: 'image/png',
+        digest: 'truncated-picture-digest',
+      }],
+      budget: { maxProviderCalls: 6 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(rawDraftTurns).toBe(2);
+    expect(waiting.state.draft?.script).toBe(
+      '# Complete page\n\nThe corrected draft reached a real stop.',
+    );
+    expect(waiting.state.draft?.script).not.toContain('Partial page');
+    expect(waiting.state.usage.providerCalls).toBe(3);
+    expect(requests.map((request) => request.tools.map((tool) => tool.name))).toEqual([
+      [],
+      [],
+      ['record_visual_review'],
+    ]);
+  });
+
+  it('keeps bounded transport retries for transient failures during raw Cohere drafting', async () => {
+    let rawDraftTurns = 0;
+    const provider: AgentProvider = {
+      id: 'cohere',
+      capabilities: async () => ({
+        providerId: 'cohere',
+        modelId: 'command-a-plus-05-2026',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        if (request.tools.length === 0) {
+          rawDraftTurns += 1;
+          if (rawDraftTurns === 1) {
+            throw new AgentProviderError({
+              code: 'rate_limit',
+              message: 'trial key pacing',
+              status: 429,
+              retryable: true,
+              retryAfterMs: 0,
+            });
+          }
+          yield {
+            type: 'public_text_delta',
+            text: '# Complete page\n\nThe transient retry preserved the draft workflow.',
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        }
+        if (request.tools[0]?.name === 'record_visual_review') {
+          yield {
+            type: 'tool_call',
+            id: 'review-retried-raw-draft',
+            name: 'record_visual_review',
+            arguments: {
+              generationId: 'generation-1',
+              reviews: [{ pageId: 'preview-page-1', findings: [] }],
+            },
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'tool_calls' };
+          return;
+        }
+        throw new Error(`unexpected Cohere phase ${request.tools[0]?.name ?? '(none)'}`);
+      },
+    };
+    const manifest = manifestWithUnits(1);
+    const { adapters } = fakeAdapters({
+      ...manifest,
+      sources: manifest.sources.map((source) => ({
+        ...source,
+        kind: 'image' as const,
+        mediaType: 'image/png',
+        units: source.units.map((unit) => ({
+          ...unit,
+          hasVisual: true,
+          visualEvidence: 'available' as const,
+        })),
+      })),
+    });
+    const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
+
+    const waiting = await runtime.start({
+      taskId: 'task-retried-raw-draft',
+      threadId: 'thread-retried-raw-draft',
+      runId: 'run-retried-raw-draft',
+      bookId: 'book-1',
+      goal: 'Add this picture to my book with one short page of notes.',
+      insertionTarget: { kind: 'book_end' },
+      attachments: [{
+        kind: 'managed_asset',
+        assetId: 'retried-picture',
+        title: 'Picture.png',
+        mediaType: 'image/png',
+        digest: 'retried-picture-digest',
+      }],
+      budget: { maxProviderCalls: 6, maxProviderRetries: 1 },
+    });
+
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    expect(rawDraftTurns).toBe(2);
+    expect(waiting.state.usage).toMatchObject({
+      providerCalls: 3,
+      providerRetries: 1,
+    });
+    expect(waiting.state.draft?.script).toContain('transient retry preserved');
+  });
+
   it('grandfathers the exact reviewed three-page headings-and-bullets log during receipt recovery', async () => {
     const failed = exactThreePageDiagnosticFailedApplyState();
     expect(notebookCraftDiagnostics(failed.patchProposal!.script, failed)).toEqual([

@@ -405,6 +405,157 @@ describe('reader-supplied image preservation', () => {
     expect(readerRequestsConciseAttachedImage(withNotebookContext)).toBe(true);
   });
 
+  it('matches concise image requests that ask for a single notes page without saying details', () => {
+    const concise = imageReadState(
+      'add this picture for week 6, and maybe 1 page of some write up',
+    );
+    expect(readerRequestsConciseAttachedImage(concise)).toBe(true);
+  });
+
+  it('matches concise image requests that ask for another notes page', () => {
+    const concise = imageReadState(
+      'add this image to my book with another page of write up',
+    );
+    expect(readerRequestsConciseAttachedImage(concise)).toBe(true);
+  });
+
+  it('matches concise image requests when manifest metadata is unavailable but a single image read turn is present', () => {
+    const concise = {
+      ...imageReadState('add this image to my book with another page of write up'),
+      sourceManifest: undefined,
+      sourceCoverage: {
+        manifestDigest: 'unknown',
+        mode: 'relevant',
+        requiredUnitIds: ['reader-picture-unit'],
+        readUnitIds: ['reader-picture-unit'],
+        citedUnitIds: ['reader-picture-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+      },
+    };
+    expect(readerRequestsConciseAttachedImage(concise)).toBe(true);
+    expect(requiredManagedImageAssetPaths(concise)).toEqual([PATH]);
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      concise,
+      '# Week 6\n\nA short note with the image placeholder.\n\n![Reader picture](){asset="ai/attachments/old-path.png", width=48}',
+    );
+    expect(repaired.script).toContain(PATH);
+    expect(repaired.insertedPaths).toEqual([PATH]);
+    const compacted = applyConciseManagedImageLayout(concise, repaired.script);
+    expect(compacted.compacted).toBe(true);
+    expect(parseNotebookScriptPages(compacted.script).pages).toHaveLength(2);
+  });
+
+  it('does not treat non-portable PDF render evidence as an attached image when the manifest is unavailable', () => {
+    const imageState = imageReadState(
+      'add this image to my book with another page of write up',
+    );
+    const pdfVisualState: AgentState = {
+      ...imageState,
+      sourceManifest: undefined,
+      modelHistory: imageState.modelHistory.map((turn) => {
+        if (turn.role !== 'tool') return turn;
+        return {
+          ...turn,
+          content: {
+            sourceId: 'reader-pdf',
+            sourceDigest: 'reader-pdf-digest',
+            units: [{
+              unitId: 'reader-pdf-page-1',
+              anchor: {
+                sourceId: 'reader-pdf',
+                unitId: 'reader-pdf-page-1',
+                pageNumber: 1,
+              },
+              text: 'PDF page text',
+              digest: 'reader-pdf-page-1-digest',
+            }],
+            truncated: false,
+            visualRefs: [{
+              anchor: {
+                sourceId: 'reader-pdf',
+                unitId: 'reader-pdf-page-1',
+                pageNumber: 1,
+              },
+              label: 'PDF page 1 · embedded image 1',
+              image: {
+                resourceId: 'reader-pdf-page-1-image',
+                mimeType: 'image/png',
+                digest: 'reader-pdf-page-1-image-digest',
+                width: 1200,
+                height: 1600,
+              },
+            }],
+          },
+        };
+      }),
+    };
+
+    expect(readerRequestsConciseAttachedImage(pdfVisualState)).toBe(false);
+    expect(requiredManagedImageAssetPaths(pdfVisualState)).toEqual([]);
+  });
+
+  it('keeps concise attached-image intent when current turn reads exactly one image unit even with extra image sources', () => {
+    const concise = {
+      ...imageReadState('add this image to my book with another page of write up'),
+      sourceManifest: {
+        ...imageReadState().sourceManifest!,
+        sources: [
+          ...imageReadState().sourceManifest!.sources,
+          {
+            id: 'secondary-image',
+            title: 'Old image',
+            kind: 'image',
+            digest: 'secondary-image-digest',
+            mediaType: 'image/png',
+            estimatedTokens: 10,
+            quarantined: true,
+            promptInjectionWarnings: [],
+            units: [{
+              id: 'secondary-image-unit',
+              label: 'Old image',
+              ordinal: 0,
+              digest: 'secondary-image-unit-digest',
+              estimatedTokens: 10,
+              characters: 0,
+              hasText: false,
+              hasVisual: true,
+              visualEvidence: 'available',
+              anchor: { sourceId: 'secondary-image', unitId: 'secondary-image-unit' },
+            }],
+          },
+        ],
+      },
+      sourceCoverage: {
+        manifestDigest: imageReadState().sourceManifest!.digest,
+        mode: 'relevant',
+        requiredUnitIds: ['reader-picture-unit'],
+        readUnitIds: ['reader-picture-unit'],
+        readExposures: [{
+          unitId: 'reader-picture-unit',
+          providerCallCount: 0,
+          exposedAt: NOW,
+        }],
+        citedUnitIds: ['reader-picture-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+    };
+    expect(readerRequestsConciseAttachedImage(concise)).toBe(true);
+    const repaired = applyConciseManagedImageLayout(
+      concise,
+      ensureRequiredManagedImagesInNotebookScript(
+        concise,
+        '# Box Packing\n\nA short note.',
+      ).script,
+    );
+    expect(repaired.compacted).toBe(true);
+    expect(repaired.script).toContain(PATH);
+  });
+
   it('keeps one whole coherent heading group and never strands a promissory lead-in', () => {
     const state = imageReadState(
       'The picture has all the details; add a little information on the next page but not too much.',
@@ -563,6 +714,33 @@ describe('reader-supplied image preservation', () => {
     expect(readerRequestsConciseAttachedImage(expandedFeedback)).toBe(false);
   });
 
+  it('keeps concise image intent even when turn anchor is stale in model history', () => {
+    const state = imageReadState('add this image to my book with another page of write up');
+    expect(readerRequestsConciseAttachedImage(state)).toBe(true);
+    const staleAnchorState: AgentState = {
+      ...state,
+      budgetWindow: {
+        providerCallsAtStart: 0,
+        toolCallsAtStart: 0,
+        repairPassesAtStart: 0,
+        startedAt: NOW,
+        readerMessageId: 'reader-message-does-not-exist',
+      },
+      modelHistory: [
+        ...state.modelHistory,
+      ],
+    };
+    expect(requiredManagedImageAssetPaths(staleAnchorState)).toEqual([PATH]);
+    expect(readerRequestsConciseAttachedImage(staleAnchorState)).toBe(true);
+    const repaired = ensureRequiredManagedImagesInNotebookScript(
+      staleAnchorState,
+      '# Week 6\n\nA grounded summary with image placeholder missing',
+    );
+    const compacted = applyConciseManagedImageLayout(staleAnchorState, repaired.script);
+    expect(compacted.compacted).toBe(true);
+    expect(compacted.script).toContain(`asset=${PATH}`);
+  });
+
   it('uses a plain title value over a generic image heading and drops metadata-only notes', () => {
     const state = imageReadState(
       'The picture has all the details; add a brief write-up to my book but not too much.',
@@ -597,7 +775,7 @@ describe('reader-supplied image preservation', () => {
     });
   });
 
-  it('pauses concise local-layout failure instead of advertising an identical model repair', () => {
+  it('allows one bounded repair for a concise local-layout failure before asking the reader', () => {
     const base = imageReadState(
       'The picture has all the details; add a brief write-up to my book, not too much.',
     );
@@ -700,7 +878,121 @@ describe('reader-supplied image preservation', () => {
       },
     };
 
-    expect([...availableAgentToolNames(state)]).toEqual(['ask_user']);
+    expect([...availableAgentToolNames(state)]).toEqual(['submit_notebook_script']);
+  });
+
+  it('keeps concise layout overflow repairable when reviewer findings are actionable', () => {
+    const state = imageReadState(
+      'The picture has all the details; add a brief write-up to my book, not too much.',
+    );
+    const script = applyConciseManagedImageLayout(
+      state,
+      ensureRequiredManagedImagesInNotebookScript(
+        state,
+        '# Box Packing\n\n## Intro\n\n![Reader picture](){asset="' + PATH + '", width=48}',
+      ).script,
+    ).script;
+    const draftHash = 'concise-layout-findings-draft';
+    const generationId = 'concise-layout-findings-generation';
+    const pages = [1, 2, 3, 4].map((pageNumber) => ({
+      pageId: `${generationId}:page:${pageNumber}`,
+      pageNumber,
+      width: 620,
+      height: 720,
+      image: {
+        resourceId: `${generationId}:image:${pageNumber}`,
+        mimeType: 'image/png' as const,
+        digest: `${generationId}:digest:${pageNumber}`,
+        width: 620,
+        height: 720,
+      },
+      textDigest: `text-${pageNumber}`,
+      layoutDigest: `layout-${pageNumber}`,
+      paginationSpill: pageNumber > 1,
+      residualOverflow: false,
+    }));
+    const scenario: AgentState = {
+      ...state,
+      objective: {
+        turnId: 'reader-source-asset',
+        mode: 'notebook_change',
+        decidedBy: 'model_action',
+      },
+      notebookSnapshot: {
+        bookId: state.identity.bookId,
+        bookRevision: 'book-revision',
+        pageIds: ['existing-page'],
+        pageRevisions: { 'existing-page': 'existing-page-revision' },
+        capturedAt: NOW,
+      },
+      insertionTarget: { kind: 'book_end' },
+      sourceCoverage: {
+        manifestDigest: state.sourceManifest!.digest,
+        mode: 'relevant',
+        requiredUnitIds: ['reader-picture-unit'],
+        readUnitIds: ['reader-picture-unit'],
+        readExposures: [{
+          unitId: 'reader-picture-unit',
+          providerCallCount: 0,
+          exposedAt: NOW,
+        }],
+        citedUnitIds: ['reader-picture-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+      draft: {
+        runId: state.identity.runId,
+        version: 1,
+        script,
+        draftHash,
+        sourceManifestDigest: state.sourceManifest!.digest,
+        sourceReadUnitIds: ['reader-picture-unit'],
+        createdAt: NOW,
+      },
+      validation: {
+        draftHash,
+        parserDiagnostics: [],
+        staticDiagnostics: [],
+        imageDiagnostics: [],
+        pageLedgerDiagnostics: [],
+        valid: true,
+        checkedAt: NOW,
+      },
+      previewGeneration: {
+        generationId,
+        draftHash,
+        layoutHash: 'concise-layout-findings-hash',
+        rendererVersion: 'test',
+        bookSnapshotRevision: 'book-revision',
+        createdAt: NOW,
+        parserValid: true,
+        layoutValid: false,
+        stale: false,
+        pageCount: 4,
+        pages,
+        diagnostics: [],
+      },
+      visualReview: {
+        generationId,
+        draftHash,
+        requiredPageIds: pages.map((page) => page.pageId),
+        imageExposures: [],
+        inspectedPageIds: pages.map((page) => page.pageId),
+        findings: [{
+          pageId: pages[0]!.pageId,
+          kind: 'semantic',
+          code: 'rendering',
+          detail: 'content exceeds this page and overflows',
+        }],
+        complete: true,
+        passed: false,
+        updatedAt: NOW,
+      },
+    };
+
+    expect([...availableAgentToolNames(scenario)]).toEqual(['submit_notebook_script']);
   });
 
   it('compacts an over-expanded vague image request to one image-led page', () => {

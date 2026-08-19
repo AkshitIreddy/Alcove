@@ -341,6 +341,8 @@ export class AgentProviderError extends Error {
   readonly status?: number;
   /** Explicit gateway retry authority; omitted for locally constructed errors. */
   readonly retryable?: boolean;
+  /** Stable provider/gateway classification retained for narrow recovery policy. */
+  readonly providerCode?: string;
   readonly code:
     | 'auth'
     | 'rate_limit'
@@ -355,6 +357,7 @@ export class AgentProviderError extends Error {
     readonly message: string;
     readonly status?: number;
     readonly retryable?: boolean;
+    readonly providerCode?: string;
     readonly retryAfterMs?: number;
   }) {
     super(input.message);
@@ -362,6 +365,7 @@ export class AgentProviderError extends Error {
     this.code = input.code;
     this.status = input.status;
     this.retryable = input.retryable;
+    this.providerCode = input.providerCode;
     this.retryAfterMs = input.retryAfterMs;
   }
 }

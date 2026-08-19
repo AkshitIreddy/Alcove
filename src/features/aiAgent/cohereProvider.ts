@@ -256,6 +256,7 @@ function providerError(error: unknown): AgentProviderError {
     message,
     status,
     retryable,
+    providerCode: code === '' ? undefined : code,
     retryAfterMs:
       typeof record.retryAfterMs === 'number' ? record.retryAfterMs : undefined,
   });
@@ -628,7 +629,12 @@ export class CohereTauriAgentProvider implements AgentProvider {
     };
     const failProtocol = (message: string): void => {
       if (failure !== undefined) return;
-      failure = new AgentProviderError({ code: 'invalid_response', message });
+      failure = new AgentProviderError({
+        code: 'invalid_response',
+        message,
+        retryable: false,
+        providerCode: 'cohere_stream_protocol',
+      });
       done = true;
       wake();
     };

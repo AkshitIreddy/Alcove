@@ -2893,18 +2893,6 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
     reviewRepairRequired ||
     feedbackPending;
   if (draftSubmissionUseful) {
-    const conciseLayoutFailedWithoutFinding =
-      readerRequestsConciseAttachedImage(state) &&
-      failedCompleteReview &&
-      (state.visualReview?.findings.length ?? 0) === 0;
-    if (conciseLayoutFailedWithoutFinding) {
-      // The local concise-image normalizer owns this exact geometry. Asking
-      // the model to resubmit prose cannot change the normalized output and
-      // previously produced an identical-draft loop. Pause with the native
-      // layout receipt intact so the reader can simplify or start fresh.
-      available.add('ask_user');
-      return available;
-    }
     if (
       repairPassesInBudgetWindow(state) >= state.budget.maxRepairPasses
     ) {

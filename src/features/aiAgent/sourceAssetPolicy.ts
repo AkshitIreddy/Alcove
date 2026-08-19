@@ -33,7 +33,21 @@ function currentReaderTurns(state: AgentState): AgentState['modelHistory'] {
     : state.modelHistory.findIndex(
         (turn) => turn.role === 'user' && turn.id === anchorId,
       );
-  return state.modelHistory.slice(anchorIndex >= 0 ? anchorIndex : state.modelHistory.length);
+  if (anchorIndex >= 0) {
+    return state.modelHistory.slice(anchorIndex);
+  }
+
+  const latestUserTurnIndex = (() => {
+    for (let index = state.modelHistory.length - 1; index >= 0; index -= 1) {
+      if (state.modelHistory[index]?.role === 'user') {
+        return index;
+      }
+    }
+    return 0;
+  })();
+  return state.modelHistory.slice(
+    Math.max(latestUserTurnIndex, 0),
+  );
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -54,7 +68,7 @@ export function observedManagedImageAssets(
       .filter((source) => source.kind === 'image')
       .map((source) => source.id) ?? [],
   );
-  if (imageSourceIds.size === 0) return [];
+  const requireManifestImageSource = imageSourceIds.size > 0;
   const assets: ObservedManagedImageAsset[] = [];
   for (const turn of currentReaderTurns(state)) {
     if (
@@ -71,8 +85,11 @@ export function observedManagedImageAssets(
       const label = visual?.label;
       if (
         typeof path === 'string' && path.trim() !== '' &&
-        typeof anchor?.sourceId === 'string' &&
-        imageSourceIds.has(anchor.sourceId)
+        (
+          requireManifestImageSource
+            ? typeof anchor?.sourceId === 'string' && imageSourceIds.has(anchor.sourceId)
+            : true
+        )
       ) {
         assets.push({
           path: path.trim(),

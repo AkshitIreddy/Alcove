@@ -612,14 +612,48 @@ function isNotebookDraftSubmissionTurn(request: AgentProviderTurnRequest): boole
     request.tools[0]?.name === 'submit_notebook_script';
 }
 
+/**
+ * Cohere's multimodal draft path is more reliable as plain Notebook Script
+ * than as a large strict tool-argument envelope. The local graph remains the
+ * authority that stores, validates, renders, reviews and eventually applies
+ * the draft; this request only asks the model for the authored script bytes.
+ */
+function rawNotebookDraftRequest(
+  request: AgentProviderTurnRequest,
+  correction?: string,
+): AgentProviderTurnRequest {
+  return {
+    ...request,
+    requestId: `${correction === undefined ? 'raw' : 'raw-repair'}-${request.requestId}`,
+    tools: [],
+    toolChoice: 'auto',
+    systemPrompt: `${request.systemPrompt}\n\n${correction ??
+      'Return only the complete raw Notebook Script for the current notebook draft—no prose preface, no outer code fence, no tool call, and no manual insertion instructions. Use the supplied source evidence and keep the reader\'s requested amount of write-up. Alcove will store the text in a disposable workspace, then validate, render and visually review it before any Insert action exists.'}`,
+  };
+}
+
+function usableRawNotebookDraftTurn(
+  turn: CollectedProviderTurn,
+): boolean {
+  // A length stop is explicitly incomplete. A tolerant Notebook Script parse
+  // can still accept the truncated prefix, so completion is part of the draft
+  // authority contract rather than merely a transport detail.
+  if (turn.finishReason !== 'stop') return false;
+  // This request intentionally advertises no tools. Any tool envelope is stale
+  // or corrupt provider output; accepting the adjacent text would make its
+  // completeness unknowable.
+  if (turn.toolCalls.length > 0) return false;
+  return normalizeNotebookScriptSubmission(turn.publicText).script.trim() !== '';
+}
+
 function notebookDraftFromProseFallback(
   state: AgentState,
   request: AgentProviderTurnRequest,
   turn: CollectedProviderTurn,
 ): AgentModelToolCall | undefined {
   if (!isNotebookDraftSubmissionTurn(request)) return undefined;
+  if (!usableRawNotebookDraftTurn(turn)) return undefined;
   const script = normalizeNotebookScriptSubmission(turn.publicText).script.trim();
-  if (script === '') return undefined;
   return {
     id: `draft-prose-recovery-${state.identity.runId}-${state.checkpointStep + 1}`,
     name: 'submit_notebook_script',
@@ -977,6 +1011,7 @@ async function invokeProviderWithRetry(
     inputTokens: number;
     outputTokens: number;
   },
+  options: { readonly retryInvalidResponse?: boolean } = {},
 ): Promise<CollectedProviderTurn> {
   // The graph validates the declared evidence transaction before counting a
   // provider call. Individual adapters independently verify what their exact
@@ -1004,6 +1039,11 @@ async function invokeProviderWithRetry(
     } catch (error) {
       if (signal.aborted) throw error;
       if (
+        (
+          options.retryInvalidResponse === false &&
+          error instanceof AgentProviderError &&
+          error.code === 'invalid_response'
+        ) ||
         !isRetryableProviderError(error) ||
         attempt >= state.budget.maxProviderRetries
       ) {
@@ -1030,6 +1070,75 @@ async function invokeProviderWithRetry(
       await (dependencies.sleep ?? abortableSleep)(delayMs, signal);
     }
   }
+}
+
+async function invokeCompleteRawNotebookDraft(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+  dependencies: AgentGraphDependencies,
+  usage: {
+    providerCalls: number;
+    providerRetries: number;
+    inputTokens: number;
+    outputTokens: number;
+  },
+): Promise<CollectedProviderTurn> {
+  const invoke = async (correction?: string): Promise<CollectedProviderTurn> =>
+    invokeProviderWithRetry(
+      state,
+      rawNotebookDraftRequest(request, correction),
+      dependencies,
+      usage,
+      { retryInvalidResponse: false },
+    );
+
+  let firstFailure: unknown;
+  try {
+    const turn = await invoke();
+    if (usableRawNotebookDraftTurn(turn)) return turn;
+    firstFailure = new AgentProviderError({
+      code: 'invalid_response',
+      message:
+        turn.finishReason === 'length'
+          ? 'Cohere truncated the raw Notebook Script draft'
+          : 'Cohere did not return one complete raw Notebook Script draft',
+      retryable: true,
+    });
+  } catch (error) {
+    firstFailure = error;
+  }
+
+  const providerCode = firstFailure instanceof AgentProviderError
+    ? firstFailure.providerCode?.toLowerCase() ?? ''
+    : '';
+  const isProviderProtocolFailure =
+    providerCode.includes('protocol') || providerCode === 'cohere_stream_protocol';
+  const canCorrect =
+    firstFailure instanceof AgentProviderError &&
+    firstFailure.code === 'invalid_response' &&
+    firstFailure.status === undefined &&
+    (firstFailure.retryable !== false || isProviderProtocolFailure) &&
+    providerCallsInBudgetWindow(state) + usage.providerCalls <
+      state.budget.maxProviderCalls;
+  if (!canCorrect) throw firstFailure;
+
+  // This is a semantic correction, not a transport retry: the failed stream
+  // may have contained malformed framing, a stale tool envelope, or a
+  // truncated prefix. Make exactly one fresh counted request, then fail closed.
+  const corrected = await invoke(
+    'Your previous raw-draft response was incomplete or used an unauthorized tool envelope. Return one complete Notebook Script as plain text now. Finish the entire script, do not call a tool, do not return JSON, and do not explain it.',
+  );
+  if (!usableRawNotebookDraftTurn(corrected)) {
+    throw new AgentProviderError({
+      code: 'invalid_response',
+      message:
+        corrected.finishReason === 'length'
+          ? 'Cohere truncated the corrected raw Notebook Script draft'
+          : 'Cohere did not return a usable corrected raw Notebook Script draft',
+      retryable: true,
+    });
+  }
+  return corrected;
 }
 
 export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
@@ -1202,26 +1311,17 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         };
       } else if (
         dependencies.provider.id === 'cohere' &&
-        isNotebookDraftSubmissionTurn(request) &&
-        (request.evidence?.requiredSourceImageCount ?? 0) > 0
+        isNotebookDraftSubmissionTurn(request)
       ) {
-        // Command A+ currently disables strict tool schemas on multimodal
-        // requests and can invent phase tools or corrupt a large Notebook
-        // Script argument envelope. Ask for the same grounded draft as raw
-        // Notebook Script in one image-bearing content turn, then synthesize
-        // the locally authorized submit call below. This is the proactive form
-        // of the existing failed-envelope recovery: it saves both the doomed
-        // tool request and its corrective retry while preserving every local
-        // validation/render/review/approval boundary.
-        turn = await invokeProviderWithRetry(
+        // A Notebook Script can be several thousand characters, and Command
+        // A+ has repeatedly corrupted that payload when it is nested in a
+        // strict tool call. Request raw script text for every sole-draft phase
+        // (initial or repair), then synthesize the same locally-authorized
+        // submit call below. This keeps images grounded without letting a
+        // provider envelope turn a repair into a no-progress loop.
+        turn = await invokeCompleteRawNotebookDraft(
           providerState,
-          {
-            ...request,
-            requestId: dependencies.adapters.ids.create('provider'),
-            tools: [],
-            toolChoice: 'auto',
-            systemPrompt: `${request.systemPrompt}\n\nReturn only the complete raw Notebook Script for the current image-grounded notebook draft—no prose preface, no outer code fence, and no manual insertion instructions. Use the attached source pixels and keep the reader's requested amount of write-up. Alcove will submit it into a disposable workspace, then validate, render and visually review it before any Insert action exists.`,
-          },
+          request,
           dependencies,
           invocationUsage,
         );
@@ -1353,6 +1453,8 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
           };
         }
       }
+      const rawNotebookDraftTurn =
+        dependencies.provider.id === 'cohere' && isNotebookDraftSubmissionTurn(request);
       let fallbackCall = turn.toolCalls.length === 0
         ? proseOnlyConversationFallback(providerState, turn) ??
           notebookDraftFromProseFallback(providerState, request, turn)
@@ -1373,6 +1475,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
         }];
       }
       const notebookToolRepair =
+        !rawNotebookDraftTurn &&
         toolCalls.length === 0 && agentRequestsNotebookMutation(providerState);
       if (
         toolCalls.length === 0 &&

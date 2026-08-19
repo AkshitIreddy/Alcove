@@ -1,5 +1,110 @@
 import type { AgentObjectiveMode, AgentState } from './types';
 
+type ModelTurnLike =
+  | {
+      readonly role: 'tool';
+      readonly toolName: string;
+      readonly isError?: boolean;
+      readonly content?: unknown;
+    }
+  | {
+      readonly role: 'assistant';
+      readonly content?: unknown;
+    }
+  | {
+      readonly role: 'user';
+      readonly content?: unknown;
+      readonly text?: string;
+    };
+
+function currentReaderScopeTurns(state: AgentState): readonly ModelTurnLike[] {
+  if (
+    state.objective?.reason === 'reader_preview_feedback' &&
+    state.draft?.sourceManifestDigest !== undefined &&
+    state.draft.sourceManifestDigest === state.sourceManifest?.digest
+  ) {
+    return state.modelHistory as readonly ModelTurnLike[];
+  }
+  const anchorId = state.budgetWindow?.readerMessageId;
+  const anchorIndex = anchorId === undefined
+    ? -1
+    : state.modelHistory.findIndex(
+        (turn) => turn.role === 'user' && turn.id === anchorId,
+      );
+  if (anchorIndex >= 0) return state.modelHistory.slice(anchorIndex) as readonly ModelTurnLike[];
+
+  let latestUserTurnIndex = -1;
+  for (let index = state.modelHistory.length - 1; index >= 0; index -= 1) {
+    if (state.modelHistory[index]?.role === 'user') {
+      latestUserTurnIndex = index;
+      break;
+    }
+  }
+  return state.modelHistory.slice(
+    Math.max(latestUserTurnIndex, 0),
+  ) as readonly ModelTurnLike[];
+}
+
+function asRecord(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+function conciseImageReadUnitEvidence(state: AgentState): Set<string> {
+  const evidence = new Set<string>();
+  for (const turn of currentReaderScopeTurns(state)) {
+    if (
+      turn.role !== 'tool' ||
+      turn.isError === true ||
+      (turn.toolName !== 'read_full_source' && turn.toolName !== 'read_source_range')
+    ) continue;
+    const content = asRecord(turn.content);
+    const visualRefs = Array.isArray(content?.visualRefs) ? content.visualRefs : [];
+    for (const value of visualRefs) {
+      const visual = asRecord(value);
+      const anchor = asRecord(visual?.anchor);
+      const unitId = anchor?.unitId;
+      // Only reader-managed attachment reads carry a portable asset path.
+      // PDF page renders and notebook screenshots are visual evidence too,
+      // but they are not images the reader authorized Alcove to insert.
+      if (
+        typeof visual?.portableAssetPath === 'string' &&
+        visual.portableAssetPath.trim() !== '' &&
+        typeof unitId === 'string' && unitId !== ''
+      ) {
+        evidence.add(unitId);
+      }
+    }
+  }
+  return evidence;
+}
+
+function imageUnitCandidates(state: AgentState): Set<string> {
+  const imageSources = state.sourceManifest?.sources.filter(
+    (source) => source.kind === 'image' && source.units.length > 0,
+  ) ?? [];
+  const bySourceImageUnits = new Map<string, string>();
+  for (const source of imageSources) {
+    for (const unit of source.units) {
+      bySourceImageUnits.set(unit.id, source.id);
+    }
+  }
+  const readImageUnits = (state.sourceCoverage?.readUnitIds ?? []).filter(
+    (unitId) => bySourceImageUnits.has(unitId),
+  );
+  if (readImageUnits.length > 0) {
+    return new Set(readImageUnits);
+  }
+  if (imageSources.length > 0) {
+    return new Set(imageSources.flatMap((source) => source.units.map((unit) => unit.id)));
+  }
+  // In recovery-heavy flows the manifest can be unavailable while the same
+  // reader turn still has a concrete image read result and therefore concrete
+  // media authority.
+  return conciseImageReadUnitEvidence(state);
+}
+
 /**
  * Reader language is the authority for conversation versus notebook work.
  * A UI-provided placement is only a convenient default if notebook work is
@@ -60,7 +165,12 @@ const ATTACHED_IMAGE_CARRIES_DETAILS = new RegExp(
 );
 
 const CONCISE_ATTACHED_IMAGE_WRITEUP = new RegExp(
-  String.raw`\b(?:brief|short|concise|minimal|small|little|tiny)\b[\s\S]{0,24}\b(?:write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary|pages?)\b|\b(?:a\s+little|a\s+bit|only\s+a\s+(?:little|bit)|just\s+a\s+(?:little|bit)|a\s+few)\b[\s\S]{0,24}\b(?:write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary|pages?)\b|\b(?:not\s+too\s+much|not\s+much|nothing\s+long|keep\s+it\s+(?:brief|short|concise))\b`,
+  String.raw`\b(?:brief|short|concise|minimal|small|little|tiny)\b[\s\S]{0,24}\b(?:write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary|pages?)\b|\b(?:a\s+little|a\s+bit|only\s+a\s+(?:little|bit)|just\s+a\s+(?:little|bit)|a\s+few|one|single|just\s+one|1)\b[\s\S]{0,32}\b(?:page|pages?|write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary)\b|\b(?:not\s+too\s+much|not\s+much|nothing\s+long|keep\s+it\s+(?:brief|short|concise))\b`,
+  'iu',
+);
+
+const ANOTHER_PAGE_WRITE_UP = new RegExp(
+  String.raw`\b(?:another|extra|additional|plus\s+one|one\s+more)\b[\s\S]{0,20}\b(?:page|pages|note|notes|write[- ]?up|writing|text|information|info|summary|explanation)\b`,
   'iu',
 );
 
@@ -92,22 +202,25 @@ export function readerRequestsDominantAttachedImage(state: AgentState): boolean 
  * over this convenience rule.
  */
 export function readerRequestsConciseAttachedImage(state: AgentState): boolean {
-  const imageSources = state.sourceManifest?.sources.filter(
-    (source) => source.kind === 'image' && source.units.length > 0,
-  ) ?? [];
+  const conciseImageSourceUnits = imageUnitCandidates(state);
+
   // Notebook page/selection context may travel beside the attachment for
   // placement and continuity. It does not turn one attached picture into a
   // multi-image authoring request.
-  if (imageSources.length !== 1) return false;
+  if (conciseImageSourceUnits.size !== 1) return false;
   const currentText = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   if (EXPANDED_ATTACHED_IMAGE_WRITEUP.test(currentText)) return false;
   const inheritedBrief = state.objective?.reason === 'reader_preview_feedback'
     ? state.taskBrief.goal
     : '';
   const text = [inheritedBrief, currentText].filter(Boolean).join('\n');
-  return agentRequestsNotebookMutation(state) &&
-    ATTACHED_IMAGE_CARRIES_DETAILS.test(text) &&
-    CONCISE_ATTACHED_IMAGE_WRITEUP.test(text);
+  const concisePrompt = ATTACHED_IMAGE_CARRIES_DETAILS.test(text) ||
+    CONCISE_ATTACHED_IMAGE_WRITEUP.test(text) ||
+    ANOTHER_PAGE_WRITE_UP.test(text);
+  const inheritedMutation = mutationIntent(inheritedBrief) === 'request';
+  return (agentRequestsNotebookMutation(state) ||
+    mutationIntent(currentText) === 'request' ||
+    inheritedMutation) && concisePrompt;
 }
 
 function currentReaderMessages(state: AgentState): readonly string[] {

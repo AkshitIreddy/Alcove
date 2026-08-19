@@ -101,7 +101,13 @@ const measure = (exitSel) =>
     if (!panel) return { error: 'no open rail panel' };
     const body = panel.querySelector('.nb-rail-panel-body');
     if (!body) return { error: 'no panel body' };
-    const exit = panel.querySelector(sel);
+    const exit = Array.from(panel.querySelectorAll(sel)).find((candidate) => {
+      if (!(candidate instanceof HTMLElement)) return false;
+      const rect = candidate.getBoundingClientRect();
+      const style = getComputedStyle(candidate);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' &&
+        style.display !== 'none';
+    });
     if (!exit) return { error: `no exit matching ${sel}` };
 
     const overflow = body.scrollHeight - body.clientHeight;
@@ -203,10 +209,10 @@ const more = page.locator('.nb-rail-panel button.nb-strip-more').first();
 await more.waitFor({ timeout: 20000 });
 await more.scrollIntoViewIfNeeded();
 await more.click();
-await page.waitForSelector('.nb-pick', { timeout: 20000 });
+await page.locator('.nb-pick:visible').first().waitFor({ timeout: 20000 });
 await page.waitForTimeout(900);
 // Expand past the 24-card cap so the sheet is as long as a reader can make it.
-const showAll = page.locator('.nb-pick .nb-more').first();
+const showAll = page.locator('.nb-pick:visible .nb-more:visible').first();
 if (await showAll.count()) {
   await showAll.scrollIntoViewIfNeeded();
   await showAll.click();
@@ -283,9 +289,9 @@ if (await openTool('customize')) {
   if (await bookMore.count()) {
     await bookMore.scrollIntoViewIfNeeded();
     await bookMore.click();
-    await page.waitForSelector('.nb-pick', { timeout: 20000 });
+    await page.locator('.nb-pick:visible').first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(900);
-    const all = page.locator('.nb-pick .nb-more').first();
+    const all = page.locator('.nb-pick:visible .nb-more:visible').first();
     if (await all.count()) {
       await all.scrollIntoViewIfNeeded();
       await all.click();

@@ -980,8 +980,8 @@ spans and diagnostics.
 
 Tolerance is deliberate and bounded. `normalize.ts` fuzzy-matches names with
 Levenshtein ≤ 2, *within a value domain only* — never across domains, so a
-misspelt paper cannot become a colour. That is the behaviour Part 1 describes as
-[it does not fail](part-1-users.md#it-does-not-fail), and the bound is not a
+misspelt paper cannot become a colour. That is the tolerant parser behaviour
+summarised under [Notebook Script](part-1-users.md#notebook-script), and the bound is not a
 detail: it is exactly the constraint the editor's vocabulary has to respect when
 it adds a name (above), because a new value within two edits of an existing one
 is silently rewritten to the existing one on the way in.

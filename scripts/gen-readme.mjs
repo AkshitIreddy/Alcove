@@ -265,9 +265,6 @@ export function renderDownloads(version = appVersion()) {
     `| **Windows 10 / 11** | [\`${exe}\`](${RELEASES}/latest) · ${INSTALLER_SIZE} |`,
     `| **macOS 11+** | [\`${dmg}\`](${RELEASES}/latest) · Apple silicon and Intel |`,
     `| **Linux** | [\`.deb\`, \`.rpm\` or \`.AppImage\`](${RELEASES}/latest) |`,
-    '',
-    `An MSI, an offline installer and a \`SHA256SUMS.txt\` are on the ` +
-      `[Release page](${RELEASES}/latest) too, along with what each one is for.`,
   ].join('\n');
 }
 

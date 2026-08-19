@@ -29,6 +29,20 @@ export function readerEvidenceUnitIds(manifest: SourceManifest): readonly string
   );
 }
 
+export function readerImageSources(
+  manifest: SourceManifest,
+): SourceManifest['sources'] {
+  return readerEvidenceSources(manifest).filter((source) => source.kind === 'image');
+}
+
+export function readerVisualEvidenceUnitIds(
+  manifest: SourceManifest,
+): readonly string[] {
+  return readerEvidenceSources(manifest).flatMap((source) =>
+    source.units.filter((unit) => unit.hasVisual).map((unit) => unit.id),
+  );
+}
+
 export function createSourceCoverageLedger(
   manifest: SourceManifest,
   mode: SourceCoverageLedger['mode'],
@@ -133,6 +147,10 @@ export function recordSourceReads(
     ...ledger.readUnitIds.filter((unitId) => evidenceUnitIds.has(unitId)),
     ...newlyRead,
   ]);
+  // This ledger proves the local read result existed before a later provider
+  // call. It does not by itself prove a provider adapter serialized visual
+  // bytes. Semantic provider turns therefore carry a separate ephemeral
+  // ProviderEvidenceReceipt whose digests are checked at the wire boundary.
   const exposures = new Map(
     (ledger.readExposures ?? [])
       .filter((exposure) => evidenceUnitIds.has(exposure.unitId))
@@ -161,7 +179,11 @@ export function recordSourceReads(
   };
 }
 
-/** Units that the model has not observed in a completed earlier turn. */
+/**
+ * Units without an earlier local read/result boundary. Visual units also need
+ * the exact per-request ProviderEvidenceReceipt; call counts alone must never
+ * be interpreted as proof that image bytes crossed a provider boundary.
+ */
 export function sourceUnitsUnobservedBeforeProviderCall(
   ledger: SourceCoverageLedger,
   unitIds: readonly string[],

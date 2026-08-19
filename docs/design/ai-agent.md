@@ -983,11 +983,119 @@ Visible panel, preview and selection changes still require running-app review;
 unit tests cannot establish that a congested rail, clipped page render or wrong
 notification timing looks right.
 
-## Current primary references
+## Research basis for the turn/outbox redesign (2026-08-18)
 
-- Cohere Command A+, image input, tool use, Embed v4, Rerank v4 and rate-limit
-  documentation.
-- LangGraph persistence, interrupts, streaming and functional API guidance.
-- OWASP Agentic Top 10 and prompt-injection guidance.
-- Alcove's canonical `block-editor.md`, `script-language.md` and page-flip
-  architecture.
+The Agent's state model was re-audited against a broad current evidence set,
+not one vendor quickstart. The useful convergence is stronger than any one
+framework choice:
+
+1. **Session, run and working context are different objects.** The session is
+   the append-only public/audit log; each reader message starts a distinct run
+   with its own objective and budget; model context is a reversible projection
+   of those durable objects. A paused approval remains an outbox item rather
+   than becoming the next run's objective.
+2. **Semantic work is an observe → decide → act → verify loop.** The model owns
+   uncertain routing and repair after receiving structured observations. Local
+   code owns credentials, capabilities, state legality, idempotency, budgets,
+   deterministic transformations and final approval.
+3. **Evidence is explicit, not adjacent.** A provider request gets a typed
+   evidence bundle keyed by source/unit/modality/digest. Its receipt records
+   what pixels/text were actually serialized. An intervening local tool can no
+   longer make required evidence disappear or let a call-count approximation
+   claim that unseen pixels were observed.
+4. **Approval is durable user-owned work.** A reviewed preview survives side
+   questions, provider failure, restore and conversation completion. Only an
+   explicit Insert, revise, reject or delete action consumes it.
+5. **Evaluation checks repeatability and end state.** Exact multi-turn traces,
+   adversarial tool errors, multimodal grounding, persisted/restarted state and
+   deliberate failing controls matter more than a single successful transcript.
+
+### Evidence ledger
+
+Primary vendor/runtime guidance:
+
+- [OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model)
+  — lean prompts, relevant tools, explicit autonomy/stopping boundaries and
+  representative quality/cost evaluation.
+- [OpenAI conversation state](https://developers.openai.com/api/docs/guides/conversation-state)
+  — durable conversations and per-response continuation are separate concerns.
+- [Cohere Command A+](https://docs.cohere.com/docs/command-a-plus) — the active
+  model supports text, images, reasoning and tool use.
+- [Cohere tool-use patterns](https://docs.cohere.com/docs/tool-use-usage-patterns)
+  — direct answers, sequential tool loops and exact assistant/tool continuity.
+- [Cohere streaming tool use](https://docs.cohere.com/docs/tool-use-streaming)
+  — streamed tool calls are protocol items that must be assembled and retained.
+- [Cohere image inputs](https://docs.cohere.com/v2/docs/image-inputs) — image
+  bytes must be explicitly present in the request; high detail matters for
+  small text and diagrams.
+- [Cohere streaming responses](https://docs.cohere.com/v2/docs/streaming) —
+  bounded typed stream events and terminal usage/finish data.
+- [Anthropic, Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
+  — composable workflows for predictable stages, agents for uncertain stages,
+  ground-truth observations, stopping conditions and carefully designed tools.
+- [Anthropic, Trustworthy agents in practice](https://www.anthropic.com/research/trustworthy-agents)
+  — plan/act/observe/adjust loops, human control, transparent harnesses and
+  calibrated clarification.
+- [Anthropic, Scaling Managed Agents](https://www.anthropic.com/engineering/managed-agents)
+  — decouple brain, hands and append-only session; context is a projection, not
+  the durable session itself.
+- [LangGraph persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence)
+  — thread checkpoints, stores, fault tolerance and human-in-the-loop state.
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
+  — a paused run is a durable cursor and side effects before resume must be
+  idempotent.
+- [LangGraph thinking model](https://docs.langchain.com/oss/python/langgraph/thinking-in-langgraph)
+  — typed shared state, discrete nodes, errors as flow and first-class human
+  input.
+- [LangGraph subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)
+  — per-invocation state isolation is the safe default for independent work.
+- [Google ADK conversational context](https://adk.dev/sessions/) — session
+  events, current state and searchable cross-session memory have distinct
+  lifecycles.
+- [LlamaIndex agent memory](https://developers.llamaindex.ai/python/framework/module_guides/deploying/agents/memory/)
+  — short-term chat history and durable memory require explicit token/retention
+  policies.
+- [AutoGen state contracts](https://microsoft.github.io/autogen/stable/reference/python/autogen_agentchat.state.html)
+  — saveable agent, message-thread, turn and stall state are explicit schemas.
+- [CrewAI flows](https://docs.crewai.com/en/concepts/flows) — structured state,
+  event-driven branching and persisted workflow checkpoints.
+
+Research and evaluation evidence:
+
+- [ReAct](https://arxiv.org/abs/2210.03629) — interleaved reasoning, action and
+  observation improves exception handling and reduces ungrounded reasoning.
+- [Reflexion](https://arxiv.org/abs/2303.11366) — linguistic feedback and
+  episodic repair memory improve later decisions without changing model weights.
+- [Toolformer](https://arxiv.org/abs/2302.04761) — useful tool use requires
+  deciding whether, when and how to call, then incorporating the result.
+- [AgentBench](https://arxiv.org/abs/2308.03688) — long-term reasoning,
+  decision-making and instruction following remain common agent failures.
+- [GAIA](https://arxiv.org/abs/2311.12983) — realistic assistants require
+  reasoning, tools and multimodal evidence with unambiguous end evaluation.
+- [tau-bench](https://arxiv.org/abs/2406.12045) — database end state and
+  pass-to-the-k reveal inconsistency hidden by a single successful trial.
+- [OSWorld](https://github.com/xlang-ai/OSWorld) and
+  [WebArena](https://webarena.dev/) — realistic stateful environments and
+  programmatic end-state validators expose long-horizon failures.
+- [Image-Grounded Conversations](https://www.microsoft.com/en-us/research/publication/image-grounded-conversations-multimodal-context-natural-question-response-generation/)
+  — later dialogue must remain constrained by the shared image, not text
+  history alone.
+- [MemexQA](https://research.google/pubs/focal-visual-text-attention-for-memex-question-answering/)
+  — answers should identify the grounding photo that justifies them.
+- [DART](https://arxiv.org/abs/2605.23311) — locally legal recovery can still be
+  semantically invalid without an explicit admissibility check.
+- [DecisionBench](https://arxiv.org/abs/2605.19099) — orchestration quality,
+  cost, latency and routing fidelity must be measured separately.
+- [Petri](https://www.anthropic.com/research/petri-open-source-auditing) — broad
+  multi-turn simulation plus independent judging finds failures one-off tests
+  miss.
+- [Graph-based long-running workflow recipes](https://arxiv.org/abs/2607.19297)
+  and [ExecuGraph](https://arxiv.org/abs/2607.20499) — typed transitions,
+  evidence gates, bounded retries, execution-grounded evaluation and ablations
+  make added complexity measurable rather than ceremonial.
+
+These sources disagree on how much autonomy or framework machinery to use, but
+agree that adding abstraction does not make a model smarter. Alcove therefore
+keeps its small provider-neutral loop, strengthens the session/run/evidence
+interfaces around it, and uses deterministic workflows only where the outcome
+is already mechanically defined.

@@ -56,7 +56,9 @@ import {
 import {
   AgentProviderError,
   isRetryableProviderError,
+  projectTurnScopedSourceEvidence,
 } from '../src/features/aiAgent/provider';
+import type { ProviderMessage } from '../src/features/aiAgent/provider';
 
 describe('Cohere AI agent provider', () => {
   it('disables extended reasoning only for a sole deterministic routing tool', async () => {
@@ -677,6 +679,395 @@ describe('Cohere AI agent provider', () => {
     ).toHaveLength(2);
     expect(gateway.serializedImageBytes).toEqual([[9, 8, 7], [6, 5, 4]]);
     expect(gateway.serializedImageBytes).not.toContainEqual([1, 2, 3]);
+  });
+
+  it.each([
+    ['source then notebook', true],
+    ['notebook then source', false],
+  ] as const)(
+    'delivers current source pixels exactly once when local tools run %s',
+    async (_label, sourceFirst) => {
+      gateway.requests.length = 0;
+      gateway.serializedImageBytes.length = 0;
+      const preparedDigests: string[] = [];
+      const provider = new CohereTauriAgentProvider(
+        () => true,
+        {
+          prepareImage: async (part) => {
+            preparedDigests.push(part.image.digest);
+            return {
+              bytes: [4, 5, 6],
+              mimeType: 'image/webp',
+              width: 800,
+              height: 1_200,
+            };
+          },
+        },
+      );
+      const sourceImage = {
+        resourceId: 'week-6-picture',
+        mimeType: 'image/png' as const,
+        digest: 'week-6-picture-digest',
+        width: 1_024,
+        height: 1_536,
+      };
+      const reader: ProviderMessage = {
+        role: 'user',
+        content: [{ type: 'text', text: 'Add this picture for Week 6 with brief notes.' }],
+      };
+      const sourceAssistant: ProviderMessage = {
+        role: 'assistant',
+        content: [],
+        toolCalls: [{
+          id: 'read-source',
+          name: 'read_full_source',
+          arguments: { sourceId: 'picture-source' },
+        }],
+      };
+      const sourceTool: ProviderMessage = {
+        role: 'tool',
+        toolCallId: 'read-source',
+        toolName: 'read_full_source',
+        content: [
+          { type: 'text', text: '{"sourceId":"picture-source"}' },
+          { type: 'image_ref', image: sourceImage, purpose: 'source_analysis' },
+        ],
+      };
+      const notebookAssistant: ProviderMessage = {
+        role: 'assistant',
+        content: [],
+        toolCalls: [{ id: 'inspect-book', name: 'inspect_notebook', arguments: {} }],
+      };
+      const notebookTool: ProviderMessage = {
+        role: 'tool',
+        toolCallId: 'inspect-book',
+        toolName: 'inspect_notebook',
+        content: [{ type: 'text', text: '{"pages":[{"title":"Earlier week"}]}' }],
+      };
+      const ordered = sourceFirst
+        ? [reader, sourceAssistant, sourceTool, notebookAssistant, notebookTool]
+        : [reader, notebookAssistant, notebookTool, sourceAssistant, sourceTool];
+      const projected = projectTurnScopedSourceEvidence({
+        messages: ordered,
+        turnId: 'reader-week-6',
+        purpose: 'notebook_draft',
+        sourceImages: [sourceImage],
+        requiredSourceImageCount: 1,
+      });
+      const stream = provider.streamTurn({
+        requestId: `order-${sourceFirst ? 'source-first' : 'notebook-first'}`,
+        runId: 'run-order-independent',
+        threadId: 'thread-order-independent',
+        systemPrompt: 'Draft only from the current source picture.',
+        messages: projected.messages,
+        evidence: projected.receipt,
+        tools: [],
+        toolChoice: 'auto',
+      }, { signal: new AbortController().signal });
+      for await (const _event of stream) {
+        // drain the request
+      }
+
+      const sent = gateway.requests[0]?.messages ?? [];
+      const images = sent.flatMap((message) =>
+        message.role === 'user' && Array.isArray(message.content)
+          ? message.content.filter((part) => part.type === 'image_url')
+          : [],
+      );
+      expect(images).toHaveLength(1);
+      expect(gateway.serializedImageBytes).toEqual([[4, 5, 6]]);
+      expect(preparedDigests).toEqual(['week-6-picture-digest']);
+      expect(projected.messages.flatMap((message) =>
+        message.role === 'tool'
+          ? message.content.filter((part) => part.type === 'image_ref')
+          : [],
+      )).toEqual([]);
+      const projectedText = JSON.stringify(projected.messages);
+      expect(projectedText).not.toContain('Earlier week');
+      expect(projectedText).toContain('placementIndexCompacted');
+    },
+  );
+
+  it('re-exposes a durable source image on a later image question', async () => {
+    gateway.requests.length = 0;
+    gateway.serializedImageBytes.length = 0;
+    const preparedDigests: string[] = [];
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        prepareImage: async (part) => {
+          preparedDigests.push(part.image.digest);
+          return {
+            bytes: [7, 7, 7],
+            mimeType: 'image/webp',
+            width: 900,
+            height: 1_200,
+          };
+        },
+      },
+    );
+    const sourceImage = {
+      resourceId: 'durable-picture',
+      mimeType: 'image/png' as const,
+      digest: 'durable-picture-digest',
+      width: 900,
+      height: 1_200,
+    };
+    const projected = projectTurnScopedSourceEvidence({
+      messages: [
+        {
+          role: 'assistant',
+          content: [],
+          toolCalls: [{ id: 'old-read', name: 'read_full_source', arguments: {} }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'old-read',
+          toolName: 'read_full_source',
+          content: [
+            { type: 'text', text: '{"sourceId":"picture"}' },
+            { type: 'image_ref', image: sourceImage, purpose: 'source_analysis' },
+          ],
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'The earlier notebook preview is ready.' }],
+          toolCalls: [{ id: 'old-preview', name: 'read_draft_preview_pages', arguments: {} }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'old-preview',
+          toolName: 'read_draft_preview_pages',
+          content: [
+            { type: 'text', text: '{"pageIds":["old-page"]}' },
+            {
+              type: 'image_ref',
+              image: {
+                resourceId: 'old-preview-page',
+                mimeType: 'image/png',
+                digest: 'old-preview-page-digest',
+                width: 900,
+                height: 1_200,
+              },
+              purpose: 'draft_visual_review',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'Can you see images? What is in this picture?' }],
+        },
+      ],
+      turnId: 'later-image-question',
+      purpose: 'conversation_answer',
+      sourceImages: [sourceImage],
+      requiredSourceImageCount: 1,
+    });
+    const stream = provider.streamTurn({
+      requestId: 'later-image-question',
+      runId: 'run-later-image-question',
+      threadId: 'thread-later-image-question',
+      systemPrompt: 'Answer the current image question.',
+      messages: projected.messages,
+      evidence: projected.receipt,
+      tools: [],
+      toolChoice: 'auto',
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the request
+    }
+
+    const sent = gateway.requests[0]?.messages ?? [];
+    const latestUser = [...sent].reverse().find((message) => message.role === 'user');
+    expect(latestUser?.role).toBe('user');
+    expect(latestUser?.role === 'user' && Array.isArray(latestUser.content)
+      ? latestUser.content.filter((part) => part.type === 'image_url')
+      : []).toHaveLength(1);
+    expect(gateway.serializedImageBytes).toEqual([[7, 7, 7]]);
+    expect(preparedDigests).toEqual(['durable-picture-digest']);
+    expect(projected.receipt.deliveredDraftImageDigests).toEqual([]);
+  });
+
+  it('sends the original source image beside current draft renders for grounded review', async () => {
+    gateway.requests.length = 0;
+    gateway.serializedImageBytes.length = 0;
+    const preparedDigests: string[] = [];
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        prepareImage: async (part) => {
+          preparedDigests.push(part.image.digest);
+          return {
+            bytes: part.purpose === 'source_analysis' ? [1, 4, 1] : [2, 5, 2],
+            mimeType: 'image/webp',
+            width: 1_000,
+            height: 1_400,
+          };
+        },
+      },
+    );
+    const sourceImage = {
+      resourceId: 'grounding-source',
+      mimeType: 'image/png' as const,
+      digest: 'grounding-source-digest',
+      width: 1_000,
+      height: 1_400,
+    };
+    const draftImage = {
+      resourceId: 'draft-page-one',
+      mimeType: 'image/png' as const,
+      digest: 'draft-page-one-digest',
+      width: 1_000,
+      height: 1_400,
+    };
+    const projected = projectTurnScopedSourceEvidence({
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'Add this image with brief notes.' }] },
+        {
+          role: 'assistant',
+          content: [],
+          toolCalls: [{ id: 'preview-read', name: 'read_draft_preview_pages', arguments: {} }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'preview-read',
+          toolName: 'read_draft_preview_pages',
+          content: [
+            { type: 'text', text: '{"pageIds":["page-1"]}' },
+            {
+              type: 'image_ref',
+              image: draftImage,
+              purpose: 'draft_visual_review',
+              pageId: 'page-1',
+              pageNumber: 1,
+            },
+          ],
+        },
+      ],
+      turnId: 'grounded-review',
+      purpose: 'preview_review',
+      sourceImages: [sourceImage],
+      requiredSourceImageCount: 1,
+      requiredDraftImageDigests: [draftImage.digest],
+    });
+    const stream = provider.streamTurn({
+      requestId: 'grounded-review',
+      runId: 'run-grounded-review',
+      threadId: 'thread-grounded-review',
+      systemPrompt: 'Compare source pixels with the rendered draft.',
+      messages: projected.messages,
+      evidence: projected.receipt,
+      tools: [],
+      toolChoice: 'auto',
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the request
+    }
+
+    const sent = gateway.requests[0]?.messages ?? [];
+    const imageTurns = sent.filter((message) =>
+      message.role === 'user' && Array.isArray(message.content) &&
+      message.content.some((part) => part.type === 'image_url'));
+    expect(imageTurns).toHaveLength(2);
+    expect(gateway.serializedImageBytes).toEqual([[1, 4, 1], [2, 5, 2]]);
+    expect(preparedDigests).toEqual([
+      'grounding-source-digest',
+      'draft-page-one-digest',
+    ]);
+  });
+
+  it('fails before gateway traffic when a required evidence receipt has no pixels', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const drain = async (): Promise<void> => {
+      const stream = provider.streamTurn({
+        requestId: 'missing-current-evidence',
+        runId: 'run-missing-current-evidence',
+        threadId: 'thread-missing-current-evidence',
+        systemPrompt: 'Do not guess from notebook titles.',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Explain this picture.' }] }],
+        evidence: {
+          turnId: 'reader-missing-evidence',
+          purpose: 'conversation_answer',
+          requiredSourceImageCount: 1,
+          requiredSourceImageDigests: ['missing-picture-digest'],
+          deliveredSourceImageDigests: [],
+          requiredDraftImageDigests: [],
+          deliveredDraftImageDigests: [],
+        },
+        tools: [],
+        toolChoice: 'auto',
+      }, { signal: new AbortController().signal });
+      for await (const _event of stream) {
+        // drain until the preflight failure
+      }
+    };
+
+    await expect(drain()).rejects.toMatchObject({
+      code: 'invalid_response',
+      retryable: false,
+    });
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it('fails before gateway traffic when declared evidence does not match serialized pixels', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(
+      () => true,
+      {
+        prepareImage: async () => {
+          throw new Error('mismatched evidence must fail before image preparation');
+        },
+      },
+    );
+    const drain = async (): Promise<void> => {
+      const stream = provider.streamTurn({
+        requestId: 'mismatched-current-evidence',
+        runId: 'run-mismatched-current-evidence',
+        threadId: 'thread-mismatched-current-evidence',
+        systemPrompt: 'Use only exact current pixels.',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Explain this picture.' },
+            {
+              type: 'image_ref',
+              image: {
+                resourceId: 'wrong-picture',
+                mimeType: 'image/png',
+                digest: 'wrong-picture-digest',
+                width: 800,
+                height: 1_000,
+              },
+              purpose: 'source_analysis',
+            },
+          ],
+        }],
+        evidence: {
+          turnId: 'reader-mismatched-evidence',
+          purpose: 'conversation_answer',
+          requiredSourceImageCount: 1,
+          requiredSourceImageDigests: ['expected-picture-digest'],
+          // This deliberately makes the provider-neutral receipt internally
+          // self-consistent. Cohere must still recompute the actual wire image
+          // and reject the mismatch independently.
+          deliveredSourceImageDigests: ['expected-picture-digest'],
+          requiredDraftImageDigests: [],
+          deliveredDraftImageDigests: [],
+        },
+        tools: [],
+        toolChoice: 'auto',
+      }, { signal: new AbortController().signal });
+      for await (const _event of stream) {
+        // drain until the transport-side preflight failure
+      }
+    };
+
+    await expect(drain()).rejects.toMatchObject({
+      code: 'invalid_response',
+      retryable: false,
+    });
+    expect(gateway.requests).toHaveLength(0);
   });
 
   it('does not replay historical tool-result pixels after a later model turn', async () => {

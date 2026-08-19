@@ -1,7 +1,9 @@
 import { parseNotebookScriptPages } from '../../editor/script/pageBoundaries';
-import type { Block } from '../../script';
+import { print, type Block } from '../../script';
 import { explicitImageRequest } from './imageIntent';
 import {
+  latestReaderText,
+  readerRequestsConciseAttachedImage,
   readerRequestsDominantAttachedImage,
   readerUsesImplicitAttachmentDefault,
 } from './intent';
@@ -15,6 +17,16 @@ export interface ObservedManagedImageAsset {
 }
 
 function currentReaderTurns(state: AgentState): AgentState['modelHistory'] {
+  if (
+    state.objective?.reason === 'reader_preview_feedback' &&
+    state.draft?.sourceManifestDigest !== undefined &&
+    state.draft.sourceManifestDigest === state.sourceManifest?.digest
+  ) {
+    // Explicit revision retains the exact reviewed draft/source authority but
+    // starts a new reader-turn anchor. Reuse only immutable successful reads
+    // from that same manifest; ordinary later chat remains turn-scoped.
+    return state.modelHistory;
+  }
   const anchorId = state.budgetWindow?.readerMessageId;
   const anchorIndex = anchorId === undefined
     ? 0
@@ -88,6 +100,26 @@ export function observedManagedImageAssetPaths(state: AgentState): readonly stri
  * prose, but they may not silently delete this exact managed asset.
  */
 export function requiredManagedImageAssetPaths(state: AgentState): readonly string[] {
+  const readerText = latestReaderText(state);
+  const refusesManagedImage =
+    /\b(?:do\s+not|don['’]?t|dont|without|exclude|omit|leave\s+out|remove)\b[\s\S]{0,32}\b(?:attached\s+)?(?:image|picture|photo|infographic|diagram)\b/iu.test(
+      readerText,
+    );
+  if (refusesManagedImage) return [];
+  // The concise-image contract is itself an explicit reader decision: one
+  // observed attached image is the primary page payload. Do not make that
+  // authority depend on whether a later model draft or feedback turn happens
+  // to repeat the word “image”.
+  if (
+    readerRequestsConciseAttachedImage(state) ||
+    readerRequestsDominantAttachedImage(state) ||
+    readerUsesImplicitAttachmentDefault(state) ||
+    /\b(?:add|include|use|put|place)\b[\s\S]{0,48}\b(?:attached\s+)?(?:image|picture|photo|infographic|diagram)\b|\b(?:image|picture|photo|infographic|diagram)\b[\s\S]{0,48}\b(?:add|include|use|put|place)\b/iu.test(
+      readerText,
+    )
+  ) {
+    return observedManagedImageAssetPaths(state);
+  }
   const directive = explicitImageRequest(state);
   if (!directive.requested && directive.evidence !== undefined) return [];
   return observedManagedImageAssetPaths(state);
@@ -143,6 +175,14 @@ function widthFor(asset: ObservedManagedImageAsset, state?: AgentState): number 
     if (width > 0 && height > width * 1.18) return 72;
     if (height > 0 && width > height * 1.18) return 92;
     return 82;
+  }
+  if (state !== undefined && readerRequestsConciseAttachedImage(state)) {
+    // A portrait infographic needs room for its heading, frame and caption.
+    // 72% looks large but spills a 3:2 portrait past the native sheet; 58%
+    // is the largest fit-safe teaching size measured on the real renderer.
+    if (width > 0 && height > width * 1.18) return 58;
+    if (height > 0 && width > height * 1.18) return 90;
+    return 74;
   }
   if (width > 0 && height > width * 1.18) return 48;
   if (height > 0 && width > height * 1.18) return 82;
@@ -224,7 +264,10 @@ export function ensureRequiredManagedImagesInNotebookScript(
       return `![${alt}](){asset="${asset.path}", width=${widthFor(asset, state)}, align=center, style=polaroid, caption="${alt}"}`;
     },
   );
-  if (readerRequestsDominantAttachedImage(state)) {
+  if (
+    readerRequestsDominantAttachedImage(state) ||
+    readerRequestsConciseAttachedImage(state)
+  ) {
     normalizedScript = normalizedScript.replace(
       /!\[([^\]]*)\]\(\)\{([^{}]*\basset="([^"]+)"[^{}]*)\}/giu,
       (whole, rawAlt: string, rawAttrs: string, rawPath: string) => {
@@ -287,6 +330,183 @@ function firstHeading(script: string): string | undefined {
       .replace(/\s+\{[^{}]*\}\s*$/u, '')
       .replace(/[*_~=`]/g, ''),
   );
+}
+
+function imagePageTitle(script: string, asset: ObservedManagedImageAsset): string {
+  const parsed = parseNotebookScriptPages(script).preview;
+  const heading = firstHeading(script);
+  if (
+    heading !== undefined &&
+    !/^(?:image|picture|photo|infographic|diagram|attached image)$/iu.test(heading)
+  ) return heading;
+  const frontmatterTitle = parsed.frontmatter.title?.trim();
+  if (frontmatterTitle) return safeInlineText(frontmatterTitle);
+  const plainTitle = /^\s*title\s*:\s*(.+?)\s*$/imu.exec(script)?.[1]?.trim();
+  if (plainTitle) return safeInlineText(plainTitle.replace(/[.]+$/u, ''));
+  return heading ?? safeInlineText(asset.label);
+}
+
+function rawFrontmatter(script: string): { readonly value: string; readonly rest: string } {
+  const match = /^\s*(---\r?\n[\s\S]*?\r?\n---)(?:\r?\n)*/u.exec(script);
+  return match === null
+    ? { value: '', rest: script }
+    : { value: match[1]!, rest: script.slice(match[0].length) };
+}
+
+function blockContainsMedia(block: Block): boolean {
+  if (block.kind === 'image' || block.kind === 'fetchDirective') return true;
+  return block.kind === 'container' && block.children.some(blockContainsMedia);
+}
+
+function blockContainsManagedAsset(block: Block, path: string): boolean {
+  if (block.kind === 'image') return block.attrs.asset === path;
+  return block.kind === 'container' &&
+    block.children.some((child) => blockContainsManagedAsset(child, path));
+}
+
+function findManagedImageBlock(
+  blocks: readonly Block[],
+  path: string,
+): Extract<Block, { readonly kind: 'image' }> | undefined {
+  for (const block of blocks) {
+    if (block.kind === 'image' && block.attrs.asset === path) return block;
+    if (block.kind === 'container') {
+      const nested = findManagedImageBlock(block.children, path);
+      if (nested !== undefined) return nested;
+    }
+  }
+  return undefined;
+}
+
+function compactNotesBlockAllowed(block: Block): boolean {
+  if (blockContainsMedia(block) || block.kind === 'divider') return false;
+  if (
+    !['heading', 'paragraph', 'quote', 'list', 'taskList', 'table', 'container'].includes(
+      block.kind,
+    )
+  ) return false;
+  if ('attrs' in block && block.attrs.size !== undefined) return false;
+  if (block.kind !== 'container') return true;
+  if (block.name === 'columns' || block.name === 'image-row') return false;
+  return block.children.every(compactNotesBlockAllowed);
+}
+
+function printStandaloneBlock(block: Block): string {
+  return print({ frontmatter: {}, blocks: [block], diagnostics: [] }).trim();
+}
+
+function blockHasPromisedPayload(block: Block): boolean {
+  if (block.kind === 'list' || block.kind === 'taskList' || block.kind === 'table') {
+    return true;
+  }
+  return block.kind === 'container' && block.children.some(blockHasPromisedPayload);
+}
+
+function blockContainsMetadataParagraph(block: Block): boolean {
+  if (block.kind === 'container') {
+    return block.children.some(blockContainsMetadataParagraph);
+  }
+  if (block.kind !== 'paragraph') return false;
+  return /^\s*(?:title|paper|wash|ink|image)\s*:/iu.test(
+    printStandaloneBlock(block),
+  );
+}
+
+function terminalSemanticText(block: Block): string {
+  if (block.kind === 'container') {
+    const last = block.children[block.children.length - 1];
+    return last === undefined ? '' : terminalSemanticText(last);
+  }
+  return printStandaloneBlock(block).trim();
+}
+
+function coherentNotesGroup(blocks: readonly Block[], text: string): boolean {
+  if (!blocks.some((block) => block.kind !== 'heading')) return false;
+  if (blocks.some(blockContainsMetadataParagraph)) return false;
+  const terminal = terminalSemanticText(blocks[blocks.length - 1]!);
+  if (/[:\u2013\u2014-]\s*$/u.test(terminal)) return false;
+  const promisesPayload =
+    /\b(?:the\s+following|shown\s+below|listed\s+below|as\s+follows|these\s+(?:are|include)|(?:one|two|three|four|five|six|\d+)\s+(?:key\s+)?(?:ways?|steps?|measurements?|dimensions?|parts?|points?|rules?))\b/iu.test(
+      text,
+    );
+  return !promisesPayload || blocks.some(blockHasPromisedPayload);
+}
+
+function compactNotesBlocks(blocks: readonly Block[], managedPath: string): string {
+  const groups: Block[][] = [];
+  let current: Block[] = [];
+  let skippedOpeningHeading = false;
+  for (const block of blocks) {
+    if (blockContainsManagedAsset(block, managedPath)) {
+      if (current.length > 0) groups.push(current);
+      current = [];
+      continue;
+    }
+    if (!compactNotesBlockAllowed(block)) continue;
+    if (block.kind === 'heading' && !skippedOpeningHeading) {
+      skippedOpeningHeading = true;
+      continue;
+    }
+    if (block.kind === 'heading' && current.length > 0) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(block);
+  }
+  if (current.length > 0) groups.push(current);
+
+  for (const group of groups) {
+    if (group.length > 5) continue;
+    const text = group.map(printStandaloneBlock).filter(Boolean).join('\n\n').trim();
+    if (text === '' || text.length > 700 || text.split('\n').length > 12) continue;
+    if (!coherentNotesGroup(group, text)) continue;
+    return text;
+  }
+  return '';
+}
+
+/**
+ * The reader says the supplied image already carries the substance and asks
+ * for only a small supporting write-up. Preserve Cohere's grounded title and
+ * earliest bounded native blocks, but enforce the editorial contract locally:
+ * one large uncropped managed-image page and at most one non-empty notes page.
+ */
+export function applyConciseManagedImageLayout(
+  state: AgentState,
+  script: string,
+): { readonly script: string; readonly compacted: boolean } {
+  if (!readerRequestsConciseAttachedImage(state)) {
+    return { script, compacted: false };
+  }
+  const assets = observedManagedImageAssets(state);
+  if (assets.length !== 1) return { script, compacted: false };
+  const asset = assets[0]!;
+  const parsed = parseNotebookScriptPages(script).preview;
+  const parsedImage = findManagedImageBlock(parsed.blocks, asset.path);
+  if (parsedImage === undefined) return { script, compacted: false };
+  const imageBlock = printStandaloneBlock({
+    ...parsedImage,
+    attrs: {
+      ...parsedImage.attrs,
+      width: widthFor(asset, state),
+      align: parsedImage.attrs.align ?? 'center',
+      style: parsedImage.attrs.style ?? 'polaroid',
+    },
+  });
+
+  const { value: frontmatter } = rawFrontmatter(script);
+  const title = imagePageTitle(script, asset);
+  const notes = compactNotesBlocks(
+    parsed.blocks,
+    asset.path,
+  );
+  const normalized = [
+    frontmatter,
+    `# ${title}`,
+    imageBlock,
+    ...(notes === '' ? [] : ['::page', notes]),
+  ].filter((part) => part !== '').join('\n\n');
+  return { script: normalized, compacted: normalized !== script };
 }
 
 /**

@@ -220,6 +220,8 @@ export interface AiAgentDraftPreviewView {
     readonly detail: string;
     readonly changedPages?: readonly string[];
   };
+  /** Preview stays visible during side conversation, but actions wait for it to settle. */
+  readonly actionsDisabled?: boolean;
   /** An informational run receipt; the model never controls this value. */
   readonly isolated: true;
 }
@@ -1366,7 +1368,7 @@ function FinalPreviewCard(props: {
   const shown = createMemo(() => props.preview.pages.slice(spreadStart(), spreadStart() + 2));
   const placement = createMemo(() => props.preview.placements.find((item) => item.id === props.preview.placementId));
   return (
-    <article class="nb-ai-final-preview" aria-label="Final notebook preview">
+    <article class="nb-ai-final-preview" data-preview-id={props.preview.id} aria-label="Final notebook preview">
       <header class="nb-ai-final-head">
         <div>
           <span class="nb-ai-card-kicker font-ui">reviewed draft · version {props.preview.version}</span>
@@ -1440,7 +1442,7 @@ function FinalPreviewCard(props: {
 
       <section class="nb-ai-placement">
         <span class="nb-ai-card-kicker font-ui">where it will go</span>
-        <button type="button" class="nb-ai-placement-button" aria-expanded={props.placementMenuOpen} onClick={props.onTogglePlacement}>
+        <button type="button" class="nb-ai-placement-button" aria-expanded={props.placementMenuOpen} disabled={props.preview.actionsDisabled} onClick={props.onTogglePlacement}>
           <span><strong>{placement()?.label ?? 'Choose a location'}</strong><Show when={placement()?.detail}><span class="font-ui">{placement()?.detail}</span></Show></span>
           <ChevronIcon />
         </button>
@@ -1448,7 +1450,7 @@ function FinalPreviewCard(props: {
           <div class="nb-ai-placement-menu" role="menu">
             <For each={props.preview.placements}>
               {(option) => (
-                <button type="button" role="menuitemradio" aria-checked={option.id === props.preview.placementId} onClick={() => props.onPlacement(option.id)}>
+                <button type="button" role="menuitemradio" aria-checked={option.id === props.preview.placementId} disabled={props.preview.actionsDisabled} onClick={() => props.onPlacement(option.id)}>
                   <span class="nb-ai-menu-tick" aria-hidden="true">{option.id === props.preview.placementId ? '✓' : ''}</span>
                   <span><strong>{option.label}</strong><Show when={option.detail}><small>{option.detail}</small></Show></span>
                 </button>
@@ -1464,14 +1466,14 @@ function FinalPreviewCard(props: {
             <span class="nb-ai-card-kicker font-ui">your book changed while I worked</span>
             <h4>{conflict.title}</h4>
             <p>{conflict.detail}</p>
-            <button type="button" class="nb-ai-secondary-action font-ui" onClick={props.onRefreshConflict}><RetryIcon /> Refresh the preview safely</button>
+            <button type="button" class="nb-ai-secondary-action font-ui" disabled={props.preview.actionsDisabled} onClick={props.onRefreshConflict}><RetryIcon /> Refresh the preview safely</button>
           </div>
         )}
       </Show>
 
       <footer class="nb-ai-final-actions">
-        <button type="button" class="nb-ai-change-action font-ui" onClick={props.onChange}>Ask for changes</button>
-        <button type="button" class="nb-ai-approve-action font-ui" disabled={props.preview.conflict !== undefined} onClick={props.onApprove}>
+        <button type="button" class="nb-ai-change-action font-ui" disabled={props.preview.actionsDisabled} onClick={props.onChange}>Ask for changes</button>
+        <button type="button" class="nb-ai-approve-action font-ui" disabled={props.preview.actionsDisabled || props.preview.conflict !== undefined} onClick={props.onApprove}>
           <CheckIcon /> Insert {props.preview.affectedPageCount} {props.preview.affectedPageCount === 1 ? 'page' : 'pages'}
         </button>
       </footer>

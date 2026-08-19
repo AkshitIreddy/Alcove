@@ -952,6 +952,317 @@ describe('Alcove autonomous notebook agent runtime', () => {
     ]);
   });
 
+  it('parks a graph-backed preview for one side conversation and keeps every decision actionable', async () => {
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Water cycle\n\nWater evaporates, condenses, and falls again.',
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+      {
+        name: 'finish_conversation',
+        args: {
+          answer: 'I can see a simple water-cycle teaching page.',
+          citedUnitIds: [],
+        },
+      },
+      {
+        name: 'finish_conversation',
+        args: {
+          answer: 'It is still the same reviewed one-page preview.',
+          citedUnitIds: [],
+        },
+      },
+    ]);
+    const { adapters } = fakeAdapters();
+    const persistence = new InMemoryAgentPersistence();
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    const waiting = await runtime.start({
+      taskId: 'task-preview-side-conversation',
+      threadId: 'thread-preview-side-conversation',
+      runId: 'run-preview-side-conversation',
+      bookId: 'book-1',
+      goal: 'Put a short water-cycle explanation in my book.',
+      insertionTarget: { kind: 'book_end' },
+    });
+    expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
+    const originalProposal = waiting.state.patchProposal!;
+    const originalGeneration = waiting.state.previewGeneration!;
+
+    const answered = await runtime.sendUserMessage(
+      'What can you see in the current preview?',
+      { userMessageId: 'reader-side-question' },
+    );
+
+    expect(answered.interrupt).toBeUndefined();
+    expect(answered.state.lifecycle).toBe('completed');
+    expect(answered.state.patchProposal).toMatchObject({
+      patchId: originalProposal.patchId,
+      status: 'waiting_for_approval',
+      preview: { previewId: originalProposal.preview.previewId },
+    });
+    expect(answered.state.previewGeneration).toEqual(originalGeneration);
+    expect(answered.state.conversation.filter((message) =>
+      message.role === 'user' && message.text === 'What can you see in the current preview?'
+    )).toEqual([expect.objectContaining({ id: 'reader-side-question' })]);
+    expect(answered.state.conversation.at(-1)?.text).toMatch(/water-cycle teaching page/i);
+    expect(provider.requests.at(-1)?.tools.map((tool) => tool.name)).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+    expect(provider.requests.at(-1)?.tools.map((tool) => tool.name)).not.toEqual(
+      expect.arrayContaining(['submit_notebook_script', 'inspect_notebook']),
+    );
+
+    const submitAssistantIndex = answered.state.modelHistory.findIndex((turn) =>
+      turn.role === 'assistant' && turn.toolCalls.some((call) =>
+        call.name === 'submit_notebook_patch'
+      )
+    );
+    expect(submitAssistantIndex).toBeGreaterThanOrEqual(0);
+    expect(answered.state.modelHistory[submitAssistantIndex + 1]).toMatchObject({
+      role: 'tool',
+      toolName: 'submit_notebook_patch',
+      content: {
+        decision: 'defer_for_conversation',
+        previewStillPending: true,
+      },
+    });
+    expect(answered.state.modelHistory[submitAssistantIndex + 2]).toMatchObject({
+      id: 'reader-side-question',
+      role: 'user',
+    });
+    expect(answered.state.modelHistory.filter(
+      (turn) => turn.role === 'tool' && turn.isError,
+    )).toEqual([]);
+
+    const answeredAgain = await runtime.sendUserMessage(
+      'Is the reviewed page still waiting for me?',
+      { userMessageId: 'reader-second-side-question' },
+    );
+    expect(answeredAgain.state.patchProposal).toEqual(answered.state.patchProposal);
+    expect(answeredAgain.state.previewGeneration).toEqual(originalGeneration);
+    expect(answeredAgain.state.conversation.filter((message) =>
+      message.role === 'user' && message.text === 'Is the reviewed page still waiting for me?'
+    )).toEqual([expect.objectContaining({ id: 'reader-second-side-question' })]);
+    expect(provider.requests.at(-1)?.tools.map((tool) => tool.name)).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+
+    const rejectedPersistence = new InMemoryAgentPersistence();
+    await rejectedPersistence.saveTask(answeredAgain.state);
+    const rejectedRuntime = new AgentRuntime(provider, adapters, rejectedPersistence);
+    await rejectedRuntime.restore(answeredAgain.state.identity.taskId);
+    const rejected = await rejectedRuntime.rejectPreview(originalProposal.preview.previewId);
+    expect(rejected.state.patchProposal?.status).toBe('rejected');
+
+    const changedPersistence = new InMemoryAgentPersistence();
+    await changedPersistence.saveTask(answeredAgain.state);
+    const changedRuntime = new AgentRuntime(provider, adapters, changedPersistence);
+    await changedRuntime.restore(answeredAgain.state.identity.taskId);
+    const changedRequestCount = provider.requests.length;
+    const changed = await changedRuntime.changePlacement(
+      originalProposal.preview.previewId,
+      { kind: 'book_start' },
+    );
+    expect(changed.state.patchProposal?.insertionTarget).toEqual({ kind: 'book_start' });
+    expect(changed.state.patchProposal?.status).toBe('waiting_for_approval');
+    expect(provider.requests).toHaveLength(changedRequestCount);
+
+    await runtime.clearActiveTask();
+    const restoredRuntime = new AgentRuntime(provider, adapters, persistence);
+    const restored = await restoredRuntime.restore(answeredAgain.state.identity.taskId);
+    expect(restored.interrupt).toBeNull();
+    expect(restored.state?.patchProposal).toMatchObject({
+      patchId: originalProposal.patchId,
+      status: 'waiting_for_approval',
+    });
+    const approved = await restoredRuntime.approvePreview(originalProposal.preview.previewId);
+    expect(approved.state.patchProposal?.status).toBe('approved_pending_apply');
+  });
+
+  it('retains a detached preview through side-answer failure, restart, and Retry', async () => {
+    const seed = logShapedFailedApplyState();
+    const detached: AgentState = {
+      ...seed,
+      lifecycle: 'completed',
+      phase: 'finished',
+      patchProposal: { ...seed.patchProposal!, status: 'waiting_for_approval' },
+      lastError: undefined,
+      lastApplyFailure: undefined,
+      applyRecovery: undefined,
+    };
+    const requests: AgentProviderTurnRequest[] = [];
+    let attempt = 0;
+    const provider: AgentProvider = {
+      id: 'flaky-preview-side-conversation',
+      capabilities: async () => ({
+        providerId: 'flaky-preview-side-conversation',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        attempt += 1;
+        if (attempt <= 2) {
+          throw new AgentProviderError({
+            code: 'invalid_response',
+            message: 'scripted side-answer failure',
+            status: 400,
+            retryable: false,
+          });
+        }
+        yield {
+          type: 'tool_call',
+          id: 'finish-side-answer-after-retry',
+          name: 'finish_conversation',
+          arguments: {
+            answer: 'The reviewed preview is still safely waiting.',
+            citedUnitIds: [],
+          },
+        };
+        yield { type: 'usage', inputTokens: 30, outputTokens: 10 };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(detached);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(detached.identity.taskId);
+
+    const failed = await runtime.sendUserMessage(
+      'Tell me whether the preview is still there.',
+      { userMessageId: 'reader-flaky-side-question' },
+    );
+    expect(failed.state).toMatchObject({
+      lifecycle: 'failed',
+      patchProposal: {
+        patchId: detached.patchProposal!.patchId,
+        status: 'waiting_for_approval',
+      },
+      previewGeneration: { generationId: detached.previewGeneration!.generationId },
+    });
+    expect(failed.state.conversation.filter((message) =>
+      message.role === 'user' && message.text === 'Tell me whether the preview is still there.'
+    )).toEqual([expect.objectContaining({ id: 'reader-flaky-side-question' })]);
+
+    await runtime.clearActiveTask();
+    const restarted = new AgentRuntime(provider, adapters, persistence);
+    const restored = await restarted.restore(detached.identity.taskId);
+    expect(restored).toMatchObject({
+      interrupt: null,
+      state: {
+        lifecycle: 'failed',
+        patchProposal: {
+          patchId: detached.patchProposal!.patchId,
+          status: 'waiting_for_approval',
+        },
+      },
+    });
+
+    const retried = await restarted.retry();
+    expect(retried.state).toMatchObject({
+      lifecycle: 'completed',
+      patchProposal: {
+        patchId: detached.patchProposal!.patchId,
+        status: 'waiting_for_approval',
+      },
+      previewGeneration: { generationId: detached.previewGeneration!.generationId },
+    });
+    expect(retried.state.conversation.at(-1)?.text).toMatch(/safely waiting/i);
+    expect(requests).toHaveLength(3);
+    expect(requests.every((request) => request.tools.every((tool) =>
+      tool.name === 'ask_user' || tool.name === 'finish_conversation'
+    ))).toBe(true);
+  });
+
+  it('wraps source-free STOP prose while a reviewed preview remains pending', async () => {
+    const seed = logShapedFailedApplyState();
+    const detached: AgentState = {
+      ...seed,
+      lifecycle: 'completed',
+      phase: 'finished',
+      patchProposal: { ...seed.patchProposal!, status: 'waiting_for_approval' },
+      lastError: undefined,
+      lastApplyFailure: undefined,
+      applyRecovery: undefined,
+      sourceManifest: undefined,
+      sourceCoverage: undefined,
+    };
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'preview-side-stop-prose',
+      capabilities: async () => ({
+        providerId: 'preview-side-stop-prose',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 16_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        yield {
+          type: 'public_text_delta',
+          text: 'Yes. The reviewed preview is still waiting for your Insert decision.',
+        };
+        yield { type: 'usage', inputTokens: 20, outputTokens: 12 };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    };
+    const { adapters } = fakeAdapters();
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(detached);
+    const runtime = new AgentRuntime(provider, adapters, persistence);
+    await runtime.restore(detached.identity.taskId);
+
+    const answered = await runtime.sendUserMessage(
+      'Is the preview still waiting?',
+      { userMessageId: 'reader-preview-stop-prose' },
+    );
+
+    expect(answered.state.lifecycle).toBe('completed');
+    expect(answered.state.patchProposal).toEqual(detached.patchProposal);
+    expect(answered.state.previewGeneration).toEqual(detached.previewGeneration);
+    expect(answered.state.conversation.at(-1)).toMatchObject({
+      role: 'assistant',
+      text: expect.stringMatching(/still waiting/i),
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+  });
+
   it('restores and restarts a terminal invalid-provider checkpoint without replaying the stored draft', async () => {
     const requests: AgentProviderTurnRequest[] = [];
     let rejectedValidate = false;
@@ -2659,22 +2970,25 @@ describe('Alcove autonomous notebook agent runtime', () => {
       async *streamTurn(request) {
         requests.push(request);
         const tool = request.tools[0]?.name;
-        if (tool === 'submit_notebook_script') {
+        if (request.tools.length === 0) {
+          expect(request.evidence?.purpose).toBe('notebook_draft');
+          yield {
+            type: 'public_text_delta',
+            text: '# Picture note\n\nA concise note grounded in the attached image.',
+          };
+          yield { type: 'usage', inputTokens: 100, outputTokens: 20 };
+          yield { type: 'finish', reason: 'stop' };
+          return;
+        } else if (tool === 'record_visual_review') {
           yield {
             type: 'tool_call',
-            id: 'cohere-semantic-draft',
+            id: 'cohere-semantic-review',
             name: tool,
             arguments: {
-              script: '# Picture note\n\nA concise note grounded in the attached image.',
-              citedUnitIds: ['invented-unit'],
-              reason: 'initial',
+              generationId: 'generation-1',
+              reviews: [{ pageId: 'preview-page-1', findings: [] }],
             },
           };
-        } else if (tool === 'record_visual_review') {
-          throw new AgentProviderError({
-            code: 'invalid_response',
-            message: 'Cohere returned invalid arguments for record_visual_review',
-          });
         } else {
           throw new Error(`unexpected semantic Cohere phase ${tool ?? '(none)'}`);
         }
@@ -2682,7 +2996,21 @@ describe('Alcove autonomous notebook agent runtime', () => {
         yield { type: 'finish', reason: 'tool_calls' };
       },
     };
-    const { adapters } = fakeAdapters(manifestWithUnits(1));
+    const baseManifest = manifestWithUnits(1);
+    const imageManifest: SourceManifest = {
+      ...baseManifest,
+      sources: baseManifest.sources.map((source) => ({
+        ...source,
+        kind: 'image' as const,
+        mediaType: 'image/png',
+        units: source.units.map((unit) => ({
+          ...unit,
+          hasVisual: true,
+          visualEvidence: 'available' as const,
+        })),
+      })),
+    };
+    const { adapters } = fakeAdapters(imageManifest);
     const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
 
     const waiting = await runtime.start({
@@ -2704,9 +3032,12 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
     expect(requests).toHaveLength(2);
     expect(requests.map((request) => request.tools.map((tool) => tool.name))).toEqual([
-      ['submit_notebook_script'],
+      [],
       ['record_visual_review'],
     ]);
+    expect(requests[0]?.systemPrompt).toContain(
+      'Return only the complete raw Notebook Script',
+    );
     expect(waiting.state.usage).toMatchObject({
       providerCalls: 2,
       toolCalls: 9,
@@ -2719,8 +3050,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
         toolName: 'submit_notebook_script',
         isError: false,
         content: expect.objectContaining({
-          sourceCitationsAutoAttached: true,
-          invalidCitationsDropped: ['invented-unit'],
+          invalidCitationsDropped: [],
         }),
       }),
     ]));
@@ -3219,13 +3549,31 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(rejectProvider.requests).toHaveLength(0);
 
     const feedbackState = recoveredState();
-    const feedbackProvider = new ScriptedProvider([{
-      name: 'ask_user',
-      args: {
-        kind: 'requirements',
-        question: 'Should the refreshed headings feel warmer throughout?',
+    const feedbackProvider = new ScriptedProvider([
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Warmer Kirby comparison\n\n- Adaptability\n- Teamwork',
+          citedUnitIds: [],
+          reason: 'user_feedback',
+        },
       },
-    }]);
+      { name: 'validate_notebook_script', args: {} },
+      { name: 'render_draft_preview', args: {} },
+      {
+        name: 'read_draft_preview_pages',
+        args: { generationId: 'generation-1', pageIds: ['preview-page-1'] },
+      },
+      {
+        name: 'record_visual_review',
+        args: {
+          generationId: 'generation-1',
+          reviews: [{ pageId: 'preview-page-1', findings: [] }],
+        },
+      },
+      { name: 'propose_notebook_patch', args: {} },
+      { name: 'submit_notebook_patch', args: {} },
+    ]);
     const { adapters: feedbackAdapters } = fakeAdapters();
     const feedbackPersistence = new InMemoryAgentPersistence();
     await feedbackPersistence.saveTask(feedbackState);
@@ -3235,13 +3583,21 @@ describe('Alcove autonomous notebook agent runtime', () => {
       feedbackPersistence,
     );
     await feedbackRuntime.restore(feedbackState.identity.taskId);
-    const feedback = await feedbackRuntime.sendUserMessage('Make the headings warmer.');
-    expect(feedback.interrupt).toMatchObject({ kind: 'requirements' });
+    const feedback = await feedbackRuntime.revisePreview(
+      feedbackState.patchProposal!.preview.previewId,
+      'Make the headings warmer.',
+      'reader-recovered-preview-feedback',
+    );
+    expect(feedback.interrupt).toBeUndefined();
+    expect(feedback.state.lifecycle).toBe('failed');
     expect(feedback.state.applyRecovery).toBeUndefined();
     expect(feedback.state.conversation.filter((message) =>
       message.role === 'user' && message.text === 'Make the headings warmer.'
-    )).toHaveLength(1);
-    expect(feedbackProvider.requests).toHaveLength(1);
+    )).toEqual([expect.objectContaining({ id: 'reader-recovered-preview-feedback' })]);
+    expect(feedbackProvider.requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      'submit_notebook_script',
+    ]);
+    expect(feedbackProvider.requests.length).toBeGreaterThanOrEqual(3);
     expect(JSON.stringify(feedbackProvider.requests[0]?.messages)).not.toMatch(
       /Refresh the final preview against the notebook/i,
     );
@@ -3759,6 +4115,78 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect((await persistence.listEvents('task-no-progress-watchdog')).filter(
       (event) => event.type === 'run.failed',
     )).toHaveLength(1);
+  });
+
+  it('pauses once instead of advertising impossible draft churn after repair budget exhaustion', async () => {
+    const provider = new ScriptedProvider([
+      { name: 'inspect_notebook', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Cats\n\nCats use whiskers to sense nearby surfaces.',
+          citedUnitIds: [],
+          reason: 'initial',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'submit_notebook_script',
+        args: {
+          script: '# Cats\n\nCats use whiskers to sense nearby surfaces.\n\n::: callout\nWhiskers help in tight spaces.\n:::',
+          citedUnitIds: [],
+          reason: 'repair',
+        },
+      },
+      { name: 'validate_notebook_script', args: {} },
+      {
+        name: 'ask_user',
+        args: {
+          kind: 'blocker',
+          question: 'I reached the safe repair limit. Would you like to simplify the requested page or start a fresh task?',
+        },
+      },
+    ]);
+    const base = fakeAdapters().adapters;
+    const adapters: AgentAdapters = {
+      ...base,
+      sandbox: {
+        ...base.sandbox,
+        validate: async (draft) => ({
+          draftHash: draft.draftHash,
+          parserDiagnostics: [],
+          staticDiagnostics: [{
+            severity: 'error',
+            code: 'test.still-invalid-after-repair',
+            message: 'The scripted fixture remains invalid.',
+          }],
+          imageDiagnostics: [],
+          pageLedgerDiagnostics: [],
+          valid: false,
+          checkedAt: NOW,
+        }),
+      },
+    };
+    const result = await new AgentRuntime(
+      provider,
+      adapters,
+      new InMemoryAgentPersistence(),
+    ).start({
+      taskId: 'task-repair-budget-blocker',
+      threadId: 'thread-repair-budget-blocker',
+      runId: 'run-repair-budget-blocker',
+      bookId: 'book-1',
+      goal: 'Add a polished cat page to my book.',
+      insertionTarget: { kind: 'book_end' },
+      budget: { maxProviderCalls: 20, maxRepairPasses: 1 },
+    });
+
+    expect(result.state.lifecycle).toBe('waiting_for_user');
+    expect(result.interrupt).toMatchObject({ kind: 'blocker' });
+    expect(result.state.usage.repairPasses).toBe(1);
+    expect(provider.requests).toHaveLength(6);
+    expect(provider.requests[5]?.tools.map((tool) => tool.name)).toEqual(['ask_user']);
+    expect(provider.requests.slice(5).some((request) =>
+      request.tools.some((tool) => tool.name === 'submit_notebook_script'))).toBe(false);
   });
 
   it('stalls whitespace-only invalid-draft churn before the full provider budget', async () => {

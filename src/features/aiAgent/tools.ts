@@ -35,6 +35,7 @@ import {
   agentRequestsNotebookMutation,
   currentAgentObjectiveMode,
   latestReaderText,
+  readerRequestsConciseAttachedImage,
   readerIntentHint,
   readerRequiresCompleteSourceCoverage,
   readerRequiresSourceEvidence,
@@ -51,6 +52,7 @@ import {
 import { planAdaptiveRetrieval } from './retrieval';
 import { notebookPageOrderExtendsSnapshot } from './productionNotebook';
 import {
+  applyConciseManagedImageLayout,
   applyDominantManagedImageLayout,
   applyVagueManagedImageDefault,
   ensureRequiredManagedImagesInNotebookScript,
@@ -974,6 +976,64 @@ function currentReaderModelTurns(state: AgentState): AgentState['modelHistory'] 
   return state.modelHistory.slice(anchorIndex >= 0 ? anchorIndex : state.modelHistory.length);
 }
 
+interface CurrentImageConversationContext {
+  readonly sourceId: string;
+  readonly unitIds: readonly string[];
+}
+
+function currentImageConversationContext(
+  state: AgentState,
+): CurrentImageConversationContext | undefined {
+  const mode = currentAgentObjectiveMode(state);
+  if (mode !== 'conversation' && readerIntentHint(state) !== 'conversation') return undefined;
+  const currentText = currentReaderModelTurns(state)
+    .filter((turn) => turn.role === 'user')
+    .map((turn) => turn.content)
+    .join('\n');
+  if (!/\b(?:image|picture|photo|infographic|diagram|visual)\b/iu.test(currentText)) {
+    return undefined;
+  }
+  const manifest = state.sourceManifest;
+  const coverage = state.sourceCoverage;
+  if (
+    manifest === undefined || coverage === undefined ||
+    coverage.manifestDigest !== manifest.digest ||
+    coverage.staleSourceIds.length > 0
+  ) return undefined;
+  const readerSources = manifest.sources.filter(
+    (source) => source.kind !== 'notebook_script_spec' && source.units.length > 0,
+  );
+  if (readerSources.length !== 1 || readerSources[0]?.kind !== 'image') return undefined;
+  const source = readerSources[0];
+  const read = new Set(coverage.readUnitIds);
+  const unitIds = source.units.map((unit) => unit.id);
+  if (unitIds.length === 0 || !unitIds.every((unitId) => read.has(unitId))) return undefined;
+  return { sourceId: source.id, unitIds };
+}
+
+function currentTurnSuccessfullyReadImage(
+  state: AgentState,
+  context: CurrentImageConversationContext,
+): boolean {
+  return currentReaderModelTurns(state).some((turn) => {
+    if (turn.role !== 'tool' || turn.isError || turn.toolName !== 'read_full_source') {
+      return false;
+    }
+    const result = turn.content !== null && typeof turn.content === 'object' &&
+        !Array.isArray(turn.content)
+      ? turn.content as Readonly<Record<string, AgentJsonValue>>
+      : undefined;
+    return result?.sourceId === context.sourceId;
+  });
+}
+
+function implicitCurrentImageConversationCitations(state: AgentState): readonly string[] {
+  const context = currentImageConversationContext(state);
+  return context !== undefined && currentTurnSuccessfullyReadImage(state, context)
+    ? context.unitIds
+    : [];
+}
+
 function answeredEquivalentQuestionExistsInCurrentReaderTurn(
   state: AgentState,
   question: string,
@@ -1652,11 +1712,22 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           state,
           sourceAssetRepair.script,
         );
-        const vagueImageDefault = applyVagueManagedImageDefault(
+        const conciseImageLayout = applyConciseManagedImageLayout(
           state,
           dominantImageLayout.script,
         );
+        const vagueImageDefault = applyVagueManagedImageDefault(
+          state,
+          conciseImageLayout.script,
+        );
         const submittedScript = vagueImageDefault.script;
+        const conciseImageIntent = readerRequestsConciseAttachedImage(state);
+        const normalizedPageCount = parseNotebookScriptPages(submittedScript).pages.length;
+        if (conciseImageIntent && normalizedPageCount > 2) {
+          throw new Error(
+            `the concise attached-image contract produced ${normalizedPageCount} authored pages; keep exactly one image-led page and at most one complete notes page`,
+          );
+        }
         const isRepair = state.draft !== undefined;
         const portableImageSlots = extractPortableImageSlots(submittedScript);
         if (portableImageSlots.length > 0) assertPortableImagesRequested(state);
@@ -1817,6 +1888,9 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             draftHash,
             portableImageSlots,
             managedSourceAssetsInserted: sourceAssetRepair.insertedPaths,
+            conciseImageIntent,
+            conciseImageDraftCompacted: conciseImageLayout.compacted,
+            normalizedPageCount,
             vagueImageDraftCompacted: vagueImageDefault.compacted,
             sourceCitationsAutoAttached,
             invalidCitationsDropped,
@@ -2265,6 +2339,12 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             throw new Error(SOURCE_INPUT_STALE_ERROR);
           }
         }
+        const implicitImageCitations = args.citedUnitIds.length === 0
+          ? implicitCurrentImageConversationCitations(state)
+          : [];
+        const citedUnitIds = args.citedUnitIds.length === 0 && implicitImageCitations.length > 0
+          ? implicitImageCitations
+          : args.citedUnitIds;
         const currentCall = context.call;
         const modelTurnIndex = [...state.modelHistory]
           .map((turn, index) => ({ turn, index }))
@@ -2303,7 +2383,7 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             'write the complete reader-facing answer in this finish call before finishing the conversation',
           );
         }
-        const decision = canCompleteConversation(state, args.citedUnitIds);
+        const decision = canCompleteConversation(state, citedUnitIds);
         if (!decision.allowed) {
           throw new Error(decision.reason ?? 'conversation completion blocked');
         }
@@ -2311,11 +2391,11 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
         if (sourceCoverage !== undefined) {
           sourceCoverage = recordSourceCitations(
             sourceCoverage,
-            args.citedUnitIds,
+            citedUnitIds,
             context.adapters.clock.now(),
           );
         }
-        const citations = verifiedConversationCitations(state, args.citedUnitIds);
+        const citations = verifiedConversationCitations(state, citedUnitIds);
         const answerMessage: AgentConversationMessage = {
           id: context.adapters.ids.create('msg'),
           role: 'assistant',
@@ -2328,10 +2408,12 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
           message: answerMessage,
         });
         const conversation = [...state.conversation, answerMessage];
-        const appliedPatch = state.patchProposal?.status === 'applied'
-          ? state.patchProposal
-          : undefined;
-        if (appliedPatch === undefined) {
+        const retainedPatch =
+          state.patchProposal?.status === 'applied' ||
+          state.patchProposal?.status === 'waiting_for_approval'
+            ? state.patchProposal
+            : undefined;
+        if (retainedPatch === undefined) {
           for (const generationId of generationIdsOwnedByState(state)) {
             await context.adapters.sandbox.dispose(generationId);
           }
@@ -2342,28 +2424,29 @@ function createDefinitions(): readonly ToolDefinition<unknown>[] {
             phase: 'finished',
             sourceCoverage,
             conversation,
-            // An answer-only turn can follow abandoned notebook work. Dispose
-            // and clear that private render workspace. An already-applied
-            // proposal is different: it is immutable read-only history and
-            // owns the image prompts the reader still needs after insertion.
-            draft: appliedPatch === undefined ? undefined : state.draft,
-            validation: appliedPatch === undefined ? undefined : state.validation,
+            // A reviewed proposal is a durable outbox, not conversation
+            // scratch space. Keep its exact draft, render and review while a
+            // reader asks a side question; only truly abandoned work is
+            // disposed. Applied proposals remain immutable history as before.
+            draft: retainedPatch === undefined ? undefined : state.draft,
+            validation: retainedPatch === undefined ? undefined : state.validation,
             previewGeneration:
-              appliedPatch === undefined ? undefined : state.previewGeneration,
-            visualReview: appliedPatch === undefined ? undefined : state.visualReview,
+              retainedPatch === undefined ? undefined : state.previewGeneration,
+            visualReview: retainedPatch === undefined ? undefined : state.visualReview,
             insertionTarget:
-              appliedPatch === undefined ? undefined : state.insertionTarget,
+              retainedPatch === undefined ? undefined : state.insertionTarget,
             imagePromptHandoff:
-              appliedPatch === undefined ? undefined : state.imagePromptHandoff,
+              retainedPatch === undefined ? undefined : state.imagePromptHandoff,
             localRestoredFinal:
-              appliedPatch === undefined ? undefined : state.localRestoredFinal,
-            patchProposal: appliedPatch,
+              retainedPatch === undefined ? undefined : state.localRestoredFinal,
+            patchProposal: retainedPatch,
           }),
           result: json({
             completed: true,
             outcome: 'conversation',
             mutationPerformed: false,
-            citedUnitIds: args.citedUnitIds,
+            citedUnitIds,
+            sourceCitationsAutoAttached: implicitImageCitations.length > 0,
           }),
           summary: 'answered in the conversation without changing the notebook',
         };
@@ -2527,11 +2610,27 @@ const ALWAYS_AVAILABLE_TOOLS = new Set<string>();
  * point is exactly how an unchanged full draft can be submitted forever.
  */
 function explicitReaderFeedbackPending(state: AgentState): boolean {
+  const currentTurnId = state.budgetWindow?.readerMessageId;
+  if (
+    currentTurnId !== undefined &&
+    state.objective?.turnId === currentTurnId &&
+    state.objective.mode === 'notebook_change' &&
+    state.objective.reason === 'reader_preview_feedback'
+  ) {
+    const turnIndex = state.modelHistory.findIndex((turn) => turn.id === currentTurnId);
+    if (turnIndex >= 0) {
+      return !state.modelHistory.slice(turnIndex + 1).some((turn) =>
+        turn.role === 'tool' && turn.toolName === 'submit_notebook_script' &&
+        !turn.isError
+      );
+    }
+  }
   for (let index = state.modelHistory.length - 1; index >= 0; index -= 1) {
     const turn = state.modelHistory[index];
     if (
       turn?.role === 'tool' &&
-      turn.toolName === 'submit_notebook_script'
+      turn.toolName === 'submit_notebook_script' &&
+      !turn.isError
     ) {
       return false;
     }
@@ -2584,6 +2683,18 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
       completeSourceBeforeDraft ||
       (state.sourceCoverage?.staleSourceIds.length ?? 0) > 0
     ) return available;
+  }
+  const imageConversation = currentImageConversationContext(state);
+  if (
+    imageConversation !== undefined &&
+    !currentTurnSuccessfullyReadImage(state, imageConversation)
+  ) {
+    // Cohere can see the turn-scoped pixels, but one exact local read gives
+    // the conversational answer a current anchored unit and prevents it from
+    // guessing citation ids. Do not expose RAG/search for a single image, and
+    // retire this capability immediately after its successful tool result.
+    available.add('read_full_source');
+    return available;
   }
   const sourceWorkIncomplete = state.sourceCoverage === undefined ||
     state.sourceCoverage.readUnitIds.length === 0 ||
@@ -2767,6 +2878,30 @@ export function availableAgentToolNames(state: AgentState): ReadonlySet<string> 
     reviewRepairRequired ||
     feedbackPending;
   if (draftSubmissionUseful) {
+    const conciseLayoutFailedWithoutFinding =
+      readerRequestsConciseAttachedImage(state) &&
+      failedCompleteReview &&
+      (state.visualReview?.findings.length ?? 0) === 0;
+    if (conciseLayoutFailedWithoutFinding) {
+      // The local concise-image normalizer owns this exact geometry. Asking
+      // the model to resubmit prose cannot change the normalized output and
+      // previously produced an identical-draft loop. Pause with the native
+      // layout receipt intact so the reader can simplify or start fresh.
+      available.add('ask_user');
+      return available;
+    }
+    if (
+      repairPassesInBudgetWindow(state) >= state.budget.maxRepairPasses
+    ) {
+      // A changed repair would now be rejected deterministically. Advertising
+      // submit_notebook_script as the sole capability makes the model spend
+      // every remaining provider call on an impossible transition. Pause once
+      // through the legal human boundary instead; no book mutation or stale
+      // preview can escape while the reader decides whether to simplify or
+      // begin a fresh task.
+      available.add('ask_user');
+      return available;
+    }
     // The tool stays available because it is also the only path for a
     // materially changed repair. Its executor deterministically rejects the
     // current exact script with a non-retryable doNotRepeat receipt; the graph
@@ -2886,6 +3021,12 @@ function unavailableToolMessage(
     }
     if (state.notebookSnapshot === undefined) return 'inspect the notebook before drafting';
     if (state.insertionTarget === undefined) return 'propose an insertion target before drafting';
+    if (
+      state.draft !== undefined &&
+      repairPassesInBudgetWindow(state) >= state.budget.maxRepairPasses
+    ) {
+      return 'the repair budget is exhausted; pause with one concise blocker question instead of submitting another draft';
+    }
     const validationCurrent = state.draft !== undefined &&
       state.validation?.draftHash === state.draft.draftHash;
     const previewCurrent = validationCurrent && state.validation?.valid === true &&
@@ -3128,6 +3269,84 @@ export class AgentToolCatalog {
     if (proposal === undefined || proposal.preview.previewId !== resume.previewId) {
       return this.failure(state, call, 'preview is stale');
     }
+    if (resume.decision === 'defer_for_conversation') {
+      const text = resume.feedback?.trim();
+      if (text === undefined || text === '') {
+        return this.failure(state, call, 'a side conversation message is required');
+      }
+      const now = this.adapters.clock.now();
+      const userMessage = {
+        id: resume.userMessageId ?? this.adapters.ids.create('msg'),
+        role: 'user' as const,
+        text,
+        createdAt: now,
+      };
+      const alreadyRecorded = state.conversation.some(
+        (message) => message.id === userMessage.id,
+      );
+      if (!alreadyRecorded) {
+        await this.events.emit({ type: 'user.message', message: userMessage });
+      }
+      return {
+        state: {
+          ...state,
+          lifecycle: 'running',
+          phase: 'intake',
+          conversation: alreadyRecorded
+            ? state.conversation
+            : [...state.conversation, userMessage],
+          // The model node consumes this only after the human node records the
+          // mandatory result for submit_notebook_patch. Cohere therefore sees
+          // a valid tool pair followed by a genuinely fresh user turn.
+          pendingUserTurns: [
+            ...(state.pendingUserTurns ?? []),
+            {
+              id: userMessage.id,
+              role: 'user' as const,
+              content: userMessage.text,
+              createdAt: userMessage.createdAt,
+            },
+          ],
+          objective: {
+            turnId: userMessage.id,
+            mode: 'conversation',
+            reason: 'reader_side_conversation',
+            decidedAt: now,
+          },
+          sourceIntentTurnId: state.sourceIntentPending
+            ? userMessage.id
+            : state.sourceIntentTurnId,
+          sourceIntentPending: undefined,
+          retrievalPlan: undefined,
+          sourceCoverage: state.sourceCoverage === undefined
+            ? undefined
+            : {
+                ...state.sourceCoverage,
+                citedUnitIds: [],
+                updatedAt: now,
+              },
+          budgetWindow: {
+            providerCallsAtStart: state.usage.providerCalls,
+            toolCallsAtStart: state.usage.toolCalls,
+            repairPassesAtStart: state.usage.repairPasses,
+            startedAt: now,
+            readerMessageId: userMessage.id,
+          },
+          // patchProposal, draft, validation, native render and visual review
+          // deliberately remain byte-for-byte owned by this state.
+          lastError: undefined,
+          checkpointStep: state.checkpointStep + 1,
+          updatedAt: now,
+        },
+        result: json({
+          decision: 'defer_for_conversation',
+          patchId: proposal.patchId,
+          previewId: proposal.preview.previewId,
+          mutationPerformed: false,
+          previewStillPending: true,
+        }),
+      };
+    }
     if (resume.decision === 'approve' || resume.decision === 'reject') {
       const approved = resume.decision === 'approve';
       if (approved) {
@@ -3202,14 +3421,19 @@ export class AgentToolCatalog {
     const feedback = resume.feedback?.trim();
     const userMessage = feedback
       ? {
-          id: this.adapters.ids.create('msg'),
+          id: resume.userMessageId ?? this.adapters.ids.create('msg'),
           role: 'user' as const,
           text: feedback,
           createdAt: this.adapters.clock.now(),
         }
       : undefined;
     if (userMessage !== undefined) {
-      await this.events.emit({ type: 'user.message', message: userMessage });
+      const alreadyRecorded = state.conversation.some(
+        (message) => message.id === userMessage.id,
+      );
+      if (!alreadyRecorded) {
+        await this.events.emit({ type: 'user.message', message: userMessage });
+      }
     }
     const staleGenerationIds = resume.decision === 'change_location'
       ? generationIdsOwnedByState(state)
@@ -3226,7 +3450,9 @@ export class AgentToolCatalog {
         conversation:
           userMessage === undefined
             ? state.conversation
-            : [...state.conversation, userMessage],
+            : state.conversation.some((message) => message.id === userMessage.id)
+              ? state.conversation
+              : [...state.conversation, userMessage],
         sourceIntentTurnId:
           state.sourceIntentPending && userMessage !== undefined
             ? userMessage.id

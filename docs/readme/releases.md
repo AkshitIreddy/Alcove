@@ -21,6 +21,17 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.6 — reliable image-assisted Agent flow
+
+**Image requests stay grounded end-to-end.** Attached visuals are now kept with the
+agent draft and review evidence, malformed image inputs are handled safely, and
+image-led requests no longer fall through to placeholder or empty preview states.
+
+**Conversation and preview are separated.** A follow-up question no longer steals a
+pending insertion attempt; pending previews remain visible and re-usable, while UI
+controls in the notebook area were hardened so focus, scroll, and wheel behavior are
+more predictable.
+
 ## 0.7.5 — steadier picture requests
 
 **Picture requests no longer stop on harmless Cohere stream variations.** The

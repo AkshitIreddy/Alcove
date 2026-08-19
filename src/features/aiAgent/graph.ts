@@ -11,18 +11,24 @@ import type { AgentPersistence } from './persistence';
 import { normalizeNotebookScriptSubmission } from './draftCraft';
 import {
   AgentProviderError,
+  assertProviderEvidenceReceipt,
   collectProviderTurn,
   deterministicRoutingToolName,
   isRetryableProviderError,
   modelHistoryToProviderProjection,
+  projectTurnScopedSourceEvidence,
   type AgentProvider,
   type AgentProviderTurnRequest,
   type CollectedProviderTurn,
+  type ProviderEvidencePurpose,
 } from './provider';
 import { buildAgentSystemPrompt } from './prompts';
+import { readerImageSources } from './coverage';
 import {
   agentRequestsNotebookMutation,
+  currentAgentObjectiveMode,
   latestReaderText,
+  readerRequestsConciseAttachedImage,
   readerRequiresSourceEvidence,
 } from './intent';
 import {
@@ -43,6 +49,7 @@ import {
 import { AgentToolCatalog, materialWorkFingerprint } from './tools';
 import type {
   AgentConversationMessage,
+  AgentImageRef,
   AgentInterrupt,
   AgentModelAssistantTurn,
   AgentModelToolCall,
@@ -160,6 +167,139 @@ function jsonRecord(
   return value !== null && !Array.isArray(value) && typeof value === 'object'
     ? value as Readonly<Record<string, unknown>>
     : undefined;
+}
+
+const SOURCE_READ_TOOL_NAMES = new Set(['read_full_source', 'read_source_range']);
+
+function agentImageRef(value: unknown): AgentImageRef | undefined {
+  const image = jsonRecord(value);
+  if (
+    typeof image?.resourceId !== 'string' || image.resourceId.trim() === '' ||
+    typeof image.digest !== 'string' || image.digest.trim() === '' ||
+    !['image/png', 'image/jpeg', 'image/webp'].includes(String(image.mimeType)) ||
+    typeof image.width !== 'number' || !Number.isFinite(image.width) || image.width <= 0 ||
+    typeof image.height !== 'number' || !Number.isFinite(image.height) || image.height <= 0
+  ) return undefined;
+  return {
+    resourceId: image.resourceId,
+    digest: image.digest,
+    mimeType: image.mimeType as AgentImageRef['mimeType'],
+    width: image.width,
+    height: image.height,
+  };
+}
+
+/**
+ * Recover immutable visual refs from successful local source reads. Durable
+ * model history owns the forensic receipt; provider projection decides afresh
+ * whether those bytes belong in the current turn.
+ */
+function observedSourceImages(state: AgentState): readonly AgentImageRef[] {
+  const imageSourceIds = new Set(
+    state.sourceManifest === undefined
+      ? []
+      : readerImageSources(state.sourceManifest).map((source) => source.id),
+  );
+  if (imageSourceIds.size === 0) return [];
+  const images: AgentImageRef[] = [];
+  for (const turn of state.modelHistory) {
+    if (
+      turn.role !== 'tool' || turn.isError ||
+      !SOURCE_READ_TOOL_NAMES.has(turn.toolName ?? '')
+    ) continue;
+    const result = jsonRecord(turn.content);
+    if (typeof result?.sourceId !== 'string' || !imageSourceIds.has(result.sourceId)) {
+      continue;
+    }
+    for (const image of turn.imageRefs ?? []) images.push(image);
+    // Older checkpoints may predate the graph-private imageRefs field while
+    // retaining the same immutable refs inside the public source receipt.
+    for (const value of Array.isArray(result.visualRefs) ? result.visualRefs : []) {
+      const visual = jsonRecord(value);
+      const parsed = agentImageRef(visual?.image);
+      if (parsed !== undefined) images.push(parsed);
+    }
+  }
+  return [...new Map(images.map((image) => [
+    `${image.resourceId}:${image.digest}`,
+    image,
+  ])).values()].sort((left, right) =>
+    left.digest.localeCompare(right.digest) ||
+    left.resourceId.localeCompare(right.resourceId),
+  );
+}
+
+function evidencePurposeForRequest(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+): ProviderEvidencePurpose | undefined {
+  const toolNames = new Set(request.tools.map((tool) => tool.name));
+  if (toolNames.has('record_visual_review')) return 'preview_review';
+  if (toolNames.has('submit_notebook_script')) return 'notebook_draft';
+  if (!agentRequestsNotebookMutation(state) && toolNames.has('finish_conversation')) {
+    return 'conversation_answer';
+  }
+  return undefined;
+}
+
+function requiredDraftImageDigestsForReview(state: AgentState): readonly string[] {
+  const generationId = state.previewGeneration?.generationId;
+  if (generationId === undefined || state.visualReview === undefined) return [];
+  const inspected = new Set(state.visualReview.inspectedPageIds);
+  return [...new Set(state.visualReview.imageExposures
+    .filter((exposure) =>
+      exposure.generationId === generationId && !inspected.has(exposure.pageId))
+    .map((exposure) => exposure.imageDigest))].sort();
+}
+
+function projectCurrentTurnEvidence(
+  state: AgentState,
+  request: AgentProviderTurnRequest,
+): AgentProviderTurnRequest {
+  const sourcePixelsRequired = readerRequiresSourceEvidence(state) ||
+    readerRequestsConciseAttachedImage(state);
+  if (!sourcePixelsRequired) return request;
+  const imageSources = state.sourceManifest === undefined
+    ? []
+    : readerImageSources(state.sourceManifest);
+  if (imageSources.length === 0) return request;
+  const purpose = evidencePurposeForRequest(state, request);
+  if (purpose === undefined) return request;
+  const sourceImages = observedSourceImages(state);
+  const locallyReadUnitIds = new Set(state.sourceCoverage?.readUnitIds ?? []);
+  const locallyReadImageSourceCount = imageSources.filter((source) =>
+    source.units.some((unit) => locallyReadUnitIds.has(unit.id))).length;
+  // Before the source-read prerequisite runs, a mixed routing request may
+  // legitimately advertise both read and semantic tools. Tool policy still
+  // prevents a grounded terminal action. Once coverage claims a visual read,
+  // however, absence of its immutable image ref must fail closed.
+  if (
+    sourceImages.length === 0 &&
+    locallyReadImageSourceCount === 0
+  ) return request;
+  const requiredDraftImageDigests = purpose === 'preview_review'
+    ? requiredDraftImageDigestsForReview(state)
+    : [];
+  const requiredSourceImageCount = sourceImages.length > 0
+    ? new Set(sourceImages.map((image) => image.digest)).size
+    : locallyReadImageSourceCount;
+  const projected = projectTurnScopedSourceEvidence({
+    messages: request.messages,
+    turnId:
+      state.budgetWindow?.readerMessageId ??
+      state.objective?.turnId ??
+      state.identity.runId,
+    purpose,
+    sourceImages,
+    requiredSourceImageCount,
+    requiredSourceImageDigests: sourceImages.map((image) => image.digest),
+    requiredDraftImageDigests,
+  });
+  return {
+    ...request,
+    messages: projected.messages,
+    evidence: projected.receipt,
+  };
 }
 
 /**
@@ -658,6 +798,22 @@ function cohereLocalWorkflowCalls(
         request.tools[0]!.name === 'read_draft_preview_pages'
       )
     ) return supervised;
+    if (
+      request.tools[0]!.name === 'read_full_source' &&
+      !agentRequestsNotebookMutation(state)
+    ) {
+      const readerSources = state.sourceManifest?.sources.filter(
+        (source) => source.kind !== 'notebook_script_spec',
+      ) ?? [];
+      if (readerSources.length === 1 && readerSources[0]?.kind === 'image') {
+        // The phase catalogue already proved this is the one exact current
+        // image needed by a conversational question. Reading that immutable
+        // local receipt is mechanical, so do it without spending a Cohere
+        // turn; the next provider call receives the pixels plus a current
+        // source-unit receipt and owns only the semantic answer.
+        return [create('read_full_source', { sourceId: readerSources[0].id })];
+      }
+    }
   }
   if (!agentRequestsNotebookMutation(state) || state.draft !== undefined) return [];
   const toolNames = new Set(request.tools.map((tool) => tool.name));
@@ -679,11 +835,14 @@ function cohereLocalWorkflowCalls(
 }
 
 function localGreetingCompletion(state: AgentState): AgentModelToolCall | undefined {
-  if (
+  const conversationAlongsidePreview =
+    currentAgentObjectiveMode(state) === 'conversation' &&
+    state.patchProposal?.status === 'waiting_for_approval';
+  if (!conversationAlongsidePreview && (
     state.draft !== undefined ||
     state.previewGeneration !== undefined ||
     (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
-  ) return undefined;
+  )) return undefined;
   const readerText = latestReaderText(state).trim();
   if (!SIMPLE_GREETING.test(readerText)) return undefined;
   return {
@@ -702,11 +861,14 @@ function proseOnlyConversationFallback(
 ): AgentModelToolCall | undefined {
   const answer = turn.publicText.trim();
   if (answer === '' || turn.finishReason !== 'stop') return undefined;
-  if (
+  const conversationAlongsidePreview =
+    currentAgentObjectiveMode(state) === 'conversation' &&
+    state.patchProposal?.status === 'waiting_for_approval';
+  if (!conversationAlongsidePreview && (
     state.draft !== undefined ||
     state.previewGeneration !== undefined ||
     (state.patchProposal !== undefined && state.patchProposal.status !== 'applied')
-  ) {
+  )) {
     return undefined;
   }
   if (agentRequestsNotebookMutation(state)) return undefined;
@@ -816,6 +978,11 @@ async function invokeProviderWithRetry(
     outputTokens: number;
   },
 ): Promise<CollectedProviderTurn> {
+  // The graph validates the declared evidence transaction before counting a
+  // provider call. Individual adapters independently verify what their exact
+  // wire projection will carry (Cohere's multimodal tool history is stricter
+  // than the provider-neutral message model).
+  assertProviderEvidenceReceipt(request);
   let attempt = 0;
   const callsAtInvocationStart = providerCallsInBudgetWindow(state);
   while (true) {
@@ -988,6 +1155,7 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
       // work and grounded source work remain forced tool turns.
       toolChoice: strictToolTurn ? 'required' : 'auto',
     };
+    request = projectCurrentTurnEvidence(providerState, request);
     if (providerState.textPrivacy !== undefined) {
       // Re-project the complete provider message envelope after building the
       // request. The prompt was built from the masked brief; request ids,
@@ -1032,6 +1200,31 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
           outputTokens: 0,
           finishReason: 'tool_calls',
         };
+      } else if (
+        dependencies.provider.id === 'cohere' &&
+        isNotebookDraftSubmissionTurn(request) &&
+        (request.evidence?.requiredSourceImageCount ?? 0) > 0
+      ) {
+        // Command A+ currently disables strict tool schemas on multimodal
+        // requests and can invent phase tools or corrupt a large Notebook
+        // Script argument envelope. Ask for the same grounded draft as raw
+        // Notebook Script in one image-bearing content turn, then synthesize
+        // the locally authorized submit call below. This is the proactive form
+        // of the existing failed-envelope recovery: it saves both the doomed
+        // tool request and its corrective retry while preserving every local
+        // validation/render/review/approval boundary.
+        turn = await invokeProviderWithRetry(
+          providerState,
+          {
+            ...request,
+            requestId: dependencies.adapters.ids.create('provider'),
+            tools: [],
+            toolChoice: 'auto',
+            systemPrompt: `${request.systemPrompt}\n\nReturn only the complete raw Notebook Script for the current image-grounded notebook draft—no prose preface, no outer code fence, and no manual insertion instructions. Use the attached source pixels and keep the reader's requested amount of write-up. Alcove will submit it into a disposable workspace, then validate, render and visually review it before any Insert action exists.`,
+          },
+          dependencies,
+          invocationUsage,
+        );
       } else try {
         turn = await invokeProviderWithRetry(
           providerState,
@@ -1096,12 +1289,15 @@ export function createAlcoveAgentGraph(dependencies: AgentGraphDependencies) {
           error.status === undefined &&
           error.retryable !== false &&
           request.tools.length === 1 &&
-          request.tools[0]?.name === 'record_visual_review'
+          request.tools[0]?.name === 'record_visual_review' &&
+          (request.evidence?.requiredSourceImageCount ?? 0) === 0
         ) {
           // The native generation already passed parser/layout/media checks
           // and its exact pixels were exposed. If Cohere corrupts only the
           // review-call JSON, let the phase supervisor build the complete
           // empty-finding ledger instead of throwing away the whole draft.
+          // Source-grounded reviews are deliberately excluded: deterministic
+          // layout checks cannot certify semantic fidelity to pixels.
           turn = {
             publicText: '',
             toolPlan: '',

@@ -69,6 +69,8 @@ export interface SelectionRewriteRequest {
 interface RetryContinuationOptions {
   /** A reader follow-up typed after Stop; durably queued before work resumes. */
   readonly followUpMessage?: string;
+  /** Reuses the panel's optimistic message when Stop recovery carries a follow-up. */
+  readonly userMessageId?: string;
   readonly preserveAllSourceInformation?: boolean;
 }
 
@@ -186,6 +188,23 @@ function recoveredPreviewInterrupt(state: AgentState): AgentInterrupt | null {
     preview: proposal.preview,
     decisions: ['approve', 'reject', 'feedback', 'change_location'],
   };
+}
+
+function previewDecisionIsLocallyOwned(
+  state: AgentState,
+  interrupt: AgentInterrupt | null,
+  previewId: string,
+): boolean {
+  const proposal = state.patchProposal;
+  if (
+    proposal?.status !== 'waiting_for_approval' ||
+    proposal.preview.previewId !== previewId
+  ) return false;
+  if (interrupt === null) return true;
+  const recovery = state.applyRecovery;
+  return interrupt.kind === 'final_preview' &&
+    recovery?.refreshedPatchId === proposal.patchId &&
+    recovery.refreshedPreviewId === previewId;
 }
 
 function sameReviewedPixels(
@@ -979,6 +998,7 @@ export class AgentRuntime {
       // mandatory tool result.
       return this.retry({
         followUpMessage: trimmed,
+        userMessageId: options.userMessageId,
         preserveAllSourceInformation: options.preserveAllSourceInformation,
       });
     }
@@ -1035,28 +1055,34 @@ export class AgentRuntime {
         recovery?.refreshedPatchId === proposal.patchId &&
         recovery.refreshedPreviewId === active.interrupt.preview.previewId
       ) {
-        // Feedback on a locally recovered preview starts one clean authoring
-        // turn. Resuming the original graph would send the reply to the stale
-        // proposal that failed before this replacement preview existed.
+        // A locally refreshed preview is an out-of-graph interrupt. There is
+        // no pending submit call to complete, so open the side conversation
+        // directly while retaining the recovered outbox.
         active.interrupt = null;
-        active.state = {
-          ...active.state,
-          lifecycle: 'completed',
-          phase: 'finished',
-          patchProposal: undefined,
-          applyRecovery: undefined,
-          lastError: undefined,
-        };
-        return this.sendUserMessage(trimmed, options);
+        return this.startConversationAlongsidePreview(
+          active,
+          trimmed,
+          options.userMessageId,
+        );
       }
+      // The ordinary composer is a conversation lane. Explicit preview
+      // revision goes through revisePreview(), which is armed only by the
+      // “Ask for changes” action. Deferring here first completes the pending
+      // submit_notebook_patch call, so Cohere receives a valid tool result
+      // before the fresh user turn while the reviewed proposal remains owned.
       return this.resume({
         kind: 'preview_decision',
-        decision: 'feedback',
+        decision: 'defer_for_conversation',
         feedback: trimmed,
+        userMessageId: options.userMessageId,
         previewId: active.interrupt.preview.previewId,
       });
     }
     if (active.busy) throw new Error('wait for the current agent turn or stop it first');
+
+    if (active.state.patchProposal?.status === 'waiting_for_approval') {
+      return this.startConversationAlongsidePreview(active, trimmed, options.userMessageId);
+    }
 
     const startsFreshSettledTurn = active.state.lifecycle === 'completed';
     const retainedAppliedProposal = active.state.patchProposal?.status === 'applied'
@@ -1166,6 +1192,87 @@ export class AgentRuntime {
     });
   }
 
+  /**
+   * Start another answer-only turn after an earlier side conversation has
+   * already detached the reviewed proposal from its graph interrupt. The
+   * preview is an immutable outbox: no draft/render field is reset here.
+   */
+  private async startConversationAlongsidePreview(
+    active: ActiveExecution,
+    text: string,
+    userMessageId?: string,
+  ): Promise<AgentRunResult> {
+    if (active.busy || active.invocation !== null) {
+      throw new Error('wait for the previous agent invocation to settle');
+    }
+    const proposal = active.state.patchProposal;
+    if (proposal?.status !== 'waiting_for_approval') {
+      throw new Error('the reviewed preview is no longer waiting for a decision');
+    }
+    const now = this.adapters.clock.now();
+    const message = {
+      id: userMessageId ?? this.adapters.ids.create('msg'),
+      role: 'user' as const,
+      text,
+      createdAt: now,
+    };
+    const userTurn = {
+      id: message.id,
+      role: 'user' as const,
+      content: message.text,
+      createdAt: message.createdAt,
+    };
+    const state: AgentState = {
+      ...active.state,
+      lifecycle: 'running',
+      phase: 'intake',
+      conversation: [...active.state.conversation, message],
+      modelHistory: [...active.state.modelHistory, userTurn],
+      objective: {
+        turnId: message.id,
+        mode: 'conversation',
+        reason: 'reader_side_conversation',
+        decidedAt: now,
+      },
+      sourceIntentTurnId: active.state.sourceIntentPending
+        ? message.id
+        : active.state.sourceIntentTurnId,
+      sourceIntentPending: undefined,
+      retrievalPlan: undefined,
+      sourceCoverage: active.state.sourceCoverage === undefined
+        ? undefined
+        : {
+            ...active.state.sourceCoverage,
+            citedUnitIds: [],
+            updatedAt: now,
+          },
+      pendingToolCalls: [],
+      lastError: undefined,
+      budgetWindow: {
+        providerCallsAtStart: active.state.usage.providerCalls,
+        toolCallsAtStart: active.state.usage.toolCalls,
+        repairPassesAtStart: active.state.usage.repairPasses,
+        startedAt: now,
+        readerMessageId: message.id,
+      },
+      checkpointStep: active.state.checkpointStep + 1,
+      updatedAt: now,
+    };
+    active.state = state;
+    active.abort = new AbortController();
+    active.bus.resume();
+    active.busy = true;
+    await active.bus.emit({ type: 'user.message', message });
+    await this.persistence.saveTask(state);
+    this.notify();
+    return this.invoke({
+      agent: state,
+      pendingInterrupt: null,
+      pendingInterruptCall: null,
+      resumeValue: null,
+    });
+  }
+
   async useSensibleDefaults(): Promise<AgentRunResult> {
     const active = this.requireActive();
     if (active.interrupt?.kind !== 'requirements') {
@@ -1218,19 +1325,19 @@ export class AgentRuntime {
 
   async approvePreview(previewId: string): Promise<AgentRunResult> {
     const active = this.requireActive();
+    if (active.busy || active.invocation !== null) {
+      throw new Error('wait for the current agent turn before inserting the preview');
+    }
     const proposal = active.state.patchProposal;
-    const recovery = active.state.applyRecovery;
     if (
       proposal?.status === 'waiting_for_approval' &&
       proposal.preview.previewId === previewId &&
-      recovery?.refreshedPatchId === proposal.patchId &&
-      recovery.refreshedPreviewId === previewId
+      previewDecisionIsLocallyOwned(active.state, active.interrupt, previewId)
     ) {
-      // Refresh already rebuilt, validated and matched the exact previously
-      // reviewed pixels locally. This approval is therefore an out-of-graph
-      // product transition just like BookView apply settlement. Resuming the
-      // original LangGraph interrupt would approve its stale patch and append
-      // a synthetic reader message that the reader never typed.
+      // A side conversation has already completed the original submit tool
+      // call, so this reviewed proposal now lives in the durable outbox rather
+      // than a graph interrupt. Approval is an out-of-graph product transition
+      // just like refreshed-preview recovery and BookView apply settlement.
       const now = this.adapters.clock.now();
       active.interrupt = null;
       active.state = {
@@ -1254,8 +1361,7 @@ export class AgentRuntime {
     }
     if (
       proposal !== undefined &&
-      recovery?.refreshedPatchId === proposal.patchId &&
-      recovery.refreshedPreviewId === previewId &&
+      proposal.preview.previewId === previewId &&
       ['approved_pending_apply', 'approved'].includes(proposal.status)
     ) {
       // Rapid/double approval is idempotent while BookView owns the one apply
@@ -1687,13 +1793,14 @@ export class AgentRuntime {
 
   async rejectPreview(previewId: string, feedback?: string): Promise<AgentRunResult> {
     const active = this.requireActive();
+    if (active.busy || active.invocation !== null) {
+      throw new Error('wait for the current agent turn before rejecting the preview');
+    }
     const proposal = active.state.patchProposal;
-    const recovery = active.state.applyRecovery;
     if (
       proposal?.status === 'waiting_for_approval' &&
       proposal.preview.previewId === previewId &&
-      recovery?.refreshedPatchId === proposal.patchId &&
-      recovery.refreshedPreviewId === previewId
+      previewDecisionIsLocallyOwned(active.state, active.interrupt, previewId)
     ) {
       for (const generationId of generationIdsOwnedByState(active.state)) {
         await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
@@ -1726,19 +1833,115 @@ export class AgentRuntime {
     return this.resumePreviewDecision(previewId, 'reject', feedback);
   }
 
-  revisePreview(previewId: string, feedback: string): Promise<AgentRunResult> {
+  revisePreview(
+    previewId: string,
+    feedback: string,
+    userMessageId?: string,
+  ): Promise<AgentRunResult> {
     const active = this.requireActive();
+    if (active.busy || active.invocation !== null) {
+      return Promise.reject(new Error(
+        'wait for the current agent turn before revising the preview',
+      ));
+    }
+    const trimmed = feedback.trim();
+    if (trimmed === '') return Promise.reject(new Error('preview feedback is empty'));
     const proposal = active.state.patchProposal;
-    const recovery = active.state.applyRecovery;
     if (
       proposal?.status === 'waiting_for_approval' &&
       proposal.preview.previewId === previewId &&
-      recovery?.refreshedPatchId === proposal.patchId &&
-      recovery.refreshedPreviewId === previewId
+      previewDecisionIsLocallyOwned(active.state, active.interrupt, previewId)
     ) {
-      return this.sendUserMessage(feedback);
+      return this.startDetachedPreviewRevision(
+        active,
+        proposal,
+        trimmed,
+        userMessageId,
+      );
     }
-    return this.resumePreviewDecision(previewId, 'feedback', feedback);
+    return this.resumePreviewDecision(
+      previewId,
+      'feedback',
+      trimmed,
+      undefined,
+      userMessageId,
+    );
+  }
+
+  private async startDetachedPreviewRevision(
+    active: ActiveExecution,
+    proposal: NotebookPatchProposal,
+    feedback: string,
+    userMessageId?: string,
+  ): Promise<AgentRunResult> {
+    for (const generationId of localFinalGenerationIdsOwnedByState(active.state)) {
+      await this.adapters.sandbox.dispose(generationId).catch(() => undefined);
+    }
+    const now = this.adapters.clock.now();
+    const message = {
+      id: userMessageId ?? this.adapters.ids.create('msg'),
+      role: 'user' as const,
+      text: feedback,
+      createdAt: now,
+    };
+    const state: AgentState = {
+      ...active.state,
+      lifecycle: 'running',
+      phase: 'repairing',
+      conversation: [...active.state.conversation, message],
+      modelHistory: [
+        ...active.state.modelHistory,
+        {
+          id: message.id,
+          role: 'user' as const,
+          content: message.text,
+          createdAt: message.createdAt,
+        },
+      ],
+      objective: {
+        turnId: message.id,
+        mode: 'notebook_change',
+        reason: 'reader_preview_feedback',
+        decidedAt: now,
+      },
+      sourceIntentTurnId: active.state.sourceIntentPending
+        ? message.id
+        : active.state.sourceIntentTurnId,
+      sourceIntentPending: undefined,
+      pendingToolCalls: [],
+      patchProposal: undefined,
+      applyRecovery: undefined,
+      localRestoredFinal: undefined,
+      lastError: undefined,
+      budgetWindow: {
+        providerCallsAtStart: active.state.usage.providerCalls,
+        toolCallsAtStart: active.state.usage.toolCalls,
+        repairPassesAtStart: active.state.usage.repairPasses,
+        startedAt: now,
+        readerMessageId: message.id,
+      },
+      checkpointStep: active.state.checkpointStep + 1,
+      updatedAt: now,
+    };
+    // The detached proposal is immutable and remains valid until this explicit
+    // revision transaction commits its new reader turn. After this point the
+    // retained draft—not the old proposal—is the repair authority.
+    if (proposal.preview.previewId !== active.state.patchProposal?.preview.previewId) {
+      throw new Error('the reviewed preview changed before revision began');
+    }
+    active.state = state;
+    active.abort = new AbortController();
+    active.bus.resume();
+    active.busy = true;
+    await active.bus.emit({ type: 'user.message', message });
+    await this.persistence.saveTask(state);
+    this.notify();
+    return this.invoke({
+      agent: state,
+      pendingInterrupt: null,
+      pendingInterruptCall: null,
+      resumeValue: null,
+    });
   }
 
   changePlacement(
@@ -1754,12 +1957,10 @@ export class AgentRuntime {
       throw new Error('A selected-text task stays anchored to that exact selection');
     }
     const proposal = active.state.patchProposal;
-    const recovery = active.state.applyRecovery;
     if (
       proposal?.status === 'waiting_for_approval' &&
       proposal.preview.previewId === previewId &&
-      recovery?.refreshedPatchId === proposal.patchId &&
-      recovery.refreshedPreviewId === previewId
+      previewDecisionIsLocallyOwned(active.state, active.interrupt, previewId)
     ) {
       // An explicit reader location change rerenders the same script locally;
       // it never reopens provider placement/drafting tools. Integrated changes
@@ -1855,7 +2056,8 @@ export class AgentRuntime {
     if (active.busy || active.invocation !== null) {
       throw new Error('wait for the previous agent invocation to settle');
     }
-    if (options.followUpMessage !== undefined) {
+    const pendingPreview = active.state.patchProposal?.status === 'waiting_for_approval';
+    if (options.followUpMessage !== undefined && !pendingPreview) {
       for (const generationId of localFinalGenerationIdsOwnedByState(active.state)) {
         await this.adapters.sandbox.dispose(generationId);
       }
@@ -1873,7 +2075,7 @@ export class AgentRuntime {
     const followUpMessage = options.followUpMessage === undefined
       ? undefined
       : {
-          id: this.adapters.ids.create('msg'),
+          id: options.userMessageId ?? this.adapters.ids.create('msg'),
           role: 'user' as const,
           text: options.followUpMessage,
           createdAt: now,
@@ -1907,9 +2109,17 @@ export class AgentRuntime {
               ? followUpMessage.id
               : active.state.sourceIntentTurnId,
             sourceIntentPending: undefined,
-            objective: { turnId: followUpMessage.id, mode: 'undecided' as const },
-            patchProposal: undefined,
-            localRestoredFinal: undefined,
+            objective: {
+              turnId: followUpMessage.id,
+              mode: pendingPreview ? 'conversation' as const : 'undecided' as const,
+              ...(pendingPreview ? { reason: 'reader_side_conversation' } : {}),
+            },
+            patchProposal: pendingPreview
+              ? active.state.patchProposal
+              : undefined,
+            localRestoredFinal: pendingPreview
+              ? active.state.localRestoredFinal
+              : undefined,
           }),
       ...(queuedUserTurns === undefined
         ? {}
@@ -2169,6 +2379,7 @@ export class AgentRuntime {
     decision: 'approve' | 'reject' | 'feedback' | 'change_location',
     feedback?: string,
     insertionTarget?: NotebookInsertionTarget,
+    userMessageId?: string,
   ): Promise<AgentRunResult> {
     const active = this.requireActive();
     if (
@@ -2181,6 +2392,7 @@ export class AgentRuntime {
       kind: 'preview_decision',
       decision,
       feedback,
+      userMessageId,
       insertionTarget,
       previewId,
     });

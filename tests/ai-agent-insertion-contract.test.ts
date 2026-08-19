@@ -2364,7 +2364,9 @@ describe('AI panel queued-source handoff', () => {
     expect(log).toContain('The attached image could not be decoded.');
     expect(log).toContain('submit_notebook_script');
     expect(log).not.toContain('"apiKey"');
-    expect(log).not.toContain('sourceCoverage');
+    expect(log).toContain('"sourceCoverage"');
+    expect(log).toContain('"readUnitIds"');
+    expect(log).toContain('"pendingSourceAttachmentCount"');
   });
 
   it('collapses conversational completion chrome to the reader and answer only', () => {
@@ -2560,6 +2562,159 @@ describe('AI panel queued-source handoff', () => {
     }
   });
 
+  it('keeps a detached reviewed preview visible and separates chat from explicit revision', async () => {
+    const { ready, preview, proposal } = panelApplyFixture();
+    let snapshot: AgentRuntimeSnapshot = {
+      state: {
+        ...ready,
+        lifecycle: 'completed',
+        phase: 'finished',
+        patchProposal: proposal,
+      },
+      interrupt: null,
+      busy: false,
+    };
+    let stateListener: ((value: AgentRuntimeSnapshot) => void) | undefined;
+    let eventListener: ((event: AgentActivityEvent) => void) | undefined;
+    const recordReaderMessage = (text: string, id: string): void => {
+      const message = {
+        id,
+        role: 'user' as const,
+        text,
+        createdAt: NOW,
+      };
+      snapshot = {
+        ...snapshot,
+        state: {
+          ...snapshot.state!,
+          conversation: [...snapshot.state!.conversation, message],
+        },
+      };
+      stateListener?.(snapshot);
+      eventListener?.({
+        type: 'user.message',
+        id: `event-${id}`,
+        sequence: 1,
+        threadId: ready.identity.threadId,
+        taskId: ready.identity.taskId,
+        runId: ready.identity.runId,
+        at: NOW,
+        message,
+      });
+    };
+    const sendUserMessage = vi.fn(async (
+      text: string,
+      options?: { readonly userMessageId?: string },
+    ) => {
+      recordReaderMessage(text, options?.userMessageId ?? 'missing-chat-id');
+      return { state: snapshot.state! };
+    });
+    const revisePreview = vi.fn(async (
+      _previewId: string,
+      text: string,
+      userMessageId?: string,
+    ) => {
+      recordReaderMessage(text, userMessageId ?? 'missing-revision-id');
+      return { state: snapshot.state! };
+    });
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: AgentRuntimeSnapshot) => void) => {
+        stateListener = listener;
+        return () => { stateListener = undefined; };
+      },
+      subscribeEvents: (listener: (event: AgentActivityEvent) => void) => {
+        eventListener = listener;
+        return () => { eventListener = undefined; };
+      },
+      sendUserMessage,
+      revisePreview,
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: ready.identity.bookId,
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      placements: () => [{ id: 'book-end', label: 'At the end', target: { kind: 'book_end' } }],
+      renderUrlFor: (image) => `asset://${image.resourceId}`,
+      onApprovedProposal: () => undefined,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    try {
+      expect(controller.state()).toMatchObject({
+        stage: 'ready',
+        preview: { id: preview.previewId, actionsDisabled: false },
+        composerPlaceholder: 'Ask a question, or choose “Ask for changes”…',
+      });
+      eventListener?.({
+        type: 'tool.completed',
+        id: 'event-reviewed-tool',
+        sequence: 1,
+        threadId: ready.identity.threadId,
+        taskId: ready.identity.taskId,
+        runId: ready.identity.runId,
+        at: NOW,
+        toolCallId: 'reviewed-tool',
+        toolName: 'render_draft_preview',
+        summary: 'rendered the reviewed preview',
+      });
+
+      snapshot = { ...snapshot, busy: true };
+      stateListener?.(snapshot);
+      expect(controller.state()).toMatchObject({
+        stage: 'working',
+        preview: { id: preview.previewId, actionsDisabled: true },
+      });
+      snapshot = { ...snapshot, busy: false };
+      stateListener?.(snapshot);
+
+      await controller.send?.('What can you see in this picture?');
+      expect(sendUserMessage).toHaveBeenCalledWith(
+        'What can you see in this picture?',
+        expect.objectContaining({ userMessageId: expect.stringMatching(/^msg-local-/) }),
+      );
+      expect(revisePreview).not.toHaveBeenCalled();
+      expect(controller.state().timeline.filter((item) =>
+        item.kind === 'message' && item.role === 'reader' &&
+        item.text === 'What can you see in this picture?'
+      )).toHaveLength(1);
+      expect(controller.state().timeline).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool',
+          name: 'render_draft_preview',
+          status: 'done',
+        }),
+      ]));
+      expect(controller.state().preview?.id).toBe(preview.previewId);
+
+      controller.requestChanges?.(preview.previewId);
+      await controller.send?.('Please change the heading colour.');
+      expect(revisePreview).toHaveBeenCalledWith(
+        preview.previewId,
+        'Please change the heading colour.',
+        expect.stringMatching(/^msg-local-/),
+      );
+      expect(sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(controller.state().timeline.filter((item) =>
+        item.kind === 'message' && item.role === 'reader' &&
+        item.text === 'Please change the heading colour.'
+      )).toHaveLength(1);
+
+      await controller.send?.('One more ordinary question.');
+      expect(sendUserMessage).toHaveBeenCalledTimes(2);
+      expect(sendUserMessage).toHaveBeenLastCalledWith(
+        'One more ordinary question.',
+        expect.objectContaining({ userMessageId: expect.stringMatching(/^msg-local-/) }),
+      );
+      expect(revisePreview).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps one natural question in conversation and sends the exact free-text reply', async () => {
     const question = {
       id: 'message-question',
@@ -2689,6 +2844,7 @@ describe('AI panel queued-source handoff', () => {
     };
     const sendUserMessage = vi.fn(async () => ({ state: stopped }));
     const retry = vi.fn(async () => ({ state: stopped }));
+    let preserveAll = false;
     const core = {
       getSnapshot: () => snapshot,
       subscribe: () => () => undefined,
@@ -2704,6 +2860,7 @@ describe('AI panel queued-source handoff', () => {
         firstUse: false,
       }),
       placements: () => [],
+      preserveAllSourceInformation: () => preserveAll,
       renderUrlFor: () => '',
       onApprovedProposal: () => undefined,
     });
@@ -2725,7 +2882,25 @@ describe('AI panel queued-source handoff', () => {
       await controller.send?.('Please continue with a gentler visual style.');
       expect(sendUserMessage).toHaveBeenCalledWith(
         'Please continue with a gentler visual style.',
+        expect.objectContaining({ preserveAllSourceInformation: undefined }),
+      );
+
+      preserveAll = true;
+      await controller.send?.('Use the attached source for this explanation.');
+      expect(sendUserMessage).toHaveBeenLastCalledWith(
+        'Use the attached source for this explanation.',
+        expect.objectContaining({ preserveAllSourceInformation: true }),
+      );
+      preserveAll = false;
+      await controller.send?.('Now use only the relevant details.');
+      expect(sendUserMessage).toHaveBeenLastCalledWith(
+        'Now use only the relevant details.',
         expect.objectContaining({ preserveAllSourceInformation: false }),
+      );
+      await controller.send?.('What does the picture show?');
+      expect(sendUserMessage).toHaveBeenLastCalledWith(
+        'What does the picture show?',
+        expect.objectContaining({ preserveAllSourceInformation: undefined }),
       );
 
       controller.retry?.();
@@ -2825,6 +3000,112 @@ describe('AI panel queued-source handoff', () => {
     }
   });
 
+  it('claims starting attachments before the preview paint can race an immediate follow-up', async () => {
+    const { ready, preview, proposal } = panelApplyFixture();
+    const queued: readonly SourceAttachmentRef[] = [{
+      kind: 'managed_asset',
+      assetId: 'race-image',
+      title: 'Race image.png',
+      mediaType: 'image/png',
+      digest: 'race-image-digest',
+    }];
+    const preservedCoverage = {
+      manifestDigest: 'race-manifest',
+      mode: 'relevant' as const,
+      requiredUnitIds: ['race-image-unit'],
+      readUnitIds: ['race-image-unit'],
+      readExposures: [{
+        unitId: 'race-image-unit',
+        providerCallCount: 0,
+        exposedAt: NOW,
+      }],
+      citedUnitIds: ['race-image-unit'],
+      omittedUnitIds: [],
+      staleSourceIds: [],
+      complete: true,
+      updatedAt: NOW,
+    };
+    let snapshot: AgentRuntimeSnapshot = { state: null, interrupt: null, busy: false };
+    let stateListener: ((value: AgentRuntimeSnapshot) => void) | undefined;
+    let releaseStart!: () => void;
+    const startGate = new Promise<void>((resolve) => { releaseStart = resolve; });
+    const startTask = vi.fn(async () => {
+      snapshot = {
+        state: {
+          ...ready,
+          lifecycle: 'waiting_for_preview_decision',
+          phase: 'waiting_for_preview_decision',
+          sourceCoverage: preservedCoverage,
+          patchProposal: proposal,
+        },
+        interrupt: {
+          kind: 'final_preview',
+          title: 'Review the finished notebook draft',
+          preview,
+          decisions: ['approve', 'reject', 'feedback', 'change_location'],
+        },
+        busy: false,
+      };
+      // Publish the preview while keeping startTask unresolved. This is the
+      // real presentation boundary at which a fast reader can send again
+      // before the first adapter continuation resumes.
+      stateListener?.(snapshot);
+      await startGate;
+      return { state: snapshot.state!, interrupt: snapshot.interrupt ?? undefined };
+    });
+    const registerAttachments = vi.fn(async () => snapshot);
+    const sendUserMessage = vi.fn(async (
+      _text: string,
+      options?: { readonly preserveAllSourceInformation?: boolean },
+    ) => {
+      expect(snapshot.state?.sourceCoverage).toEqual(preservedCoverage);
+      expect(options?.preserveAllSourceInformation).toBeUndefined();
+      return { state: snapshot.state! };
+    });
+    const core = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: (value: AgentRuntimeSnapshot) => void) => {
+        stateListener = listener;
+        return () => { stateListener = undefined; };
+      },
+      subscribeEvents: () => () => undefined,
+      startTask,
+      registerAttachments,
+      sendUserMessage,
+    } as unknown as CoreAiAgentController;
+    const controller = createAiAgentPanelController(core, {
+      bookId: ready.identity.bookId,
+      connection: () => ({ status: 'connected', provider: 'Cohere', firstUse: false }),
+      sourceAttachments: () => queued,
+      placements: () => [],
+      renderUrlFor: () => '',
+      onApprovedProposal: () => undefined,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    try {
+      const starting = controller.send?.('Build pages from this image.');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(startTask).toHaveBeenCalledTimes(1);
+      expect(controller.state().preview?.id).toBe(preview.previewId);
+
+      await controller.send?.('What can you see in the image?');
+      expect(registerAttachments).not.toHaveBeenCalled();
+      expect(sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(snapshot.state?.sourceCoverage).toEqual(preservedCoverage);
+
+      releaseStart();
+      await starting;
+    } finally {
+      releaseStart();
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('serializes rapid double-send behind one registration operation', async () => {
     const state = {
       ...createInitialAgentState({
@@ -2889,7 +3170,7 @@ describe('AI panel queued-source handoff', () => {
       expect(registerAttachments).toHaveBeenCalledTimes(2);
       expect(sendUserMessage).toHaveBeenCalledTimes(1);
       expect(sendUserMessage).toHaveBeenCalledWith('first', expect.objectContaining({
-        preserveAllSourceInformation: false,
+        preserveAllSourceInformation: undefined,
       }));
     } finally {
       controller.dispose();

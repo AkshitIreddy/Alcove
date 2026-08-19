@@ -981,7 +981,11 @@ describe('AI Agent local text veil', () => {
       crashPersistence,
     );
     await crashRuntime.restore('privacy-proposal-task');
-    await expect(crashRuntime.sendUserMessage('Revise it'))
+    await expect(crashRuntime.revisePreview(
+      proposal.preview.previewId,
+      'Revise it',
+      'reader-private-preview-revision',
+    ))
       .rejects.toThrow('simulated checkpoint crash');
     expect(crashOrder).toEqual([
       'dispose:restored-generation',

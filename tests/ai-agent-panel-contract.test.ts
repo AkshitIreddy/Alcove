@@ -5,7 +5,10 @@ import {
   canPresentFinalPreview,
   previewLayoutView,
 } from '../src/views/rail/aiAgentPreviewGate';
-import { asksForCompleteSourcePreservation } from '../src/views/rail/aiAgentControllerAdapter';
+import {
+  asksForCompleteSourcePreservation,
+  asksToRelaxCompleteSourcePreservation,
+} from '../src/views/rail/aiAgentControllerAdapter';
 import type { AiAgentDraftPreviewView } from '../src/views/rail/AiAgentPanel';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -241,8 +244,23 @@ describe('AI agent complete-source intent', () => {
     'Summarise the most important findings',
     'Use the relevant examples from the PDF',
     'Write a short note without unnecessary repetition',
+    'The picture has mostly all the details, so keep the notes brief',
   ])('does not turn an ordinary selective request into preserve-all for %j', (request) => {
     expect(asksForCompleteSourcePreservation(request)).toBe(false);
+  });
+
+  it.each([
+    "I don't need you to preserve everything this time",
+    'Only use the relevant details',
+    'Use the key parts rather than everything',
+  ])('recognizes an explicit request to relax an existing contract: %j', (request) => {
+    expect(asksToRelaxCompleteSourcePreservation(request)).toBe(true);
+  });
+
+  it('does not interpret an unrelated follow-up as a preservation revocation', () => {
+    expect(asksToRelaxCompleteSourcePreservation(
+      'can you see images, tell me what you see in this picture',
+    )).toBe(false);
   });
 });
 

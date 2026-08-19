@@ -302,6 +302,441 @@ function withCurrentAnswer(
 }
 
 describe('portable generated-image handoff', () => {
+  it('routes one current image read then auto-cites an empty-citation finish with zero tool errors', async () => {
+    const sourceManifest: SourceManifest = {
+      version: 1,
+      createdAt: NOW,
+      digest: 'single-image-followup-manifest',
+      totalEstimatedTokens: 1,
+      sources: [{
+        id: 'single-image-source',
+        title: 'Box packing.png',
+        kind: 'image',
+        digest: 'single-image-digest',
+        mediaType: 'image/png',
+        estimatedTokens: 1,
+        quarantined: true,
+        promptInjectionWarnings: [],
+        units: [{
+          id: 'single-image-unit',
+          label: 'image',
+          ordinal: 0,
+          digest: 'single-image-unit-digest',
+          estimatedTokens: 1,
+          characters: 0,
+          hasText: false,
+          hasVisual: true,
+          visualEvidence: 'available',
+          anchor: { sourceId: 'single-image-source', unitId: 'single-image-unit' },
+        }],
+      }],
+    };
+    const initial = createInitialAgentState({
+      identity: {
+        threadId: 'thread-single-image-followup',
+        taskId: 'task-single-image-followup',
+        runId: 'run-single-image-followup',
+        bookId: 'book-single-image-followup',
+      },
+      goal: 'Add this picture to my book.',
+      now: NOW,
+      userMessageId: 'reader-initial-image',
+    });
+    const currentUser = {
+      id: 'reader-image-question',
+      role: 'user' as const,
+      content: 'Can you see images? Tell me what is in this picture.',
+      createdAt: NOW,
+    };
+    const base: AgentState = {
+      ...initial,
+      lifecycle: 'running',
+      sourceManifest,
+      sourceCoverage: {
+        manifestDigest: sourceManifest.digest,
+        mode: 'relevant',
+        requiredUnitIds: ['single-image-unit'],
+        readUnitIds: ['single-image-unit'],
+        readExposures: [{
+          unitId: 'single-image-unit',
+          providerCallCount: 0,
+          exposedAt: NOW,
+        }],
+        citedUnitIds: ['single-image-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+      conversation: [
+        ...initial.conversation,
+        {
+          id: currentUser.id,
+          role: 'user',
+          text: currentUser.content,
+          createdAt: NOW,
+        },
+      ],
+      modelHistory: [
+        ...initial.modelHistory,
+        {
+          id: 'old-read-assistant',
+          role: 'assistant',
+          content: '',
+          toolCalls: [{
+            id: 'old-read-call',
+            name: 'read_full_source',
+            arguments: { sourceId: 'single-image-source' },
+          }],
+          createdAt: NOW,
+        },
+        {
+          id: 'old-read-result',
+          role: 'tool',
+          toolCallId: 'old-read-call',
+          toolName: 'read_full_source',
+          content: { sourceId: 'single-image-source' },
+          isError: false,
+          createdAt: NOW,
+        },
+        currentUser,
+      ],
+      objective: {
+        turnId: currentUser.id,
+        mode: 'conversation',
+        reason: 'reader_side_conversation',
+      },
+      budgetWindow: {
+        providerCallsAtStart: 0,
+        toolCallsAtStart: 0,
+        repairPassesAtStart: 0,
+        startedAt: NOW,
+        readerMessageId: currentUser.id,
+      },
+    };
+
+    expect([...availableAgentToolNames(base)]).toEqual(['read_full_source']);
+    const afterCurrentRead: AgentState = {
+      ...base,
+      usage: { ...base.usage, providerCalls: 2, toolCalls: 1 },
+      modelHistory: [
+        ...base.modelHistory,
+        {
+          id: 'current-read-assistant',
+          role: 'assistant',
+          content: '',
+          toolCalls: [{
+            id: 'current-read-call',
+            name: 'read_full_source',
+            arguments: { sourceId: 'single-image-source' },
+          }],
+          createdAt: NOW,
+        },
+        {
+          id: 'current-read-result',
+          role: 'tool',
+          toolCallId: 'current-read-call',
+          toolName: 'read_full_source',
+          content: { sourceId: 'single-image-source' },
+          isError: false,
+          createdAt: NOW,
+        },
+      ],
+    };
+    expect([...availableAgentToolNames(afterCurrentRead)]).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+
+    const finishCall = {
+      id: 'current-finish-call',
+      name: 'finish_conversation',
+      arguments: {
+        answer: 'The picture is a kitten-themed box-packing infographic.',
+        citedUnitIds: [],
+      },
+    } as const;
+    const finishState: AgentState = {
+      ...afterCurrentRead,
+      modelHistory: [
+        ...afterCurrentRead.modelHistory,
+        {
+          id: 'current-finish-assistant',
+          role: 'assistant',
+          content: '',
+          toolCalls: [finishCall],
+          createdAt: NOW,
+        },
+      ],
+      pendingToolCalls: [finishCall],
+    };
+    const result = await catalog(adaptersForManifest(sourceManifest)).execute(
+      finishState,
+      finishCall,
+      new AbortController().signal,
+    );
+    expect(result.result).toMatchObject({
+      completed: true,
+      citedUnitIds: ['single-image-unit'],
+      sourceCitationsAutoAttached: true,
+    });
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.sourceCoverage?.citedUnitIds).toEqual(['single-image-unit']);
+    expect(result.state.modelHistory.filter(
+      (turn) => turn.role === 'tool' && turn.isError,
+    )).toEqual([]);
+  });
+
+  it('auto-runs the sole current image read locally and spends one provider turn on the answer', async () => {
+    const sourceManifest: SourceManifest = {
+      version: 1,
+      createdAt: NOW,
+      digest: 'local-image-read-manifest',
+      totalEstimatedTokens: 1,
+      sources: [{
+        id: 'local-image-source',
+        title: 'Box packing.png',
+        kind: 'image',
+        digest: 'local-image-source-digest',
+        mediaType: 'image/png',
+        estimatedTokens: 1,
+        quarantined: true,
+        promptInjectionWarnings: [],
+        units: [{
+          id: 'local-image-unit',
+          label: 'image',
+          ordinal: 0,
+          digest: 'local-image-unit-digest',
+          estimatedTokens: 1,
+          characters: 0,
+          hasText: false,
+          hasVisual: true,
+          visualEvidence: 'available',
+          anchor: { sourceId: 'local-image-source', unitId: 'local-image-unit' },
+        }],
+      }],
+    };
+    const initial = createInitialAgentState({
+      identity: {
+        threadId: 'thread-local-image-read',
+        taskId: 'task-local-image-read',
+        runId: 'run-local-image-read',
+        bookId: 'book-local-image-read',
+      },
+      goal: 'Add this picture to my book.',
+      now: NOW,
+      userMessageId: 'reader-old-image-task',
+    });
+    const currentMessage = {
+      id: 'reader-current-image-question',
+      role: 'user' as const,
+      text: 'Can you see images? Tell me what is in this picture.',
+      createdAt: NOW,
+    };
+    const state: AgentState = {
+      ...initial,
+      lifecycle: 'failed',
+      phase: 'intake',
+      lastError: {
+        code: 'provider_invalid_response',
+        message: 'resume this current image question',
+        retryable: true,
+      },
+      sourceManifest,
+      sourceCoverage: {
+        manifestDigest: sourceManifest.digest,
+        mode: 'relevant',
+        requiredUnitIds: ['local-image-unit'],
+        readUnitIds: ['local-image-unit'],
+        readExposures: [{
+          unitId: 'local-image-unit',
+          providerCallCount: 0,
+          exposedAt: NOW,
+        }],
+        citedUnitIds: ['local-image-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+      conversation: [...initial.conversation, currentMessage],
+      modelHistory: [
+        ...initial.modelHistory,
+        {
+          id: 'old-local-image-read-assistant',
+          role: 'assistant',
+          content: '',
+          toolCalls: [{
+            id: 'old-local-image-read-call',
+            name: 'read_full_source',
+            arguments: { sourceId: 'local-image-source' },
+          }],
+          createdAt: NOW,
+        },
+        {
+          id: 'old-local-image-read-result',
+          role: 'tool',
+          toolCallId: 'old-local-image-read-call',
+          toolName: 'read_full_source',
+          content: { sourceId: 'local-image-source' },
+          isError: false,
+          createdAt: NOW,
+        },
+        {
+          id: currentMessage.id,
+          role: 'user',
+          content: currentMessage.text,
+          createdAt: NOW,
+        },
+      ],
+      objective: {
+        turnId: currentMessage.id,
+        mode: 'conversation',
+        reason: 'reader_side_conversation',
+        decidedAt: NOW,
+      },
+      budgetWindow: {
+        providerCallsAtStart: 0,
+        toolCallsAtStart: 0,
+        repairPassesAtStart: 0,
+        startedAt: NOW,
+        readerMessageId: currentMessage.id,
+      },
+    };
+    const requests: AgentProviderTurnRequest[] = [];
+    const provider: AgentProvider = {
+      id: 'cohere',
+      capabilities: async () => ({
+        providerId: 'cohere',
+        modelId: 'test',
+        toolUse: true,
+        streaming: true,
+        imageInput: true,
+        maxInputTokens: 128_000,
+        maxOutputTokens: 8_000,
+        supportsParallelToolCalls: false,
+      }),
+      async *streamTurn(request) {
+        requests.push(request);
+        yield {
+          type: 'tool_call',
+          id: 'finish-local-image-answer',
+          name: 'finish_conversation',
+          arguments: {
+            answer: 'It is a kitten-themed box-packing infographic.',
+            citedUnitIds: [],
+          },
+        };
+        yield { type: 'finish', reason: 'tool_calls' };
+      },
+    };
+    const baseAdapters = adaptersForManifest(sourceManifest);
+    const runtimeAdapters: AgentAdapters = {
+      ...baseAdapters,
+      sources: {
+        ...baseAdapters.sources,
+        readFullSource: async () => ({
+          sourceId: 'local-image-source',
+          sourceDigest: 'local-image-source-digest',
+          units: [{
+            unitId: 'local-image-unit',
+            anchor: sourceManifest.sources[0]!.units[0]!.anchor,
+            text: '',
+            digest: 'local-image-unit-digest',
+          }],
+          truncated: false,
+          visualRefs: [{
+            image: {
+              resourceId: 'local-image-resource',
+              mimeType: 'image/png',
+              digest: 'local-image-pixel-digest',
+              width: 1024,
+              height: 1536,
+            },
+            anchor: sourceManifest.sources[0]!.units[0]!.anchor,
+            label: 'Box packing image',
+          }],
+        }),
+      },
+    };
+    const persistence = new InMemoryAgentPersistence();
+    await persistence.saveTask(state);
+    const runtime = new AgentRuntime(provider, runtimeAdapters, persistence);
+    await runtime.restore(state.identity.taskId);
+
+    const result = await runtime.retry();
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      'ask_user',
+      'finish_conversation',
+    ]);
+    expect(result.state.lifecycle).toBe('completed');
+    expect(result.state.conversation.at(-1)?.text).toMatch(/kitten-themed/i);
+    expect(result.state.modelHistory.filter((turn) =>
+      turn.role === 'tool' && turn.toolName === 'read_full_source' && !turn.isError
+    )).toHaveLength(2);
+    expect(result.state.modelHistory.filter((turn) =>
+      turn.role === 'tool' && turn.isError
+    )).toEqual([]);
+    expect(result.state.sourceCoverage?.citedUnitIds).toEqual(['local-image-unit']);
+  });
+
+  it('tells grounded preview review to compare the original source image with draft pages', () => {
+    const state = createInitialAgentState({
+      identity: {
+        threadId: 'thread-grounded-image-prompt',
+        taskId: 'task-grounded-image-prompt',
+        runId: 'run-grounded-image-prompt',
+        bookId: 'book-grounded-image-prompt',
+      },
+      goal: 'Add the attached image to my book with a brief related note.',
+      now: NOW,
+      userMessageId: 'reader-grounded-image-prompt',
+    });
+    const grounded: AgentState = {
+      ...state,
+      sourceIntentTurnId: 'reader-grounded-image-prompt',
+      sourceManifest: {
+        version: 1,
+        createdAt: NOW,
+        digest: 'grounded-image-manifest',
+        totalEstimatedTokens: 1,
+        sources: [{
+          id: 'grounded-image-source',
+          title: 'Picture.png',
+          kind: 'image',
+          digest: 'grounded-image-source-digest',
+          mediaType: 'image/png',
+          estimatedTokens: 1,
+          quarantined: true,
+          promptInjectionWarnings: [],
+          units: [{
+            id: 'grounded-image-unit',
+            label: 'image',
+            ordinal: 0,
+            digest: 'grounded-image-unit-digest',
+            estimatedTokens: 1,
+            characters: 0,
+            hasText: false,
+            hasVisual: true,
+            visualEvidence: 'available',
+            anchor: {
+              sourceId: 'grounded-image-source',
+              unitId: 'grounded-image-unit',
+            },
+          }],
+        }],
+      },
+    };
+
+    const prompt = buildAgentSystemPrompt(grounded);
+    expect(prompt).toContain('base image-specific titles, captions and write-up on what those pixels actually show');
+    expect(prompt).toContain('compare them directly');
+    expect(prompt).toContain('A clean page is not a grounded or complete page');
+    expect(prompt).toContain('notebook titles are not source facts');
+  });
+
   it('requires an explicit reader image request and lets the latest directive revoke it', async () => {
     const baseOrdinary = baseState();
     const ordinary = {

@@ -54,7 +54,11 @@ export interface AiAgentController {
     outcome: { readonly applied: boolean; readonly message?: string },
   ): Promise<AgentRunResult>;
   rejectPreview(previewId: string, feedback?: string): Promise<AgentRunResult>;
-  revisePreview(previewId: string, feedback: string): Promise<AgentRunResult>;
+  revisePreview(
+    previewId: string,
+    feedback: string,
+    userMessageId?: string,
+  ): Promise<AgentRunResult>;
   changePlacement(
     previewId: string,
     target: NotebookInsertionTarget,
@@ -94,8 +98,8 @@ export function createAiAgentController(runtime: AgentRuntime): AiAgentControlle
       runtime.finalizeApprovedPatch(patchId, outcome),
     rejectPreview: (previewId, feedback) =>
       runtime.rejectPreview(previewId, feedback),
-    revisePreview: (previewId, feedback) =>
-      runtime.revisePreview(previewId, feedback),
+    revisePreview: (previewId, feedback, userMessageId) =>
+      runtime.revisePreview(previewId, feedback, userMessageId),
     changePlacement: (previewId, target) =>
       runtime.changePlacement(previewId, target),
   };

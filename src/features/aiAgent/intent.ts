@@ -16,7 +16,11 @@ const NOTEBOOK_MUTATION_NEGATION = new RegExp(
 );
 
 const CONVERSATION_REQUEST = new RegExp(
-  String.raw`^\s*(?:hi|hello|hey|what|why|how|who|when|where|which|explain|define|describe|tell\s+me|compare|brainstorm|answer|summari[sz]e|analy[sz]e|review|read|find|search)\b|\?\s*$`,
+  // Questions often arrive without terminal punctuation (especially on
+  // mobile): “can you see images”, “does this look right”, “would that work”.
+  // Mutation intent is checked first, so “can you add this to my book” still
+  // enters notebook work while question-shaped requests default to chat.
+  String.raw`^\s*(?:hi|hello|hey|what|why|how|who|when|where|which|can|could|would|do|does|did|is|are|was|were|will|should|may|explain|define|describe|tell\s+me|compare|brainstorm|answer|summari[sz]e|analy[sz]e|review|read|find|search)\b|\?\s*$`,
   'iu',
 );
 
@@ -50,6 +54,21 @@ const DOMINANT_ATTACHED_IMAGE_REQUEST = new RegExp(
   'iu',
 );
 
+const ATTACHED_IMAGE_CARRIES_DETAILS = new RegExp(
+  String.raw`\b(?:image|picture|photo|infographic|diagram)\b[\s\S]{0,56}\b(?:has|contains|includes|shows|carries|covers|holds)\b[\s\S]{0,40}\b(?:details?|information|info|content|facts?)\b|\b(?:most|all|nearly\s+all)\b[\s\S]{0,32}\b(?:details?|information|info|content|facts?)\b[\s\S]{0,32}\b(?:in|on|inside)\b[\s\S]{0,12}\b(?:image|picture|photo|infographic|diagram)\b`,
+  'iu',
+);
+
+const CONCISE_ATTACHED_IMAGE_WRITEUP = new RegExp(
+  String.raw`\b(?:brief|short|concise|minimal|small|little|tiny)\b[\s\S]{0,24}\b(?:write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary|pages?)\b|\b(?:a\s+little|a\s+bit|only\s+a\s+(?:little|bit)|just\s+a\s+(?:little|bit)|a\s+few)\b[\s\S]{0,24}\b(?:write[- ]?up|writing|notes?|info(?:rmation)?|text|explanation|summary|pages?)\b|\b(?:not\s+too\s+much|not\s+much|nothing\s+long|keep\s+it\s+(?:brief|short|concise))\b`,
+  'iu',
+);
+
+const EXPANDED_ATTACHED_IMAGE_WRITEUP = new RegExp(
+  String.raw`\b(?:detailed|in[- ]depth|comprehensive|thorough|exhaustive|long[- ]form|full\s+study\s+guide|study\s+guide|transcrib(?:e|ing)|extract\s+(?:all|every)|all\s+visible\s+text|many\s+pages|multiple\s+pages)\b`,
+  'iu',
+);
+
 export function latestReaderText(state: AgentState): string {
   return [...state.conversation]
     .reverse()
@@ -64,6 +83,31 @@ export function readerUsesImplicitAttachmentDefault(state: AgentState): boolean 
 export function readerRequestsDominantAttachedImage(state: AgentState): boolean {
   const text = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   return DOMINANT_ATTACHED_IMAGE_REQUEST.test(text);
+}
+
+/**
+ * One supplied information-dense image plus explicitly small supporting prose
+ * is a bounded two-page editorial request, not permission to expand the
+ * surrounding notebook into a chapter. Detailed/transcription wording wins
+ * over this convenience rule.
+ */
+export function readerRequestsConciseAttachedImage(state: AgentState): boolean {
+  const imageSources = state.sourceManifest?.sources.filter(
+    (source) => source.kind === 'image' && source.units.length > 0,
+  ) ?? [];
+  // Notebook page/selection context may travel beside the attachment for
+  // placement and continuity. It does not turn one attached picture into a
+  // multi-image authoring request.
+  if (imageSources.length !== 1) return false;
+  const currentText = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
+  if (EXPANDED_ATTACHED_IMAGE_WRITEUP.test(currentText)) return false;
+  const inheritedBrief = state.objective?.reason === 'reader_preview_feedback'
+    ? state.taskBrief.goal
+    : '';
+  const text = [inheritedBrief, currentText].filter(Boolean).join('\n');
+  return agentRequestsNotebookMutation(state) &&
+    ATTACHED_IMAGE_CARRIES_DETAILS.test(text) &&
+    CONCISE_ATTACHED_IMAGE_WRITEUP.test(text);
 }
 
 function currentReaderMessages(state: AgentState): readonly string[] {

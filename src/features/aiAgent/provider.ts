@@ -67,6 +67,210 @@ export interface AgentProviderTurnRequest {
   readonly tools: readonly AgentToolDescriptor[];
   readonly toolChoice: 'auto' | 'required';
   readonly maxOutputTokens?: number;
+  /**
+   * Ephemeral proof of the visual evidence selected for this exact provider
+   * request. This is deliberately not durable task state: a later turn must
+   * project its own current evidence instead of inheriting an earlier model's
+   * access to pixels by assumption.
+   *
+   * Provider adapters recompute what their wire format will actually carry
+   * and fail before network traffic when the required digests are absent.
+   */
+  readonly evidence?: ProviderEvidenceReceipt;
+}
+
+export type ProviderEvidencePurpose =
+  | 'conversation_answer'
+  | 'notebook_draft'
+  | 'preview_review';
+
+export interface ProviderEvidenceReceipt {
+  readonly turnId: string;
+  readonly purpose: ProviderEvidencePurpose;
+  readonly requiredSourceImageCount: number;
+  readonly requiredSourceImageDigests: readonly string[];
+  readonly deliveredSourceImageDigests: readonly string[];
+  readonly requiredDraftImageDigests: readonly string[];
+  readonly deliveredDraftImageDigests: readonly string[];
+}
+
+export interface TurnScopedEvidenceProjection {
+  readonly messages: readonly ProviderMessage[];
+  readonly receipt: ProviderEvidenceReceipt;
+}
+
+function sortedUniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim() !== ''))].sort();
+}
+
+function imageDigests(
+  messages: readonly ProviderMessage[],
+  purpose: Extract<ProviderContentPart, { type: 'image_ref' }>['purpose'],
+): string[] {
+  return sortedUniqueStrings(messages.flatMap((message) =>
+    message.content.flatMap((part) =>
+      part.type === 'image_ref' && part.purpose === purpose
+        ? [part.image.digest]
+        : [],
+    ),
+  ));
+}
+
+function compactNotebookPlacementReceipt(text: string): string {
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return text;
+    const record = value as Record<string, unknown>;
+    if (!Array.isArray(record.pages)) return text;
+    return JSON.stringify({
+      title: record.title ?? null,
+      pageCount:
+        typeof record.pageCount === 'number' ? record.pageCount : record.pages.length,
+      bookRevision: record.bookRevision ?? null,
+      capturedAt: record.capturedAt ?? null,
+      placementIndexCompacted: true,
+      note:
+        'The insertion target is already resolved. Historical notebook page titles are not source evidence for this semantic turn.',
+    });
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Attach current source pixels to the latest reader message in the ephemeral
+ * provider projection. The latest user message is the stable semantic turn
+ * anchor even when local tool calls (notebook inspection, source coverage,
+ * placement) occur after it. Keeping the pixels on that message makes their
+ * delivery independent of tool-result ordering without replaying them into
+ * durable model history.
+ */
+export function projectTurnScopedSourceEvidence(input: {
+  readonly messages: readonly ProviderMessage[];
+  readonly turnId: string;
+  readonly purpose: ProviderEvidencePurpose;
+  readonly sourceImages: readonly AgentImageRef[];
+  readonly requiredSourceImageCount?: number;
+  readonly requiredSourceImageDigests?: readonly string[];
+  readonly requiredDraftImageDigests?: readonly string[];
+}): TurnScopedEvidenceProjection {
+  const sourceImages = [...new Map(input.sourceImages.map((image) => [
+    `${image.resourceId}:${image.digest}`,
+    image,
+  ])).values()].sort((left, right) =>
+    left.digest.localeCompare(right.digest) ||
+    left.resourceId.localeCompare(right.resourceId),
+  );
+  const latestUserIndex = (() => {
+    for (let index = input.messages.length - 1; index >= 0; index -= 1) {
+      if (input.messages[index]?.role === 'user') return index;
+    }
+    return -1;
+  })();
+  const messages = input.messages.map((message, index): ProviderMessage => {
+    // The exact source pixels are consolidated onto the current reader turn.
+    // Remove their historical tool-result copies so a favourable tool order
+    // cannot send the same attachment twice while an intervening tool order
+    // sends it zero times. Draft-review pixels stay on their current tool
+    // result because Cohere must preserve that call/result continuity.
+    if (message.role === 'tool') {
+      const withoutSourcePixels = message.content.filter((part) =>
+        part.type !== 'image_ref' || part.purpose !== 'source_analysis');
+      const content = message.toolName === 'inspect_notebook'
+        ? withoutSourcePixels.map((part): ProviderContentPart =>
+            part.type === 'text'
+              ? { ...part, text: compactNotebookPlacementReceipt(part.text) }
+              : part)
+        : withoutSourcePixels;
+      return content.length === message.content.length &&
+          content.every((part, partIndex) => part === message.content[partIndex])
+        ? message
+        : { ...message, content };
+    }
+    if (index !== latestUserIndex || sourceImages.length === 0) return message;
+    const existingSourceDigests = new Set(message.content.flatMap((part) =>
+      part.type === 'image_ref' && part.purpose === 'source_analysis'
+        ? [part.image.digest]
+        : [],
+    ));
+    return {
+      ...message,
+      content: [
+        ...message.content,
+        ...sourceImages
+          .filter((image) => !existingSourceDigests.has(image.digest))
+          .map((image): ProviderContentPart => ({
+            type: 'image_ref',
+            image,
+            purpose: 'source_analysis',
+          })),
+      ],
+    };
+  });
+  const deliveredSourceImageDigests = imageDigests(messages, 'source_analysis');
+  const requiredDraftImageDigests = sortedUniqueStrings(
+    input.requiredDraftImageDigests ?? [],
+  );
+  const availableDraftImageDigests = new Set(
+    imageDigests(messages, 'draft_visual_review'),
+  );
+  // A later conversation may retain historical preview refs in its forensic
+  // transcript, but those pixels are intentionally not current evidence. Only
+  // draft images explicitly required for this review transaction are declared
+  // as delivered; the Cohere adapter independently checks their wire position.
+  const deliveredDraftImageDigests = requiredDraftImageDigests.filter((digest) =>
+    availableDraftImageDigests.has(digest));
+  return {
+    messages,
+    receipt: {
+      turnId: input.turnId,
+      purpose: input.purpose,
+      requiredSourceImageCount:
+        input.requiredSourceImageCount ?? sourceImages.length,
+      requiredSourceImageDigests: sortedUniqueStrings(
+        input.requiredSourceImageDigests ?? sourceImages.map((image) => image.digest),
+      ),
+      deliveredSourceImageDigests,
+      requiredDraftImageDigests,
+      deliveredDraftImageDigests,
+    },
+  };
+}
+
+function missingEvidenceDigests(
+  required: readonly string[],
+  delivered: readonly string[],
+): readonly string[] {
+  const deliveredSet = new Set(delivered);
+  return [...new Set(required)].filter((digest) => !deliveredSet.has(digest));
+}
+
+/** Provider-neutral half of the evidence transaction. */
+export function assertProviderEvidenceReceipt(
+  request: Pick<AgentProviderTurnRequest, 'evidence'>,
+): void {
+  const receipt = request.evidence;
+  if (receipt === undefined) return;
+  if (
+    !Number.isInteger(receipt.requiredSourceImageCount) ||
+    receipt.requiredSourceImageCount < 0 ||
+    receipt.deliveredSourceImageDigests.length < receipt.requiredSourceImageCount ||
+    missingEvidenceDigests(
+      receipt.requiredSourceImageDigests,
+      receipt.deliveredSourceImageDigests,
+    ).length > 0 ||
+    missingEvidenceDigests(
+      receipt.requiredDraftImageDigests,
+      receipt.deliveredDraftImageDigests,
+    ).length > 0
+  ) {
+    throw new AgentProviderError({
+      code: 'invalid_response',
+      message:
+        'Alcove stopped the AI turn because the current required visual evidence was not attached to its provider request.',
+      retryable: false,
+    });
+  }
 }
 
 /**

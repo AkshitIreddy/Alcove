@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   createInitialAgentState,
+  applyConciseManagedImageLayout,
   applyDominantManagedImageLayout,
   applyVagueManagedImageDefault,
+  availableAgentToolNames,
   ensureRequiredManagedImagesInNotebookScript,
   missingRequiredManagedImageAssetPaths,
   notebookScriptManagedImageAssetPaths,
   requiredManagedImageAssetPaths,
   type AgentState,
 } from '../src/features/aiAgent';
+import { parseNotebookScriptPages } from '../src/editor/script/pageBoundaries';
+import { readerRequestsConciseAttachedImage } from '../src/features/aiAgent/intent';
 
 const NOW = '2026-08-18T08:00:00.000Z';
 const ATTACHMENT_ALIAS = `att_${'a'.repeat(64)}`;
@@ -225,6 +229,478 @@ describe('reader-supplied image preservation', () => {
     expect(normalized.script.match(/^::page$/gmu)).toHaveLength(1);
     expect(normalized.script).toContain('::page\n\n## Short notes');
     expect(normalized.script.trimEnd()).toMatch(/exceeding capacity\.$/u);
+  });
+
+  it('bounds the exact concise Week 6 request to one image page and one grounded notes page', () => {
+    const state = imageReadState(
+      'hi can you add this for week 6, the picture has mostly all the details, but maybe you add some fun looking things with info on the same on the next pages but not too much',
+    );
+    expect(readerRequestsConciseAttachedImage(state)).toBe(true);
+    expect(requiredManagedImageAssetPaths(state)).toEqual([PATH]);
+    const expanded = [
+      '---',
+      'paper: grid',
+      'wash: sky',
+      '---',
+      '',
+      '# Week 6 — Box Packing with Kittens {sticker=box}',
+      '',
+      `![Kitten box-packing infographic](){asset="${PATH}", width=48, align=center, style=polaroid, caption="Box packing explained with kittens"}`,
+      '',
+      '::page',
+      '',
+      '## The 10-second idea',
+      '',
+      '::: callout {variant=tip, color=sky}',
+      '**Fit test:** compare length, breadth and height. Every dimension of the smaller box must be less than or equal to the matching dimension of the larger box.',
+      ':::',
+      '',
+      '## What rotation changes',
+      '',
+      '- Without rotation, keep dimensions in their original order.',
+      '- With rotation, sort dimensions and compare component by component.',
+      ...Array.from({ length: 5 }, (_, index) => [
+        '',
+        '::page',
+        '',
+        `## Expanded section ${index + 3}`,
+        '',
+        index === 0
+          ? 'The longest chain shown is W → Z → U → X, giving four nested kittens.'
+          : `Unrequested prior-week filler ${index + 1}.`,
+        '',
+        '| Earlier week | Unrelated detail |',
+        '| --- | --- |',
+        `| ${index + 1} | should be removed |`,
+      ].join('\n')),
+    ].join('\n');
+    const repaired = ensureRequiredManagedImagesInNotebookScript(state, expanded);
+    const compacted = applyConciseManagedImageLayout(state, repaired.script);
+
+    expect(compacted.compacted).toBe(true);
+    expect(parseNotebookScriptPages(compacted.script).pages).toHaveLength(2);
+    expect(compacted.script.match(/^::page$/gmu)).toHaveLength(1);
+    expect(compacted.script).toContain('# Week 6 — Box Packing with Kittens');
+    expect(notebookScriptManagedImageAssetPaths(compacted.script)).toEqual([PATH]);
+    const managedImage = parseNotebookScriptPages(compacted.script).pages[0]?.doc.blocks.find(
+      (block) => block.kind === 'image',
+    );
+    expect(managedImage?.kind === 'image' ? managedImage.attrs.width : undefined).toBe(58);
+    expect(compacted.script).toContain('## The 10-second idea');
+    expect(compacted.script).toContain('compare length, breadth and height');
+    expect(compacted.script).not.toContain('Expanded section 3');
+    expect(compacted.script).not.toContain('Unrequested prior-week filler');
+    expect(compacted.script).not.toContain('Earlier week');
+    expect(applyConciseManagedImageLayout(state, compacted.script)).toEqual({
+      script: compacted.script,
+      compacted: false,
+    });
+  });
+
+  it('recovers a concise raw draft that omitted usable managed-image syntax', () => {
+    const state = imageReadState(
+      'hi can you add this for week 6, the picture has mostly all the details, but maybe you add some fun looking things with info on the same on the next pages but not too much',
+    );
+    const raw = [
+      '# image',
+      '',
+      'title: Week 6 — Box Packing Problem with Kittens.',
+      '',
+      '::page',
+      '',
+      '## Dimensions matter',
+      '',
+      'Compare length, breadth and height.',
+      '',
+      '::page',
+      '',
+      '## Unrequested expansion',
+      '',
+      'This third page should never survive the concise contract.',
+    ].join('\n');
+
+    const repaired = ensureRequiredManagedImagesInNotebookScript(state, raw);
+    const compacted = applyConciseManagedImageLayout(state, repaired.script);
+
+    expect(repaired.insertedPaths).toEqual([PATH]);
+    expect(parseNotebookScriptPages(compacted.script).pages.length).toBeLessThanOrEqual(2);
+    expect(compacted.script).toContain('# Week 6 — Box Packing Problem with Kittens');
+    expect(compacted.script).not.toContain('# image');
+    expect(compacted.script).not.toContain('title: Week 6');
+    expect(compacted.script).not.toContain('Unrequested expansion');
+    expect(compacted.script.match(new RegExp(
+      PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      'g',
+    ))).toHaveLength(1);
+  });
+
+  it('does not compact a detailed or multi-image request through the concise-image rule', () => {
+    const detailed = imageReadState(
+      'The picture has all the details; create a detailed multi-page study guide from it.',
+    );
+    expect(readerRequestsConciseAttachedImage(detailed)).toBe(false);
+    const secondSource: AgentState = {
+      ...imageReadState(
+        'The pictures have all the details; add only a little write-up to my book.',
+      ),
+      sourceManifest: {
+        ...imageReadState().sourceManifest!,
+        sources: [
+          ...imageReadState().sourceManifest!.sources,
+          {
+            ...imageReadState().sourceManifest!.sources[0]!,
+            id: 'reader-picture-two',
+            title: 'Second picture.png',
+            digest: 'reader-picture-two-digest',
+            units: [{
+              ...imageReadState().sourceManifest!.sources[0]!.units[0]!,
+              id: 'reader-picture-two-unit',
+              anchor: {
+                sourceId: 'reader-picture-two',
+                unitId: 'reader-picture-two-unit',
+              },
+            }],
+          },
+        ],
+      },
+    };
+    expect(readerRequestsConciseAttachedImage(secondSource)).toBe(false);
+    const withNotebookContext: AgentState = {
+      ...imageReadState(
+        'The picture has all the details; add a little write-up to my book but not too much.',
+      ),
+      sourceManifest: {
+        ...imageReadState().sourceManifest!,
+        sources: [
+          ...imageReadState().sourceManifest!.sources,
+          {
+            id: 'placement-context-page',
+            title: 'Week 6',
+            kind: 'page',
+            digest: 'placement-context-digest',
+            mediaType: 'text/x-alcove-notebook-script',
+            estimatedTokens: 5,
+            quarantined: true,
+            promptInjectionWarnings: [],
+            units: [{
+              id: 'placement-context-unit',
+              label: 'page 6',
+              ordinal: 0,
+              digest: 'placement-context-unit-digest',
+              estimatedTokens: 5,
+              characters: 20,
+              hasText: true,
+              hasVisual: false,
+              visualEvidence: 'none',
+              anchor: {
+                sourceId: 'placement-context-page',
+                unitId: 'placement-context-unit',
+                pageNumber: 6,
+              },
+            }],
+          },
+        ],
+      },
+    };
+    expect(readerRequestsConciseAttachedImage(withNotebookContext)).toBe(true);
+  });
+
+  it('keeps one whole coherent heading group and never strands a promissory lead-in', () => {
+    const state = imageReadState(
+      'The picture has all the details; add a little information on the next page but not too much.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(state, [
+      '# Box Packing Problem Explained with Kittens',
+      '',
+      `![Box packing infographic](){asset=${PATH}, width=48, align=center}`,
+      '',
+      '::page',
+      '',
+      '## Main Concept',
+      '',
+      'The infographic explains box packing through three key ways:',
+      '',
+      '## 1. Dimensions Matter',
+      '',
+      'Each kitten box has three measurements:',
+      '',
+      '- **Length** — nose to tail',
+      '- **Breadth** — side to side',
+      '- **Height** — floor to ears',
+      '',
+      '## 2. Rotation',
+      '',
+      'Sort the dimensions before comparing them.',
+    ].join('\n'));
+    const compacted = applyConciseManagedImageLayout(state, repaired.script);
+
+    expect(parseNotebookScriptPages(compacted.script).pages).toHaveLength(2);
+    expect(compacted.script).not.toContain('## Main Concept');
+    expect(compacted.script).not.toContain('three key ways:');
+    expect(compacted.script).toContain('## 1. Dimensions Matter');
+    expect(compacted.script).toContain('Each kitten box has three measurements:');
+    expect(compacted.script).toContain('- **Length** — nose to tail');
+    expect(compacted.script).toContain('- **Breadth** — side to side');
+    expect(compacted.script).toContain('- **Height** — floor to ears');
+    expect(compacted.script).not.toMatch(/:\s*$/u);
+    expect(applyConciseManagedImageLayout(state, compacted.script).script)
+      .toBe(compacted.script);
+  });
+
+  it('keeps a coherent grounded notes group authored before the managed image', () => {
+    const state = imageReadState(
+      'The picture has most of the information; add a short write-up to my book but not too much.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(state, [
+      '# Box Packing with Kittens',
+      '',
+      '## Quick summary',
+      '',
+      'The picture compares three cases:',
+      '',
+      '- Fixed dimension order',
+      '- Rotation after sorting dimensions',
+      '- Longest nesting chain',
+      '',
+      `![Box packing infographic](){asset=${PATH}, width=48, align=center}`,
+    ].join('\n'));
+    const compacted = applyConciseManagedImageLayout(state, repaired.script);
+
+    expect(parseNotebookScriptPages(compacted.script).pages).toHaveLength(2);
+    expect(compacted.script).toContain('## Quick summary');
+    expect(compacted.script).toContain('The picture compares three cases:');
+    expect(compacted.script).toContain('- Fixed dimension order');
+    expect(compacted.script).toContain('- Rotation after sorting dimensions');
+    expect(compacted.script).toContain('- Longest nesting chain');
+  });
+
+  it('keeps the original concise contract through explicit preview feedback unless expanded', () => {
+    const original = imageReadState(
+      'The picture has all the details; add a little write-up to my book but not too much.',
+    );
+    const revisionId = 'reader-concise-revision';
+    const revised: AgentState = {
+      ...original,
+      conversation: [
+        ...original.conversation,
+        {
+          id: revisionId,
+          role: 'user',
+          text: 'Keep the same two pages, but make the heading warmer.',
+          createdAt: NOW,
+        },
+      ],
+      modelHistory: [
+        ...original.modelHistory,
+        {
+          id: revisionId,
+          role: 'user',
+          content: 'Keep the same two pages, but make the heading warmer.',
+          createdAt: NOW,
+        },
+      ],
+      objective: {
+        turnId: revisionId,
+        mode: 'notebook_change',
+        reason: 'reader_preview_feedback',
+      },
+      budgetWindow: {
+        providerCallsAtStart: 2,
+        toolCallsAtStart: 9,
+        repairPassesAtStart: 0,
+        startedAt: NOW,
+        readerMessageId: revisionId,
+      },
+      draft: {
+        runId: original.identity.runId,
+        version: 1,
+        script: '# Original concise image page',
+        draftHash: 'original-concise-draft',
+        sourceManifestDigest: original.sourceManifest!.digest,
+        sourceReadUnitIds: ['reader-picture-unit'],
+        createdAt: NOW,
+      },
+    };
+    expect(readerRequestsConciseAttachedImage(revised)).toBe(true);
+    const expandedRevision = [
+      '# Warmer Box Packing',
+      '',
+      `![Box packing infographic](){asset="${PATH}", width=48, align=center}`,
+      ...Array.from({ length: 5 }, (_, index) => [
+        '',
+        '::page',
+        '',
+        `## Revision section ${index + 1}`,
+        '',
+        `Grounded note ${index + 1}.`,
+      ].join('\n')),
+    ].join('\n');
+    expect(parseNotebookScriptPages(
+      applyConciseManagedImageLayout(revised, expandedRevision).script,
+    ).pages.length).toBeLessThanOrEqual(2);
+
+    const expandedFeedback: AgentState = {
+      ...revised,
+      conversation: [
+        ...original.conversation,
+        {
+          id: revisionId,
+          role: 'user',
+          text: 'Turn it into a detailed multi-page study guide.',
+          createdAt: NOW,
+        },
+      ],
+      modelHistory: [
+        ...original.modelHistory,
+        {
+          id: revisionId,
+          role: 'user',
+          content: 'Turn it into a detailed multi-page study guide.',
+          createdAt: NOW,
+        },
+      ],
+    };
+    expect(readerRequestsConciseAttachedImage(expandedFeedback)).toBe(false);
+  });
+
+  it('uses a plain title value over a generic image heading and drops metadata-only notes', () => {
+    const state = imageReadState(
+      'The picture has all the details; add a brief write-up to my book but not too much.',
+    );
+    const repaired = ensureRequiredManagedImagesInNotebookScript(state, [
+      '# image',
+      '',
+      `![Box packing infographic](){asset=${PATH}, width=48, align=center}`,
+      '',
+      '::page',
+      '',
+      'title: Week 6 - Box Packing Problem with Kittens.',
+      '',
+      'paper: grid',
+      '',
+      'wash: sky',
+      '',
+      'image: attached infographic',
+    ].join('\n'));
+    const compacted = applyConciseManagedImageLayout(state, repaired.script);
+
+    expect(parseNotebookScriptPages(compacted.script).pages).toHaveLength(1);
+    expect(compacted.script).toContain('# Week 6 - Box Packing Problem with Kittens');
+    expect(compacted.script).not.toContain('# image');
+    expect(compacted.script).not.toMatch(/^title\s*:/imu);
+    expect(compacted.script).not.toMatch(/^paper\s*:/imu);
+    expect(compacted.script).not.toMatch(/^wash\s*:/imu);
+    expect(compacted.script).not.toMatch(/^image\s*:/imu);
+    expect(applyConciseManagedImageLayout(state, compacted.script)).toEqual({
+      script: compacted.script,
+      compacted: false,
+    });
+  });
+
+  it('pauses concise local-layout failure instead of advertising an identical model repair', () => {
+    const base = imageReadState(
+      'The picture has all the details; add a brief write-up to my book, not too much.',
+    );
+    const script = ensureRequiredManagedImagesInNotebookScript(
+      base,
+      '# Box Packing\n\nA short grounded explanation.',
+    ).script;
+    const draftHash = 'concise-layout-draft';
+    const generationId = 'concise-layout-generation';
+    const pages = [1, 2].map((pageNumber) => ({
+      pageId: `${generationId}:page:${pageNumber}`,
+      pageNumber,
+      width: 620,
+      height: 720,
+      image: {
+        resourceId: `${generationId}:image:${pageNumber}`,
+        mimeType: 'image/png' as const,
+        digest: `${generationId}:digest:${pageNumber}`,
+        width: 620,
+        height: 720,
+      },
+      textDigest: `text-${pageNumber}`,
+      layoutDigest: `layout-${pageNumber}`,
+      paginationSpill: pageNumber === 2,
+      residualOverflow: false,
+    }));
+    const state: AgentState = {
+      ...base,
+      objective: {
+        turnId: 'reader-source-asset',
+        mode: 'notebook_change',
+        decidedBy: 'model_action',
+      },
+      notebookSnapshot: {
+        bookId: base.identity.bookId,
+        bookRevision: 'book-revision',
+        pageIds: ['existing-page'],
+        pageRevisions: { 'existing-page': 'existing-page-revision' },
+        capturedAt: NOW,
+      },
+      insertionTarget: { kind: 'book_end' },
+      sourceCoverage: {
+        manifestDigest: base.sourceManifest!.digest,
+        mode: 'relevant',
+        requiredUnitIds: ['reader-picture-unit'],
+        readUnitIds: ['reader-picture-unit'],
+        readExposures: [{
+          unitId: 'reader-picture-unit',
+          providerCallCount: 0,
+          exposedAt: NOW,
+        }],
+        citedUnitIds: ['reader-picture-unit'],
+        omittedUnitIds: [],
+        staleSourceIds: [],
+        complete: true,
+        updatedAt: NOW,
+      },
+      draft: {
+        runId: base.identity.runId,
+        version: 1,
+        script,
+        draftHash,
+        sourceManifestDigest: base.sourceManifest!.digest,
+        sourceReadUnitIds: ['reader-picture-unit'],
+        createdAt: NOW,
+      },
+      validation: {
+        draftHash,
+        parserDiagnostics: [],
+        staticDiagnostics: [],
+        imageDiagnostics: [],
+        pageLedgerDiagnostics: [],
+        valid: true,
+        checkedAt: NOW,
+      },
+      previewGeneration: {
+        generationId,
+        draftHash,
+        layoutHash: 'concise-layout-hash',
+        rendererVersion: 'test',
+        bookSnapshotRevision: 'book-revision',
+        createdAt: NOW,
+        parserValid: true,
+        layoutValid: false,
+        stale: false,
+        pageCount: 2,
+        pages,
+        diagnostics: [],
+      },
+      visualReview: {
+        generationId,
+        draftHash,
+        requiredPageIds: pages.map((page) => page.pageId),
+        imageExposures: [],
+        inspectedPageIds: pages.map((page) => page.pageId),
+        findings: [],
+        complete: true,
+        passed: false,
+        updatedAt: NOW,
+      },
+    };
+
+    expect([...availableAgentToolNames(state)]).toEqual(['ask_user']);
   });
 
   it('compacts an over-expanded vague image request to one image-led page', () => {

@@ -870,8 +870,15 @@ export type AgentResumeValue =
     }
   | {
       readonly kind: 'preview_decision';
-      readonly decision: 'approve' | 'reject' | 'feedback' | 'change_location';
+      readonly decision:
+        | 'approve'
+        | 'reject'
+        | 'feedback'
+        | 'change_location'
+        | 'defer_for_conversation';
       readonly feedback?: string;
+      /** Reuses the optimistic panel message for a deferred side conversation. */
+      readonly userMessageId?: string;
       readonly insertionTarget?: NotebookInsertionTarget;
       readonly previewId: string;
     };

@@ -415,6 +415,102 @@ async function gatewayMessages(
   return messages;
 }
 
+function sortedImageDigests(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+/**
+ * Mirror the exact multimodal selection performed by gatewayMessages without
+ * decoding any bytes. User-message images always cross the wire. Tool-result
+ * images cross only from the final unanswered result group, where the adapter
+ * can legally follow the contiguous tool receipts with one synthetic user
+ * observation turn.
+ */
+function cohereSerializableImageEvidence(
+  source: readonly ProviderMessage[],
+): {
+  readonly sourceImageDigests: readonly string[];
+  readonly draftImageDigests: readonly string[];
+  readonly imageCount: number;
+} {
+  let trailingToolStart = source.length;
+  while (trailingToolStart > 0 && source[trailingToolStart - 1]?.role === 'tool') {
+    trailingToolStart -= 1;
+  }
+  const sourceImageDigests: string[] = [];
+  const draftImageDigests: string[] = [];
+  let imageCount = 0;
+  for (const [index, message] of source.entries()) {
+    const serializable = message.role === 'user' ||
+      (message.role === 'tool' && index >= trailingToolStart);
+    if (!serializable) continue;
+    for (const part of message.content) {
+      if (part.type !== 'image_ref') continue;
+      imageCount += 1;
+      if (part.purpose === 'source_analysis') {
+        sourceImageDigests.push(part.image.digest);
+      } else {
+        draftImageDigests.push(part.image.digest);
+      }
+    }
+  }
+  return {
+    sourceImageDigests: sortedImageDigests(sourceImageDigests),
+    draftImageDigests: sortedImageDigests(draftImageDigests),
+    imageCount,
+  };
+}
+
+function missingDigests(
+  required: readonly string[],
+  delivered: readonly string[],
+): readonly string[] {
+  const present = new Set(delivered);
+  return [...new Set(required)].filter((digest) => !present.has(digest));
+}
+
+function assertCohereEvidenceReceipt(request: AgentProviderTurnRequest): void {
+  const receipt = request.evidence;
+  if (receipt === undefined) return;
+  const actual = cohereSerializableImageEvidence(request.messages);
+  const missingSource = missingDigests(
+    receipt.requiredSourceImageDigests,
+    actual.sourceImageDigests,
+  );
+  const missingDraft = missingDigests(
+    receipt.requiredDraftImageDigests,
+    actual.draftImageDigests,
+  );
+  const declaredSourceMissing = missingDigests(
+    receipt.deliveredSourceImageDigests,
+    actual.sourceImageDigests,
+  );
+  const declaredDraftMissing = missingDigests(
+    receipt.deliveredDraftImageDigests,
+    actual.draftImageDigests,
+  );
+  if (
+    actual.sourceImageDigests.length < receipt.requiredSourceImageCount ||
+    missingSource.length > 0 || missingDraft.length > 0 ||
+    declaredSourceMissing.length > 0 || declaredDraftMissing.length > 0
+  ) {
+    throw new AgentProviderError({
+      code: 'invalid_response',
+      message:
+        'Alcove stopped a Cohere turn because its required current visual evidence was not present in the outbound request.',
+      retryable: false,
+    });
+  }
+  if (actual.imageCount > MAX_PROVIDER_IMAGES_PER_TURN) {
+    throw new AgentProviderError({
+      code: 'invalid_response',
+      message:
+        `Alcove selected ${actual.imageCount} current images, above Cohere's ${MAX_PROVIDER_IMAGES_PER_TURN}-image request limit.`,
+      retryable: false,
+    });
+  }
+}
+
 interface PendingToolCall {
   id: string;
   name: string;
@@ -477,6 +573,10 @@ export class CohereTauriAgentProvider implements AgentProvider {
         message: 'Acknowledge the trial-key privacy notice before sending material to Cohere.',
       });
     }
+    // Validate against the adapter's exact serialization policy before image
+    // decoding, credential-bearing gateway traffic or provider usage. This is
+    // the independent transport-side half of the graph's evidence receipt.
+    assertCohereEvidenceReceipt(request);
     const messages: AiGatewayMessage[] = [
       { role: 'system', content: request.systemPrompt },
     ];

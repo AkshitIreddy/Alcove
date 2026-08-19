@@ -26,6 +26,9 @@ import type {
   SourceCitation,
   UserPreviewContract,
 } from '../../features/aiAgent';
+import { parseNotebookScriptPages } from '../../editor/script/pageBoundaries';
+import { readerRequestsConciseAttachedImage } from '../../features/aiAgent/intent';
+import { notebookScriptManagedImageAssetPaths } from '../../features/aiAgent/sourceAssetPolicy';
 import type {
   AiAgentAttachmentView,
   AiAgentConnectionView,
@@ -110,12 +113,27 @@ export const asksForCompleteSourcePreservation = (text: string): boolean => {
     // Positive, explicit completeness requests.
     /\b(?:preserve|retain|include|read|cover|capture)\s+(?:absolutely\s+)?(?:all|every)\s+(?:the\s+)?(?:information|info|facts?|details?|content|pages?|sources?|pieces? of information)\b/i,
     /\b(?:preserve|retain|include|read|cover|capture|keep)\s+(?:absolutely\s+)?(?:everything|every\s+single\s+(?:fact|detail|page|piece of information))\b/i,
-    /\b(?:every|all)\s+(?:the\s+)?(?:information|info|facts?|details?|content|pages?|sources?|pieces? of information)\b/i,
+    /\b(?:need|want|require|use|keep|carry|bring)\s+(?:absolutely\s+)?(?:every|all)\s+(?:the\s+)?(?:information|info|facts?|details?|content|pages?|sources?|pieces? of information)\b/i,
+    /\b(?:every|all)\s+(?:the\s+)?(?:information|info|facts?|details?|content|pages?|sources?|pieces? of information)\b(?:\s+[\w'-]+){0,5}\s+\b(?:must|should)\s+(?:survive|remain|be\s+(?:retained|included|preserved|covered))\b/i,
     /\bcomplete(?:ly)?\s+(?:preserve|retain|read|cover|capture)\b/i,
     /\b(?:no|not a single)\s+(?:piece of\s+)?(?:information|info|fact|detail|page)\b(?:\s+[\w'-]+){0,4}\s+\b(?:lost|omitted|skipped|dropped|excluded|discarded)\b/i,
     /\b(?:make sure|ensure)\b(?:\s+[\w'-]+){0,4}\s+\bnothing\b(?:\s+[\w'-]+){0,4}\s+\b(?:lost|omitted|skipped|dropped|excluded|discarded|left out)\b/i,
     /\b(?:need|want|use|include|preserve|retain|keep)\s+all\s+of\s+(?:it|this|that)\b/i,
     /\b(?:lossless|verbatim|exhaustive|full[- ]coverage)\b/i,
+  ].some((pattern) => pattern.test(normalized));
+};
+
+/** Only an explicit reader instruction may relax an already-active contract. */
+export const asksToRelaxCompleteSourcePreservation = (text: string): boolean => {
+  const normalized = text
+    .normalize('NFKC')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [
+    /\b(?:do not|don't|no need to|need not)\b(?:\s+[\w'-]+){0,5}\s+\b(?:preserve|retain|include|read|cover|capture|keep)\b(?:\s+[\w'-]+){0,5}\s+\b(?:all|everything|every detail)\b/i,
+    /\b(?:only|just)\s+(?:use|keep|include|read|cover|capture)?\s*(?:the\s+)?(?:relevant|important|key|main|selected)\s+(?:information|info|facts?|details?|content|pages?|parts?)\b/i,
+    /\b(?:not|rather than)\s+(?:all|everything|every detail)\b/i,
   ].some((pattern) => pattern.test(normalized));
 };
 
@@ -234,6 +252,14 @@ export function buildAiAgentDiagnosticLog(
   attachments: readonly AiAgentAttachmentView[],
 ): string {
   const state = runtime.state;
+  const draftShape = state?.draft === undefined
+    ? null
+    : {
+        conciseImageIntent: readerRequestsConciseAttachedImage(state),
+        authoredPageCount: parseNotebookScriptPages(state.draft.script).pages.length,
+        managedImageAssetCount:
+          notebookScriptManagedImageAssetPaths(state.draft.script).length,
+      };
   const interrupt = runtime.interrupt === null
     ? null
     : runtime.interrupt.kind === 'requirements'
@@ -290,8 +316,29 @@ export function buildAiAgentDiagnosticLog(
         .slice(-5),
       pendingToolCalls: state.pendingToolCalls.map((call) => call.name),
       draftVersion: state.draft?.version ?? null,
+      draftShape,
       validationValid: state.validation?.valid ?? null,
       previewGenerationId: state.previewGeneration?.generationId ?? null,
+      previewGeneration: state.previewGeneration === undefined
+        ? null
+        : {
+            pageCount: state.previewGeneration.pageCount,
+            parserValid: state.previewGeneration.parserValid,
+            layoutValid: state.previewGeneration.layoutValid,
+            stale: state.previewGeneration.stale,
+            diagnostics: state.previewGeneration.diagnostics.map((item) => ({
+              code: item.code,
+              message: item.message,
+              line: item.line,
+              column: item.column,
+            })),
+            pages: state.previewGeneration.pages.map((page) => ({
+              pageId: page.pageId,
+              pageNumber: page.pageNumber,
+              paginationSpill: page.paginationSpill,
+              residualOverflow: page.residualOverflow,
+            })),
+          },
       visualReview: state.visualReview === undefined ? null : {
         complete: state.visualReview.complete,
         passed: state.visualReview.passed,
@@ -303,6 +350,22 @@ export function buildAiAgentDiagnosticLog(
         })),
       },
       proposalStatus: state.patchProposal?.status ?? null,
+      proposalPatchId: state.patchProposal?.patchId ?? null,
+      proposalPreviewId: state.patchProposal?.preview.previewId ?? null,
+      proposalGenerationId: state.patchProposal?.preview.generationId ?? null,
+      sourceCoverage: state.sourceCoverage === undefined
+        ? null
+        : {
+            manifestDigest: state.sourceCoverage.manifestDigest,
+            mode: state.sourceCoverage.mode,
+            requiredUnitIds: state.sourceCoverage.requiredUnitIds,
+            readUnitIds: state.sourceCoverage.readUnitIds,
+            citedUnitIds: state.sourceCoverage.citedUnitIds,
+            omittedUnitIds: state.sourceCoverage.omittedUnitIds,
+            staleSourceIds: state.sourceCoverage.staleSourceIds,
+            complete: state.sourceCoverage.complete,
+          },
+      pendingSourceAttachmentCount: state.pendingSourceAttachments?.length ?? 0,
     },
     interrupt,
     attachments: attachments.map((attachment) => ({
@@ -348,10 +411,20 @@ export function currentActivityTimeline(
   items: readonly AiAgentTimelineItem[],
   busy: boolean,
 ): readonly AiAgentTimelineItem[] {
+  let latestReaderIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind === 'message' && item.role === 'reader') {
+      latestReaderIndex = index;
+      break;
+    }
+  }
   const liveId = busy
-    ? [...items].reverse().find(
-        (item) => item.kind === 'activity' && item.status === 'running',
-      )?.id
+    ? [...items].reverse().find((item, reverseIndex) => {
+        const originalIndex = items.length - reverseIndex - 1;
+        return originalIndex >= latestReaderIndex &&
+          item.kind === 'activity' && item.status === 'running';
+      })?.id
     : undefined;
   return items.map((item) =>
     item.kind === 'activity' && item.status === 'running' && item.id !== liveId
@@ -380,16 +453,20 @@ const phaseProgress = (phase: AgentPhase | undefined): number | undefined => {
 const stageOf = (snapshot: AgentRuntimeSnapshot): AiAgentViewState['stage'] => {
   const state = snapshot.state;
   if (state === null) return 'idle';
+  if (snapshot.busy) {
+    return state.phase === 'intake' ? 'intake' : 'working';
+  }
   if (snapshot.interrupt?.kind === 'final_preview') return 'ready';
   if (state.patchProposal?.status === 'apply_failed') return 'conflict';
+  if (state.lifecycle === 'failed') return 'error';
   if (
+    state.patchProposal?.status === 'waiting_for_approval' ||
     state.patchProposal?.status === 'approved_pending_apply' ||
     state.patchProposal?.status === 'approved'
   ) return 'ready';
   if (snapshot.interrupt !== null) return 'waiting';
   if (state.lastError?.code === 'stale_context') return 'conflict';
   if (state.lifecycle === 'cancelled') return 'cancelled';
-  if (state.lifecycle === 'failed') return 'error';
   if (state.lifecycle === 'completed') return 'complete';
   if (state.phase === 'reviewing_preview' || state.phase === 'rendering_preview' || state.phase === 'repairing' || state.phase === 'building_preview') return 'reviewing';
   if (state.lifecycle === 'running') return state.phase === 'intake' ? 'intake' : 'working';
@@ -480,6 +557,7 @@ function previewView(
           detail: state.lastError.message,
         }
       : undefined),
+    actionsDisabled: snapshot.busy,
     isolated: true,
   };
 }
@@ -580,6 +658,25 @@ export function createAiAgentPanelController(
   const [applyingApprovedPatch, setApplyingApprovedPatch] = createSignal(false);
   let creativeDirection: { name: string; prompt: string } | undefined;
   let registeredAttachmentFingerprint = '';
+  let requestedFeedbackPreviewId: string | undefined;
+  let lastPreserveAllUiValue = options.preserveAllSourceInformation?.();
+
+  const preservationModeForMessage = (
+    message: string,
+    initialTask: boolean,
+  ): boolean | undefined => {
+    const currentUiValue = options.preserveAllSourceInformation?.();
+    const uiValueChanged = currentUiValue !== undefined &&
+      currentUiValue !== lastPreserveAllUiValue;
+    lastPreserveAllUiValue = currentUiValue;
+    if (asksToRelaxCompleteSourcePreservation(message)) return false;
+    if (asksForCompleteSourcePreservation(message)) return true;
+    // Starting a task establishes the initial contract. On later turns,
+    // silence means “retain it”; only a real UI-toggle transition or an
+    // explicit reader instruction may downgrade complete coverage.
+    if (initialTask) return currentUiValue ?? false;
+    return uiValueChanged ? currentUiValue : undefined;
+  };
 
   const attachmentFingerprint = (refs: readonly SourceAttachmentRef[]): string =>
     refs.map((ref) => {
@@ -700,7 +797,9 @@ export function createAiAgentPanelController(
     if (interrupt?.kind === 'final_preview') return interrupt.preview;
     const proposal = snapshot().state?.patchProposal;
     return proposal !== undefined &&
-      ['approved_pending_apply', 'apply_failed', 'approved'].includes(proposal.status)
+      ['waiting_for_approval', 'approved_pending_apply', 'apply_failed', 'approved'].includes(
+        proposal.status,
+      )
       ? proposal.preview
       : undefined;
   };
@@ -709,8 +808,12 @@ export function createAiAgentPanelController(
   const viewState = (): AiAgentViewState => {
     const current = snapshot();
     const state = current.state;
+    const unresolvedPreviewOutbox = state?.patchProposal !== undefined &&
+      ['waiting_for_approval', 'approved_pending_apply', 'apply_failed', 'approved'].includes(
+        state.patchProposal.status,
+      );
     const visibleTimeline = currentActivityTimeline(
-      latestTurnTimeline(timeline()),
+      unresolvedPreviewOutbox ? timeline() : latestTurnTimeline(timeline()),
       current.busy,
     );
     const conversationOnlySettled =
@@ -785,8 +888,9 @@ export function createAiAgentPanelController(
       canSend: connectionReady() && !current.busy && !applyingApprovedPatch(),
       composerPlaceholder: current.interrupt?.kind === 'requirements'
         ? 'Reply naturally in your own words…'
-        : current.interrupt?.kind === 'final_preview'
-          ? 'Describe the changes you want in the final draft…'
+        : current.interrupt?.kind === 'final_preview' ||
+            state?.patchProposal?.status === 'waiting_for_approval'
+          ? 'Ask a question, or choose “Ask for changes”…'
           : 'Describe what you want this notebook to become…',
     };
   };
@@ -805,39 +909,68 @@ export function createAiAgentPanelController(
     )),
     send: (message) => {
       const userMessageId = optimisticReaderMessage(message);
+      const feedbackPreviewId = requestedFeedbackPreviewId;
+      requestedFeedbackPreviewId = undefined;
       return (async () => {
         // Yield a real paint boundary before graph construction/source setup.
         // Without this, the signal updates immediately but the first message
         // cannot become pixels until the expensive first-task work yields.
         await afterOptimisticPaint();
         const current = snapshot();
+        const preserveAllSourceInformation = preservationModeForMessage(
+          message,
+          current.state === null,
+        );
         if (current.state === null) {
           const startingAttachments = options.sourceAttachments?.() ?? [];
           const startingFingerprint = attachmentFingerprint(startingAttachments);
+          const previousFingerprint = registeredAttachmentFingerprint;
           const direction = creativeDirection === undefined
             ? undefined
             : `${creativeDirection.name}: ${creativeDirection.prompt}`;
-          await core.startTask({
-            bookId: options.bookId,
-            goal: message,
-            creativeDirection: direction,
-            defaultContextPolicy: options.defaultContextPolicy?.(),
-            preserveAllSourceInformation:
-              options.preserveAllSourceInformation?.() === true ||
-              asksForCompleteSourcePreservation(message),
-            obfuscatePrivateText: options.obfuscatePrivateText?.() === true,
-            attachments: startingAttachments,
-            insertionTarget: options.insertionTarget?.(),
-            userMessageId,
-          });
+          // Claim the exact starting queue before awaiting runtime work. The
+          // final preview can paint before this promise's continuation runs;
+          // without this synchronous claim, an immediate follow-up mistakes
+          // the same visible attachment for a new queue and resets its already
+          // complete source-coverage ledger.
           registeredAttachmentFingerprint = startingFingerprint;
+          try {
+            await core.startTask({
+              bookId: options.bookId,
+              goal: message,
+              creativeDirection: direction,
+              defaultContextPolicy: options.defaultContextPolicy?.(),
+              preserveAllSourceInformation,
+              obfuscatePrivateText: options.obfuscatePrivateText?.() === true,
+              attachments: startingAttachments,
+              insertionTarget: options.insertionTarget?.(),
+              userMessageId,
+            });
+          } catch (error) {
+            const pendingFingerprint = attachmentFingerprint(
+              core.getSnapshot().state?.pendingSourceAttachments ?? [],
+            );
+            if (
+              registeredAttachmentFingerprint === startingFingerprint &&
+              pendingFingerprint !== startingFingerprint
+            ) {
+              registeredAttachmentFingerprint = previousFingerprint;
+            }
+            throw error;
+          }
           return;
         }
         await registerQueuedSources();
+        const currentPreview = activePreview();
+        if (
+          feedbackPreviewId !== undefined &&
+          currentPreview?.previewId === feedbackPreviewId
+        ) {
+          await core.revisePreview(feedbackPreviewId, message, userMessageId);
+          return;
+        }
         await core.sendUserMessage(message, {
-          preserveAllSourceInformation:
-            options.preserveAllSourceInformation?.() === true ||
-            asksForCompleteSourcePreservation(message),
+          preserveAllSourceInformation,
           insertionTarget: options.insertionTarget?.(),
           userMessageId,
         });
@@ -863,6 +996,7 @@ export function createAiAgentPanelController(
     stop: () => safely(() => core.stop()),
     retry: () => safely(() => core.retry()),
     startNewTask: () => {
+      requestedFeedbackPreviewId = undefined;
       setTimeline([]);
       safely(async () => {
         await registerQueuedSources();
@@ -872,6 +1006,7 @@ export function createAiAgentPanelController(
       });
     },
     selectThread: options.onSelectThread === undefined ? undefined : (id) => {
+      requestedFeedbackPreviewId = undefined;
       setTimeline([]);
       safely(async () => {
         await registerQueuedSources();
@@ -932,10 +1067,12 @@ export function createAiAgentPanelController(
         }
       });
     },
-    // Clicking “Ask for changes” only focuses the composer. Sending its text
-    // calls core.sendUserMessage(), which resumes the final-preview interrupt
-    // as feedback in one step. No intermediate rejection is needed.
-    requestChanges: (_previewId) => undefined,
+    // Arm exactly one composer submission as preview feedback. Ordinary
+    // messages remain side conversation and cannot silently consume the
+    // durable preview outbox.
+    requestChanges: (previewId) => {
+      requestedFeedbackPreviewId = previewId;
+    },
     refreshAfterConflict: () => safely(() => {
       if (snapshot().state?.patchProposal?.status === 'apply_failed') {
         return core.refreshFailedPreview();

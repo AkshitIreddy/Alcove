@@ -1248,10 +1248,6 @@ export default function BookView(): JSX.Element {
           })()
         : [...topLevelBlocksInRange(editor, selectionRange)];
     if (selected.length === 0) return;
-    if (selectionRange === undefined && selected[0]?.pos !== 0) {
-      notify('only the first block can move to the previous page', 'error');
-      return;
-    }
     const previous = pages()[slot - 1];
     if (previous === undefined) return;
     const first = selected[0]!;
@@ -1277,7 +1273,16 @@ export default function BookView(): JSX.Element {
     setFocusedSide((slot - 1) % 2 === 0 ? 'left' : 'right');
 
     withPageEditor(previous.id, (destination) => {
-      const currentSource = pages().find((page) => page.id === pageId)?.doc;
+      // The mounted editor is the newest source of truth. TipTap may normalize
+      // its initial document (for example by materializing a trailing writing
+      // paragraph) before that harmless change reaches the page mirror. Using
+      // only `pages()` here made an untouched non-first block look stale and
+      // rejected every backward move. If the source leaf unmounted while we
+      // chased the destination, fall back to the synchronous page mirror.
+      const mountedSource = getPageEditor(pageId);
+      const currentSource = mountedSource?.view.dom.isConnected
+        ? mountedSource.getJSON() as PageDoc
+        : pages().find((page) => page.id === pageId)?.doc;
       if (
         currentSource === undefined ||
         JSON.stringify(currentSource) !== sourceBeforeKey

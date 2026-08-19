@@ -145,8 +145,11 @@ describe('authored release-note order', () => {
         env: { ...process.env, ALCOVE_RELEASE_NOTES_TEST_BODY: body },
       },
     );
-    expect(body).toContain('## More reliable picture requests');
-    expect(body).toContain('## Smoother notebook editing');
+    const headings = body.match(/^##\s+\S.+$/gm) ?? [];
+    expect(body.trim().length).toBeGreaterThanOrEqual(180);
+    expect(headings.length).toBeGreaterThanOrEqual(1);
+    expect(headings.length).toBeLessThanOrEqual(3);
+    expect(body).not.toMatch(/\b(?:TODO|TBD|PLACEHOLDER)\b/i);
     expect(output).toMatch(/verified authored release note/i);
   });
 

@@ -21,6 +21,17 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.7 — smoother notebook editing
+
+**Everyday block actions are more dependable.** The context menu now has a
+normal Paste action, any block can move back one page when it fits, and rail
+panels keep their complete outline while their contents scroll.
+
+**The Agent stops turning one answer into another interview.** After a reader
+answers a clarification, the task continues without advertising another
+question in the same turn. The reader guide is also much shorter, with a small
+download section placed before the feature tour.
+
 ## 0.7.6 — reliable image-assisted Agent flow
 
 **Image requests stay grounded end-to-end.** Attached visuals are now kept with the

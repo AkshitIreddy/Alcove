@@ -1115,11 +1115,11 @@ const tl = timeline((t) => {
   t.loopAnchor();
   t.cue('shelf');
   /*
-   * The first frame a GitHub reader sees. It used to hold 1.8s — long enough
-   * to scroll past before the cursor moved. Half a second is plenty for the
-   * loop trimmer to find a matching seam; motion starts on the studio click.
+   * The first frame a GitHub reader sees. Start moving almost immediately so
+   * a reader cannot mistake the shelf for a still and scroll past the demo.
+   * The long matching hold at the end still gives the trimmer its clean seam.
    */
-  t.hold(0.5);
+  t.hold(0.1);
 
   /* ---------------------------- 2. the studio ---------------------------- */
 

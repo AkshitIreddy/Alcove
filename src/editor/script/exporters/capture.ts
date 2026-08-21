@@ -27,6 +27,7 @@ import {
 } from '../../document';
 import { mountMarginDoodles } from '../../effects/doodles';
 import { createEditorExtensions } from '../../extensions';
+import { mountStoredPageWritings } from '../../media/pageWritings';
 import {
   SNAPSHOTTING_CLASS,
   TRANSPARENT_PX,
@@ -283,6 +284,7 @@ export async function withOffscreenPage<T>(
   // Staged inside the live spread when the caller asks for it, so every
   // `.nb-spread …` rule reaches this sheet exactly as it reaches a real leaf.
   (context.host ?? document.body).appendChild(host);
+  mountStoredPageWritings(page, doc.attrs?.mouseWritings);
 
   let editor: Editor | null = null;
   let unmountDoodles: (() => void) | undefined;

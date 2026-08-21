@@ -150,6 +150,18 @@
   --page-line-height: var(--page-rule-pitch);
 }
 
+/* Saved whole-page mouse writing. It belongs to `.nb-page`, outside the prose
+   flow, so drawing never changes pagination or intercepts ordinary editing. */
+.nb-page-writing {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* When paginated, overflow is handed to the next page — never a scrollbar. */
 .nb-page[data-paginated='true'] .nb-page-editor .ProseMirror {
   overflow: hidden;

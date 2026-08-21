@@ -9,6 +9,10 @@ import Document from '@tiptap/extension-document';
 import { PAGE_STYLES } from '../data/types';
 import type { PageDoc, PageStyle } from '../data/types';
 import { normalizeStationerySplits } from './nodes/stationerySplit';
+import {
+  parsePageWritings,
+  serializePageWritings,
+} from './media/pageWritings';
 
 /*
  * The ruling IDS live in `data/types.ts`, beside the `PageStyle` union the
@@ -100,6 +104,16 @@ export const NotebookDocument = Document.extend({
           if (raw === null || raw === '') return undefined;
           const gap = clampRuleGapPx(raw);
           return gap === DEFAULT_RULE_GAP_PX ? undefined : gap;
+        },
+        renderHTML: () => ({}),
+      },
+      // Whole-page mouse writing uses the same normalized vector format as
+      // image annotations. Undefined keeps untouched page JSON compact.
+      mouseWritings: {
+        default: undefined,
+        parseHTML: (element: HTMLElement) => {
+          const raw = element.getAttribute('data-mouse-writings');
+          return serializePageWritings(parsePageWritings(raw)) ?? undefined;
         },
         renderHTML: () => ({}),
       },

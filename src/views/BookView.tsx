@@ -178,12 +178,25 @@ import TocPanel from './rail/TocPanel';
 import FocusRail from './rail/FocusRail';
 import {
   ZOOM_REST,
-  clampPan,
   clampZoom,
+  moveFocusPan,
   stepFocusLevel,
   stepZoom,
   type FocusLevel,
 } from './rail/focusLevels';
+import {
+  type ImageAnnotationColour,
+  type ImageAnnotationTool,
+} from '../editor/media/imageAnnotations';
+import {
+  PAGE_WRITINGS_ATTR,
+  PageWritingLayer,
+  erasePageWritingsAt,
+  parsePageWritings,
+  serializePageWritings,
+  type PageWritingPoint,
+  type PageWritingStroke,
+} from '../editor/media/pageWritings';
 import {
   armedMark,
   armedMarkLabel,
@@ -2334,20 +2347,47 @@ export default function BookView(): JSX.Element {
   const [deskZoom, setDeskZoom] = createSignal(DESK_ZOOM_REST);
   const [deskWheelArmed, setDeskWheelArmed] = createSignal(false);
   const [focusPan, setFocusPan] = createSignal({ x: 0, y: 0 });
+  const [focusInteraction, setFocusInteraction] = createSignal<'move' | 'write'>('move');
+  const [writingTool, setWritingTool] = createSignal<ImageAnnotationTool>('pen');
+  const [writingColour, setWritingColour] = createSignal<ImageAnnotationColour>('graphite');
+  const [writingSize, setWritingSize] = createSignal<number>(7);
+  const [clearWritingArmed, setClearWritingArmed] = createSignal(false);
+  const [focusWritingUndo, setFocusWritingUndo] =
+    createSignal<readonly (readonly PageWritingStroke[])[]>([]);
+  const [focusWritingRedo, setFocusWritingRedo] =
+    createSignal<readonly (readonly PageWritingStroke[])[]>([]);
+  interface FocusWritingSession {
+    readonly pageId: string;
+    readonly side: LeafSide;
+    readonly baseline: readonly PageWritingStroke[];
+    readonly strokes: readonly PageWritingStroke[];
+    readonly undo: readonly (readonly PageWritingStroke[])[];
+    readonly redo: readonly (readonly PageWritingStroke[])[];
+  }
+  const [focusWriting, setFocusWriting] = createSignal<FocusWritingSession | null>(null);
+  let writingGesture:
+    | {
+        readonly pointerId: number;
+        readonly pageId: string;
+        readonly before: readonly PageWritingStroke[];
+        readonly strokeId?: string;
+        changed: boolean;
+      }
+    | null = null;
   /** Which leaf survives at the `leaf` rung. */
   const [soloLeaf, setSoloLeaf] = createSignal<LeafSide>('left');
   const [activePanel, setActivePanel] = createSignal<RailPanelId | null>(null);
 
   const focusMode = (): boolean => focusLevel() !== 'off';
+  const focusWritingDirty = (): boolean => {
+    const current = focusWriting();
+    return current !== null &&
+      serializePageWritings(current.strokes) !==
+        serializePageWritings(current.baseline);
+  };
   /** The two rungs where the book itself is out of the way. */
   const boardsOff = (): boolean =>
     focusLevel() === 'page' || focusLevel() === 'leaf';
-
-  /** The window box the pan is clamped against (the stage fills it). */
-  const viewportBox = (): { width: number; height: number } => ({
-    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
-    height: typeof window === 'undefined' ? 800 : window.innerHeight,
-  });
 
   const recentre = (): void => {
     setFocusZoom(ZOOM_REST);
@@ -2357,10 +2397,166 @@ export default function BookView(): JSX.Element {
   const changeZoom = (direction: 1 | -1): void => {
     const next = stepZoom(focusZoom(), direction);
     setFocusZoom(next);
-    // Zooming back out has to bring the book back with it, or the reader ends
-    // up at 100% with the spread parked off the left edge and no way to tell
-    // that the pan — not the zoom — is what is wrong.
-    setFocusPan((pan) => clampPan(pan, next, viewportBox()));
+  };
+
+  const pageWritings = (page: Page): PageWritingStroke[] => {
+    const live = getPageEditor(page.id);
+    return parsePageWritings(
+      live?.state.doc.attrs[PAGE_WRITINGS_ATTR] ?? page.doc.attrs?.[PAGE_WRITINGS_ATTR],
+    );
+  };
+
+  const pageForFocusSide = (side: LeafSide): Page | null =>
+    side === 'left' ? leftPage() : rightPage();
+
+  const hasFocusWritings = (): boolean => {
+    const current = focusWriting();
+    if (current !== null) return current.strokes.length > 0;
+    const page = pageForFocusSide(focusedSide());
+    return page !== null && pageWritings(page).length > 0;
+  };
+
+  const startWritingSession = (side = soloLeaf()): FocusWritingSession | null => {
+    const page = pageForFocusSide(side);
+    if (page === null) return null;
+    const existing = focusWriting();
+    if (existing?.pageId === page.id) return existing;
+    if (existing !== null && focusWritingDirty()) {
+      notify('save or discard the unsaved writing before changing pages', 'error');
+      return null;
+    }
+    const stored = pageWritings(page);
+    const next: FocusWritingSession = {
+      pageId: page.id,
+      side,
+      baseline: stored,
+      strokes: stored,
+      undo: [],
+      redo: [],
+    };
+    setFocusWriting(next);
+    setFocusWritingUndo([]);
+    setFocusWritingRedo([]);
+    setFocusedSide(side);
+    return next;
+  };
+
+  const pickFocusInteraction = (mode: 'move' | 'write'): void => {
+    setClearWritingArmed(false);
+    setFocusInteraction(mode);
+    if (mode === 'write') startWritingSession(focusedSide());
+  };
+
+  const discardFocusWriting = (): void => {
+    const current = focusWriting();
+    if (current === null) return;
+    setFocusWriting({
+      ...current,
+      strokes: current.baseline,
+      undo: [],
+      redo: [],
+    });
+    setFocusWritingUndo([]);
+    setFocusWritingRedo([]);
+    writingGesture = null;
+    setClearWritingArmed(false);
+    notify('unsaved mouse writing discarded');
+  };
+
+  const saveFocusWriting = async (
+    strokes = focusWriting()?.strokes,
+  ): Promise<boolean> => {
+    const current = focusWriting();
+    if (current === null || strokes === undefined) return false;
+    const editor = getPageEditor(current.pageId);
+    if (editor === null || editor.isDestroyed) {
+      notify('that page is not ready to save yet', 'error');
+      return false;
+    }
+    const serialized = serializePageWritings(strokes) ?? undefined;
+    editor.view.dispatch(
+      editor.state.tr.setDocAttribute(PAGE_WRITINGS_ATTR, serialized),
+    );
+    const doc = editor.getJSON() as PageDoc;
+    updatePageDoc(current.pageId, doc);
+    if ((await savePageDoc(current.pageId, doc)) === null) {
+      notify('could not save the page writing', 'error');
+      return false;
+    }
+    setFocusWriting({
+      ...current,
+      baseline: strokes,
+      strokes,
+      undo: [],
+      redo: [],
+    });
+    setFocusWritingUndo([]);
+    setFocusWritingRedo([]);
+    flipApi?.invalidateSnapshots();
+    notify(strokes.length === 0 ? 'page writing cleared' : 'writing saved to the page');
+    return true;
+  };
+
+  const clearAllFocusWriting = (): void => {
+    const current = focusWriting() ?? startWritingSession(focusedSide());
+    if (current === null || (current.strokes.length === 0 && current.baseline.length === 0)) {
+      return;
+    }
+    if (!clearWritingArmed()) {
+      setClearWritingArmed(true);
+      window.setTimeout(() => setClearWritingArmed(false), 4000);
+      return;
+    }
+    setClearWritingArmed(false);
+    setFocusWriting({ ...current, strokes: [], undo: [], redo: [] });
+    void saveFocusWriting([]);
+  };
+
+  const undoFocusWriting = (): void => {
+    const current = focusWriting();
+    const history = focusWritingUndo();
+    const previous = history[history.length - 1] ?? current?.baseline;
+    if (current === null || previous === undefined) return;
+    setFocusWritingUndo(history.slice(0, -1));
+    setFocusWritingRedo((redo) => [...redo.slice(-49), current.strokes]);
+    setFocusWriting({
+      ...current,
+      strokes: previous,
+    });
+  };
+
+  const redoFocusWriting = (): void => {
+    const current = focusWriting();
+    const history = focusWritingRedo();
+    const next = history[history.length - 1];
+    if (current === null || next === undefined) return;
+    setFocusWritingRedo(history.slice(0, -1));
+    setFocusWritingUndo((undo) => [...undo.slice(-49), current.strokes]);
+    setFocusWriting({
+      ...current,
+      strokes: next,
+    });
+  };
+
+  const requestSoloLeaf = (side: LeafSide): void => {
+    if (focusWritingDirty() && focusWriting()?.side !== side) {
+      notify('save or discard the unsaved writing before changing pages', 'error');
+      return;
+    }
+    setSoloLeaf(side);
+    setFocusedSide(side);
+    if (focusInteraction() === 'write') startWritingSession(side);
+  };
+
+  const requestLeaveFocus = (): void => {
+    if (focusWritingDirty()) {
+      notify('writing is unsaved — save or discard it before leaving focus', 'error');
+      return;
+    }
+    setFocusInteraction('move');
+    setFocusWriting(null);
+    writingGesture = null;
+    setFocus(false);
   };
 
   /**
@@ -2386,7 +2582,13 @@ export default function BookView(): JSX.Element {
     setFocusLevel(level);
   };
 
-  const setFocus = (on: boolean): void => goToFocus(on ? 'spread' : 'off');
+  const setFocus = (on: boolean): void => {
+    if (!on && focusWritingDirty()) {
+      notify('writing is unsaved — save or discard it before leaving focus', 'error');
+      return;
+    }
+    goToFocus(on ? 'spread' : 'off');
+  };
   const toggleFocus = (): void => setFocus(!focusMode());
   const stepFocus = (direction: 1 | -1): void =>
     goToFocus(stepFocusLevel(focusLevel(), direction));
@@ -2805,21 +3007,13 @@ export default function BookView(): JSX.Element {
       changeZoom(event.deltaY < 0 ? 1 : -1);
       return;
     }
-    // Once the book is bigger than the window the wheel walks it around.
-    // Free to claim: pages never scroll, so a plain wheel over a leaf has
-    // never meant anything until now.
-    if (focusZoom() <= ZOOM_REST) return;
+    // Plain wheel/touchpad motion always moves the infinite focus canvas —
+    // including at 100%. Ctrl/pinch is the only wheel gesture that zooms.
     event.preventDefault();
     const step = event.shiftKey
       ? { x: -event.deltaY, y: 0 }
       : { x: -event.deltaX, y: -event.deltaY };
-    setFocusPan((pan) =>
-      clampPan(
-        { x: pan.x + step.x, y: pan.y + step.y },
-        focusZoom(),
-        viewportBox(),
-      ),
-    );
+    setFocusPan((pan) => moveFocusPan(pan, step));
   };
   const onDeskPointerMove = (event: PointerEvent): void => {
     if (!deskWheelArmed()) return;
@@ -2890,15 +3084,17 @@ export default function BookView(): JSX.Element {
   });
 
   /**
-   * Drag the zoomed book around.
-   *
-   * Only past 100% — at rest the book already fits, and a pan there would only
-   * ever be a way to push it off screen. Only off the paper, too: a drag that
+   * Drag the focus canvas around at every zoom, including 100%. Only off the paper, too: a drag that
    * starts inside the prose is the browser's own sweep-to-select and the page
    * turn's own grab, and stealing either would be worse than not panning.
    */
   const onPanDown = (event: PointerEvent): void => {
-    if (!focusMode() || focusZoom() <= ZOOM_REST || event.button !== 0) return;
+    if (
+      !focusMode() ||
+      focusInteraction() !== 'move' ||
+      event.button !== 0 ||
+      event.pointerType === 'touch'
+    ) return;
     const target = event.target;
     if (
       target instanceof Element &&
@@ -2912,13 +3108,9 @@ export default function BookView(): JSX.Element {
     const from = { px: event.clientX, py: event.clientY, ...focusPan() };
     const onMove = (move: PointerEvent): void => {
       setFocusPan(
-        clampPan(
-          {
-            x: from.x + (move.clientX - from.px),
-            y: from.y + (move.clientY - from.py),
-          },
-          focusZoom(),
-          viewportBox(),
+        moveFocusPan(
+          { x: from.x, y: from.y },
+          { x: move.clientX - from.px, y: move.clientY - from.py },
         ),
       );
     };
@@ -4731,6 +4923,143 @@ export default function BookView(): JSX.Element {
     onCleanup(() => el.removeEventListener('pointerdown', onDown, true));
   };
 
+  const writingPointAt = (
+    element: Element,
+    event: PointerEvent,
+  ): PageWritingPoint | null => {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  };
+
+  const beginFocusWriting = (
+    side: LeafSide,
+    event: PointerEvent,
+  ): void => {
+    if (
+      focusInteraction() !== 'write' ||
+      event.button !== 0 ||
+      event.pointerType === 'touch'
+    ) {
+      return;
+    }
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const current = startWritingSession(side);
+    if (current === null) return;
+    const point = writingPointAt(target, event);
+    if (point === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const tool = writingTool();
+    let next: readonly PageWritingStroke[] = current.strokes;
+    let strokeId: string | undefined;
+    if (tool === 'eraser') {
+      const rect = target.getBoundingClientRect();
+      next = erasePageWritingsAt(
+        current.strokes,
+        point,
+        rect.width > 0 ? rect.height / rect.width : 1.414,
+        writingSize(),
+      );
+    } else {
+      strokeId = `page-mark-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      next = [
+        ...current.strokes,
+        {
+          id: strokeId,
+          tool,
+          colour: writingColour(),
+          size: writingSize(),
+          points: [point],
+        },
+      ];
+    }
+    writingGesture = {
+      pointerId: event.pointerId,
+      pageId: current.pageId,
+      before: current.strokes,
+      strokeId,
+      changed:
+        serializePageWritings(next) !== serializePageWritings(current.strokes),
+    };
+    // Record the gesture's bookend immediately. Pointer capture is still used
+    // for the stroke itself, but Undo must not depend on a browser delivering
+    // pointerup back to the exact DOM node where the line began (headless and
+    // Windows pen drivers can both release it at the window boundary).
+    setFocusWritingUndo((history) => [...history.slice(-49), current.strokes]);
+    setFocusWritingRedo([]);
+    setFocusWriting({
+      ...current,
+      strokes: next,
+      redo: [],
+    });
+    target.setPointerCapture(event.pointerId);
+  };
+
+  const moveFocusWritingOn = (
+    target: HTMLElement,
+    event: PointerEvent,
+  ): void => {
+    const gesture = writingGesture;
+    if (gesture === null || gesture.pointerId !== event.pointerId) return;
+    const point = writingPointAt(target, event);
+    if (point === null) return;
+    event.preventDefault();
+    const current = focusWriting();
+    if (current === null || current.pageId !== gesture.pageId) return;
+    if (gesture.strokeId === undefined) {
+      const rect = target.getBoundingClientRect();
+      const next = erasePageWritingsAt(
+        current.strokes,
+        point,
+        rect.width > 0 ? rect.height / rect.width : 1.414,
+        writingSize(),
+      );
+      if (next.length !== current.strokes.length) gesture.changed = true;
+      setFocusWriting({ ...current, strokes: next });
+      return;
+    }
+    setFocusWriting({
+      ...current,
+      strokes: current.strokes.map((stroke) => {
+        if (stroke.id !== gesture.strokeId) return stroke;
+        const last = stroke.points[stroke.points.length - 1];
+        if (
+          last !== undefined &&
+          Math.hypot(last.x - point.x, last.y - point.y) < 0.001
+        ) {
+          return stroke;
+        }
+        gesture.changed = true;
+        return { ...stroke, points: [...stroke.points, point] };
+      }),
+    });
+  };
+
+  const endFocusWritingOn = (
+    target: HTMLElement,
+    event: PointerEvent,
+  ): void => {
+    const gesture = writingGesture;
+    if (gesture === null || gesture.pointerId !== event.pointerId) return;
+    if (target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+    writingGesture = null;
+    // History was recorded at pointerdown. This event only closes capture;
+    // every pointermove has already updated the same stroke in place.
+  };
+
+  const focusOverlayStrokes = (page: Page | null): readonly PageWritingStroke[] => {
+    if (page === null) return [];
+    const current = focusWriting();
+    return current?.pageId === page.id ? current.strokes : pageWritings(page);
+  };
+
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (
     <div
       class="nb-sheet-paper nb-leaf-paper"
@@ -4835,6 +5164,39 @@ export default function BookView(): JSX.Element {
           ) : null;
         }}
       </Show>
+      <Show when={focusMode() && focusInteraction() === 'write' && page() !== null}>
+        <div
+          class="nb-focus-writing-canvas"
+          data-page-id={page()?.id}
+          aria-label={`Temporary mouse writing canvas for the ${side} page`}
+          ref={(el) => {
+            const down = (event: PointerEvent): void => beginFocusWriting(side, event);
+            const move = (event: PointerEvent): void => moveFocusWritingOn(el, event);
+            const end = (event: PointerEvent): void => endFocusWritingOn(el, event);
+            el.addEventListener('pointerdown', down);
+            el.addEventListener('pointermove', move);
+            el.addEventListener('pointerup', end);
+            el.addEventListener('pointercancel', end);
+            onCleanup(() => {
+              el.removeEventListener('pointerdown', down);
+              el.removeEventListener('pointermove', move);
+              el.removeEventListener('pointerup', end);
+              el.removeEventListener('pointercancel', end);
+            });
+          }}
+        >
+          <PageWritingLayer
+            class="nb-focus-writing-preview"
+            strokes={focusOverlayStrokes(page())}
+            aspect={
+              paperElements[side]?.offsetWidth
+                ? (paperElements[side]!.offsetHeight - 72) /
+                  paperElements[side]!.offsetWidth
+                : 1.414
+            }
+          />
+        </div>
+      </Show>
     </div>
   );
 
@@ -4845,6 +5207,7 @@ export default function BookView(): JSX.Element {
       classList={{
         'is-focus-mode': focusMode(),
         'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
+        'is-focus-writing': focusMode() && focusInteraction() === 'write',
         'is-placing': armedMark() !== null,
       }}
       aria-busy={closing() ? 'true' : undefined}
@@ -4905,13 +5268,32 @@ export default function BookView(): JSX.Element {
           onZoom={changeZoom}
           onZoomRest={recentre}
           leaf={soloLeaf()}
-          onPickLeaf={setSoloLeaf}
+          onPickLeaf={requestSoloLeaf}
           panned={focusPan().x !== 0 || focusPan().y !== 0}
           onRecentre={recentre}
+          interaction={focusInteraction()}
+          onPickInteraction={pickFocusInteraction}
+          writingTool={writingTool()}
+          onPickWritingTool={setWritingTool}
+          writingColour={writingColour()}
+          onPickWritingColour={setWritingColour}
+          writingSize={writingSize()}
+          onPickWritingSize={setWritingSize}
+          writingDirty={focusWritingDirty() || focusWritingUndo().length > 0}
+          writingPageLabel={`${focusWriting()?.side ?? focusedSide()} page`}
+          canUndoWriting={focusWriting() !== null}
+          canRedoWriting={focusWritingRedo().length > 0}
+          hasWritings={hasFocusWritings()}
+          clearArmed={clearWritingArmed()}
+          onUndoWriting={undoFocusWriting}
+          onRedoWriting={redoFocusWriting}
+          onSaveWriting={() => void saveFocusWriting()}
+          onDiscardWriting={discardFocusWriting}
+          onClearWriting={clearAllFocusWriting}
           onOpenSettings={() => {
             runCommand('open-settings');
           }}
-          onLeave={() => setFocus(false)}
+          onLeave={requestLeaveFocus}
         />
       </Show>
 

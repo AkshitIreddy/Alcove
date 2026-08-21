@@ -47,7 +47,14 @@ import { isHistoryTransaction, undoDepth } from '@tiptap/pm/history';
 import type { Transaction } from '@tiptap/pm/state';
 import { gsap } from 'gsap';
 import { Flip } from 'gsap/Flip';
-import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import {
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import { savePageDoc } from '../data/pages';
 import type { PageDoc, PageStyle } from '../data/types';
 import { bumpLinkGraph } from '../search/backlinks';
@@ -74,6 +81,10 @@ import {
   insertMediaFiles,
   mediaFilesFrom,
 } from './media';
+import {
+  PageWritingLayer,
+  parsePageWritings,
+} from './media/pageWritings';
 import {
   accumulateCarriedCaret,
   contentOverflows,
@@ -1316,6 +1327,11 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     return value === undefined ? DEFAULT_RULE_GAP_PX : clampRuleGapPx(value);
   });
 
+  const mouseWritings = createEditorTransaction(editor, (instance) =>
+    parsePageWritings(instance?.state.doc.attrs.mouseWritings),
+  );
+  const [pageAspect, setPageAspect] = createSignal(1.414);
+
   // -------------------------------------------------------------------------
   // Margin doodles — deterministic pencil sketches, seeded by pageId.
   // Mounted only when the user wants them (settings are reactive; the
@@ -1380,15 +1396,28 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
       onDrop={onPageDrop}
       ref={(el) => {
         pageRootElement = el;
+        const measureWritingLayer = (): void => {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            setPageAspect(rect.height / rect.width);
+          }
+        };
+        const writingResize = new ResizeObserver(measureWritingLayer);
+        writingResize.observe(el);
+        measureWritingLayer();
         el.addEventListener('pointerdown', onTaskPointerDown);
         el.addEventListener('change', onTaskToggle);
         onCleanup(() => {
+          writingResize.disconnect();
           el.removeEventListener('pointerdown', onTaskPointerDown);
           el.removeEventListener('change', onTaskToggle);
         });
       }}
     >
       <div class="nb-page-editor" ref={mountElement} />
+      <Show when={mouseWritings().length > 0}>
+        <PageWritingLayer strokes={mouseWritings()} aspect={pageAspect()} />
+      </Show>
       <BacklinksTab cards={backlinks()} />
       <div
         class="nb-page-full-hint font-accent"

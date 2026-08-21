@@ -45,6 +45,17 @@
   transition: transform var(--dur-sm) var(--ease-out);
 }
 
+/* One-page mode retains both canonical half-width leaves so entering focus
+   cannot rewrap the book. Move the complete surface by exactly one quarter of
+   itself: the surviving half is then optically and geometrically centred. */
+.nb-book-view[data-focus-level='leaf'][data-solo-leaf='left'] .nb-flip-surface {
+  transform: translate3d(25%, 0, 0);
+}
+
+.nb-book-view[data-focus-level='leaf'][data-solo-leaf='right'] .nb-flip-surface {
+  transform: translate3d(-25%, 0, 0);
+}
+
 /* Only while it is actually moving. A permanent `will-change` on a stage that
    contains every mounted editor keeps a compositor layer alive for the whole
    session, which is the opposite of what the hint is for. */
@@ -55,12 +66,16 @@
 /* Somewhere to take hold of the zoomed book. The paper keeps its own cursor —
    a drag that starts in the prose is the browser's sweep-to-select, and the
    pan handler in BookView stands aside for it. */
-.nb-book-view.is-zoomed .nb-book-cover {
+.nb-book-view.is-focus-mode:not(.is-focus-writing) .nb-book-cover {
   cursor: grab;
 }
 
-.nb-book-view.is-zoomed .nb-book-cover:active {
+.nb-book-view.is-focus-mode:not(.is-focus-writing) .nb-book-cover:active {
   cursor: grabbing;
+}
+
+.nb-book-view.is-focus-writing .nb-flip-hotspot {
+  pointer-events: none;
 }
 
 /* --------------------------------------------------------------------------
@@ -274,6 +289,244 @@
 .nb-focus-rail-leave:hover {
   background: var(--wash-blush-light);
   border-color: var(--ink-line);
+}
+
+/* --------------------------------------------------------------------------
+   Focus writing palette — a stitched stationery pocket beside the narrow
+   rail. It opens only in Write mode; Move mode returns to one quiet column.
+   -------------------------------------------------------------------------- */
+.nb-focus-writing-palette {
+  position: absolute;
+  top: 50%;
+  left: 57px;
+  width: 254px;
+  max-height: calc(100vh - 28px);
+  overflow: auto;
+  padding: 13px;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: var(--stroke-ink-thin);
+  border-radius: 10px 17px 14px 19px / 16px 11px 19px 13px;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%) rotate(-0.15deg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-line) var(--paper-deep);
+}
+
+.nb-focus-writing-palette::-webkit-scrollbar { width: 11px; }
+.nb-focus-writing-palette::-webkit-scrollbar-track {
+  margin-block: 10px;
+  background: var(--paper-deep);
+  border-left: 1px solid var(--paper-edge);
+}
+.nb-focus-writing-palette::-webkit-scrollbar-thumb {
+  background: var(--paper-aged);
+  border: 2px solid var(--ink-line);
+  border-radius: 8px 11px 9px 12px;
+}
+
+.nb-focus-writing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 2px 10px;
+  border-bottom: 1.5px solid var(--paper-edge);
+}
+
+.nb-focus-writing-head > div {
+  display: grid;
+  gap: 1px;
+}
+
+.nb-focus-writing-head .font-accent { font-size: 17px; }
+.nb-focus-writing-head strong { font-size: 11px; text-transform: capitalize; }
+
+.nb-focus-writing-state {
+  padding: 3px 7px;
+  font-size: 10px;
+  color: var(--ink-sepia-soft);
+  background: var(--wash-moss-light);
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px 11px 9px 12px;
+}
+
+.nb-focus-writing-state.is-unsaved {
+  color: var(--ink-sepia);
+  background: var(--wash-lemon-light);
+  border-color: var(--wash-amber);
+}
+
+.nb-focus-writing-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.nb-focus-writing-tool {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 11px;
+  text-transform: capitalize;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 7px 10px 8px 11px;
+}
+
+.nb-focus-writing-tool:last-child { grid-column: 1 / -1; }
+.nb-focus-writing-tool:hover,
+.nb-focus-writing-tool.is-active {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+}
+
+.nb-focus-writing-tool > span {
+  width: 27px;
+  height: 4px;
+  display: block;
+  background: currentColor;
+  border-radius: 50%;
+  transform: rotate(-5deg);
+}
+.nb-focus-writing-tool > .is-pencil { height: 2px; opacity: 0.7; }
+.nb-focus-writing-tool > .is-brush { height: 8px; }
+.nb-focus-writing-tool > .is-highlighter { height: 9px; border-radius: 1px; opacity: 0.45; }
+.nb-focus-writing-tool > .is-eraser {
+  width: 18px;
+  height: 10px;
+  background: var(--wash-blush-light);
+  border: 1.5px solid currentColor;
+  border-radius: 3px 6px 4px 5px;
+}
+
+.nb-focus-writing-colours,
+.nb-focus-writing-sizes {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px;
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px 8px 12px 9px;
+}
+
+.nb-focus-writing-colours button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--swatch);
+  border: 2px solid var(--paper-cream);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--paper-edge);
+}
+
+.nb-focus-writing-colours button.is-active {
+  box-shadow: 0 0 0 2px var(--ink-sepia);
+  transform: scale(1.08);
+}
+
+.nb-focus-writing-sizes button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px 10px 7px 11px;
+}
+.nb-focus-writing-sizes button.is-active {
+  background: var(--wash-amber-light);
+  border-color: var(--ink-line);
+}
+.nb-focus-writing-sizes i {
+  display: block;
+  max-width: 20px;
+  max-height: 20px;
+  background: var(--ink-sepia);
+  border-radius: 50%;
+}
+
+.nb-focus-writing-history,
+.nb-focus-writing-danger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.nb-focus-writing-history button,
+.nb-focus-writing-danger button,
+.nb-focus-writing-save {
+  min-height: 31px;
+  padding: 5px 8px;
+  font-size: 10px;
+  color: var(--ink-sepia);
+  background: var(--paper-cream);
+  border: 1px solid var(--paper-edge);
+  border-radius: 7px 10px 8px 11px;
+}
+.nb-focus-writing-history button:disabled,
+.nb-focus-writing-danger button:disabled,
+.nb-focus-writing-save:disabled { opacity: 0.38; }
+
+.nb-focus-writing-save {
+  width: 100%;
+  margin-top: 9px;
+  min-height: 38px;
+  font-weight: 700;
+  background: var(--gilt-face);
+  border-color: var(--ink-sepia);
+}
+
+.nb-focus-writing-danger button:last-child { color: var(--accent-deep); }
+.nb-focus-writing-danger button.is-confirming {
+  color: var(--paper-cream);
+  background: var(--accent-deep);
+  border-color: var(--ink-sepia);
+}
+
+.nb-focus-writing-note {
+  margin: 9px 3px 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ink-sepia-soft);
+}
+
+.nb-focus-writing-canvas {
+  position: absolute;
+  /* Match `.nb-page` exactly inside the leaf: the page begins below the
+     sheet's 40px top inset and ends above its 32px foot. Its negative inline
+     margin already expands the ruling plane to both paper edges. */
+  inset: var(--space-40) 0 var(--space-32);
+  z-index: calc(var(--z-flip) + 7);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.nb-focus-writing-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The preview includes saved + temporary strokes; hide the durable layer
+   beneath it during Write mode so saved ink is not double-painted. */
+.nb-book-view.is-focus-writing .nb-leaf-paper .nb-page-writing {
+  visibility: hidden;
 }
 
 /* The full rail still fits the demo's 562px viewport and ordinary compact

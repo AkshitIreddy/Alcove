@@ -153,3 +153,18 @@ export function clampPan(
     y: whole(Math.min(ry, Math.max(-ry, pan.y))),
   };
 }
+
+/**
+ * Focus is an infinite desk, not a bounded image crop. This helper is kept
+ * separate from the legacy zoom clamp above so wheel and pointer paths share
+ * the exact same whole-pixel, unbounded camera math.
+ */
+export function moveFocusPan(
+  pan: { x: number; y: number },
+  delta: { x: number; y: number },
+): { x: number; y: number } {
+  return {
+    x: whole(pan.x + delta.x),
+    y: whole(pan.y + delta.y),
+  };
+}

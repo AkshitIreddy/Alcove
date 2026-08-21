@@ -584,6 +584,8 @@ export class CohereTauriAgentProvider implements AgentProvider {
     messages.push(...(await gatewayMessages(request.messages, context.signal, this.media)));
     abortIfNeeded(context.signal);
     const deterministicRouting = deterministicRoutingToolName(request) !== undefined;
+    const rawNotebookDraft = request.tools.length === 0 &&
+      request.evidence?.purpose === 'notebook_draft';
     const gatewayRequest: AiGatewayChatRequest = {
       runId: request.requestId,
       model: 'command-a-plus-05-2026',
@@ -597,9 +599,19 @@ export class CohereTauriAgentProvider implements AgentProvider {
         ? Math.min(request.maxOutputTokens ?? 2_048, 2_048)
         : request.maxOutputTokens ?? 16_384,
       temperature: 0.25,
+      // Raw Notebook Script is the final authored payload, not a tool-planning
+      // turn. Keep its private reasoning lane much smaller than an agent turn;
+      // the flattened transcript below removes stale tool-plan priming and the
+      // remaining output budget belongs to the visible script.
       thinking: deterministicRouting
         ? { type: 'disabled' }
-        : { type: 'enabled', tokenBudget: 8_000 },
+        : rawNotebookDraft
+          // Live Command A+ rejects an explicitly disabled thinking block on
+          // the four-image vision draft envelope (HTTP 422). Keep the clean,
+          // tool-free transcript and give reasoning a small bounded lane so
+          // most of the output budget remains available for the final script.
+          ? { type: 'enabled', tokenBudget: 2_000 }
+          : { type: 'enabled', tokenBudget: 8_000 },
       // Keep these two concerns separate. `request.toolChoice` is Alcove's
       // local graph invariant: a notebook/source turn must advance through a
       // tool and prose-only output is repaired or rejected below the provider

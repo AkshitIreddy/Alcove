@@ -117,6 +117,41 @@ describe('Cohere AI agent provider', () => {
     });
   });
 
+  it('keeps raw Notebook Script reasoning bounded for Cohere vision compatibility', async () => {
+    gateway.requests.length = 0;
+    const provider = new CohereTauriAgentProvider(() => true);
+    const stream = provider.streamTurn({
+      requestId: 'provider-raw-draft',
+      runId: 'run-raw-draft',
+      threadId: 'thread-raw-draft',
+      systemPrompt: 'Return the complete Notebook Script as plain text.',
+      tools: [],
+      messages: [{
+        role: 'user',
+        content: [{ type: 'text', text: 'Add these Week 7 images with explanations.' }],
+      }],
+      toolChoice: 'auto',
+      maxOutputTokens: 16_384,
+      evidence: {
+        turnId: 'reader-raw-draft',
+        purpose: 'notebook_draft',
+        requiredSourceImageCount: 0,
+        requiredSourceImageDigests: [],
+        deliveredSourceImageDigests: [],
+        requiredDraftImageDigests: [],
+        deliveredDraftImageDigests: [],
+      },
+    }, { signal: new AbortController().signal });
+    for await (const _event of stream) {
+      // drain the provider turn
+    }
+
+    expect(gateway.requests[0]).toMatchObject({
+      maxTokens: 16_384,
+      thinking: { type: 'enabled', tokenBudget: 2_000 },
+    });
+  });
+
   it('keeps ordinary conversation optional while validating any returned tool call strictly', async () => {
     gateway.requests.length = 0;
     const provider = new CohereTauriAgentProvider(() => true);

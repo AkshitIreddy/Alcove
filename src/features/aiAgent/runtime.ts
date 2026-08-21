@@ -474,6 +474,9 @@ export class AgentRuntime {
     const pendingSourceAttachments = cloneSourceAttachmentRefs(
       input.attachments ?? [],
     );
+    const suppliedImageCount = pendingSourceAttachments.filter((attachment) =>
+      attachment.kind === 'managed_asset' && attachment.mediaType.startsWith('image/'))
+      .length;
     let initial = createInitialAgentState({
       identity,
       goal: input.goal,
@@ -588,7 +591,9 @@ export class AgentRuntime {
         sourceManifest: manifest,
         sourceCoverage: createSourceCoverageLedger(
           manifest,
-          input.preserveAllSourceInformation ? 'complete' : 'relevant',
+          input.preserveAllSourceInformation || suppliedImageCount > 1
+            ? 'complete'
+            : 'relevant',
           this.adapters.clock.now(),
         ),
         updatedAt: this.adapters.clock.now(),

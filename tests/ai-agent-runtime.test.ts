@@ -2983,7 +2983,7 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(waiting.state.lastError).toBeUndefined();
   });
 
-  it('uses Cohere only for semantic drafting and visual judgment on a single-image task', async () => {
+  it('uses Cohere only for semantic drafting and keeps every image in a composed source unit', async () => {
     const requests: AgentProviderTurnRequest[] = [];
     const provider: AgentProvider = {
       id: 'cohere',
@@ -3040,7 +3040,37 @@ describe('Alcove autonomous notebook agent runtime', () => {
         })),
       })),
     };
-    const { adapters } = fakeAdapters(imageManifest);
+    const { adapters: baseAdapters } = fakeAdapters(imageManifest);
+    const sourceUnit = imageManifest.sources[0]!.units[0]!;
+    const sourceImages = Array.from({ length: 4 }, (_, index) => ({
+      image: {
+        resourceId: `week-7-image-${index + 1}`,
+        mimeType: 'image/png' as const,
+        digest: `week-7-image-digest-${index + 1}`,
+        width: 1056,
+        height: 1504,
+      },
+      anchor: sourceUnit.anchor,
+      label: `Week 7 image ${index + 1}`,
+    }));
+    const adapters: AgentAdapters = {
+      ...baseAdapters,
+      sources: {
+        ...baseAdapters.sources,
+        readFullSource: async (sourceId) => ({
+          sourceId,
+          sourceDigest: 'source-digest-1',
+          units: [{
+            unitId: sourceUnit.id,
+            anchor: sourceUnit.anchor,
+            text: `text for ${sourceUnit.id}`,
+            digest: sourceUnit.digest,
+          }],
+          truncated: false,
+          visualRefs: sourceImages,
+        }),
+      },
+    };
     const runtime = new AgentRuntime(provider, adapters, new InMemoryAgentPersistence());
 
     const waiting = await runtime.start({
@@ -3050,13 +3080,13 @@ describe('Alcove autonomous notebook agent runtime', () => {
       bookId: 'book-1',
       goal: 'Add this to my book.',
       insertionTarget: { kind: 'book_end' },
-      attachments: [{
-        kind: 'managed_asset',
-        assetId: 'cohere-local-picture',
-        title: 'Picture.png',
-        mediaType: 'image/png',
-        digest: 'cohere-local-picture-digest',
-      }],
+      attachments: sourceImages.map((source, index) => ({
+        kind: 'managed_asset' as const,
+        assetId: `cohere-local-picture-${index + 1}`,
+        title: `Week 7 (${index + 1}).png`,
+        mediaType: 'image/png' as const,
+        digest: source.image.digest,
+      })),
     });
 
     expect(waiting.interrupt).toMatchObject({ kind: 'final_preview' });
@@ -3065,6 +3095,27 @@ describe('Alcove autonomous notebook agent runtime', () => {
       [],
       ['record_visual_review'],
     ]);
+    expect(requests[0]?.messages.map((message) => message.role)).toEqual(['user']);
+    expect(requests[0]?.evidence).toMatchObject({
+      purpose: 'notebook_draft',
+      requiredSourceImageCount: 4,
+      requiredSourceImageDigests: sourceImages.map((source) => source.image.digest),
+      deliveredSourceImageDigests: sourceImages.map((source) => source.image.digest),
+    });
+    expect(requests[0]?.messages[0]?.content.filter((part) =>
+      part.type === 'image_ref' && part.purpose === 'source_analysis'
+    )).toEqual(sourceImages.map((source) => ({
+      type: 'image_ref',
+      purpose: 'source_analysis',
+      image: source.image,
+    })));
+    expect(requests[0]?.messages[0]?.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('[Current raw authoring instruction]'),
+      }),
+    ]));
+    expect(JSON.stringify(requests[0]?.messages)).not.toContain('"toolCalls"');
     expect(requests[0]?.systemPrompt).toContain(
       'Return only the complete raw Notebook Script',
     );
@@ -3218,6 +3269,12 @@ describe('Alcove autonomous notebook agent runtime', () => {
     expect(requests[2]?.systemPrompt).toContain(
       'previous raw-draft response was incomplete or used an unauthorized tool envelope',
     );
+    expect(requests.slice(0, 3).every((request) =>
+      request.messages.length === 1 && request.messages[0]?.role === 'user'
+    )).toBe(true);
+    expect(requests.slice(0, 3).every((request) =>
+      !JSON.stringify(request.messages).includes('"toolCalls"')
+    )).toBe(true);
     expect(waiting.state.modelHistory.filter((turn) =>
       turn.role === 'tool' && turn.toolName === 'submit_notebook_script' && turn.isError,
     )).toEqual([]);

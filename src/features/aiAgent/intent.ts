@@ -80,6 +80,22 @@ function conciseImageReadUnitEvidence(state: AgentState): Set<string> {
   return evidence;
 }
 
+function conciseImageReadAssetEvidence(state: AgentState): Set<string> {
+  const paths = new Set<string>();
+  for (const turn of currentReaderScopeTurns(state)) {
+    if (
+      turn.role !== 'tool' || turn.isError === true ||
+      (turn.toolName !== 'read_full_source' && turn.toolName !== 'read_source_range')
+    ) continue;
+    const content = asRecord(turn.content);
+    for (const value of Array.isArray(content?.visualRefs) ? content.visualRefs : []) {
+      const path = asRecord(value)?.portableAssetPath;
+      if (typeof path === 'string' && path.trim() !== '') paths.add(path.trim());
+    }
+  }
+  return paths;
+}
+
 function imageUnitCandidates(state: AgentState): Set<string> {
   const imageSources = state.sourceManifest?.sources.filter(
     (source) => source.kind === 'image' && source.units.length > 0,
@@ -208,6 +224,11 @@ export function readerRequestsConciseAttachedImage(state: AgentState): boolean {
   // placement and continuity. It does not turn one attached picture into a
   // multi-image authoring request.
   if (conciseImageSourceUnits.size !== 1) return false;
+  // Several uploaded images may be composed into one source unit. Unit count
+  // alone then lies about the request shape and the one-image compactor drops
+  // every attachment after the first. Once the source receipt exposes more
+  // than one portable asset, this is unambiguously a multi-image task.
+  if (conciseImageReadAssetEvidence(state).size > 1) return false;
   const currentText = currentReaderMessages(state).join('\n').trim() || latestReaderText(state);
   if (EXPANDED_ATTACHED_IMAGE_WRITEUP.test(currentText)) return false;
   const inheritedBrief = state.objective?.reason === 'reader_preview_feedback'

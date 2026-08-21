@@ -1,5 +1,29 @@
 # Alcove — running TODO
 
+## ✅ 0.7.9 — freer pages and better-bound books (released 2026-08-21)
+
+This release turns Focus mode and the image viewer into full workspaces with
+free pan and zoom, optional vector writing and explicit persistence. Navigation
+now restores each book's reading place, keeps one table-of-contents destination
+active, collapses minor sections and waits for page snapshots before curling.
+Book Studio remembers earlier generated looks; the context and slash menus are
+cleaner and configurable. Cohere preserves complete ordered multi-image tasks,
+while the title furniture and emblem catalogues use a smaller vetted set.
+
+Commits `3eb85d6` through `5f32795` plus annotated tag `v0.7.9` were pushed to
+`main`. GitHub Actions run `32469152367` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets; signed `latest.json` reports version 0.7.9 and
+immutable updater URLs for Windows, Linux and both macOS architectures.
+
+- [x] Preserve all supplied images in order through Cohere authoring and repair.
+- [x] Add free image and Focus canvases with durable, explicitly saved writing.
+- [x] Restore reading position, reliable heavy-book curls and atomic backflow.
+- [x] Simplify and customise editor menus and the table of contents.
+- [x] Restore previous Book Studio generations and curate title/emblem art.
+- [x] Pass frontend, Rust, README, spec, icon, platform-build and live-release
+      verification; publish all installers, checksums and updater metadata.
+
 ## ✅ 0.7.8 — steadier image-assisted pages (released 2026-08-19)
 
 The patch makes Cohere draft recovery explicit and bounded: malformed or

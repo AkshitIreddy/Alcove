@@ -16,7 +16,7 @@
 
 <!-- gen:badges -->
 <p align="center">
-  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.9-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.9"></a>
+  <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/badge/download-Alcove%200.7.10-c96f4a?style=flat-square&labelColor=4f3120" alt="Download Alcove 0.7.10"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/releases/latest"><img src="https://img.shields.io/github/v/release/AkshitIreddy/Alcove?style=flat-square&labelColor=4f3120&color=b8863b&label=latest" alt="Latest release"></a>
   <a href="https://github.com/AkshitIreddy/Alcove/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/AkshitIreddy/Alcove/release.yml?style=flat-square&labelColor=4f3120&label=build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-7d915c?style=flat-square&labelColor=4f3120" alt="Platforms: Windows, macOS and Linux">
@@ -168,8 +168,8 @@ the installer. Alcove needs no account.
 
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.9_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
-| **macOS 11+** | [`Alcove_0.7.9_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.10_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 16 MB |
+| **macOS 11+** | [`Alcove_0.7.10_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 
 Your library is stored separately from the app, so uninstalling Alcove does not
@@ -1267,7 +1267,7 @@ defending — why it is that way and what it replaced.
 ### What the source files document about themselves
 
 <!--f:srcDocstrings-->350<!--/f--> of <!--f:srcFiles-->391<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7366<!--/f--> lines of it.
+open with a module docstring — <!--f:docstringLines-->7362<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1460,7 +1460,7 @@ reader.
 
 | | | Where it is explained |
 | --- | --- | --- |
-| Frontend source | <!--f:srcFiles-->391<!--/f--> TypeScript files, <!--f:srcDocstrings-->350<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7366<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
+| Frontend source | <!--f:srcFiles-->391<!--/f--> TypeScript files, <!--f:srcDocstrings-->350<!--/f--> of which open with a module docstring — <!--f:docstringLines-->7362<!--/f--> lines of prose | [What the source files document about themselves](#what-the-source-files-document-about-themselves) |
 | Rust host | <!--f:rustFiles-->11<!--/f--> files, <!--f:rustLines-->7903<!--/f--> lines, <!--f:rustCommands-->29<!--/f--> commands, <!--f:dbMigrations-->2<!--/f--> migrations | [How it's built](#how-its-built) |
 | Everyday checks | The explicit `vitest.smoke.config.ts` allow-list plus strict TypeScript compilation | [The gate](docs/readme/part-2-developers.md#the-gate) |
 | Visual and audio acceptance | Performed directly by the owner, with targeted automation used when the changed surface warrants it | [The everyday gate](docs/readme/part-2-developers.md#the-everyday-gate) |

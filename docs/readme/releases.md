@@ -21,6 +21,25 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.10 — freer canvases and better-bound books
+
+**Focus and image workspaces now share a deliberate strategy-map camera.** The
+wheel zooms and a held middle mouse button pans anywhere, including over page
+content. Focus writing can begin in the margin and cross onto paper without
+selecting text, the writing pocket can close, image markup no longer repaints
+the page while drawing, and fullscreen images reach every viewport edge.
+
+**Page and Studio transitions are calmer.** The page curl remains visible until
+the newly landed image source is decoded, removing the blank-image handoff.
+Previous Look is a compact arrow on the live book preview, while custom-colour
+pickers no longer repeat remembered colours as another swatch shelf.
+
+**The binding catalogue was rebuilt rather than padded.** Twenty-five
+material-specific title constructions replace the rejected previous set, and
+six curated additions expand the accepted cover-frame catalogue to eighteen.
+The new work covers paper, vellum, morocco, calf, cloth and split bindings with
+distinct direct, inset, architectural and cartouche treatments.
+
 ## 0.7.9 — freer pages and better-bound books
 
 **Focus mode is now a real page workspace.** A single leaf centres in the

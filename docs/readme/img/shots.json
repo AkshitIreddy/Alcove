@@ -15,7 +15,7 @@
   "app": {
     "product": "Alcove",
     "version": "0.7.6",
-    "compatibleThrough": "0.7.9"
+    "compatibleThrough": "0.7.10"
   },
   "depicts": {
     "welcomeTitle": "Welcome to Alcove ✎",

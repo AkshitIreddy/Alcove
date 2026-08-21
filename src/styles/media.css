@@ -470,8 +470,10 @@
 }
 
 .nb-image-viewer.is-fullscreen {
-  width: 100vw;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -751,7 +753,7 @@
   cursor: crosshair;
 }
 
-.nb-image-viewer-stage[data-mode='move'][data-dragging] {
+.nb-image-viewer-stage[data-dragging] {
   cursor: grabbing;
 }
 

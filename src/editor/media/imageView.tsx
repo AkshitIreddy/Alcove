@@ -277,6 +277,9 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [annotations, setAnnotations] = createSignal<ImageAnnotationStroke[]>(
     parseImageAnnotations(props.node.attrs.annotations),
   );
+  const [pageAnnotations, setPageAnnotations] = createSignal<ImageAnnotationStroke[]>(
+    parseImageAnnotations(props.node.attrs.annotations),
+  );
   const [annotationUndo, setAnnotationUndo] =
     createSignal<ImageAnnotationStroke[][]>([]);
   const [annotationRedo, setAnnotationRedo] =
@@ -306,6 +309,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
         changed: boolean;
       }
     | undefined;
+  let annotationsDirty = false;
   let alive = true;
   let sourceGeneration = 0;
   onCleanup(() => {
@@ -315,8 +319,14 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
 
   createEffect(() => {
     const raw = props.node.attrs.annotations;
-    if (annotationGesture !== undefined) return;
     const incoming = parseImageAnnotations(raw);
+    if (
+      serializeImageAnnotations(incoming) !==
+      serializeImageAnnotations(untrack(pageAnnotations))
+    ) {
+      setPageAnnotations(incoming);
+    }
+    if (annotationGesture !== undefined || annotationsDirty) return;
     if (
       serializeImageAnnotations(incoming) !==
       serializeImageAnnotations(untrack(annotations))
@@ -440,11 +450,12 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   };
 
   const beginViewerDrag = (event: PointerEvent): void => {
-    if (viewerMode() === 'mark') {
+    const isMiddleButton = event.button === 1;
+    if (!isMiddleButton && viewerMode() === 'mark') {
       beginAnnotationGesture(event);
       return;
     }
-    if (event.button !== 0) return;
+    if (!isMiddleButton && event.button !== 0) return;
     event.preventDefault();
     const pan = viewerPan();
     viewerDrag = {
@@ -504,6 +515,26 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     props.updateAttributes({ annotations: serializeImageAnnotations(next) });
   };
 
+  /*
+   * TipTap attribute transactions can invalidate the page snapshot and node
+   * view behind this portal. Doing that at every pointer-up made the picture
+   * flash even though the workspace itself had not changed. Keep the active
+   * SVG draft local, then commit only after the portal is hidden.
+   */
+  const commitAnnotations = (): void => {
+    if (!annotationsDirty) return;
+    const next = annotations();
+    annotationsDirty = false;
+    setPageAnnotations(next);
+    persistAnnotations(next);
+  };
+
+  const closeViewer = (): void => {
+    setViewerFullscreen(false);
+    setViewerOpen(false);
+    queueMicrotask(commitAnnotations);
+  };
+
   const recordAnnotationChange = (
     before: ImageAnnotationStroke[],
     next: ImageAnnotationStroke[],
@@ -512,7 +543,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setAnnotationUndo((history) => [...history.slice(-49), before]);
     setAnnotationRedo([]);
     setAnnotations(next);
-    persistAnnotations(next);
+    annotationsDirty = true;
   };
 
   const eraseAt = (
@@ -617,7 +648,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setAnnotationUndo(history.slice(0, -1));
     setAnnotationRedo((redo) => [...redo.slice(-49), current]);
     setAnnotations(previous);
-    persistAnnotations(previous);
+    annotationsDirty = true;
   };
 
   const redoAnnotation = (): void => {
@@ -628,7 +659,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setAnnotationRedo(history.slice(0, -1));
     setAnnotationUndo((undo) => [...undo.slice(-49), current]);
     setAnnotations(next);
-    persistAnnotations(next);
+    annotationsDirty = true;
   };
 
   const clearAnnotations = (): void => {
@@ -649,7 +680,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       }
       if (event.key === 'Escape') {
         if (viewerFullscreen()) setViewerFullscreen(false);
-        else setViewerOpen(false);
+        else closeViewer();
       }
       if (event.key === '+' || event.key === '=') changeViewerZoom(25);
       if (event.key === '-') changeViewerZoom(-25);
@@ -1114,9 +1145,9 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   openViewer();
                 }}
               />
-              <Show when={annotations().length > 0}>
+              <Show when={pageAnnotations().length > 0}>
                 <ImageAnnotationLayer
-                  strokes={annotations()}
+                  strokes={pageAnnotations()}
                   aspect={imageAspect()}
                   class="nb-image-annotations"
                 />
@@ -1307,8 +1338,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
             role="presentation"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) {
-                setViewerFullscreen(false);
-                setViewerOpen(false);
+                closeViewer();
               }
             }}
           >
@@ -1348,10 +1378,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   <button
                     type="button"
                     class="is-recenter"
-                    aria-label="Back to image"
+                    aria-label="Center"
                     onClick={recenterViewer}
                   >
-                    <span aria-hidden="true">⌖</span> Back to image
+                    <span aria-hidden="true">⌖</span> Center
                   </button>
                   <button type="button" aria-label="Zoom out" onClick={() => changeViewerZoom(-25)}>−</button>
                   <button type="button" aria-label="Reset zoom and position" onClick={resetViewer}>100%</button>
@@ -1367,10 +1397,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                     type="button"
                     class="is-close"
                     aria-label="Close image viewer"
-                    onClick={() => {
-                      setViewerFullscreen(false);
-                      setViewerOpen(false);
-                    }}
+                    onClick={closeViewer}
                   >×</button>
                 </div>
               </header>
@@ -1449,9 +1476,9 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                 onWheel={(event) => {
                   event.preventDefault();
                   const action = viewerWheelAction(event);
-                  if (action.kind === 'zoom') changeViewerZoom(action.delta);
-                  else nudgeViewerPan(action.x, action.y);
+                  changeViewerZoom(action.delta);
                 }}
+                onAuxClick={(event) => event.preventDefault()}
                 onPointerDown={beginViewerDrag}
                 onPointerMove={moveViewerDrag}
                 onPointerUp={endViewerDrag}
@@ -1490,9 +1517,9 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               <footer class="nb-image-viewer-help font-ui">
                 <Show
                   when={viewerMode() === 'mark'}
-                  fallback={<>Drag anywhere — even at 100% — to explore the blank canvas. Wheel or +/− zooms; arrows nudge; 0 fits.</>}
+                  fallback={<>Hold the scroll wheel and drag anywhere to pan. Wheel or +/− zooms; arrows nudge; 0 fits.</>}
                 >
-                  Draw on the picture with pen, pencil, brush or highlighter. Marks save with the image; Ctrl+Z undoes.
+                  Draw with pen, pencil, brush or highlighter. Hold the scroll wheel to pan; marks save with the image when you close.
                 </Show>
               </footer>
             </section>

@@ -25,7 +25,7 @@ const browser = await chromium.launch({
   ],
 });
 const page = await browser.newPage({ viewport: { width: 1500, height: 980 } });
-page.setDefaultTimeout(120_000);
+page.setDefaultTimeout(30_000);
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
 const report = { ok: false, errors };
@@ -103,21 +103,32 @@ try {
   const stage = viewer.locator('.nb-image-viewer-stage');
   const art = viewer.locator('.nb-image-viewer-art');
   const transform0 = await art.evaluate((node) => node.style.transform);
-  await stage.dispatchEvent('wheel', { deltaX: 85, deltaY: -64, deltaMode: 0 });
-  const transformPan = await art.evaluate((node) => node.style.transform);
+  const zoomBeforeWheel = await viewer.locator('.nb-image-viewer-title span').textContent();
+  await stage.dispatchEvent('wheel', { deltaX: 0, deltaY: -64, deltaMode: 0 });
+  const transformAfterPlainWheel = await art.evaluate((node) => node.style.transform);
+  const zoomAfterWheel = await viewer.locator('.nb-image-viewer-title span').textContent();
   const zoomBeforePinch = await viewer.locator('.nb-image-viewer-title span').textContent();
   await stage.dispatchEvent('wheel', { deltaX: 0, deltaY: -120, deltaMode: 0, ctrlKey: true });
   const zoomAfterPinch = await viewer.locator('.nb-image-viewer-title span').textContent();
-  report.touchpad = { transform0, transformPan, zoomBeforePinch, zoomAfterPinch };
+  report.touchpad = {
+    transform0,
+    transformAfterPlainWheel,
+    zoomBeforeWheel,
+    zoomAfterWheel,
+    zoomBeforePinch,
+    zoomAfterPinch,
+  };
 
   const sb = await stage.boundingBox();
   if (sb === null) throw new Error('viewer stage missing');
   await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2);
-  await page.mouse.down();
+  await page.mouse.down({ button: 'middle' });
   await page.mouse.move(sb.x + sb.width + 900, sb.y + sb.height + 700, { steps: 12 });
-  await page.mouse.up();
+  await page.mouse.up({ button: 'middle' });
   report.deepPan = await art.evaluate((node) => node.style.transform);
-  await viewer.getByRole('button', { name: 'Back to image' }).click();
+  const centreButton = viewer.getByRole('button', { name: /^(Center|Back to image)$/ });
+  report.centerLabel = await centreButton.getAttribute('aria-label');
+  await centreButton.click();
   report.recentered = await art.evaluate((node) => node.style.transform);
 
   await viewer.getByRole('button', { name: 'Full screen image workspace' }).click();
@@ -127,6 +138,14 @@ try {
   await viewer.getByRole('button', { name: /Marker size 4/ }).click();
   const ab = await art.boundingBox();
   if (ab === null) throw new Error('image art missing');
+  const markPanBefore = await art.evaluate((node) => node.style.transform);
+  await page.mouse.move(ab.x + ab.width * 0.5, ab.y + ab.height * 0.5);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(ab.x + ab.width * 0.5 + 140, ab.y + ab.height * 0.5 + 90, { steps: 6 });
+  await page.mouse.up({ button: 'middle' });
+  const markPanAfter = await art.evaluate((node) => node.style.transform);
+  await centreButton.click();
+  report.middlePanInMarkMode = { before: markPanBefore, after: markPanAfter };
   await page.mouse.move(ab.x + ab.width * 0.18, ab.y + ab.height * 0.26);
   await page.mouse.down();
   await page.mouse.move(ab.x + ab.width * 0.8, ab.y + ab.height * 0.35, { steps: 18 });
@@ -134,10 +153,33 @@ try {
   await viewer.getByRole('button', { name: 'pen brush' }).click();
   await viewer.getByRole('button', { name: 'Terracotta marker' }).click();
   await viewer.getByRole('button', { name: /Marker size 3/ }).click();
+  await viewer.evaluate((node) => { node.dataset.qaIdentity = 'original-viewer'; });
   await page.mouse.move(ab.x + ab.width * 0.35, ab.y + ab.height * 0.7);
   await page.mouse.down();
-  await page.mouse.move(ab.x + ab.width * 0.68, ab.y + ab.height * 0.52, { steps: 14 });
+  const annotationFrames = [];
+  for (let step = 1; step <= 14; step += 1) {
+    const progress = step / 14;
+    await page.mouse.move(
+      ab.x + ab.width * (0.35 + (0.68 - 0.35) * progress),
+      ab.y + ab.height * (0.7 + (0.52 - 0.7) * progress),
+    );
+    annotationFrames.push(await page.evaluate(() => {
+      const viewerNode = document.querySelector('.nb-image-viewer');
+      const imageNode = document.querySelector('.nb-image-viewer-image');
+      const rect = imageNode?.getBoundingClientRect();
+      return {
+        viewerConnected: viewerNode?.isConnected === true,
+        imageConnected: imageNode?.isConnected === true,
+        imageWidth: rect?.width ?? 0,
+        imageHeight: rect?.height ?? 0,
+        backgroundPaths: document.querySelectorAll('.nb-image-annotations path').length,
+      };
+    }));
+  }
   await page.mouse.up();
+  report.annotationFrames = annotationFrames;
+  report.viewerIdentityAfterStroke = await viewer.getAttribute('data-qa-identity');
+  report.pageAnnotationPathsWhileViewerOpen = await page.locator('.nb-image-annotations path').count();
   const pathsBeforeUndo = await viewer.locator('.nb-image-viewer-annotations path').count();
   await viewer.getByRole('button', { name: 'Undo marker stroke' }).click();
   const pathsAfterUndo = await viewer.locator('.nb-image-viewer-annotations path').count();
@@ -146,7 +188,17 @@ try {
   report.annotations = { pathsBeforeUndo, pathsAfterUndo, pathsAfterRedo };
   report.fullscreen = await viewer.evaluate((node) => {
     const rect = node.getBoundingClientRect();
-    return { width: rect.width, height: rect.height, className: node.className };
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      right: rect.right,
+      bottom: rect.bottom,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      className: node.className,
+    };
   });
   await page.screenshot({ path: `${OUT}/02-fullscreen-annotation-workspace.png`, caret: 'hide' });
 
@@ -166,15 +218,28 @@ try {
     report.resize.widthPct > 100 &&
     report.resize.centred &&
     report.resize.insideLeaf &&
-    transformPan !== transform0 &&
+    zoomAfterWheel !== zoomBeforeWheel &&
     zoomBeforePinch !== zoomAfterPinch &&
     /translate3d\([^0]/.test(report.deepPan) &&
+    report.middlePanInMarkMode.after !== report.middlePanInMarkMode.before &&
     report.recentered.includes('translate3d(0px, 0px') &&
+    report.centerLabel === 'Center' &&
     pathsBeforeUndo === 2 &&
     pathsAfterUndo === 1 &&
     pathsAfterRedo === 2 &&
-    report.fullscreen.width === 1500 &&
-    report.fullscreen.height === 980 &&
+    report.fullscreen.x === 0 &&
+    report.fullscreen.y === 0 &&
+    report.fullscreen.right === report.fullscreen.viewportWidth &&
+    report.fullscreen.bottom === report.fullscreen.viewportHeight &&
+    report.viewerIdentityAfterStroke === 'original-viewer' &&
+    report.annotationFrames.every((frame) =>
+      frame.viewerConnected &&
+      frame.imageConnected &&
+      frame.imageWidth > 0 &&
+      frame.imageHeight > 0 &&
+      frame.backgroundPaths === 0
+    ) &&
+    report.pageAnnotationPathsWhileViewerOpen === 0 &&
     report.pageAnnotationPaths === 2 &&
     report.reopenedAnnotationPaths === 2;
 } catch (error) {

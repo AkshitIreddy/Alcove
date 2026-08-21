@@ -32,15 +32,15 @@ describe('large image viewer pan bounds', () => {
 });
 
 describe('image viewer touchpad gestures', () => {
-  it('uses ordinary two-axis wheel movement for canvas travel', () => {
+  it('uses ordinary wheel rotation for deliberate zoom rather than canvas travel', () => {
     expect(
       viewerWheelAction({
-        deltaX: 18,
+        deltaX: 0,
         deltaY: -42,
         deltaMode: 0,
         ctrlKey: false,
       }),
-    ).toEqual({ kind: 'pan', x: -18, y: 42 });
+    ).toEqual({ kind: 'zoom', delta: 3.36 });
   });
 
   it('reserves zoom for pinch-style Ctrl+wheel and bounds its step', () => {
@@ -62,7 +62,7 @@ describe('image viewer touchpad gestures', () => {
     ).toEqual({ kind: 'zoom', delta: -18 });
   });
 
-  it('normalises line wheels and caps a single pan event', () => {
+  it('normalises line-wheel zoom and bounds a single step', () => {
     expect(
       viewerWheelAction({
         deltaX: -30,
@@ -70,6 +70,17 @@ describe('image viewer touchpad gestures', () => {
         deltaMode: 1,
         ctrlKey: false,
       }),
-    ).toEqual({ kind: 'pan', x: 240, y: -240 });
+    ).toEqual({ kind: 'zoom', delta: -18 });
+  });
+
+  it('does not turn a sideways precision-touchpad gesture into zoom', () => {
+    expect(
+      viewerWheelAction({
+        deltaX: 96,
+        deltaY: 0,
+        deltaMode: 0,
+        ctrlKey: false,
+      }),
+    ).toEqual({ kind: 'zoom', delta: 0 });
   });
 });

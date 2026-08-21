@@ -139,7 +139,10 @@ import {
   bookStyleOverridesFor,
   resolveBookAppearance,
 } from '../features/bookshelf/bookIdentity';
-import { bookSurpriseLocksFor } from '../features/bookshelf/bookStudioPrefs';
+import {
+  bookSurpriseHistoryFor,
+  bookSurpriseLocksFor,
+} from '../features/bookshelf/bookStudioPrefs';
 import { prefsForBookcase } from '../features/bookshelf/libraryPrefs';
 import { prefersReducedMotion } from '../features/bookshelf/env';
 import {
@@ -5080,6 +5083,7 @@ export default function BookView(): JSX.Element {
                   bookId={loaded.book.id}
                   initialBookStyle={bookStyleOverridesFor(loaded.book)}
                   initialSurpriseLocks={bookSurpriseLocksFor(loaded.book)}
+                  initialSurpriseHistory={bookSurpriseHistoryFor(loaded.book)}
                   spineSeed={loaded.book.spineSeed}
                   title={loaded.book.title}
                   overrides={coverOverrides()}

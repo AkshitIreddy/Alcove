@@ -45,8 +45,12 @@ import {
 } from '../../features/bookshelf/bookIdentity';
 import { saveBookBinding } from '../../data/designPrefs';
 import {
+  bookSurpriseHistoryFor,
   bookSurpriseLocksFor,
+  normalizeBookSurpriseHistory,
+  saveBookSurpriseHistory,
   saveBookSurpriseLocks,
+  type BookSurpriseHistoryEntry,
 } from '../../features/bookshelf/bookStudioPrefs';
 import {
   RULING_ORDER,
@@ -97,6 +101,8 @@ export interface CustomizePanelProps {
   initialBookStyle?: Record<string, unknown> | null;
   /** Surprise locks from the same already-loaded Book row. */
   initialSurpriseLocks?: BookSurpriseLockSet;
+  /** Bounded per-book Surprise appearance stack from the same Book row. */
+  initialSurpriseHistory?: readonly BookSurpriseHistoryEntry[];
   /** Page count, for the default spine thickness. */
   pageCount?: number;
   /**
@@ -117,6 +123,9 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
   );
   const [surpriseLocks, setSurpriseLocks] = createSignal<BookSurpriseLockSet>(
     normalizeBookSurpriseLocks(props.initialSurpriseLocks),
+  );
+  const [surpriseHistory, setSurpriseHistory] = createSignal<readonly BookSurpriseHistoryEntry[]>(
+    normalizeBookSurpriseHistory(props.initialSurpriseHistory),
   );
   const hydration = createBookAppearanceHydrationGuard();
   /*
@@ -149,12 +158,14 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
         if (id === undefined) {
           setStyle(null);
           setSurpriseLocks(normalizeBookSurpriseLocks(props.initialSurpriseLocks));
+          setSurpriseHistory(normalizeBookSurpriseHistory(props.initialSurpriseHistory));
           return;
         }
         if (props.initialBookStyle !== undefined) {
           if (hydration.accepts(ticket)) {
             setStyle(props.initialBookStyle);
             setSurpriseLocks(normalizeBookSurpriseLocks(props.initialSurpriseLocks));
+            setSurpriseHistory(normalizeBookSurpriseHistory(props.initialSurpriseHistory));
           }
           return;
         }
@@ -163,6 +174,7 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
             if (hydration.accepts(ticket)) {
               setStyle(book === null ? null : bookStyleOverridesFor(book));
               setSurpriseLocks(bookSurpriseLocksFor(book));
+              setSurpriseHistory(bookSurpriseHistoryFor(book));
             }
           })
           .catch(() => undefined);
@@ -245,6 +257,16 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
     }
   };
 
+  const changeSurpriseHistory = (
+    next: readonly BookSurpriseHistoryEntry[],
+  ): void => {
+    const normalized = normalizeBookSurpriseHistory(next);
+    setSurpriseHistory(normalized);
+    if (props.bookId !== undefined) {
+      void saveBookSurpriseHistory(props.bookId, normalized).catch(() => undefined);
+    }
+  };
+
   const patchDefaults = (partial: BookPageDefaults): void => {
     props.onPageDefaultsChange({ ...(props.pageDefaults ?? {}), ...partial });
   };
@@ -316,6 +338,8 @@ export default function CustomizePanel(props: CustomizePanelProps): JSX.Element 
             onAppearanceChange={changeAppearance}
             surpriseLocks={surpriseLocks()}
             onSurpriseLocksChange={changeSurpriseLocks}
+            surpriseHistory={surpriseHistory()}
+            onSurpriseHistoryChange={changeSurpriseHistory}
             pageCount={props.pageCount}
             // The binding is keyed by book id, and without this the studio
             // falls back to `seed:<spineSeed>` — stable, but a different key

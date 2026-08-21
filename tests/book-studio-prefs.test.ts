@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { mergeCoverMetaSection } from '../src/data/books';
 import {
   BOOK_STUDIO_PREFS_VERSION,
+  BOOK_SURPRISE_HISTORY_LIMIT,
+  bookSurpriseHistoryFor,
   bookStudioPrefsSection,
   bookSurpriseLocksFor,
   mergeBookStudioPrefsSection,
   normalizeBookStudioPrefs,
+  popBookSurpriseHistory,
+  pushBookSurpriseHistory,
 } from '../src/features/bookshelf/bookStudioPrefs';
 
 describe('per-book Book Studio preferences', () => {
@@ -19,6 +23,58 @@ describe('per-book Book Studio preferences', () => {
     ).toEqual({
       version: BOOK_STUDIO_PREFS_VERSION,
       surpriseLocks: ['binding'],
+      surpriseHistory: [],
+    });
+  });
+
+  it('hydrates a bounded per-book Surprise history and drops corrupt entries', () => {
+    const raw = Array.from({ length: BOOK_SURPRISE_HISTORY_LIMIT + 3 }, (_, index) => ({
+      style: { height: 260 + index },
+      binding: null,
+      projectionBinding: 'plain-cloth',
+    }));
+    raw.splice(2, 0, {
+      style: { height: 999 },
+      binding: null,
+      projectionBinding: 'not-a-binding',
+    });
+    const history = bookSurpriseHistoryFor({
+      coverMeta: {
+        studio: {
+          version: BOOK_STUDIO_PREFS_VERSION,
+          surpriseLocks: [],
+          surpriseHistory: raw,
+        },
+      },
+    });
+
+    expect(history).toHaveLength(BOOK_SURPRISE_HISTORY_LIMIT);
+    expect(history[0]?.style).toMatchObject({ height: 263 });
+    expect(history[history.length - 1]?.style).toMatchObject({
+      height: 260 + BOOK_SURPRISE_HISTORY_LIMIT + 2,
+    });
+    expect(history.every((entry) => entry.projectionBinding === 'plain-cloth')).toBe(true);
+  });
+
+  it('steps backward through rapid Surprise generations newest-first', () => {
+    const looks = [250, 270, 290].reduce(
+      (history, height) => pushBookSurpriseHistory(history, {
+        style: { height },
+        binding: null,
+        projectionBinding: 'plain-cloth',
+      }),
+      [] as ReturnType<typeof pushBookSurpriseHistory>,
+    );
+
+    const first = popBookSurpriseHistory(looks);
+    expect(first.previous?.style).toMatchObject({ height: 290 });
+    const second = popBookSurpriseHistory(first.remaining);
+    expect(second.previous?.style).toMatchObject({ height: 270 });
+    const third = popBookSurpriseHistory(second.remaining);
+    expect(third.previous?.style).toMatchObject({ height: 250 });
+    expect(popBookSurpriseHistory(third.remaining)).toEqual({
+      previous: null,
+      remaining: [],
     });
   });
 
@@ -75,7 +131,7 @@ describe('per-book Book Studio preferences', () => {
         futureFinishing: extension,
       }, ['cover.frame', 'thickness']),
     ).toEqual({
-      version: 1,
+      version: BOOK_STUDIO_PREFS_VERSION,
       surpriseLocks: [
         'future.foil',
         { futureGroup: 'endpapers' },
@@ -99,7 +155,7 @@ describe('per-book Book Studio preferences', () => {
         futureFinishing: { foil: 'silver' },
       }, []),
     ).toEqual({
-      version: 1,
+      version: BOOK_STUDIO_PREFS_VERSION,
       futureFinishing: { foil: 'silver' },
     });
   });

@@ -34,7 +34,10 @@ import {
 } from '../../data/books';
 import type { Book } from '../../data/types';
 import { bookStyleOverridesFor } from '../../features/bookshelf/bookIdentity';
-import { bookSurpriseLocksFor } from '../../features/bookshelf/bookStudioPrefs';
+import {
+  bookSurpriseHistoryFor,
+  bookSurpriseLocksFor,
+} from '../../features/bookshelf/bookStudioPrefs';
 import CustomizePanel from './CustomizePanel';
 import LibraryStudio from './LibraryStudio';
 import RailPanel from './RailPanel';
@@ -180,6 +183,7 @@ export default function ShelfStudio(props: ShelfStudioProps): JSX.Element {
             bookId={loaded().id}
             initialBookStyle={bookStyleOverridesFor(loaded())}
             initialSurpriseLocks={bookSurpriseLocksFor(loaded())}
+            initialSurpriseHistory={bookSurpriseHistoryFor(loaded())}
             spineSeed={loaded().spineSeed}
             title={loaded().title}
             overrides={overrides()}

@@ -103,6 +103,12 @@ import {
   coverOverridesFromStyle as resolvedCoverOverrides,
   themeSpineDefaults,
 } from '../../features/bookshelf/bookIdentity';
+import {
+  normalizeBookSurpriseHistory,
+  popBookSurpriseHistory,
+  pushBookSurpriseHistory,
+  type BookSurpriseHistoryEntry,
+} from '../../features/bookshelf/bookStudioPrefs';
 import type { CoverOverrides } from '../../art/covers';
 import {
   PIGMENT_CLOTH_NAMES,
@@ -682,6 +688,9 @@ export interface BookStudioProps {
    */
   surpriseLocks?: BookSurpriseLockSet;
   onSurpriseLocksChange?(next: BookSurpriseLockSet): void;
+  /** Previous whole-book Surprise appearances, newest last. */
+  surpriseHistory?: readonly BookSurpriseHistoryEntry[];
+  onSurpriseHistoryChange?(next: readonly BookSurpriseHistoryEntry[]): void;
 }
 
 export default function BookStudio(props: BookStudioProps): JSX.Element {
@@ -704,6 +713,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   >(undefined);
   const [sessionLocks, setSessionLocks] = createSignal<BookSurpriseLockSet>(
     normalizeBookSurpriseLocks(props.surpriseLocks),
+  );
+  const [sessionHistory, setSessionHistory] = createSignal<readonly BookSurpriseHistoryEntry[]>(
+    normalizeBookSurpriseHistory(props.surpriseHistory),
   );
   let studioRoot: HTMLDivElement | undefined;
   let highlightedControl: HTMLElement | undefined;
@@ -808,8 +820,20 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   );
   createEffect(
     on(
+      () => props.surpriseHistory,
+      (incoming) => {
+        if (incoming !== undefined) setSessionHistory(normalizeBookSurpriseHistory(incoming));
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
       () => props.bookId,
-      () => setSessionLocks(normalizeBookSurpriseLocks(props.surpriseLocks)),
+      () => {
+        setSessionLocks(normalizeBookSurpriseLocks(props.surpriseLocks));
+        setSessionHistory(normalizeBookSurpriseHistory(props.surpriseHistory));
+      },
       { defer: true },
     ),
   );
@@ -833,6 +857,12 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     setLocks([...next] as BookSurpriseLockSet);
   };
   const unlockAll = (): void => setLocks([]);
+  const surpriseHistory = (): readonly BookSurpriseHistoryEntry[] => sessionHistory();
+  const setHistory = (next: readonly BookSurpriseHistoryEntry[]): void => {
+    const normalized = normalizeBookSurpriseHistory(next);
+    setSessionHistory(normalized);
+    props.onSurpriseHistoryChange?.(normalized);
+  };
 
   const Lock = (lockProps: { id: BookSurpriseLockId; label?: string }): JSX.Element => (
     <SurpriseLockButton
@@ -1336,6 +1366,15 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
    * to overwrite a value the reader explicitly asked Surprise to keep.
    */
   const surprise = (): void => {
+    const effectiveBinding = pinned() ?? seedBinding();
+    setHistory(pushBookSurpriseHistory(
+      surpriseHistory(),
+      {
+        style: normalizeBookStyleOverrides(props.style),
+        binding: pinned(),
+        projectionBinding: effectiveBinding,
+      },
+    ));
     const recipe = curatedSurpriseRecipe((Math.random() * 0xffffffff) >>> 0);
     const current = { ...(normalizeBookStyleOverrides(props.style) ?? {}) };
     // The named preset owns its covering unless the reader locked the coarse
@@ -1348,6 +1387,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       ...(recipe.style as Partial<BookStyle>),
     };
     applyAppearance(next, recipe.preset, recipe.preset);
+  };
+
+  const restorePreviousSurprise = (): void => {
+    const { previous, remaining } = popBookSurpriseHistory(surpriseHistory());
+    if (previous === null) return;
+    setHistory(remaining);
+    applyAppearance(previous.style, previous.binding, previous.projectionBinding);
   };
 
   /**
@@ -1716,16 +1762,35 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             </button>
           </Show>
         </div>
-        <button type="button" class="nb-library-surprise-action" onClick={surprise}>
-          <span aria-hidden="true">⚄</span>
-          <span>
-            <strong>dress this book</strong>
-            <small>
-              binding, cloth, proportions and finishing together
-              <Show when={surpriseLocks().length > 0}> — except what you locked</Show>
-            </small>
-          </span>
-        </button>
+        <div class="nb-book-surprise-actions">
+          <button type="button" class="nb-library-surprise-action" onClick={surprise}>
+            <span aria-hidden="true">⚄</span>
+            <span>
+              <strong>dress this book</strong>
+              <small>
+                binding, cloth, proportions and finishing together
+                <Show when={surpriseLocks().length > 0}> — except what you locked</Show>
+              </small>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="nb-book-surprise-previous"
+            disabled={surpriseHistory().length === 0}
+            aria-label="Restore previous generated book look"
+            onClick={restorePreviousSurprise}
+          >
+            <span class="nb-book-surprise-previous-mark" aria-hidden="true">↶</span>
+            <span>
+              <strong>previous look</strong>
+              <small class="font-ui">
+                {surpriseHistory().length === 0
+                  ? 'dress the book to begin a history'
+                  : `${surpriseHistory().length} saved ${surpriseHistory().length === 1 ? 'look' : 'looks'} for this book`}
+              </small>
+            </span>
+          </button>
+        </div>
       </section>
 
       {/* Height remains prominent, but below the whole-book shortcut. */}

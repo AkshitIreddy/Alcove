@@ -12,21 +12,87 @@ import {
   normalizeBookSurpriseLocks,
   type BookSurpriseLockSet,
 } from '../../art/bookSurprise';
+import { isBookPresetId, type BookPresetId } from '../../art/bookDesign';
+import {
+  normalizeBookStyleOverrides,
+  type BookStyleOverrides,
+} from '../../art/bookStyle';
 import {
   mergeCoverMetaSection,
   mutateBookCoverMeta,
 } from '../../data/books';
 import type { Book } from '../../data/types';
 
-export const BOOK_STUDIO_PREFS_VERSION = 1 as const;
+export const BOOK_STUDIO_PREFS_VERSION = 2 as const;
+export const BOOK_SURPRISE_HISTORY_LIMIT = 12 as const;
+
+export interface BookSurpriseHistoryEntry {
+  readonly style: BookStyleOverrides | null;
+  /** Null means the book was following its seed rather than a pinned binding. */
+  readonly binding: BookPresetId | null;
+  /** Exact binding used to project/render the stored style. */
+  readonly projectionBinding: BookPresetId;
+}
 
 export interface BookStudioPrefs {
   version: typeof BOOK_STUDIO_PREFS_VERSION;
   surpriseLocks: BookSurpriseLockSet;
+  surpriseHistory: readonly BookSurpriseHistoryEntry[];
 }
 
 const EMPTY_LOCKS = Object.freeze([]) as BookSurpriseLockSet;
 const KNOWN_LOCK_IDS = new Set<string>(BOOK_SURPRISE_LOCK_IDS);
+
+function normalizeHistoryEntry(raw: unknown): BookSurpriseHistoryEntry | null {
+  const record = objectRecord(raw);
+  if (record === null || !isBookPresetId(record.projectionBinding)) return null;
+  const binding = record.binding === null
+    ? null
+    : isBookPresetId(record.binding)
+      ? record.binding
+      : undefined;
+  if (binding === undefined) return null;
+  const style = record.style === null
+    ? null
+    : normalizeBookStyleOverrides(record.style);
+  if (record.style !== null && style === null) return null;
+  return {
+    style,
+    binding,
+    projectionBinding: record.projectionBinding,
+  };
+}
+
+export function normalizeBookSurpriseHistory(
+  raw: unknown,
+): readonly BookSurpriseHistoryEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(normalizeHistoryEntry)
+    .filter((entry): entry is BookSurpriseHistoryEntry => entry !== null)
+    .slice(-BOOK_SURPRISE_HISTORY_LIMIT);
+}
+
+export function pushBookSurpriseHistory(
+  history: readonly BookSurpriseHistoryEntry[],
+  current: BookSurpriseHistoryEntry,
+): readonly BookSurpriseHistoryEntry[] {
+  return normalizeBookSurpriseHistory([...history, current]);
+}
+
+export function popBookSurpriseHistory(
+  history: readonly BookSurpriseHistoryEntry[],
+): {
+  readonly previous: BookSurpriseHistoryEntry | null;
+  readonly remaining: readonly BookSurpriseHistoryEntry[];
+} {
+  const normalized = normalizeBookSurpriseHistory(history);
+  if (normalized.length === 0) return { previous: null, remaining: [] };
+  return {
+    previous: normalized[normalized.length - 1] ?? null,
+    remaining: normalized.slice(0, -1),
+  };
+}
 /**
  * Locks from surfaces deliberately destroyed by the book reset. They are not
  * future extensions: preserving them would resurrect invisible promises in a
@@ -77,12 +143,14 @@ export function normalizeBookStudioPrefs(raw: unknown): BookStudioPrefs {
     return {
       version: BOOK_STUDIO_PREFS_VERSION,
       surpriseLocks: EMPTY_LOCKS,
+      surpriseHistory: [],
     };
   }
   const record = raw as Record<string, unknown>;
   return {
     version: BOOK_STUDIO_PREFS_VERSION,
     surpriseLocks: normalizeBookSurpriseLocks(record.surpriseLocks),
+    surpriseHistory: normalizeBookSurpriseHistory(record.surpriseHistory),
   };
 }
 
@@ -91,6 +159,12 @@ export function bookSurpriseLocksFor(
   book: Pick<Book, 'coverMeta'> | null | undefined,
 ): BookSurpriseLockSet {
   return normalizeBookStudioPrefs(book?.coverMeta?.studio).surpriseLocks;
+}
+
+export function bookSurpriseHistoryFor(
+  book: Pick<Book, 'coverMeta'> | null | undefined,
+): readonly BookSurpriseHistoryEntry[] {
+  return normalizeBookStudioPrefs(book?.coverMeta?.studio).surpriseHistory;
 }
 
 /** Pure persisted representation; an empty set removes the whole section. */
@@ -174,6 +248,41 @@ export function saveBookSurpriseLocks(
 ): Promise<Book | null> {
   return mutateBookCoverMeta(bookId, (meta) => {
     const section = mergeBookStudioPrefsSection(meta?.studio, locks);
+    return mergeCoverMetaSection(meta, 'studio', section);
+  });
+}
+
+/**
+ * Persist the bounded stack without rewriting locks or extension fields.
+ * Future envelopes remain opaque to this build rather than being downgraded.
+ */
+export function saveBookSurpriseHistory(
+  bookId: string,
+  history: readonly BookSurpriseHistoryEntry[],
+): Promise<Book | null> {
+  const normalized = normalizeBookSurpriseHistory(history);
+  return mutateBookCoverMeta(bookId, (meta) => {
+    const current = objectRecord(meta?.studio);
+    if (current !== null && isFutureEnvelope(current)) return meta;
+    const next: Record<string, unknown> = {
+      ...(current ?? {}),
+      version: BOOK_STUDIO_PREFS_VERSION,
+    };
+    if (normalized.length > 0) {
+      next.surpriseHistory = normalized.map((entry) => ({
+        style: entry.style,
+        binding: entry.binding,
+        projectionBinding: entry.projectionBinding,
+      }));
+    } else {
+      delete next.surpriseHistory;
+    }
+    const extensionKeys = Object.keys(next).filter((key) =>
+      key !== 'version' && key !== 'surpriseLocks' && key !== 'surpriseHistory');
+    const hasLocks = Array.isArray(next.surpriseLocks) && next.surpriseLocks.length > 0;
+    const section = !hasLocks && normalized.length === 0 && extensionKeys.length === 0
+      ? null
+      : next;
     return mergeCoverMetaSection(meta, 'studio', section);
   });
 }

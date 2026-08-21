@@ -115,7 +115,6 @@ import {
 import {
   topLevelBlockAt,
   topLevelBlocksInRange,
-  type BlockRangeRef,
 } from '../editor/menu/blockOps';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
@@ -1144,81 +1143,6 @@ export default function BookView(): JSX.Element {
     | { readonly pageId: string; overflowed: boolean }
     | null = null;
 
-  /** Copy the rendered block roots while the source leaf is still mounted. */
-  const cloneMoveBlocks = (
-    editor: Editor,
-    blocks: readonly BlockRangeRef[],
-  ): readonly HTMLElement[] =>
-    blocks.flatMap((block) => {
-      const dom = editor.view.nodeDOM(block.pos);
-      return dom instanceof HTMLElement
-        ? [dom.cloneNode(true) as HTMLElement]
-        : [];
-    });
-
-  /**
-   * Measure a proposed append in an invisible clone of the real destination.
-   *
-   * This is deliberately a rendered preflight, not a word-count estimate.
-   * Tables, maths, pictures, handwriting wraps and authored cards all occupy
-   * different heights. The cloned page has the destination's exact width,
-   * CSS variables and existing DOM, so the same block-bottom + padding test as
-   * PageEditor's overflow drain can answer whether the *entire* selection
-   * fits. Nothing is written until that answer is yes; a rejected multi-block
-   * move therefore cannot leave half the selection behind or duplicate the
-   * overflowed half on the source page.
-   */
-  const appendedBlocksFit = (
-    destination: Editor,
-    blockClones: readonly HTMLElement[],
-  ): boolean => {
-    if (qaNoPagination) return true;
-    const capacity = pageCapacity();
-    if (!(capacity > 0) || blockClones.length === 0) return false;
-    const liveRoot = destination.view.dom;
-    const livePage = liveRoot.closest<HTMLElement>('.nb-page');
-    if (livePage === null) return false;
-    const probePage = livePage.cloneNode(true) as HTMLElement;
-    const probeRoot = probePage.querySelector<HTMLElement>('.nb-prose');
-    if (probeRoot === null) return false;
-
-    // appendBlocksToDoc removes TipTap's empty trailing writing lines before
-    // appending real content. Keep the measurement DOM byte-for-byte aligned
-    // with the JSON that will be committed below.
-    let docIndex = destination.state.doc.childCount - 1;
-    while (docIndex >= 0) {
-      const node = destination.state.doc.child(docIndex);
-      if (node.type.name !== 'paragraph' || node.content.size > 0) break;
-      probeRoot.lastElementChild?.remove();
-      docIndex -= 1;
-    }
-    for (const clone of blockClones) probeRoot.append(clone.cloneNode(true));
-
-    probePage.setAttribute('aria-hidden', 'true');
-    Object.assign(probePage.style, {
-      position: 'fixed',
-      left: '-20000px',
-      top: '0',
-      width: `${livePage.offsetWidth}px`,
-      height: `${livePage.offsetHeight}px`,
-      visibility: 'hidden',
-      pointerEvents: 'none',
-      transform: 'none',
-      zIndex: '-1',
-    });
-    document.body.append(probePage);
-    try {
-      const rootRect = probeRoot.getBoundingClientRect();
-      const last = probeRoot.lastElementChild?.getBoundingClientRect();
-      if (last === undefined) return true;
-      const padBottom =
-        Number.parseFloat(getComputedStyle(probeRoot).paddingBottom) || 0;
-      return last.bottom - rootRect.top + padBottom <= capacity + 0.5;
-    } finally {
-      probePage.remove();
-    }
-  };
-
   /**
    * Pull one block, or every complete block touched by a retained selection,
    * into the previous leaf in one all-or-nothing page transaction.
@@ -1258,7 +1182,6 @@ export default function BookView(): JSX.Element {
     const sourceBeforeKey = JSON.stringify(sourceBefore);
     const sourceAfter = editor.state.tr.delete(deleteFrom, deleteTo).doc.toJSON() as PageDoc;
     const moved = selected.map((block) => block.node.toJSON());
-    const blockClones = cloneMoveBlocks(editor, selected);
     const sourceSpread = spreadOfSlot(slot);
     const targetSpread = spreadOfSlot(slot - 1);
     const relativeSelection =
@@ -1290,26 +1213,12 @@ export default function BookView(): JSX.Element {
         notify('that selection changed before it could move', 'error');
         return;
       }
-      if (!appendedBlocksFit(destination, blockClones)) {
-        notify(
-          selected.length === 1
-            ? 'that block does not fit on the previous page'
-            : 'that selection does not fit on the previous page',
-          'error',
-        );
-        if (sourceSpread !== spreadIndex()) setSpreadIndex(sourceSpread);
-        setFocusedSide(slot % 2 === 0 ? 'left' : 'right');
-        if (relativeSelection !== null) {
-          withPageEditor(pageId, (source) => {
-            source
-              .chain()
-              .focus()
-              .setTextSelection(selectionRange!)
-              .run();
-          });
-        }
-        return;
-      }
+      // Do not reject from a cloned DOM measurement. Custom node views such
+      // as cards can carry wrapper geometry that changes when reparented, so
+      // the clone can claim a half-empty previous page is full. The real
+      // provisional transaction below runs PageEditor's synchronous overflow
+      // drain and rolls both complete documents back before paint if anything
+      // actually spills; that is the authoritative, atomic fit decision.
 
       const fallbackAttrs: Record<string, unknown> = {
         pageStyle: bookPageStyle(),
@@ -1331,11 +1240,10 @@ export default function BookView(): JSX.Element {
 
       /*
        * Let the real destination editor make the final capacity decision in
-       * this same JavaScript task. The invisible clone above avoids almost all
-       * rejected writes, but node views can finish intrinsic sizing between
-       * the clone and this transaction. Suppress that one overflow carry while
+       * this same JavaScript task. Node views can finish intrinsic sizing only
+       * in their real destination, so suppress that one overflow carry while
        * the transaction is provisional: if PageEditor peels anything, restore
-       * both complete pre-move documents before paint. This is the second,
+       * both complete pre-move documents before paint. This is the
        * authoritative all-or-nothing guard; without it a late image/math size
        * could put two selected blocks back while leaving the first one moved.
        */

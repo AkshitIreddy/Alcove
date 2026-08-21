@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { appendBlocksToDoc } from '../src/views/spread';
 
@@ -78,5 +79,28 @@ describe('backward page flow', () => {
         moved,
       ).content,
     ).toEqual([paragraph('previous'), ...moved]);
+  });
+
+  it('uses the live provisional overflow rollback instead of a cloned-DOM fit rejection', () => {
+    const source = readFileSync(
+      new URL('../src/views/BookView.tsx', import.meta.url),
+      'utf8',
+    );
+    const start = source.indexOf('const moveBlockToPreviousPage =');
+    const end = source.indexOf('KEEP TWO COMPLETE, ALREADY-STYLED SPREADS', start);
+    const move = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(move).not.toContain('cloneMoveBlocks');
+    expect(move).not.toContain('appendedBlocksFit');
+    expect(move).not.toContain('getBoundingClientRect');
+    expect(move).toContain('backwardMoveOverflowTarget = {');
+    expect(move).toContain('overflowed: false');
+    expect(move).toContain('if (overflowed)');
+    expect(move).toContain('destination.schema.nodeFromJSON(destinationBefore)');
+    expect(move).toContain('liveSource.schema.nodeFromJSON(sourceBefore)');
+    expect(move).toContain('updatePageDoc(pageId, sourceBefore)');
+    expect(move).toContain('updatePageDoc(previous.id, destinationBefore)');
   });
 });

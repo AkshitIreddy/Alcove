@@ -174,8 +174,14 @@ function measureSceneGeometry(
 
 const TAP_SLOP_PX = 6;
 const TAP_MAX_MS = 300;
-/** Never hold the cheaper raster endpoint on screen for a broken/lazy image. */
-const LANDING_MEDIA_CAP_MS = 96;
+/**
+ * A high-resolution local image can need several frames to decode on a busy
+ * book. The complete curl endpoint already contains that image, so holding it
+ * is visually continuous; revealing live DOM after the old 96ms cap was the
+ * visible blank-image flash this barrier exists to prevent. Broken assets are
+ * still bounded well below the media helper's general 1200ms ceiling.
+ */
+const LANDING_MEDIA_CAP_MS = 900;
 
 /** InertiaPlugin is free since GSAP 3.13 but may not be registered. */
 function inertiaRegistered(): boolean {

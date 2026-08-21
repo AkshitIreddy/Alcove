@@ -3243,6 +3243,16 @@
   transform: rotate(-0.5deg);
 }
 
+/* Page headings use ruled-paper baseline compensation (padding plus a matching
+   negative margin). Inside a self-contained card there is no page rule to
+   align to, and that compensation pulls the first heading through the card's
+   top border. Give card headings ordinary internal flow instead. */
+:is(.nb-prose, .nb-fx-specimen) [data-type='card'] :is(h1, h2, h3, h4) {
+  padding-top: 0;
+  margin: 0 0 var(--space-4);
+  line-height: 1.2;
+}
+
 /* ----------------------------------------------------------------------------
    6.5 quote-card — a pull-quote between two big pigment quote marks
    -------------------------------------------------------------------------- */

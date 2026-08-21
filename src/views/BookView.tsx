@@ -5152,7 +5152,7 @@ export default function BookView(): JSX.Element {
               >
                 <TocPanel
                   pages={pages()}
-                  currentSpread={spreadIndex()}
+                  activeSlot={spreadIndex() * 2 + (focusedSide() === 'right' ? 1 : 0)}
                   onJump={(slot) => {
                     jumpToSlot(slot);
                     setActivePanel(null);

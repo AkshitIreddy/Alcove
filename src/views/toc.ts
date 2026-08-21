@@ -22,6 +22,39 @@ export interface TocRow {
 }
 
 /**
+ * A collapsed outline keeps the book's highest authored heading tier. Most
+ * books use H1 for chapters, but imported notes sometimes begin at H2; using
+ * the shallowest tier actually present avoids turning those books into an
+ * empty sheet. Continuation/page rows are deliberately not promoted: this is
+ * a chapter map rather than a page list.
+ */
+export function majorTocRows(rows: readonly TocRow[]): TocRow[] {
+  const majorLevel = rows.reduce(
+    (shallowest, row) =>
+      !row.isPageRow && row.level > 0
+        ? Math.min(shallowest, row.level)
+        : shallowest,
+    Number.POSITIVE_INFINITY,
+  );
+  if (!Number.isFinite(majorLevel)) return [];
+  return rows.filter((row) => !row.isPageRow && row.level === majorLevel);
+}
+
+/**
+ * One leaf can own several headings, but painting every one as current makes
+ * the TOC look as though several destinations are selected. The first visible
+ * row on the focused leaf owns the mark. A heading-less continuation keeps
+ * the nearest preceding authored heading active without inventing a TOC row.
+ */
+export function activeTocRow(
+  rows: readonly TocRow[],
+  activeSlot: number,
+): TocRow | undefined {
+  return rows.find((row) => row.slot === activeSlot) ??
+    [...rows].reverse().find((row) => row.slot < activeSlot);
+}
+
+/**
  * Search spelling belongs here, beside the rows it searches, rather than in
  * the panel. NFKD separates a reader-facing letter from its accent and the
  * Unicode Mark class removes only that accent; words in non-Latin scripts are
@@ -162,54 +195,15 @@ export function pageHasVisibleContent(
 }
 
 /**
- * Presentation rows for the rail. Trailing stocked blank leaves are omitted;
- * a heading-less continuation names the section it continues instead of
- * redundantly printing “page 5   p.5”. Intentional blank leaves inside the
- * authored range remain reachable.
+ * Presentation rows for the rail. A table of contents is an outline, not a
+ * physical page list: heading-less continuation, blank and stocked leaves are
+ * all omitted rather than receiving synthetic labels.
  */
 export function buildTocRows(pages: readonly Page[]): TocRow[] {
-  let lastAuthoredSlot = -1;
-  pages.forEach((page, slot) => {
-    if (pageHasVisibleContent(page.doc)) lastAuthoredSlot = slot;
-  });
-  if (lastAuthoredSlot < 0) return [];
-
-  const headings = buildBookToc(pages);
-  const bySlot = new Map<number, TocEntry[]>();
-  for (const heading of headings) {
-    const list = bySlot.get(heading.slot) ?? [];
-    list.push(heading);
-    bySlot.set(heading.slot, list);
-  }
-
-  const rows: TocRow[] = [];
-  let previousHeading = '';
-  for (let slot = 0; slot <= lastAuthoredSlot; slot += 1) {
-    const pageHeadings = bySlot.get(slot);
-    if (pageHeadings && pageHeadings.length > 0) {
-      for (const heading of pageHeadings) {
-        rows.push({
-          slot,
-          level: heading.level,
-          text: heading.text,
-          isPageRow: false,
-        });
-        previousHeading = heading.text;
-      }
-      continue;
-    }
-
-    const visible = pageHasVisibleContent(pages[slot]?.doc);
-    rows.push({
-      slot,
-      level: 0,
-      text: visible
-        ? previousHeading === ''
-          ? 'untitled'
-          : `continued — ${previousHeading}`
-        : 'blank page',
-      isPageRow: true,
-    });
-  }
-  return rows;
+  return buildBookToc(pages).map((heading) => ({
+    slot: heading.slot,
+    level: heading.level,
+    text: heading.text,
+    isPageRow: false,
+  }));
 }

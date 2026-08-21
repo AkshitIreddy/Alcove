@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Page, PageDoc } from '../src/data/types';
 import {
+  activeTocRow,
   buildTocRows,
   filterTocRows,
+  majorTocRows,
   normalizeTocSearch,
   pageHasVisibleContent,
 } from '../src/views/toc';
@@ -29,7 +31,7 @@ const page = (slot: number, pageDoc: PageDoc): Page => ({
 });
 
 describe('table-of-contents presentation rows', () => {
-  it('names heading-less content as a continuation and omits stocked trailing blanks', () => {
+  it('lists authored headings without manufacturing continuation or blank-page rows', () => {
     const rows = buildTocRows([
       page(0, doc(heading('The Final Tree'), paragraph('Branch convention.'))),
       page(1, doc({ type: 'diagram', attrs: { kind: 'tree' } })),
@@ -40,29 +42,17 @@ describe('table-of-contents presentation rows', () => {
 
     expect(rows).toEqual([
       { slot: 0, level: 2, text: 'The Final Tree', isPageRow: false },
-      {
-        slot: 1,
-        level: 0,
-        text: 'continued — The Final Tree',
-        isPageRow: true,
-      },
       { slot: 2, level: 2, text: 'Final Codes', isPageRow: false },
     ]);
   });
 
-  it('keeps an intentional blank inside the authored range reachable', () => {
+  it('omits intentional blank and heading-less prose pages from the outline', () => {
     const rows = buildTocRows([
       page(0, doc(heading('Opening'))),
       page(1, doc(paragraph())),
       page(2, doc(paragraph('Later prose.'))),
     ]);
-    expect(rows[1]).toEqual({
-      slot: 1,
-      level: 0,
-      text: 'blank page',
-      isPageRow: true,
-    });
-    expect(rows[2]?.text).toBe('continued — Opening');
+    expect(rows).toEqual([{ slot: 0, level: 2, text: 'Opening', isPageRow: false }]);
   });
 
   it('recognises text and atomic visuals but not an empty TipTap paragraph', () => {
@@ -113,5 +103,44 @@ describe('table-of-contents presentation rows', () => {
     expect(filterTocRows(rows, '2')).toEqual([rows[1], rows[21]]);
     expect(filterTocRows(rows, 'section b 2')).toEqual([rows[1]]);
     expect(filterTocRows(rows, 'section l 2')).toEqual([]);
+  });
+
+  it('collapses the outline to authored major headings without page continuations', () => {
+    const rows = buildTocRows([
+      page(0, doc(heading('Week seven', 1), heading('What a heap stores', 2))),
+      page(1, doc(paragraph('The explanation continues here.'))),
+      page(2, doc(heading('Worked examples', 1), heading('Insert', 3))),
+      page(3, doc(heading('Delete', 3))),
+    ]);
+
+    expect(majorTocRows(rows)).toEqual([
+      { slot: 0, level: 1, text: 'Week seven', isPageRow: false },
+      { slot: 2, level: 1, text: 'Worked examples', isPageRow: false },
+    ]);
+  });
+
+  it('uses the shallowest heading tier present when imported notes have no H1', () => {
+    const rows = buildTocRows([
+      page(0, doc(heading('Imported chapter', 2), heading('Detail', 3))),
+      page(1, doc(heading('Another chapter', 2))),
+    ]);
+
+    expect(majorTocRows(rows).map((row) => row.text)).toEqual([
+      'Imported chapter',
+      'Another chapter',
+    ]);
+    expect(majorTocRows([])).toEqual([]);
+  });
+
+  it('selects exactly one visible row for the focused leaf', () => {
+    const rows = buildTocRows([
+      page(0, doc(heading('Week seven', 1), heading('Priority queues', 2))),
+      page(1, doc(paragraph('Continued explanation.'))),
+    ]);
+
+    expect(activeTocRow(rows, 0)).toBe(rows[0]);
+    expect(rows.filter((row) => row === activeTocRow(rows, 0))).toHaveLength(1);
+    expect(activeTocRow(rows, 1)).toBe(rows[1]);
+    expect(activeTocRow(rows, 9)).toBe(rows[1]);
   });
 });

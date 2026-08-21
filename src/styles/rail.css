@@ -925,16 +925,77 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
 }
 
 .nb-toc-search-meta {
-  min-height: 18px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-8);
-  padding: 3px 2px 0;
+  padding: 4px 2px 0;
   color: var(--ink-graphite-soft);
   font-family: var(--font-ui);
   font-size: var(--text-ui-xs);
   letter-spacing: var(--tracking-ui);
+}
+
+/* VS Code's collapse-all idea, redrawn as a small paper tab instead of a
+   generic chrome icon. The three uneven rules are the outline tiers; the
+   moving amber chevron tells the eye whether those tiers are folded or open. */
+.nb-toc-depth-toggle {
+  flex: 0 0 auto;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px 3px 5px;
+  color: var(--ink-sepia-soft);
+  background: var(--paper-aged);
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px 11px 9px 10px / 10px 8px 11px 9px;
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-ui);
+  white-space: nowrap;
+  transition:
+    background var(--dur-xs) var(--ease-out),
+    color var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-toc-depth-toggle:hover,
+.nb-toc-depth-toggle:focus-visible {
+  color: var(--ink-sepia);
+  background: var(--wash-amber-light);
+  transform: rotate(-0.7deg);
+}
+
+.nb-toc-depth-toggle:focus-visible {
+  outline: 2px solid var(--wash-amber);
+  outline-offset: 2px;
+}
+
+.nb-toc-depth-toggle.is-major-only {
+  color: var(--wash-amber-deep);
+  background: var(--wash-amber-light);
+}
+
+.nb-toc-depth-toggle svg {
+  width: 18px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nb-toc-depth-mark {
+  transform-origin: 3px 9px;
+  transition: transform var(--dur-xs) var(--ease-out);
+}
+
+.nb-toc-depth-toggle.is-major-only .nb-toc-depth-mark {
+  transform: rotate(180deg);
 }
 
 .nb-toc-results {

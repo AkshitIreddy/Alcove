@@ -13,11 +13,18 @@ import {
   type JSX,
 } from 'solid-js';
 import type { Page } from '../../data/types';
-import { buildTocRows, filterTocRows, normalizeTocSearch } from '../toc';
+import {
+  activeTocRow,
+  buildTocRows,
+  filterTocRows,
+  majorTocRows,
+  normalizeTocSearch,
+} from '../toc';
 
 export interface TocPanelProps {
   pages: readonly Page[];
-  currentSpread: number;
+  /** One leaf owns the active tick: left by default, or the page being edited. */
+  activeSlot: number;
   onJump(slot: number): void;
 }
 
@@ -27,9 +34,18 @@ export default function TocPanel(props: TocPanelProps): JSX.Element {
   const resultsId = createUniqueId();
   const statusId = createUniqueId();
   const [query, setQuery] = createSignal('');
+  const [majorOnly, setMajorOnly] = createSignal(false);
   const rows = createMemo(() => buildTocRows(props.pages));
   const searching = createMemo(() => normalizeTocSearch(query()).length > 0);
   const matches = createMemo(() => filterTocRows(rows(), query()));
+  const majorRows = createMemo(() => majorTocRows(rows()));
+  const canCollapse = createMemo(() => majorRows().length < rows().length);
+  // Search always sees the whole book. Clearing it returns to the reader's
+  // chosen outline depth instead of silently throwing that choice away.
+  const visibleRows = createMemo(() =>
+    searching() || !majorOnly() ? matches() : majorRows(),
+  );
+  const activeRow = createMemo(() => activeTocRow(visibleRows(), props.activeSlot));
 
   const clearSearch = (): void => {
     setQuery('');
@@ -58,9 +74,9 @@ export default function TocPanel(props: TocPanelProps): JSX.Element {
       focusResult(0);
       return;
     }
-    if (event.key === 'Enter' && matches().length > 0) {
+    if (event.key === 'Enter' && visibleRows().length > 0) {
       event.preventDefault();
-      props.onJump(matches()[0]!.slot);
+      props.onJump(visibleRows()[0]!.slot);
     }
   };
 
@@ -136,14 +152,34 @@ export default function TocPanel(props: TocPanelProps): JSX.Element {
               </button>
             </Show>
           </div>
-          <div class="nb-toc-search-meta" id={statusId} role="status" aria-live="polite">
-            <span>
+          <div class="nb-toc-search-meta">
+            <span id={statusId} role="status" aria-live="polite">
               {searching()
                 ? `${matches().length} ${matches().length === 1 ? 'match' : 'matches'} in ${rows().length}`
-                : `${rows().length} ${rows().length === 1 ? 'entry' : 'entries'} in this book`}
+                : majorOnly()
+                  ? `${majorRows().length} major ${majorRows().length === 1 ? 'section' : 'sections'} · ${rows().length} total`
+                  : `${rows().length} ${rows().length === 1 ? 'entry' : 'entries'} in this book`}
             </span>
             <Show when={searching() && matches().length > 0}>
               <span aria-hidden="true">↓ browse · enter open</span>
+            </Show>
+            <Show when={!searching() && canCollapse()}>
+              <button
+                type="button"
+                class="nb-toc-depth-toggle"
+                classList={{ 'is-major-only': majorOnly() }}
+                aria-label="Show major sections only"
+                aria-pressed={majorOnly()}
+                aria-controls={resultsId}
+                title={majorOnly() ? 'show every section' : 'collapse smaller sections'}
+                onClick={() => setMajorOnly((value) => !value)}
+              >
+                <svg viewBox="0 0 22 18" aria-hidden="true">
+                  <path class="nb-toc-depth-lines" d="M 2.8 3.5 C 7.6 3.2 13 3.3 18.9 3.6 M 5.5 8.9 C 9.4 8.7 13.7 8.8 18.8 9 M 8.2 14.4 C 11.7 14.2 15.3 14.3 18.8 14.5" />
+                  <path class="nb-toc-depth-mark" d="M 1.9 7 L 4.2 9 L 1.9 11" />
+                </svg>
+                <span>{majorOnly() ? 'show all' : 'major only'}</span>
+              </button>
             </Show>
           </div>
         </div>
@@ -155,7 +191,7 @@ export default function TocPanel(props: TocPanelProps): JSX.Element {
           onKeyDown={onResultsKeyDown}
         >
           <For
-            each={matches()}
+            each={visibleRows()}
             fallback={
               <div class="nb-toc-empty" role="note">
                 <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -173,7 +209,7 @@ export default function TocPanel(props: TocPanelProps): JSX.Element {
                 class="nb-toc-row"
                 classList={{
                   'is-page-row': row.isPageRow,
-                  'is-current': Math.floor(row.slot / 2) === props.currentSpread,
+                  'is-current': row === activeRow(),
                 }}
                 data-level={row.level}
                 onClick={() => props.onJump(row.slot)}

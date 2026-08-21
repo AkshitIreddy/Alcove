@@ -103,30 +103,43 @@ const BASE: CoverParams = {
 
 const EXPECTED_FURNITURE = new Map<string, CoverTitleFurniture>([
   ['none', 'direct-lettering'],
-  ['gilt-direct', 'direct-gilt'],
-  ['printer-imprint', 'press-imprint'],
-  ['debossed', 'debossed-field'],
-  ['label', 'paper-ticket'],
-  ['vellum-ink-field', 'vellum-ticket'],
-  ['morocco-label', 'morocco-ticket'],
-  ['presentation-shoulder', 'double-morocco-ticket'],
-  ['calf-compartment', 'calf-lettering-piece'],
-  ['double-fillet', 'open-double-fillet'],
-  ['twin-rules', 'open-twin-rules'],
-  ['oxford-compartment', 'oxford-blind-compartment'],
-  ['inlay-strip', 'inlay-strip'],
-  ['split-binding-band', 'dyed-leather-band'],
-  ['ink-panel', 'ink-block'],
+  ['direct-blind-title', 'direct-blind-impression'],
+  ['direct-gilt-title', 'direct-gilt-lettering'],
+  ['direct-ink-title', 'direct-ink-lettering'],
+  ['press-small-caps', 'press-small-caps'],
+  ['printer-floret-imprint', 'printer-floret'],
+  ['laid-paper-ticket', 'laid-paper-label'],
+  ['deckled-paper-ticket', 'deckled-paper-label'],
+  ['vellum-rule-ticket', 'vellum-ruled-label'],
+  ['parchment-slip', 'parchment-title-slip'],
+  ['morocco-single-rule', 'morocco-single-fillet'],
+  ['morocco-double-rule', 'morocco-double-fillet'],
+  ['morocco-clipped-rule', 'morocco-clipped-fillet'],
+  ['calf-blind-label', 'calf-blind-piece'],
+  ['two-tone-leather-label', 'two-tone-leather-piece'],
+  ['library-buckram-label', 'buckram-library-piece'],
+  ['dyed-leather-crossband', 'dyed-leather-crossband'],
+  ['gilt-ruled-crossband', 'gilt-ruled-crossband'],
+  ['cloth-inlay-crossband', 'cloth-inlay-crossband'],
+  ['split-leather-crossband', 'split-leather-crossband'],
+  ['oxford-blind-compartment', 'oxford-open-compartment'],
+  ['cambridge-calf-compartment', 'cambridge-open-compartment'],
+  ['french-triple-fillet', 'french-triple-compartment'],
+  ['ledger-open-field', 'ledger-open-rules'],
+  ['inscription-shoulders', 'concave-inscription-shoulders'],
+  ['renaissance-title-window', 'renaissance-mitred-window'],
 ]);
 
 describe('authored cover frame system', () => {
-  it('keeps twelve materially distinct frame families and translates every legacy id', () => {
+  it('keeps eighteen materially distinct frame families and translates every legacy id', () => {
     expect(ACTIVE_COVER_FRAME_INDICES).toEqual([
       0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
+      50, 51, 52, 53, 54, 55,
     ]);
     expect(ACTIVE_COVER_FRAMES.map(({ tier }) => tier)).toEqual([
       'single', 'double', 'single', 'fillet', 'single', 'double',
       'fillet', 'fillet', 'fillet', 'banded', 'banded', 'banded',
+      'fillet', 'triple', 'triple', 'triple', 'triple', 'fillet',
     ]);
     const constructions = ACTIVE_COVER_FRAMES.map((frame) => JSON.stringify({
       rules: frame.rules,
@@ -136,7 +149,7 @@ describe('authored cover frame system', () => {
       band: frame.band,
     }));
     expect(new Set(constructions).size).toBe(ACTIVE_COVER_FRAMES.length);
-    for (let index = 0; index < 50; index += 1) {
+    for (let index = 0; index < 56; index += 1) {
       expect(ACTIVE_COVER_FRAME_INDICES, `legacy frame ${index}`).toContain(
         normalizeCoverFrameIndex(index),
       );
@@ -191,12 +204,21 @@ describe('authored cover title furniture', () => {
     expect(new Set(keys).size).toBe(ACTIVE_TITLE_PLATES.length);
   });
 
-  it('allocates full lateral bands and broad authored panels', () => {
+  it('allocates broad horizontal fields and genuine vertical slips', () => {
+    const vertical = new Set([
+      'deckled-paper-ticket', 'parchment-slip', 'cloth-inlay-crossband',
+    ]);
     for (const style of ACTIVE_TITLE_PLATES) {
       const layout = coverCompositionLayout(style, 26, -1);
-      if (layout.family === 'band') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.83);
-      if (layout.family === 'ticket') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.72);
-      if (layout.family === 'heraldic') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.74);
+      if (vertical.has(style)) {
+        expect(layout.titleWidth, style).toBeLessThanOrEqual(0.32);
+        expect(layout.titleHeight, style).toBeGreaterThanOrEqual(0.5);
+        expect(layout.titleCenterX, style).not.toBe(0.5);
+        continue;
+      }
+      if (layout.family === 'band') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.82);
+      if (layout.family === 'ticket') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.45);
+      if (layout.family === 'heraldic') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.64);
       if (layout.family === 'panel') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.73);
     }
   });

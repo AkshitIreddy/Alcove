@@ -433,12 +433,25 @@ describe('book binding quality vocabulary', () => {
         expect(coveringSpecFor(resolved.cover).id).toBe(preset.material);
 
         const coverTitle = resolveCoverTitleColours(resolved.cover, 'Winter Herbarium');
+        const directTitle = [
+          'none', 'direct-blind-title', 'direct-gilt-title', 'direct-ink-title',
+          'press-small-caps', 'printer-floret-imprint',
+          'oxford-blind-compartment', 'cambridge-calf-compartment',
+          'french-triple-fillet', 'ledger-open-field',
+          'inscription-shoulders', 'renaissance-title-window',
+        ].includes(resolved.cover.titlePlate ?? '');
+        const titleContrastFloor = directTitle
+          // Direct tooling is intentionally the board's own field. Forcing
+          // the physical-label floor used to fabricate a filled UI card
+          // behind mid-tone calf/cloth. The visually inspected direct anchors
+          // remain clear at 3.0 because they are large identity lettering,
+          // while physical labels retain the stricter universal floor.
+          ? 3
+          : TITLE_TEXT_MIN_CONTRAST;
         expect(
           colourContrast(coverTitle.ink, coverTitle.ground),
-          `${direction.id}:${seed}:${recipe.preset}`,
-        ).toBeGreaterThanOrEqual(
-          TITLE_TEXT_MIN_CONTRAST,
-        );
+          `${direction.id}:${seed}:${recipe.preset}:${recipe.style.titlePlate}:${resolved.cover.titlePlate}:${JSON.stringify(coverTitle)}`,
+        ).toBeGreaterThanOrEqual(titleContrastFloor);
       }
     }
 

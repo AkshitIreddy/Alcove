@@ -871,7 +871,7 @@ export function resolveBookStyle(
       (theme.titlePlates ? pick(theme.titlePlates, rPlate) : (base.titlePlate ?? 'none')),
   );
   if (surfaceLed && !SURFACE_LED_TITLE_PLATES.has(titlePlate)) {
-    titlePlate = gilt ? 'gilt-direct' : 'blind-lettered';
+    titlePlate = normalizeTitlePlateStyle(gilt ? 'gilt-direct' : 'blind-lettered');
   }
 
   const titleFont = normalizeCoverHandIndex(
@@ -1034,7 +1034,9 @@ export function effectiveBookTitlePlate(
 ): TitlePlateStyle {
   if (titlePlatePinned || style.titlePlate !== 'none') return style.titlePlate;
   const preset = binding === null ? presetForSeed(seed >>> 0) : bookPreset(binding);
-  return bookPresetWantsCoverTitle(preset.id) ? 'label' : 'none';
+  return bookPresetWantsCoverTitle(preset.id)
+    ? normalizeTitlePlateStyle('label')
+    : 'none';
 }
 
 /** Project a resolved style onto renderable SpineParams. */

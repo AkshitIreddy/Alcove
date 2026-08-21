@@ -73,7 +73,7 @@ describe('Surprise locks preserve rendered values, not latent seed fields', () =
 
     expect(before.pinned.has('titlePlate')).toBe(false);
     expect(before.style.titlePlate).toBe('none');
-    expect(before.cover.titlePlate).toBe('label');
+    expect(before.cover.titlePlate).toBe('laid-paper-ticket');
 
     const recipe = surpriseBookRecipe({
       direction: 'quiet',
@@ -82,21 +82,21 @@ describe('Surprise locks preserve rendered values, not latent seed fields', () =
       locks: ['title.plate'],
     });
 
-    expect(recipe.style.titlePlate).toBe('label');
+    expect(recipe.style.titlePlate).toBe('laid-paper-ticket');
     const after = resolveBookStyle(before.seed, undefined, recipe.style, {
       binding: recipe.preset,
     });
     expect(after.pinned.has('titlePlate')).toBe(true);
-    expect(after.cover.titlePlate).toBe('label');
+    expect(after.cover.titlePlate).toBe('laid-paper-ticket');
   });
 
   it('keeps an active unpinned seed plate instead of replacing it with the binding fallback', () => {
     const binding = 'library-buckram';
     const before = latentStyle(
       binding,
-      (resolved) => resolved.style.titlePlate === 'morocco-label',
+      (resolved) => resolved.style.titlePlate === 'morocco-single-rule',
     );
-    expect(before.cover.titlePlate).toBe('morocco-label');
+    expect(before.cover.titlePlate).toBe('morocco-single-rule');
 
     const recipe = surpriseBookRecipe({
       direction: 'formal',
@@ -104,7 +104,7 @@ describe('Surprise locks preserve rendered values, not latent seed fields', () =
       current: current(binding, before),
       locks: ['title.plate'],
     });
-    expect(recipe.style.titlePlate).toBe('morocco-label');
+    expect(recipe.style.titlePlate).toBe('morocco-single-rule');
   });
 
   it('lets an explicit None plate remove a binding-derived label and locks that absence', () => {
@@ -127,10 +127,10 @@ describe('Surprise locks preserve rendered values, not latent seed fields', () =
     const binding = 'library-buckram';
     const before = latentStyle(
       binding,
-      (resolved) => resolved.style.titlePlate === 'morocco-label',
+      (resolved) => resolved.style.titlePlate === 'morocco-single-rule',
     );
     expect(before.pinned.has('titlePlate')).toBe(false);
-    expect(before.cover.titlePlate).toBe('morocco-label');
+    expect(before.cover.titlePlate).toBe('morocco-single-rule');
   });
 
   it('still preserves an explicitly pinned coarse material over the binding', () => {

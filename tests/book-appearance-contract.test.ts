@@ -101,7 +101,7 @@ describe('book appearance integration contract', () => {
     expect(resolved.cover).toMatchObject({
       frame: 48,
       medallion: 0,
-      titlePlate: 'gilt-direct',
+      titlePlate: 'direct-gilt-title',
       titleFont: 44,
       cornerProtectors: false,
       insetPlate: false,
@@ -229,12 +229,12 @@ describe('book appearance integration contract', () => {
       if (candidate.style.titlePlate === 'none') latent = candidate;
     }
     expect(latent).toBeDefined();
-    expect(latent!.cover.titlePlate).toBe('label');
+    expect(latent!.cover.titlePlate).toBe('laid-paper-ticket');
     expect(coverOverridesFromStyle(latent!.style, {
       binding,
       seed: latent!.seed,
       titlePlatePinned: false,
-    }).titlePlate).toBe('label');
+    }).titlePlate).toBe('laid-paper-ticket');
 
     const explicitNone = resolveBookStyle(
       latent!.seed,
@@ -308,7 +308,7 @@ describe('book appearance integration contract', () => {
     ];
     expect(savedStyle).toBeNull();
     expect(savedCover).toMatchObject({
-      titlePlate: 'label',
+      titlePlate: 'laid-paper-ticket',
       titlePlateSource: 'inherited',
     });
     expect(normalizeCoverOverrides(savedCover)).not.toHaveProperty('titlePlate');

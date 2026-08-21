@@ -1335,13 +1335,13 @@ const DIRECTION_EMBLEM_CANDIDATES: Readonly<
 const DIRECTION_ARCHITECTURAL_FRAME_CANDIDATES: Readonly<
   Record<BookSurpriseDirectionId, readonly number[]>
 > = {
-  formal: [5, 17, 20, 24],
-  grand: [6, 26, 36, 43, 48],
-  antique: [5, 8, 17, 20, 24],
-  storybook: [6, 8, 17, 26, 43],
-  botanical: [6, 26, 43, 48],
-  cosy: [5, 6, 17, 26, 36],
-  rustic: [5, 8, 17, 20, 24, 36],
+  formal: [5, 17, 20, 24, 50, 53, 54],
+  grand: [6, 26, 36, 43, 48, 51, 52, 54, 55],
+  antique: [5, 8, 17, 20, 24, 50, 52, 55],
+  storybook: [6, 8, 17, 26, 43, 51, 54],
+  botanical: [6, 26, 43, 48, 51, 55],
+  cosy: [5, 6, 17, 26, 36, 50, 51],
+  rustic: [5, 8, 17, 20, 24, 36, 50, 53, 55],
   quiet: [],
 };
 
@@ -1798,6 +1798,7 @@ function compositionMode(direction: BookSurpriseDirectionId, rnd: RandomFn): Cov
 }
 
 function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boolean {
+  plate = normalizeTitlePlateStyle(plate);
   const materialGroup = preset === undefined ? null : MATERIALS[preset.material].group;
     // Manual Studio choices stay reader-owned, but Surprise treats physical
     // labels as physical materials. A calf/morocco piece belongs on leather
@@ -1805,14 +1806,25 @@ function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boo
     // vellum ticket is welcome on the paper/vellum archive families.
     if (materialGroup === null) return true;
     if (
-      plate === 'morocco-label' ||
-      plate === 'presentation-shoulder' ||
-      plate === 'calf-compartment'
+      plate === 'morocco-single-rule' ||
+      plate === 'morocco-double-rule' ||
+      plate === 'morocco-clipped-rule' ||
+      plate === 'calf-blind-label' ||
+      plate === 'two-tone-leather-label'
     ) return materialGroup === 'leather' || materialGroup === 'split';
-    if (plate === 'split-binding-band') {
+    if (
+      plate === 'dyed-leather-crossband' ||
+      plate === 'gilt-ruled-crossband' ||
+      plate === 'split-leather-crossband'
+    ) {
       return materialGroup === 'leather' || materialGroup === 'cloth' || materialGroup === 'split';
     }
-    if (plate === 'vellum-ink-field') {
+    if (
+      plate === 'laid-paper-ticket' ||
+      plate === 'deckled-paper-ticket' ||
+      plate === 'vellum-rule-ticket' ||
+      plate === 'parchment-slip'
+    ) {
       return materialGroup === 'vellum' || materialGroup === 'paper' || materialGroup === 'split';
     }
     return true;
@@ -1823,8 +1835,9 @@ function platePoolForComposition(
   mode: CoverCompositionMode,
   preset?: BookPreset,
 ): readonly TitlePlateStyle[] {
-  const materialEligible = values.filter((plate) => plateMaterialEligible(plate, preset));
-  const candidates = materialEligible.length > 0 ? materialEligible : values;
+  const normalized = uniqueValues(values.map(normalizeTitlePlateStyle));
+  const materialEligible = normalized.filter((plate) => plateMaterialEligible(plate, preset));
+  const candidates = materialEligible.length > 0 ? materialEligible : normalized;
   const selected = candidates.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0).family;
     if (mode === 'restrained') return family === 'direct' || family === 'ticket' || family === 'band';
@@ -1913,13 +1926,13 @@ function generatedStyle(
     request,
     rnd,
   );
-  const curatedPlates = curatedGrammarValues(
+  const curatedPlates = uniqueValues(curatedGrammarValues(
     grammar?.plates ?? p.plates,
     p.plates,
     'title-plate',
     String,
     request,
-  );
+  ).map(normalizeTitlePlateStyle));
   const titlePlate = pick(platePoolForComposition(curatedPlates, composition, preset), rnd);
   const curatedFrames = curatedGrammarValues(
     grammar?.frames ?? p.frames,
@@ -2253,8 +2266,10 @@ function quietPlateForProgramme(
   request: NormalizedRequest,
   salt: string,
 ): TitlePlateStyle {
-  const preferred = grammar?.plates ?? DIRECTIONS[directionId].plates;
-  const wider = DIRECTIONS[directionId].plates;
+  const preferred = uniqueValues(
+    (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
+  );
+  const wider = uniqueValues(DIRECTIONS[directionId].plates.map(normalizeTitlePlateStyle));
   const quiet = focalValues(
     preferred,
     wider,
@@ -2264,12 +2279,13 @@ function quietPlateForProgramme(
   );
   const authored = quiet.length > 0 ? quiet : curatedGrammarValues(
     preferred,
-    DIRECTIONS[directionId].plates,
+    wider,
     'title-plate',
     String,
     request,
   );
-  const eligible = authored.filter((plate) => plateMaterialEligible(plate, preset));
+  const eligible = authored.filter((plate) =>
+    plateMaterialEligible(plate, preset) && titlePlateStatement(plate) <= 0.62);
   const values = eligible.length > 0
     ? eligible
     : ACTIVE_TITLE_PLATES.filter((plate) =>
@@ -2365,13 +2381,13 @@ function chooseFocalProgramme(
   // sampled recipes; architectural frames now spend the same single budget
   // without reviving studs, charms, corners, wallpaper or applied hardware.
   const programmeWeights: Readonly<Record<BookSurpriseDirectionId, readonly FocalProgramme[]>> = {
-    formal: ['frame-led', 'frame-led', 'matched-emblem'],
+    formal: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem'],
     grand: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    antique: ['frame-led', 'frame-led', 'frame-led', 'matched-emblem', 'matched-emblem'],
+    antique: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
     storybook: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
     botanical: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    cosy: ['frame-led', 'frame-led', 'frame-led', 'matched-emblem', 'matched-emblem'],
-    rustic: ['frame-led', 'frame-led', 'frame-led', 'matched-emblem', 'matched-emblem'],
+    cosy: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
+    rustic: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
     quiet: ['title-led'],
   };
   const hasMotifs = motifPoolForProgramme(grammar, directionId, request).length > 0;
@@ -2505,8 +2521,8 @@ function focusGeneratedTreatment(
 
   if (programme === 'title-led') {
     const plates = curatedGrammarValues(
-      grammar?.plates ?? DIRECTIONS[directionId].plates,
-      DIRECTIONS[directionId].plates,
+      (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
+      DIRECTIONS[directionId].plates.map(normalizeTitlePlateStyle),
       'title-plate',
       String,
       request,
@@ -2773,7 +2789,9 @@ function calmerPlate(
   preset: BookPreset,
   current: TitlePlateStyle,
 ): TitlePlateStyle {
-  const authored = grammar?.plates ?? DIRECTIONS[directionId].plates;
+  const authored = uniqueValues(
+    (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
+  );
   const eligible = authored.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0, false).family;
     return plateMaterialEligible(plate, preset)
@@ -2918,6 +2936,27 @@ function reconcileUnlocked(
       titlePlateStatement(out.titlePlate ?? 'label') >= 1
     ) {
       out.titlePlate = calmerPlate(grammar, directionId, preset, out.titlePlate ?? 'label');
+    }
+  }
+
+  // A statement title field and an architectural perimeter are two complete
+  // cover programmes even when the direction's older numeric statement budget
+  // would permit both. Keep the perimeter and quiet the unlocked title first;
+  // a locked title instead quiets the frame. This is the hard hierarchy seam
+  // exercised by the adversarial title/frame/emblem sabotage board.
+  if (
+    titlePlateStatement(out.titlePlate ?? 'laid-paper-ticket') >= 1 &&
+    frameStatement(out.coverFrame ?? 0) >= 0.72
+  ) {
+    if (!locks.has('title.plate')) {
+      out.titlePlate = calmerPlate(
+        grammar,
+        directionId,
+        preset,
+        out.titlePlate ?? 'laid-paper-ticket',
+      );
+    } else if (!locks.has('cover.frame')) {
+      out.coverFrame = calmerFrame(grammar, directionId, preset, out.coverFrame ?? 0, 15);
     }
   }
 

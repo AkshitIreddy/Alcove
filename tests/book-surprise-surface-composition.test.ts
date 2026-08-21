@@ -85,13 +85,20 @@ describe('Surprise surface composition', () => {
         expect(ACTIVE_COVER_FRAME_INDICES, at).toContain(recipe.style.coverFrame);
         expect(ACTIVE_TITLE_PLATES, at).toContain(recipe.style.titlePlate);
         const materialGroup = MATERIALS[preset.material].group;
-        if (['morocco-label', 'presentation-shoulder', 'calf-compartment'].includes(recipe.style.titlePlate)) {
+        if ([
+          'morocco-single-rule', 'morocco-double-rule', 'morocco-clipped-rule',
+          'calf-blind-label', 'two-tone-leather-label',
+        ].includes(recipe.style.titlePlate)) {
           expect(['leather', 'split'], `${at}:${recipe.style.titlePlate}`).toContain(materialGroup);
         }
-        if (recipe.style.titlePlate === 'split-binding-band') {
+        if ([
+          'dyed-leather-crossband', 'gilt-ruled-crossband', 'split-leather-crossband',
+        ].includes(recipe.style.titlePlate)) {
           expect(['leather', 'cloth', 'split'], at).toContain(materialGroup);
         }
-        if (recipe.style.titlePlate === 'vellum-ink-field') {
+        if ([
+          'laid-paper-ticket', 'deckled-paper-ticket', 'vellum-rule-ticket', 'parchment-slip',
+        ].includes(recipe.style.titlePlate)) {
           expect(['vellum', 'paper', 'split'], at).toContain(materialGroup);
         }
         expect(ACTIVE_EDGE_TREATMENTS, at).toContain(recipe.style.edge);
@@ -149,7 +156,10 @@ describe('Surprise surface composition', () => {
         });
         const audit = inspectBookSurpriseSurfaceComposition(recipe);
         expect(recipe.preset, `${direction.id}:${seedIndex}`).toBe(openPreset.id);
-        expect(audit.programmes, `${direction.id}:${seedIndex}`).toHaveLength(1);
+        expect(
+          audit.programmes,
+          `${direction.id}:${seedIndex}:${JSON.stringify(recipe.style)}:${JSON.stringify(audit)}`,
+        ).toHaveLength(1);
         reached.add(audit.programmes[0] ?? 'missing');
       }
       expect([...reached], `${direction.id}:${openPreset.id}:frame`).toContain('architectural-frame');

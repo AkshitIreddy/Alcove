@@ -83,7 +83,6 @@ import {
 import { clamp, mulberry32 } from './noise';
 import { textWidth } from './textMetrics';
 import {
-  TITLE_TEXT_MIN_CONTRAST,
   colourContrast,
   resolveTitleColours,
   type TitleColourResolution,
@@ -874,74 +873,68 @@ export function resolveCoverTitleColours(
   const board = resolvedCoverBoard(params);
   const [face, dark] = board;
   const pale = isPaleCovering(coveringSpecFor(params));
-  const style: TitlePlateStyle = title.trim() ? (params.titlePlate ?? 'label') : 'label';
-  const paper = style === 'label' || style === 'vellum-ink-field';
+  const style: TitlePlateStyle = normalizeTitlePlateStyle(
+    title.trim() ? (params.titlePlate ?? 'laid-paper-ticket') : 'laid-paper-ticket',
+  );
+  const paper = new Set<TitlePlateStyle>([
+    'laid-paper-ticket', 'deckled-paper-ticket', 'vellum-rule-ticket', 'parchment-slip',
+  ]).has(style);
   const blindField =
-    style === 'debossed' ||
-    style === 'blind-panel' ||
-    style === 'oxford-compartment';
-  const openField =
-    style === 'gilt' ||
-    style === 'gilt-cartouche' ||
-    style === 'ruled-box';
-  const direct =
-    style === 'none' ||
-    style === 'gilt-direct' ||
-    style === 'printer-imprint' ||
-    style === 'double-fillet' ||
-    style === 'twin-rules';
-  const giltBand = style === 'gilt-band';
-  const dyedBand = style === 'split-binding-band';
-  const inkBlock = style === 'ink-panel';
+    style === 'direct-blind-title' ||
+    style === 'oxford-blind-compartment' ||
+    style === 'cambridge-calf-compartment';
+  const direct = new Set<TitlePlateStyle>([
+    'none', 'direct-blind-title', 'direct-gilt-title', 'direct-ink-title',
+    'press-small-caps', 'printer-floret-imprint',
+    'oxford-blind-compartment', 'cambridge-calf-compartment',
+    'french-triple-fillet', 'ledger-open-field', 'inscription-shoulders',
+    'renaissance-title-window',
+  ]).has(style);
+  const crossband = new Set<TitlePlateStyle>([
+    'dyed-leather-crossband', 'gilt-ruled-crossband',
+    'cloth-inlay-crossband', 'split-leather-crossband',
+  ]).has(style);
   const ground =
-    direct || blindField || openField
+    direct || blindField
       ? face
       : paper
         ? pale
           ? FLAT.creamDeep
           : FLAT.cream
-        : giltBand
-          ? normaliseHex(params.toolingHex) ?? FLAT.gilt
-          : dyedBand
-            ? normaliseHex(params.coverAccentHex) ?? dark
-          : inkBlock
-            ? FLAT.ink
-            : dark;
+        : crossband
+          ? normaliseHex(params.coverAccentHex) ?? dark
+          : dark;
+  const resolvedGround = crossband ? mixHex(ground, FLAT.ink, 0.24) : ground;
   const authored =
     blindField
       ? dark
-      : direct || openField
+      : direct
       ? pale
         ? FLAT.inkSoft
-        : params.gilt || style === 'gilt-direct'
+        : params.gilt || style === 'direct-gilt-title' || style === 'printer-floret-imprint'
           ? FLAT.giltPale
           : FLAT.cream
       : paper
         ? FLAT.ink
-        : giltBand
-          ? FLAT.ink
-          : dyedBand
-            ? params.gilt ? FLAT.giltPale : FLAT.cream
-          : inkBlock
-            ? FLAT.cream
-            : params.gilt
-              ? FLAT.giltPale
-              : FLAT.cream;
-  const preferred = blindField ? dark : params.toolingHex ?? authored;
-  const resolved = resolveTitleColours(preferred, ground, !direct);
-  if (!direct || colourContrast(resolved.ink, resolved.ground) >= TITLE_TEXT_MIN_CONTRAST) {
-    return resolved;
+        : params.gilt
+          ? FLAT.giltPale
+          : FLAT.cream;
+  const forceAuthoredInk =
+    style === 'direct-blind-title' ||
+    style === 'direct-gilt-title' ||
+    style === 'direct-ink-title' ||
+    style === 'press-small-caps';
+  if (blindField) {
+    const blindInk = mixHex(dark, FLAT.ink, 0.62);
+    return resolveTitleColours(blindInk, face, false);
   }
-
-  /*
-   * A mid-tone board can make both house text inks miss the guaranteed floor.
-   * Direct lettering cannot solve that by pretending a different colour sits
-   * behind it. Promote only that failing case to a small flat sunk field; the
-   * painter detects the changed ground below and draws it. This keeps the
-   * authored treatment visually direct in every ordinary case while making
-   * the reported ground truthful in the one case that needs a plate.
-   */
-  return resolveTitleColours(preferred, dark, true);
+  const preferred = blindField
+    ? dark
+    : forceAuthoredInk
+      ? authored
+      : params.toolingHex ?? authored;
+  const resolved = resolveTitleColours(preferred, resolvedGround, !direct);
+  return resolved;
 }
 
 /** Decorative tooling is smaller than title text, but it must not disappear. */
@@ -3153,6 +3146,14 @@ const FRAMES: readonly FrameSpec[] = [
   frame('rosace', 'Rosace', [1, 0.5], 'fleuron', 'pair', 'round'),
   frame('renaissance-panel', 'Renaissance Panel', [1, 0.55], 'renaissance', 'none', 'square', true),
   frame('gothic-panel', 'Gothic Panel', [1, 0.65, 0.4], 'bracket', 'none', 'ogee', true),
+
+  /* --- second curation: append-only authored frame constructions --- */
+  frame('mitred-calf-panel', 'Mitred Calf Panel', [1.25, 0.34], 'bracket', 'none', 'shouldered'),
+  frame('open-dentelle', 'Open Dentelle', [1, 0.55, 0.22], 'fleuron', 'none', 'square'),
+  frame('grolier-lozenge-panel', 'Grolier Lozenge Panel', [1, 0.66, 0.26], 'lozenge', 'none', 'shouldered'),
+  frame('library-triple-mitre', 'Library Triple Mitre', [1, 0.48, 0.2], 'none', 'none', 'square'),
+  frame('renaissance-open-panel', 'Renaissance Open Panel', [1, 0.72, 0.3], 'renaissance', 'none', 'shouldered'),
+  frame('blind-acanthus-panel', 'Blind Acanthus Panel', [1.15, 0.42], 'acanthus', 'none', 'shouldered'),
 ];
 
 /**
@@ -3165,6 +3166,7 @@ const FRAMES: readonly FrameSpec[] = [
  */
 export const ACTIVE_COVER_FRAME_INDICES = [
   0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
+  50, 51, 52, 53, 54, 55,
 ] as const;
 
 export interface ActiveCoverFrameOption {
@@ -5313,27 +5315,61 @@ export type CoverTitleFurniture =
   | 'gilt-band'
   | 'open-twin-rules'
   | 'direct-gilt'
-  | 'ink-block';
+  | 'ink-block'
+  | 'direct-blind-impression'
+  | 'direct-gilt-lettering'
+  | 'direct-ink-lettering'
+  | 'press-small-caps'
+  | 'printer-floret'
+  | 'laid-paper-label'
+  | 'deckled-paper-label'
+  | 'vellum-ruled-label'
+  | 'parchment-title-slip'
+  | 'morocco-single-fillet'
+  | 'morocco-double-fillet'
+  | 'morocco-clipped-fillet'
+  | 'calf-blind-piece'
+  | 'two-tone-leather-piece'
+  | 'buckram-library-piece'
+  | 'dyed-leather-crossband'
+  | 'gilt-ruled-crossband'
+  | 'cloth-inlay-crossband'
+  | 'split-leather-crossband'
+  | 'oxford-open-compartment'
+  | 'cambridge-open-compartment'
+  | 'french-triple-compartment'
+  | 'ledger-open-rules'
+  | 'concave-inscription-shoulders'
+  | 'renaissance-mitred-window';
 
 export function coverTitleFurniture(style: TitlePlateStyle): CoverTitleFurniture {
   switch (normalizeTitlePlateStyle(style)) {
-    case 'printer-imprint': return 'press-imprint';
-    case 'label': return 'paper-ticket';
-    case 'vellum-ink-field': return 'vellum-ticket';
-    case 'debossed': return 'debossed-field';
-    case 'morocco-label': return 'morocco-ticket';
-    case 'presentation-shoulder': return 'double-morocco-ticket';
-    case 'calf-compartment': return 'calf-lettering-piece';
-    case 'double-fillet': return 'open-double-fillet';
-    case 'oxford-compartment': return 'oxford-blind-compartment';
-    case 'inlay-strip': return 'inlay-strip';
-    case 'split-binding-band': return 'dyed-leather-band';
-    case 'twin-rules': return 'open-twin-rules';
-    case 'gilt-direct': return 'direct-gilt';
-    case 'ink-panel': return 'ink-block';
-    case 'none':
-    default:
-      return 'direct-lettering';
+    case 'none': return 'direct-lettering';
+    case 'direct-blind-title': return 'direct-blind-impression';
+    case 'direct-gilt-title': return 'direct-gilt-lettering';
+    case 'direct-ink-title': return 'direct-ink-lettering';
+    case 'press-small-caps': return 'press-small-caps';
+    case 'printer-floret-imprint': return 'printer-floret';
+    case 'laid-paper-ticket': return 'laid-paper-label';
+    case 'deckled-paper-ticket': return 'deckled-paper-label';
+    case 'vellum-rule-ticket': return 'vellum-ruled-label';
+    case 'parchment-slip': return 'parchment-title-slip';
+    case 'morocco-single-rule': return 'morocco-single-fillet';
+    case 'morocco-double-rule': return 'morocco-double-fillet';
+    case 'morocco-clipped-rule': return 'morocco-clipped-fillet';
+    case 'calf-blind-label': return 'calf-blind-piece';
+    case 'two-tone-leather-label': return 'two-tone-leather-piece';
+    case 'library-buckram-label': return 'buckram-library-piece';
+    case 'dyed-leather-crossband': return 'dyed-leather-crossband';
+    case 'gilt-ruled-crossband': return 'gilt-ruled-crossband';
+    case 'cloth-inlay-crossband': return 'cloth-inlay-crossband';
+    case 'split-leather-crossband': return 'split-leather-crossband';
+    case 'oxford-blind-compartment': return 'oxford-open-compartment';
+    case 'cambridge-calf-compartment': return 'cambridge-open-compartment';
+    case 'french-triple-fillet': return 'french-triple-compartment';
+    case 'ledger-open-field': return 'ledger-open-rules';
+    case 'inscription-shoulders': return 'concave-inscription-shoulders';
+    case 'renaissance-title-window': return 'renaissance-mitred-window';
   }
 }
 
@@ -5446,6 +5482,326 @@ function paintTitleFurniture(
   }
 
   switch (furniture) {
+    case 'direct-blind-impression': {
+      const impressed = mixHex(blind, spec.face, 0.22);
+      stroke(ctx, x + w * 0.22, y + h * 0.14, x + w * 0.78, y + h * 0.14, impressed, line * 0.5, spec.seed + 100);
+      stroke(ctx, x + w * 0.31, y + h * 0.86, x + w * 0.69, y + h * 0.86, impressed, line * 0.7, spec.seed + 101);
+      return;
+    }
+    case 'direct-gilt-lettering': {
+      stroke(ctx, x + w * 0.3, y + h * 0.84, x + w * 0.7, y + h * 0.84, tooling, line * 0.76, spec.seed + 102);
+      return;
+    }
+    case 'direct-ink-lettering':
+      return;
+    case 'press-small-caps': {
+      const ink = spec.titleColours.ink;
+      const top = y + h * 0.11;
+      const bottom = y + h * 0.89;
+      stroke(ctx, x + w * 0.18, top, x + w * 0.82, top, ink, line * 0.44, spec.seed + 103);
+      stroke(ctx, x + w * 0.18, bottom, x + w * 0.82, bottom, ink, line * 0.44, spec.seed + 104);
+      for (const side of [-1, 1] as const) {
+        const inner = side < 0 ? x + w * 0.18 : x + w * 0.82;
+        const outer = side < 0 ? x + w * 0.03 : x + w * 0.97;
+        ctx.beginPath();
+        ctx.moveTo(inner, y + h * 0.16);
+        ctx.bezierCurveTo(outer, y + h * 0.22, outer, y + h * 0.38, outer, y + h * 0.5);
+        ctx.bezierCurveTo(outer, y + h * 0.62, outer, y + h * 0.78, inner, y + h * 0.84);
+        pen(ctx, ink, line * 0.52);
+        ctx.stroke();
+      }
+      return;
+    }
+    case 'printer-floret': {
+      const ink = spec.titleColours.ink;
+      traceClippedTitleTicket(ctx, x, y, w, h, h * 0.055);
+      pen(ctx, ink, line * 0.65);
+      ctx.stroke();
+      const g = h * 0.14;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 107);
+      pen(ctx, ink, line * 0.34);
+      ctx.stroke();
+      for (const [cx, cy, sx, sy] of [
+        [x + g, y + g, 1, 1], [x + w - g, y + g, -1, 1],
+        [x + w - g, y + h - g, -1, -1], [x + g, y + h - g, 1, -1],
+      ] as const) {
+        stroke(ctx, cx, cy, cx + sx * g * 0.7, cy + sy * g * 0.7, ink, line * 0.28, spec.seed + cx + cy);
+      }
+      const cy = y + h * 0.84;
+      const r = Math.max(1.8, h * 0.055);
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.5, cy - r);
+      ctx.lineTo(x + w * 0.5 + r * 0.62, cy);
+      ctx.lineTo(x + w * 0.5, cy + r);
+      ctx.lineTo(x + w * 0.5 - r * 0.62, cy);
+      ctx.closePath();
+      pen(ctx, ink, line * 0.55);
+      ctx.stroke();
+      return;
+    }
+
+    case 'laid-paper-label': {
+      const lift = Math.max(1, h * 0.055);
+      wobbleRect(ctx, x + lift * 0.5, y + lift, w, h, 0, spec.seed + 110);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 111);
+      fillAndRuleTitleShape(ctx, fill, spec.titleColours.ink, line * 0.72);
+      stroke(ctx, x + w * 0.08, y + h * 0.16, x + w * 0.08, y + h * 0.84, spec.titleColours.ink, line * 0.34, spec.seed + 112);
+      return;
+    }
+    case 'deckled-paper-label': {
+      const j = h * 0.045;
+      ctx.beginPath();
+      ctx.moveTo(x + j, y);
+      ctx.lineTo(x + w * 0.27, y + j * 0.3);
+      ctx.lineTo(x + w * 0.52, y - j * 0.2);
+      ctx.lineTo(x + w - j, y + j * 0.25);
+      ctx.lineTo(x + w, y + h * 0.28);
+      ctx.lineTo(x + w - j * 0.35, y + h * 0.67);
+      ctx.lineTo(x + w - j, y + h);
+      ctx.lineTo(x + w * 0.58, y + h - j * 0.25);
+      ctx.lineTo(x + w * 0.3, y + h + j * 0.18);
+      ctx.lineTo(x + j, y + h - j * 0.2);
+      ctx.lineTo(x, y + h * 0.64);
+      ctx.lineTo(x + j * 0.35, y + h * 0.26);
+      ctx.closePath();
+      fillAndRuleTitleShape(ctx, fill, spec.titleColours.ink, line * 0.62);
+      return;
+    }
+    case 'vellum-ruled-label': {
+      const edge = Math.max(1, h * 0.045);
+      wobbleRect(ctx, x + edge * 0.45, y + edge, w, h, 0, spec.seed + 114);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 115);
+      fillAndRuleTitleShape(ctx, fill, spec.titleColours.ink, line * 0.62);
+      const g = h * 0.11;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 116);
+      pen(ctx, spec.titleColours.ink, line * 0.3);
+      ctx.stroke();
+      return;
+    }
+    case 'parchment-title-slip': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 117);
+      fillAndRuleTitleShape(ctx, fill, blind, line * 0.62);
+      stroke(ctx, x + w * 0.14, y + h * 0.05, x + w * 0.14, y + h * 0.95, blind, line * 0.34, spec.seed + 118);
+      stroke(ctx, x + w * 0.86, y + h * 0.05, x + w * 0.86, y + h * 0.95, blind, line * 0.34, spec.seed + 119);
+      return;
+    }
+
+    case 'morocco-single-fillet': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 122);
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.78);
+      return;
+    }
+    case 'morocco-double-fillet': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 123);
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.8);
+      const g = h * 0.12;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 124);
+      pen(ctx, tooling, line * 0.38);
+      ctx.stroke();
+      return;
+    }
+    case 'morocco-clipped-fillet': {
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.5, y);
+      ctx.lineTo(x + w, y + h * 0.5);
+      ctx.lineTo(x + w * 0.5, y + h);
+      ctx.lineTo(x, y + h * 0.5);
+      ctx.closePath();
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.8);
+      const g = Math.min(w, h) * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.5, y + g);
+      ctx.lineTo(x + w - g, y + h * 0.5);
+      ctx.lineTo(x + w * 0.5, y + h - g);
+      ctx.lineTo(x + g, y + h * 0.5);
+      ctx.closePath();
+      pen(ctx, tooling, line * 0.34);
+      ctx.stroke();
+      return;
+    }
+    case 'calf-blind-piece': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 125);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.5, y + h * 0.5, w * 0.37, h * 0.38, 0, 0, Math.PI * 2);
+      pen(ctx, tooling, line * 0.38);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.5, y + h * 0.5, w * 0.32, h * 0.3, 0, 0, Math.PI * 2);
+      pen(ctx, blind, line * 0.28);
+      ctx.stroke();
+      return;
+    }
+    case 'two-tone-leather-piece': {
+      ctx.fillStyle = mixHex(fill, spec.face, 0.28);
+      ctx.fillRect(x, y, w, h);
+      stroke(ctx, x, y, x + w, y, blind, line * 0.68, spec.seed + 127);
+      stroke(ctx, x, y + h, x + w, y + h, blind, line * 0.68, spec.seed + 128);
+      const g = h * 0.1;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 129);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      pen(ctx, tooling, line * 0.38);
+      ctx.stroke();
+      return;
+    }
+    case 'buckram-library-piece': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 129);
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.68);
+      const end = w * 0.055;
+      stroke(ctx, x + end, y + h * 0.16, x + end, y + h * 0.84, tooling, line * 0.38, spec.seed + 130);
+      stroke(ctx, x + w - end, y + h * 0.16, x + w - end, y + h * 0.84, tooling, line * 0.38, spec.seed + 131);
+      return;
+    }
+
+    case 'dyed-leather-crossband': {
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, y, w, h);
+      stroke(ctx, x, y + h * 0.1, x + w, y + h * 0.1, blind, line * 0.56, spec.seed + 132);
+      stroke(ctx, x, y + h * 0.9, x + w, y + h * 0.9, blind, line * 0.56, spec.seed + 133);
+      stroke(ctx, x + w * 0.08, y + h * 0.19, x + w * 0.92, y + h * 0.19, tooling, line * 0.3, spec.seed + 134);
+      return;
+    }
+    case 'gilt-ruled-crossband': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 135);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      stroke(ctx, x, y + h * 0.1, x + w, y + h * 0.1, tooling, line * 0.75, spec.seed + 136);
+      stroke(ctx, x, y + h * 0.22, x + w, y + h * 0.22, tooling, line * 0.3, spec.seed + 137);
+      stroke(ctx, x, y + h * 0.78, x + w, y + h * 0.78, tooling, line * 0.3, spec.seed + 138);
+      stroke(ctx, x, y + h * 0.9, x + w, y + h * 0.9, tooling, line * 0.75, spec.seed + 139);
+      return;
+    }
+    case 'cloth-inlay-crossband': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 140);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      stroke(ctx, x + w * 0.06, y + h * 0.11, x + w * 0.94, y + h * 0.11, tooling, line * 0.42, spec.seed + 141);
+      stroke(ctx, x + w * 0.06, y + h * 0.89, x + w * 0.94, y + h * 0.89, tooling, line * 0.42, spec.seed + 142);
+      return;
+    }
+    case 'split-leather-crossband': {
+      const rail = h * 0.2;
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, y, w, rail);
+      ctx.fillRect(x, y + h - rail, w, rail);
+      stroke(ctx, x, y + rail, x + w, y + rail, tooling, line * 0.52, spec.seed + 143);
+      stroke(ctx, x, y + h - rail, x + w, y + h - rail, tooling, line * 0.52, spec.seed + 144);
+      return;
+    }
+
+    case 'oxford-open-compartment': {
+      const step = Math.min(w * 0.08, h * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.07, y + h * 0.24);
+      ctx.lineTo(x + w * 0.07 + step, y + h * 0.08);
+      ctx.lineTo(x + w * 0.93 - step, y + h * 0.08);
+      ctx.lineTo(x + w * 0.93, y + h * 0.24);
+      ctx.moveTo(x + w * 0.07, y + h * 0.76);
+      ctx.lineTo(x + w * 0.07 + step, y + h * 0.92);
+      ctx.lineTo(x + w * 0.93 - step, y + h * 0.92);
+      ctx.lineTo(x + w * 0.93, y + h * 0.76);
+      pen(ctx, blind, line * 0.72);
+      ctx.stroke();
+      return;
+    }
+    case 'cambridge-open-compartment': {
+      const arm = w * 0.22;
+      const rise = h * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(x, y + rise);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x + arm, y);
+      ctx.moveTo(x + w - arm * 0.72, y);
+      ctx.lineTo(x + w, y);
+      ctx.lineTo(x + w, y + rise * 0.62);
+      ctx.moveTo(x + w, y + h - rise);
+      ctx.lineTo(x + w, y + h);
+      ctx.lineTo(x + w - arm, y + h);
+      ctx.moveTo(x + arm * 0.72, y + h);
+      ctx.lineTo(x, y + h);
+      ctx.lineTo(x, y + h - rise * 0.62);
+      pen(ctx, blind, line * 0.64);
+      ctx.stroke();
+      stroke(ctx, x + arm * 0.82, y + h * 0.16, x + w - arm * 0.82, y + h * 0.16, tooling, line * 0.32, spec.seed + 146);
+      return;
+    }
+    case 'french-triple-compartment': {
+      const positions = [0.08, 0.18, 0.82, 0.92] as const;
+      positions.forEach((p, index) => {
+        const weight = index === 1 || index === 2 ? 0.72 : 0.32;
+        stroke(ctx, x + w * 0.04, y + h * p, x + w * 0.96, y + h * p, tooling, line * weight, spec.seed + 150 + index);
+      });
+      stroke(ctx, x + w * 0.04, y + h * 0.08, x + w * 0.04, y + h * 0.28, tooling, line * 0.32, spec.seed + 154);
+      stroke(ctx, x + w * 0.96, y + h * 0.72, x + w * 0.96, y + h * 0.92, tooling, line * 0.32, spec.seed + 155);
+      return;
+    }
+    case 'ledger-open-rules': {
+      const ink = spec.titleColours.ink;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.12, y + h * 0.28);
+      ctx.lineTo(x + w * 0.12, y + h * 0.12);
+      ctx.lineTo(x + w * 0.38, y + h * 0.12);
+      ctx.lineTo(x + w * 0.5, y - h * 0.04);
+      ctx.lineTo(x + w * 0.62, y + h * 0.12);
+      ctx.lineTo(x + w * 0.88, y + h * 0.12);
+      ctx.lineTo(x + w * 0.88, y + h * 0.28);
+      ctx.moveTo(x + w * 0.12, y + h * 0.72);
+      ctx.lineTo(x + w * 0.12, y + h * 0.88);
+      ctx.lineTo(x + w * 0.88, y + h * 0.88);
+      ctx.lineTo(x + w * 0.88, y + h * 0.72);
+      pen(ctx, ink, line * 0.58);
+      ctx.stroke();
+      return;
+    }
+    case 'concave-inscription-shoulders': {
+      const cx = x + w * 0.5;
+      const cy = y + h * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, y);
+      ctx.quadraticCurveTo(x + w * 0.62, y - h * 0.04, x + w * 0.68, y + h * 0.18);
+      ctx.quadraticCurveTo(x + w * 0.74, y + h * 0.34, x + w * 0.88, y + h * 0.28);
+      ctx.quadraticCurveTo(x + w * 1.04, y + h * 0.25, x + w * 0.92, cy);
+      ctx.quadraticCurveTo(x + w * 1.04, y + h * 0.75, x + w * 0.88, y + h * 0.72);
+      ctx.quadraticCurveTo(x + w * 0.74, y + h * 0.66, x + w * 0.68, y + h * 0.82);
+      ctx.quadraticCurveTo(x + w * 0.62, y + h * 1.04, cx, y + h);
+      ctx.quadraticCurveTo(x + w * 0.38, y + h * 1.04, x + w * 0.32, y + h * 0.82);
+      ctx.quadraticCurveTo(x + w * 0.26, y + h * 0.66, x + w * 0.12, y + h * 0.72);
+      ctx.quadraticCurveTo(x - w * 0.04, y + h * 0.75, x + w * 0.08, cy);
+      ctx.quadraticCurveTo(x - w * 0.04, y + h * 0.25, x + w * 0.12, y + h * 0.28);
+      ctx.quadraticCurveTo(x + w * 0.26, y + h * 0.34, x + w * 0.32, y + h * 0.18);
+      ctx.quadraticCurveTo(x + w * 0.38, y - h * 0.04, cx, y);
+      ctx.closePath();
+      pen(ctx, tooling, line * 0.7);
+      ctx.stroke();
+      return;
+    }
+    case 'renaissance-mitred-window': {
+      const cx = x + w * 0.5;
+      const cy = y + h * 0.5;
+      const rx = w * 0.42;
+      const ry = h * 0.42;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - ry);
+      ctx.bezierCurveTo(cx + rx * 0.26, cy - ry, cx + rx * 0.23, cy - ry * 0.48, cx + rx * 0.52, cy - ry * 0.46);
+      ctx.bezierCurveTo(cx + rx, cy - ry * 0.42, cx + rx, cy - ry * 0.2, cx + rx, cy);
+      ctx.bezierCurveTo(cx + rx, cy + ry * 0.2, cx + rx, cy + ry * 0.42, cx + rx * 0.52, cy + ry * 0.46);
+      ctx.bezierCurveTo(cx + rx * 0.23, cy + ry * 0.48, cx + rx * 0.26, cy + ry, cx, cy + ry);
+      ctx.bezierCurveTo(cx - rx * 0.26, cy + ry, cx - rx * 0.23, cy + ry * 0.48, cx - rx * 0.52, cy + ry * 0.46);
+      ctx.bezierCurveTo(cx - rx, cy + ry * 0.42, cx - rx, cy + ry * 0.2, cx - rx, cy);
+      ctx.bezierCurveTo(cx - rx, cy - ry * 0.2, cx - rx, cy - ry * 0.42, cx - rx * 0.52, cy - ry * 0.46);
+      ctx.bezierCurveTo(cx - rx * 0.23, cy - ry * 0.48, cx - rx * 0.26, cy - ry, cx, cy - ry);
+      ctx.closePath();
+      pen(ctx, tooling, line * 0.68);
+      ctx.stroke();
+      return;
+    }
+
     case 'direct-lettering':
     case 'direct-gilt':
       return;
@@ -5751,16 +6107,18 @@ function paintLabel(
 
   const ink = spec.titleColours.ink;
   const furniture = coverTitleFurniture(spec.style);
-  const directStyle =
-    furniture === 'direct-lettering' ||
-    furniture === 'direct-gilt' ||
-    furniture === 'press-imprint' ||
-    furniture === 'open-double-fillet' ||
-    furniture === 'open-twin-rules';
+  const directStyle = new Set<CoverTitleFurniture>([
+    'direct-blind-impression', 'direct-gilt-lettering', 'direct-ink-lettering',
+    'press-small-caps', 'printer-floret', 'oxford-open-compartment',
+    'cambridge-open-compartment', 'french-triple-compartment',
+    'ledger-open-rules', 'concave-inscription-shoulders',
+    'renaissance-mitred-window',
+  ]).has(furniture);
   const expandedDirectTitle =
-    furniture === 'direct-gilt' ||
-    furniture === 'open-double-fillet' ||
-    furniture === 'open-twin-rules';
+    furniture === 'direct-gilt-lettering' ||
+    furniture === 'direct-ink-lettering' ||
+    furniture === 'press-small-caps' ||
+    furniture === 'printer-floret';
   const forcedDirectField = directStyle && spec.titleColours.ground !== spec.face;
   paintTitleFurniture(ctx, x, y, w, h, spec, furniture, forcedDirectField);
 
@@ -5792,12 +6150,68 @@ function paintLabel(
   // than they need. At specimen-card scale it made even a two-word title
   // ellipsise inside a visibly broad plate. Nine percent is still a generous
   // bookbinder's margin and, crucially, agrees with the width the eye reads.
-  const maxWidth = w * 0.91;
+  const titleWidthShare =
+    furniture === 'morocco-clipped-fillet' ? 0.58
+      : furniture === 'calf-blind-piece' ? 0.68
+        : furniture === 'concave-inscription-shoulders' ? 0.68
+          : furniture === 'renaissance-mitred-window' ? 0.62
+            : furniture === 'printer-floret' ? 0.76
+              : furniture === 'ledger-open-rules' ? 0.74
+                : 0.91;
+  const maxWidth = w * titleWidthShare;
   const floorPx = HAND_FLOOR_PX * spec.s;
   const hand = spec.hand;
   // The plate's vertical cap holds whatever the hand asks for: a hand set at
   // 1.28 that overflowed its own label would be a hand nobody would pick.
   const startPx = Math.min(h * 0.52, Math.min(h * 0.46, 30 * spec.s) * hand.scale);
+  const verticalTitle =
+    furniture === 'deckled-paper-label' ||
+    furniture === 'parchment-title-slip' ||
+    furniture === 'cloth-inlay-crossband';
+  if (verticalTitle) {
+    ctx.save();
+    ctx.translate(x + w * 0.5, y + h * 0.5);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let verticalStack = FACE_STACKS[hand.face] ?? FACE_STACKS[0]!;
+    const verticalStart = Math.min(w * 0.48, 24 * spec.s * hand.scale);
+    let verticalLayout = fitCoverTitle(
+      ctx,
+      text,
+      hand,
+      verticalStack,
+      verticalStart,
+      HAND_FLOOR_PX * spec.s,
+      h * 0.78,
+      w * 0.92,
+      0.76,
+    );
+    if (hand.face !== PRINTED_FACE && verticalLayout.fontPx < HAND_FLOOR_PX * spec.s) {
+      verticalStack = FACE_STACKS[PRINTED_FACE]!;
+      verticalLayout = fitCoverTitle(
+        ctx,
+        text,
+        hand,
+        verticalStack,
+        verticalStart,
+        HAND_FLOOR_PX * spec.s,
+        h * 0.78,
+        w * 0.92,
+        0.76,
+      );
+    }
+    const verticalPx = Math.max(1, verticalLayout.fontPx);
+    setHand(ctx, hand, verticalLayout.stack, verticalPx, text, verticalLayout.track);
+    const lineHeight = verticalPx * 1.02;
+    const first = -((verticalLayout.lines.length - 1) * lineHeight) / 2;
+    ctx.fillStyle = ink;
+    verticalLayout.lines.forEach((lineText, index) => {
+      ctx.fillText(lineText, 0, first + index * lineHeight, h * 0.78);
+    });
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -5808,11 +6222,23 @@ function paintLabel(
   // below it; treating that field like a pasted label made long gilt-direct
   // titles needlessly microscopic despite a broad, empty board around them.
   const openRuleField =
-    furniture === 'open-double-fillet' || furniture === 'open-twin-rules';
+    new Set<CoverTitleFurniture>([
+      'press-small-caps', 'printer-floret', 'oxford-open-compartment',
+      'cambridge-open-compartment', 'french-triple-compartment',
+      'ledger-open-rules', 'concave-inscription-shoulders',
+      'renaissance-mitred-window',
+    ]).has(furniture);
   const materialBand =
-    furniture === 'inlay-strip' || furniture === 'dyed-leather-band' || furniture === 'gilt-band' || furniture === 'ink-block';
+    new Set<CoverTitleFurniture>([
+      'dyed-leather-crossband', 'gilt-ruled-crossband',
+      'cloth-inlay-crossband', 'split-leather-crossband',
+    ]).has(furniture);
   const verticalShare =
-    furniture === 'direct-gilt' ? 0.74 : openRuleField || materialBand ? 0.64 : 0.58;
+    furniture === 'direct-gilt-lettering' || furniture === 'direct-ink-lettering'
+      ? 0.74
+      : openRuleField || materialBand
+        ? 0.64
+        : 0.58;
   let layout = fitCoverTitle(
     ctx,
     text,
@@ -5888,21 +6314,24 @@ function paintLabel(
 
   // Open fillets and full material bands already supply a lower rule. Other
   // treatments keep one short binder's finishing stroke beneath the title.
-  if (
-    furniture !== 'open-double-fillet' &&
-    furniture !== 'open-twin-rules' &&
-    furniture !== 'inlay-strip' &&
-    furniture !== 'dyed-leather-band' &&
-    furniture !== 'gilt-band' &&
-    furniture !== 'ink-block'
-  ) {
+  const furnitureOwnsFinishingRule = new Set<CoverTitleFurniture>([
+    'direct-blind-impression', 'direct-gilt-lettering', 'press-small-caps',
+    'printer-floret', 'parchment-title-slip', 'dyed-leather-crossband',
+    'gilt-ruled-crossband', 'cloth-inlay-crossband', 'split-leather-crossband',
+    'oxford-open-compartment', 'cambridge-open-compartment',
+    'french-triple-compartment', 'ledger-open-rules',
+    'concave-inscription-shoulders', 'renaissance-mitred-window',
+  ]).has(furniture);
+  if (!furnitureOwnsFinishingRule) {
     stroke(
       ctx,
       x + w * 0.34,
       y + h * (expandedDirectTitle && lines.length > 1 ? 0.9 : 0.78),
       x + w * 0.66,
       y + h * (expandedDirectTitle && lines.length > 1 ? 0.9 : 0.78),
-      spec.style === 'label' ? FLAT.inkSoft : ink,
+      spec.style === 'laid-paper-ticket' || spec.style === 'deckled-paper-ticket'
+        ? FLAT.inkSoft
+        : ink,
       Math.max(0.9, h * 0.05),
       spec.seed + 7,
     );
@@ -6214,6 +6643,8 @@ export interface RenderCoverOptions {
 export interface CoverCompositionLayout {
   titleWidth: number;
   titleHeight: number;
+  /** Horizontal title locus on the face, 0 = joint and 1 = fore-edge. */
+  titleCenterX?: number;
   titleCenterY: number;
   medallionCenterY: number;
   medallionScale: number;
@@ -6221,29 +6652,51 @@ export interface CoverCompositionLayout {
 }
 
 const BAND_TITLE_PLATES = new Set<TitlePlateStyle>([
-  'gilt-band', 'ribbon-band', 'inlay-strip', 'twin-rules', 'double-fillet',
-  'triple-fillet', 'dotted-rule', 'starred-ends', 'fleuron-ends', 'lozenge-ends',
-  'split-binding-band',
+  'dyed-leather-crossband', 'gilt-ruled-crossband',
+  'cloth-inlay-crossband', 'split-leather-crossband',
 ]);
 const TICKET_TITLE_PLATES = new Set<TitlePlateStyle>([
-  'label', 'morocco-label', 'paper-slip', 'vellum-slip', 'linen-tag',
-  'ivory-plate', 'ebony-plate', 'copper-plate', 'enamel-plate', 'leather-onlay',
-  'vellum-ink-field', 'calf-compartment', 'presentation-shoulder',
+  'laid-paper-ticket', 'deckled-paper-ticket', 'vellum-rule-ticket', 'parchment-slip',
+  'morocco-single-rule', 'morocco-double-rule', 'morocco-clipped-rule',
+  'calf-blind-label', 'two-tone-leather-label', 'library-buckram-label',
 ]);
-const HERALDIC_TITLE_PLATES = new Set<TitlePlateStyle>([
-  'shield-plate', 'crest-plate', 'scroll-plate', 'arched-plate', 'pedimented',
-  'gilt-cartouche', 'gothic-panel',
-]);
-const ROUND_TITLE_PLATES = new Set<TitlePlateStyle>([
-  'roundel', 'oval-medallion', 'lozenge-plate', 'wreathed-plate',
-  'scallop-edge', 'bead-frame',
-]);
+const HERALDIC_TITLE_PLATES = new Set<TitlePlateStyle>();
+const ROUND_TITLE_PLATES = new Set<TitlePlateStyle>();
 const PANEL_TITLE_PLATES = new Set<TitlePlateStyle>([
-  'blind-panel', 'ruled-box', 'corner-brackets', 'notched-corners', 'sunk-panel',
-  'stepped-frame', 'chamfered-plate', 'hatched-ground', 'stippled-ground',
-  'rope-frame', 'stone-tablet', 'ink-panel',
-  'oxford-compartment',
+  'oxford-blind-compartment', 'cambridge-calf-compartment',
+  'french-triple-fillet', 'ledger-open-field',
+  'inscription-shoulders', 'renaissance-title-window',
 ]);
+
+/** Individual bookbinding layouts; variation is architectural, not cosmetic. */
+const AUTHORED_TITLE_LAYOUTS: Readonly<Partial<Record<TitlePlateStyle, CoverCompositionLayout & { titleCenterX?: number }>>> = {
+  none: { family: 'direct', titleWidth: 0.72, titleHeight: 0.2, titleCenterY: 0.29, medallionCenterY: 0.62, medallionScale: 0.088 },
+  'direct-blind-title': { family: 'direct', titleWidth: 0.74, titleHeight: 0.2, titleCenterY: 0.23, medallionCenterY: 0.59, medallionScale: 0.09 },
+  'direct-gilt-title': { family: 'direct', titleWidth: 0.82, titleHeight: 0.26, titleCenterY: 0.32, medallionCenterY: 0.66, medallionScale: 0.086 },
+  'direct-ink-title': { family: 'direct', titleWidth: 0.68, titleHeight: 0.2, titleCenterY: 0.43, medallionCenterY: 0.76, medallionScale: 0.07 },
+  'press-small-caps': { family: 'panel', titleWidth: 0.9, titleHeight: 0.27, titleCenterY: 0.31, medallionCenterY: 0.68, medallionScale: 0.078 },
+  'printer-floret-imprint': { family: 'panel', titleWidth: 0.88, titleHeight: 0.36, titleCenterY: 0.39, medallionCenterY: 0.76, medallionScale: 0.066 },
+  'laid-paper-ticket': { family: 'ticket', titleWidth: 0.6, titleHeight: 0.16, titleCenterY: 0.29, medallionCenterY: 0.66, medallionScale: 0.082 },
+  'deckled-paper-ticket': { family: 'ticket', titleWidth: 0.3, titleHeight: 0.56, titleCenterX: 0.73, titleCenterY: 0.43, medallionCenterY: 0.74, medallionScale: 0.068 },
+  'vellum-rule-ticket': { family: 'band', titleWidth: 0.84, titleHeight: 0.17, titleCenterY: 0.24, medallionCenterY: 0.64, medallionScale: 0.082 },
+  'parchment-slip': { family: 'ticket', titleWidth: 0.28, titleHeight: 0.58, titleCenterX: 0.28, titleCenterY: 0.45, medallionCenterY: 0.75, medallionScale: 0.066 },
+  'morocco-single-rule': { family: 'ticket', titleWidth: 0.48, titleHeight: 0.13, titleCenterY: 0.55, medallionCenterY: 0.79, medallionScale: 0.062 },
+  'morocco-double-rule': { family: 'ticket', titleWidth: 0.72, titleHeight: 0.19, titleCenterY: 0.35, medallionCenterY: 0.71, medallionScale: 0.078 },
+  'morocco-clipped-rule': { family: 'heraldic', titleWidth: 0.66, titleHeight: 0.34, titleCenterY: 0.4, medallionCenterY: 0.78, medallionScale: 0.064 },
+  'calf-blind-label': { family: 'round', titleWidth: 0.86, titleHeight: 0.3, titleCenterY: 0.38, medallionCenterY: 0.77, medallionScale: 0.064 },
+  'two-tone-leather-label': { family: 'panel', titleWidth: 0.74, titleHeight: 0.34, titleCenterY: 0.4, medallionCenterY: 0.79, medallionScale: 0.06 },
+  'library-buckram-label': { family: 'ticket', titleWidth: 0.55, titleHeight: 0.14, titleCenterY: 0.27, medallionCenterY: 0.64, medallionScale: 0.082 },
+  'dyed-leather-crossband': { family: 'band', titleWidth: 0.9, titleHeight: 0.31, titleCenterY: 0.31, medallionCenterY: 0.72, medallionScale: 0.074 },
+  'gilt-ruled-crossband': { family: 'band', titleWidth: 0.88, titleHeight: 0.17, titleCenterY: 0.35, medallionCenterY: 0.7, medallionScale: 0.078 },
+  'cloth-inlay-crossband': { family: 'band', titleWidth: 0.29, titleHeight: 0.58, titleCenterX: 0.72, titleCenterY: 0.44, medallionCenterY: 0.75, medallionScale: 0.066 },
+  'split-leather-crossband': { family: 'band', titleWidth: 0.84, titleHeight: 0.28, titleCenterY: 0.38, medallionCenterY: 0.76, medallionScale: 0.068 },
+  'oxford-blind-compartment': { family: 'panel', titleWidth: 0.76, titleHeight: 0.23, titleCenterY: 0.32, medallionCenterY: 0.7, medallionScale: 0.078 },
+  'cambridge-calf-compartment': { family: 'panel', titleWidth: 0.79, titleHeight: 0.27, titleCenterY: 0.35, medallionCenterY: 0.73, medallionScale: 0.072 },
+  'french-triple-fillet': { family: 'panel', titleWidth: 0.9, titleHeight: 0.29, titleCenterY: 0.34, medallionCenterY: 0.75, medallionScale: 0.068 },
+  'ledger-open-field': { family: 'heraldic', titleWidth: 0.78, titleHeight: 0.35, titleCenterY: 0.4, medallionCenterY: 0.8, medallionScale: 0.056 },
+  'inscription-shoulders': { family: 'heraldic', titleWidth: 0.74, titleHeight: 0.36, titleCenterY: 0.4, medallionCenterY: 0.8, medallionScale: 0.056 },
+  'renaissance-title-window': { family: 'round', titleWidth: 0.74, titleHeight: 0.42, titleCenterY: 0.42, medallionCenterY: 0.81, medallionScale: 0.052 },
+};
 
 export function coverCompositionLayout(
   plate: TitlePlateStyle,
@@ -6255,23 +6708,22 @@ export function coverCompositionLayout(
   frame = normalizeCoverFrameIndex(frame);
   medallion = normalizeCoverEmblemIndex(medallion);
   let layout: CoverCompositionLayout;
-  if (plate === 'gilt-direct' || plate === 'printer-imprint') {
+  const authored = AUTHORED_TITLE_LAYOUTS[plate];
+  if (authored !== undefined) {
+    layout = authored;
+  } else if (
+    plate === 'direct-blind-title' ||
+    plate === 'direct-gilt-title' ||
+    plate === 'direct-ink-title' ||
+    plate === 'press-small-caps' ||
+    plate === 'printer-floret-imprint'
+  ) {
     layout = {
       // There is no physical ticket here: this is an invisible lettering
       // field on the board. Its extra height lets a long direct title use two
       // proper lines while the finishing rule still clears the medallion.
       family: 'direct', titleWidth: 0.82, titleHeight: 0.25,
       titleCenterY: 0.29, medallionCenterY: 0.59, medallionScale: 0.094,
-    };
-  } else if (plate === 'none') {
-    layout = {
-      family: 'direct', titleWidth: 0.82, titleHeight: 0.22,
-      titleCenterY: 0.29, medallionCenterY: 0.59, medallionScale: 0.094,
-    };
-  } else if (plate === 'debossed') {
-    layout = {
-      family: 'panel', titleWidth: 0.76, titleHeight: 0.18,
-      titleCenterY: 0.34, medallionCenterY: 0.7, medallionScale: 0.082,
     };
   } else if (BAND_TITLE_PLATES.has(plate)) {
     layout = {
@@ -6312,7 +6764,11 @@ export function coverCompositionLayout(
   const elaborateFrame = frame === 36 || frame === 43;
   return {
     ...layout,
-    titleWidth: clamp(layout.titleWidth + (inset ? 0.018 : 0) - (elaborateFrame ? 0.015 : 0), 0.54, 0.88),
+    titleWidth: clamp(
+      layout.titleWidth + (inset ? 0.018 : 0) - (elaborateFrame ? 0.015 : 0),
+      layout.titleCenterX === undefined ? 0.5 : 0.2,
+      0.92,
+    ),
     titleCenterY: clamp(layout.titleCenterY + (elaborateFrame ? 0.012 : 0), 0.26, 0.43),
     medallionCenterY: clamp(
       layout.medallionCenterY + (elaborateFrame ? 0.012 : 0) + ((Math.abs(medallion) % 3) - 1) * 0.012,
@@ -6512,7 +6968,7 @@ export function renderCoverInto(
   );
 
   /* ---- label ---- */
-  const plateStyle: TitlePlateStyle = params.titlePlate ?? 'label';
+  const plateStyle: TitlePlateStyle = params.titlePlate ?? 'laid-paper-ticket';
   const composition = coverCompositionLayout(
     plateStyle,
     params.frame,
@@ -6520,8 +6976,14 @@ export function renderCoverInto(
     params.insetPlate === true,
   );
   const labelW = faceW * composition.titleWidth;
-  const labelH = Math.min(bh * composition.titleHeight, labelW * 0.62);
-  const labelX = faceX + (faceW - labelW) / 2;
+  const verticalPlate =
+    plateStyle === 'deckled-paper-ticket' ||
+    plateStyle === 'parchment-slip' ||
+    plateStyle === 'cloth-inlay-crossband';
+  const labelH = verticalPlate
+    ? bh * composition.titleHeight
+    : Math.min(bh * composition.titleHeight, labelW * 0.62);
+  const labelX = faceX + faceW * (composition.titleCenterX ?? 0.5) - labelW / 2;
   const labelY = by + bh * composition.titleCenterY - labelH / 2;
   if (opts.plate !== false) {
     if (params.medallion === 20 && fineDetail) {
@@ -6536,7 +6998,7 @@ export function renderCoverInto(
       );
     }
     paintLabel(ctx, labelX, labelY, labelW, labelH, title, {
-      style: title ? plateStyle : 'label',
+      style: title ? plateStyle : 'laid-paper-ticket',
       inset: params.insetPlate === true,
       gilded,
       tooling: params.toolingHex ?? null,

@@ -108,7 +108,7 @@ describe('spine-title retirement contract', () => {
     });
 
     expect(normalized).toEqual({
-      titlePlate: 'presentation-shoulder',
+      titlePlate: 'inscription-shoulders',
       titleFont: 2,
     });
 
@@ -123,7 +123,7 @@ describe('spine-title retirement contract', () => {
     expect(resolved.spine).not.toHaveProperty('titleScale');
     expect(resolved.spine).not.toHaveProperty('titleSpace');
     expect(resolved.cover).toMatchObject({
-      titlePlate: 'label',
+      titlePlate: 'laid-paper-ticket',
       titleFont: 1,
     });
   });
@@ -146,9 +146,9 @@ describe('spine-title retirement contract', () => {
       titleFont: 0,
     });
 
-    expect(first.cover.titlePlate).toBe('presentation-shoulder');
+    expect(first.cover.titlePlate).toBe('inscription-shoulders');
     expect(first.cover.titleFont).toBe(2);
-    expect(second.cover.titlePlate).toBe('label');
+    expect(second.cover.titlePlate).toBe('laid-paper-ticket');
     expect(second.cover.titleFont).toBe(0);
   });
 });

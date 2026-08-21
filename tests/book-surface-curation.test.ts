@@ -45,6 +45,7 @@ const APPROVED_ORNAMENTS = [
 
 const APPROVED_FRAMES = [
   0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
+  50, 51, 52, 53, 54, 55,
 ] as const;
 
 describe('book-surface apocalypse catalogue', () => {
@@ -120,7 +121,7 @@ describe('book-surface apocalypse catalogue', () => {
   });
 
   it('keeps only continuous cover-title treatments and unpatterned physical page edges', () => {
-    const forbiddenTitles = /bead|rope|dot|scallop|ribbon|hatch|stipple|slip|tag|copper|enamel|crest|roundel|wreath|star|shield|oval/i;
+    const forbiddenTitles = /bead|rope|dot|scallop|ribbon|hatch|stipple|tag|copper|enamel|crest|roundel|wreath|star|shield|oval/i;
     for (const title of ACTIVE_TITLE_PLATES) expect(title).not.toMatch(forbiddenTitles);
     for (const historical of TITLE_PLATES) {
       expect(ACTIVE_TITLE_PLATES).toContain(normalizeTitlePlateStyle(historical));
@@ -184,7 +185,7 @@ describe('book-surface hard normalization', () => {
       ornament: 1,
       coverMedallion: 1,
       coverFrame: 26,
-      titlePlate: 'printer-imprint',
+      titlePlate: 'ledger-open-field',
       edge: 'plain',
       charm: 'none',
       raisedBands: MAX_RAISED_BANDS,
@@ -217,7 +218,7 @@ describe('book-surface hard normalization', () => {
     ).toMatchObject({
       frame: 36,
       medallion: 23,
-      titlePlate: 'oxford-compartment',
+      titlePlate: 'cambridge-calf-compartment',
       edge: 'plain',
       charm: 'none',
       cornerProtectors: false,
@@ -263,7 +264,7 @@ describe('book-surface hard normalization', () => {
     expect(resolved.ornament).toBe(-1);
     expect(resolved.coverMedallion).toBe(-1);
     expect([0, 2, 24, 28]).toContain(resolved.coverFrame);
-    expect(['none', 'debossed', 'blind-lettered', 'gilt-direct', 'twin-rules']).toContain(
+    expect(['none', 'direct-blind-title', 'direct-gilt-title']).toContain(
       resolved.titlePlate,
     );
     expect(resolved.charm).toBe('none');

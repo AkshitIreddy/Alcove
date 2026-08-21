@@ -14,6 +14,7 @@ const option = (name, fallback) => {
 };
 const TAG = option('tag', 'now');
 const URL = option('url', 'http://localhost:1420');
+const SABOTAGE = args.includes('--sabotage');
 const OUT = 'shots-now/out';
 mkdirSync(OUT, { recursive: true });
 
@@ -86,6 +87,26 @@ const report = await page.evaluate(async () => {
     return node;
   }
 
+  function reduced(source, width, height) {
+    const node = canvas(width, height);
+    const ctx = node.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, width, height);
+    return node;
+  }
+
+  function pixelSignature(source) {
+    const thumb = reduced(source, 48, 66);
+    const data = thumb.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, 48, 66).data;
+    let hash = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      hash ^= (data[i] >> 3) ^ ((data[i + 1] >> 3) << 5) ^ ((data[i + 2] >> 3) << 10);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+  }
+
   function board(id, columns, cellWidth) {
     const section = document.createElement('section');
     section.id = id;
@@ -127,11 +148,59 @@ const report = await page.evaluate(async () => {
   const title = 'A Quiet Ledger of Small Histories';
   const titlesTrue = board('titles-true', 5, 154);
   const titlesDetail = board('titles-detail', 3, 300);
+  const titlesShelf = board('titles-shelf', 8, 104);
+  const titlesMaterial = board('titles-material', 5, 154);
+  const titlesMaterialShelf = board('titles-material-shelf', 8, 104);
+  const titleSignatures = [];
+  const materialRows = {
+    'direct-blind-title': ['polished-calf', '#795744', '#5d3d31', false],
+    'direct-gilt-title': ['morocco-grain', '#71364a', '#4d2434', true],
+    'direct-ink-title': ['smooth-cloth', '#7993a0', '#536f7c', false],
+    'press-small-caps': ['morocco-grain', '#2f665b', '#20483f', true],
+    'printer-floret-imprint': ['polished-calf', '#6b4437', '#4e3029', true],
+    'laid-paper-ticket': ['smooth-cloth', '#8d4b42', '#69352f', false],
+    'deckled-paper-ticket': ['half-bound', '#355f68', '#24464e', false],
+    'vellum-rule-ticket': ['polished-calf', '#5f3f34', '#432c25', false],
+    'parchment-slip': ['buckram', '#70445d', '#4f3043', false],
+    'morocco-single-rule': ['polished-calf', '#3f6757', '#2a493d', true],
+    'morocco-double-rule': ['russia-calf', '#744238', '#522e28', true],
+    'morocco-clipped-rule': ['morocco-grain', '#473866', '#312649', true],
+    'calf-blind-label': ['polished-calf', '#8a6145', '#62442f', true],
+    'two-tone-leather-label': ['half-bound', '#355c64', '#744239', true],
+    'library-buckram-label': ['buckram', '#4b6272', '#334552', false],
+    'dyed-leather-crossband': ['half-bound', '#8a5944', '#50372e', true],
+    'gilt-ruled-crossband': ['morocco-grain', '#5e3550', '#3e2437', true],
+    'cloth-inlay-crossband': ['half-cloth-paper', '#86725b', '#405d64', false],
+    'split-leather-crossband': ['three-quarter', '#546c5a', '#713f35', true],
+    'oxford-blind-compartment': ['polished-calf', '#765344', '#51392f', false],
+    'cambridge-calf-compartment': ['russia-calf', '#6a4739', '#493127', false],
+    'french-triple-fillet': ['morocco-grain', '#354f63', '#243848', true],
+    'ledger-open-field': ['smooth-cloth', '#6c7982', '#4b565e', false],
+    'inscription-shoulders': ['morocco-grain', '#395f57', '#27433d', true],
+    'renaissance-title-window': ['morocco-grain', '#71413a', '#4e2d29', true],
+  };
+  function materialOverrides(id) {
+    const [material, coverBaseHex, coverAccentHex, gilt] = materialRows[id] ?? ['smooth-cloth', '#475d82', '#314564', true];
+    return {
+      material,
+      covering: Math.max(0, cv.COVER_TEXTURES.indexOf(material)),
+      coverBaseHex,
+      coverAccentHex,
+      gilt,
+      toolingHex: gilt ? '#e8c96b' : '#49332c',
+      emblemHex: gilt ? '#f3db91' : '#49332c',
+    };
+  }
   for (const { id, label } of sp.ACTIVE_TITLE_PLATE_OPTIONS) {
     const natural = cover({ frame: 0, titlePlate: id }, title);
+    const materialNatural = cover({ frame: 0, titlePlate: id, ...materialOverrides(id) }, title);
     const caption = `${label} · ${cv.coverTitleFurniture(id)}`;
+    titleSignatures.push({ id, signature: pixelSignature(natural) });
     titlesTrue.append(cell(caption, natural, 154));
     titlesDetail.append(cell(caption, scaled(natural, 2), 300));
+    titlesShelf.append(cell(caption, reduced(natural, 60, 83), 104));
+    titlesMaterial.append(cell(caption, materialNatural, 154));
+    titlesMaterialShelf.append(cell(caption, reduced(materialNatural, 60, 83), 104));
   }
 
   const handsTrue = board('hands-true', 5, 154);
@@ -196,11 +265,12 @@ const report = await page.evaluate(async () => {
       programme: cv.coverEmblemProgramme(index),
     })),
     frames: cv.ACTIVE_COVER_FRAMES,
-    titles: sp.ACTIVE_TITLE_PLATE_OPTIONS.map(({ id, label }) => ({
+    titles: sp.ACTIVE_TITLE_PLATE_OPTIONS.map(({ id, label }, index) => ({
       id,
       label,
       furniture: cv.coverTitleFurniture(id),
       layout: cv.coverCompositionLayout(id, 0, -1),
+      signature: titleSignatures[index]?.signature ?? '',
     })),
     hands: cv.ACTIVE_COVER_HANDS,
     edges: sp.ACTIVE_EDGE_OPTIONS,
@@ -213,6 +283,8 @@ for (const id of [
   'emblems-true', 'emblems-detail',
   'frames-true', 'frames-detail',
   'titles-true', 'titles-detail',
+  'titles-shelf',
+  'titles-material', 'titles-material-shelf',
   'hands-true', 'hands-detail',
   'edges-true', 'edges-detail',
   'endbands-true', 'endbands-detail',
@@ -223,6 +295,19 @@ for (const id of [
   console.log('  shot', path);
 }
 const reportPath = `${OUT}/cover-frame-title-report-${TAG}.json`;
+if (SABOTAGE && report.titles.length > 1) {
+  report.titles[1].signature = report.titles[0].signature;
+}
+const uniqueFurniture = new Set(report.titles.map((row) => row.furniture)).size;
+const uniqueTitlePixels = new Set(report.titles.map((row) => row.signature)).size;
+const gateFailures = [];
+if (report.titles.length < 25) gateFailures.push(`only ${report.titles.length} active title treatments`);
+if (uniqueFurniture !== report.titles.length) gateFailures.push(`${report.titles.length - uniqueFurniture} duplicate furniture mappings`);
+if (uniqueTitlePixels !== report.titles.length) gateFailures.push(`${report.titles.length - uniqueTitlePixels} duplicate shelf pixel signatures`);
+if (report.frames.length < 17) gateFailures.push(`only ${report.frames.length} active frame constructions`);
+report.gate = { passed: gateFailures.length === 0, failures: gateFailures };
 writeFileSync(reportPath, JSON.stringify(report, null, 2));
 console.log('  report', reportPath);
 await browser.close();
+console.log(SABOTAGE && !report.gate.passed ? 'GATE ALIVE' : report.gate.passed ? 'GATE PASSED' : 'GATE FAILED');
+if (!report.gate.passed) throw new Error(report.gate.failures.join('\n'));

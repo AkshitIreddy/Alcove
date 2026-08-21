@@ -125,6 +125,20 @@ pub fn run() {
         library::LibraryPaths::resolve().expect("could not resolve Alcove's library folder");
     let db_url = library_paths.db_url().to_string();
     let setup_paths = library_paths.clone();
+    let qa_mode = std::env::var("ALCOVE_QA").as_deref() == Ok("1");
+    let window_state_plugin = {
+        let builder = tauri_plugin_window_state::Builder::new();
+        if qa_mode {
+            // The plugin's empty-cache default is `visible: true` and its
+            // window-ready hook otherwise calls show()+focus(), overriding the
+            // hidden QA window config. Skipping only this initial restore keeps
+            // native automation off the reader's screen; the QA identifier has
+            // its own state file and production behaviour is unchanged.
+            builder.skip_initial_state("main").build()
+        } else {
+            builder.build()
+        }
+    };
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -166,7 +180,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(window_state_plugin)
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
@@ -174,6 +188,16 @@ pub fn run() {
             None,
         ))
         .setup(move |app| {
+            if qa_mode {
+                let window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| "Alcove QA main window was not created".to_string())?;
+                // Reinforce the QA config at the native boundary. A hidden
+                // window is not enough if it remains taskbar-eligible, and a
+                // taskbar-free window is not enough if a plugin shows it.
+                window.set_skip_taskbar(true)?;
+                window.hide()?;
+            }
             // `convertFileSrc` remains narrowly scoped even when the reader
             // chose a library on another drive.
             app.asset_protocol_scope()

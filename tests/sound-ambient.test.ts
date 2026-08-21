@@ -10,6 +10,10 @@ vi.mock('@pixi/sound', () => ({ sound: {} }));
 import {
   SOUND_MANIFEST,
   getEngineState,
+  init,
+  play,
+  prepareInteractionAudio,
+  recordInteractionGesture,
   resetEngineForTests,
   setAppHiddenInTray,
   setPixiSoundLoader,
@@ -176,6 +180,41 @@ class FakeLibrary {
 const flushMicrotasks = async (turns = 8): Promise<void> => {
   for (let i = 0; i < turns; i += 1) await Promise.resolve();
 };
+
+describe('invisible native QA silence boundary', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetEngineForTests();
+  });
+
+  it('refuses every audio startup and playback path before loading a backend', async () => {
+    vi.stubGlobal('location', { search: '?qa-silent=1' });
+    let backendLoads = 0;
+    setPixiSoundLoader(async () => {
+      backendLoads += 1;
+      return { sound: new FakeLibrary() as unknown as PixiSoundLibraryLike };
+    });
+
+    recordInteractionGesture();
+    await prepareInteractionAudio();
+    await init();
+    await startAmbient();
+    await play('click-soft');
+
+    expect(backendLoads).toBe(0);
+    expect(getEngineState()).toMatchObject({
+      ambientPlaying: null,
+      ambientActive: 0,
+      backend: {
+        loaded: false,
+        cached: 0,
+        trustedGestures: 0,
+        contextState: 'not-loaded',
+        suppressedBy: 'qa',
+      },
+    });
+  });
+});
 
 describe('ambient latest-intent lifecycle', () => {
   let library: FakeLibrary;

@@ -184,6 +184,16 @@ export type SoundCategory = 'ui' | 'pages' | 'shelf' | 'ambient';
 export type VolumeKey = SoundCategory | 'master';
 export type Volumes = Record<VolumeKey, number>;
 
+/** Native QA runs are invisible and must also be physically silent. */
+export function qaAudioForcedSilent(): boolean {
+  if (!import.meta.env.DEV || typeof location === 'undefined') return false;
+  try {
+    return new URLSearchParams(location.search).get('qa-silent') === '1';
+  } catch {
+    return false;
+  }
+}
+
 /* -------------------------------- families -------------------------------- */
 
 /**
@@ -686,6 +696,10 @@ function handleTrustedGesture(library: PixiSoundLibraryLike): void {
  * the latch keeps that seam honest without changing production timing.
  */
 export function recordInteractionGesture(nowMs: number = Date.now()): void {
+  // The native QA shell is deliberately invisible. Do not even initialize its
+  // audio backend from a synthetic CDP gesture: muting after the context wakes
+  // is too late to guarantee that an automated run can never reach hardware.
+  if (qaAudioForcedSilent()) return;
   if (!appFocused) setAppFocused(true);
   const isNewGesture = nowMs - lastTrustedGestureMs > 8;
   lastTrustedGestureMs = nowMs;
@@ -892,7 +906,7 @@ async function preloadCriticalCues(): Promise<void> {
 
 /** Whether a sound is currently forbidden by either kind of mute. */
 function soundsSuppressed(): boolean {
-  return muted || (muteWhenUnfocused && !appFocused);
+  return qaAudioForcedSilent() || muted || (muteWhenUnfocused && !appFocused);
 }
 
 /** Ambient-only policy layered on top of the ordinary mute/focus gate. */
@@ -1151,6 +1165,7 @@ function loadPixiSoundOnce(): Promise<PixiSoundModule> {
  * decoding the interaction cues which must feel immediate. It never plays.
  */
 export async function prepareInteractionAudio(): Promise<void> {
+  if (qaAudioForcedSilent()) return;
   await Promise.all([loadPixiSoundOnce(), preparePageTurnAudio()]);
   void preloadCriticalCues();
 }
@@ -1247,6 +1262,7 @@ export interface PlayOptions {
  * this after first paint hides any first-play latency.
  */
 export async function init(): Promise<void> {
+  if (qaAudioForcedSilent()) return;
   await Promise.all([loadPixiSoundOnce(), preparePageTurnAudio()]);
   const results = await Promise.allSettled(SOUND_NAMES.map((name) => ensureSound(shippedCue(name))));
   if (results.every((result) => result.status === 'fulfilled')) preloadState = 'ready';
@@ -1268,6 +1284,7 @@ export async function init(): Promise<void> {
  * fatigues.
  */
 export async function play(name: PlayableName, options: PlayOptions = {}): Promise<number | undefined> {
+  if (qaAudioForcedSilent()) return undefined;
   if (options.signal?.aborted === true) return undefined;
   if (isFamily(name)) return playRole(name, options);
   return playFile(shippedCue(name), options, {
@@ -2153,7 +2170,7 @@ export interface SoundEngineState {
     preload: PreloadState;
     unlocked: boolean;
     contextState: string;
-    suppressedBy: 'mute' | 'focus' | null;
+    suppressedBy: 'qa' | 'mute' | 'focus' | null;
     trustedGestures: number;
     lastGestureAgeMs: number | null;
     lastError: string | null;
@@ -2214,7 +2231,13 @@ export function getEngineState(): SoundEngineState {
       preload: preloadState,
       unlocked: isAudioReady() && audioUnlocked,
       contextState: pixiLibrary?.context.audioContext?.state ?? (pixiLibrary === undefined ? 'not-loaded' : 'legacy'),
-      suppressedBy: muted ? 'mute' : muteWhenUnfocused && !appFocused ? 'focus' : null,
+      suppressedBy: qaAudioForcedSilent()
+        ? 'qa'
+        : muted
+          ? 'mute'
+          : muteWhenUnfocused && !appFocused
+            ? 'focus'
+            : null,
       trustedGestures,
       lastGestureAgeMs: Number.isFinite(lastTrustedGestureMs)
         ? Math.max(0, Date.now() - lastTrustedGestureMs)

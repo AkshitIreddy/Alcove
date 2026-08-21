@@ -10,6 +10,7 @@
     "build": "npm run spec:check && vite build",
     "serve": "vite preview",
     "tauri": "tauri",
+    "tauri:qa": "node scripts/tauri-qa.mjs",
     "spec": "node scripts/gen-spec.mjs",
     "spec:check": "node scripts/gen-spec.mjs --check",
     "sounds": "node scripts/gen-sounds.mjs",

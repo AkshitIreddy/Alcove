@@ -1,5 +1,30 @@
 # Alcove — running TODO
 
+## ✅ 0.7.10 — freer canvases and better-bound books (released 2026-08-21)
+
+The release makes wheel rotation zoom and a held middle mouse button pan in
+Focus mode and the image workspace. Margin writing remains owned by its page,
+image markup no longer repaints behind the viewer, fullscreen reaches every
+viewport edge, and page curls hold their raster endpoint until landed images
+decode. Book Studio moves history to a compact preview arrow and removes
+redundant custom-colour swatches. The rejected title catalogue is replaced by
+25 material-specific constructions, with six new accepted cover frames.
+
+Commits `706bd93` through `016346c` plus annotated tag `v0.7.10` were pushed to
+`main`. GitHub Actions run `32497637693` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets; signed `latest.json` reports version 0.7.10
+with immutable updater URLs for Windows, Linux and both macOS architectures.
+
+- [x] Unify Focus and image camera behavior around wheel zoom and middle pan.
+- [x] Preserve off-page Focus ink without reactivating page text selection.
+- [x] Remove image drawing and page-turn image flicker at their handoff seams.
+- [x] Simplify Book Studio history and custom-colour controls.
+- [x] Replace the prior title set with 25 reviewed constructions and add six
+      curated frames without weakening the twelve accepted frames.
+- [x] Pass frontend, Rust, visual sabotage, adversarial, packaging and live
+      release verification; publish all installers, checksums and updater data.
+
 ## ✅ 0.7.9 — freer pages and better-bound books (released 2026-08-21)
 
 This release turns Focus mode and the image viewer into full workspaces with

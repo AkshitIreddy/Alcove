@@ -442,6 +442,10 @@ export interface ShelfMeta {
   lastOpenedAt?: string;
   /** Cached page count driving auto spine thickness. */
   pageCount?: number;
+  /** Last open spread in this book (zero-based, clamped again on restore). */
+  lastSpread?: number;
+  /** Focused leaf on that spread. */
+  lastFocusedSide?: 'left' | 'right';
   /** Present only while the book sits in the trash (floor -1). */
   deletedAt?: string;
   /** Shelf position to restore to when un-trashed. */
@@ -478,6 +482,12 @@ export function readShelfMeta(
   }
   if (typeof raw.prevSlot === 'number' && Number.isFinite(raw.prevSlot)) {
     out.prevSlot = Math.max(0, Math.round(raw.prevSlot));
+  }
+  if (typeof raw.lastSpread === 'number' && Number.isFinite(raw.lastSpread)) {
+    out.lastSpread = Math.max(0, Math.round(raw.lastSpread));
+  }
+  if (raw.lastFocusedSide === 'left' || raw.lastFocusedSide === 'right') {
+    out.lastFocusedSide = raw.lastFocusedSide;
   }
   if (typeof raw.positionX === 'number' && Number.isFinite(raw.positionX)) {
     out.positionX = Math.max(0, raw.positionX);
@@ -666,6 +676,18 @@ function patchShelfMeta(
       'shelf',
       merged as Record<string, unknown>,
     );
+  });
+}
+
+/** Persist where this particular book should reopen. */
+export function setBookReadingPosition(
+  id: string,
+  spread: number,
+  side: 'left' | 'right',
+): Promise<Book | null> {
+  return patchShelfMeta(id, {
+    lastSpread: Math.max(0, Math.round(spread)),
+    lastFocusedSide: side,
   });
 }
 

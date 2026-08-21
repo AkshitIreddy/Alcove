@@ -41,6 +41,7 @@ import {
   listBooksByFloorRange,
   readPageDefaults,
   readShelfMeta,
+  setBookReadingPosition,
   savePageDefaults,
   type BookPageDefaults,
 } from '../data/books';
@@ -773,7 +774,10 @@ export default function BookView(): JSX.Element {
     on(session, (loaded) => {
       if (loaded) {
         setPages(loaded.pages);
-        setSpreadIndex(0);
+        const shelfMeta = readShelfMeta(loaded.book);
+        const maxSpread = Math.max(0, Math.ceil(loaded.pages.length / 2) - 1);
+        setSpreadIndex(Math.min(maxSpread, shelfMeta?.lastSpread ?? 0));
+        setFocusedSide(shelfMeta?.lastFocusedSide ?? 'left');
         // Hydrate from the same resolved appearance the shelf and pull-out use.
         // A Welcome-style `cover_meta.style` without a duplicated `cover`
         // section used to fall through to a fresh random board here.
@@ -814,6 +818,20 @@ export default function BookView(): JSX.Element {
       }
     }),
   );
+
+  // A book remembers its own reading place. Debounce the metadata write so a
+  // fast sequence of turns records only the settled spread, while close/reopen
+  // still restores the latest page the reader actually reached.
+  createEffect(() => {
+    const loaded = session();
+    if (!loaded) return;
+    const spread = spreadIndex();
+    const side = focusedSide();
+    const timer = window.setTimeout(() => {
+      void setBookReadingPosition(loaded.book.id, spread, side);
+    }, 180);
+    onCleanup(() => window.clearTimeout(timer));
+  });
 
   // Whole-book history is deliberately independent of page autosaves. The
   // recorder deep-copies immediately, deduplicates, throttles and serializes

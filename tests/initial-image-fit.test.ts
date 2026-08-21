@@ -70,7 +70,7 @@ describe('new image page-fit safety', () => {
     ).toBe(100);
   });
 
-  it('stops a manual resize at the page-fit ceiling', () => {
+  it('lets pagination move following copy while keeping the image leaf-safe', () => {
     expect(
       safeManualImageResizeWidth({
         measuredWidthPct: 40,
@@ -83,7 +83,23 @@ describe('new image page-fit safety', () => {
         pagePaddingBottomPx: 24,
         minimumWidthPct: 10,
       }),
-    ).toBe(64);
+    ).toBe(90);
+  });
+
+  it('stops a tall image at the empty-leaf ceiling', () => {
+    expect(
+      safeManualImageResizeWidth({
+        measuredWidthPct: 70,
+        requestedWidthPct: 130,
+        imageHeightPx: 600,
+        blockHeightPx: 630,
+        blockTopPx: 300,
+        followingContentHeightPx: 300,
+        pageCapacityPx: 820,
+        pagePaddingBottomPx: 24,
+        minimumWidthPct: 10,
+      }),
+    ).toBe(89);
   });
 
   it('allows manual enlargement when the page has room', () => {

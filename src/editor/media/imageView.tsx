@@ -10,7 +10,15 @@
  * - a Solid node view with a selected halo + the controls above.
  */
 import Image from '@tiptap/extension-image';
-import { Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  untrack,
+  type JSX,
+} from 'solid-js';
 import { Portal } from 'solid-js/web';
 import {
   NodeViewWrapper,
@@ -28,7 +36,11 @@ import {
   assetRelPathForImageAttrs,
 } from './portableAssets';
 import { MISSING_ASSET_SRC, resolveAssetSrc } from './resolver';
-import { clampViewerPan, type ViewerPan } from './imageViewerPan';
+import {
+  clampViewerPan,
+  viewerWheelAction,
+  type ViewerPan,
+} from './imageViewerPan';
 import {
   imageFileDimensions,
   initialImageWidthForPage,
@@ -38,6 +50,29 @@ import {
   copyPortableImage,
   downloadPortableImage,
 } from '../menu/blockPortability';
+import {
+  IMAGE_ANNOTATION_COLOURS,
+  IMAGE_ANNOTATION_SIZES,
+  IMAGE_ANNOTATION_TOOLS,
+  parseImageAnnotations,
+  serializeImageAnnotations,
+  type ImageAnnotationColour,
+  type ImageAnnotationPoint,
+  type ImageAnnotationStroke,
+  type ImageAnnotationTool,
+} from './imageAnnotations';
+
+export {
+  IMAGE_ANNOTATION_COLOURS,
+  IMAGE_ANNOTATION_SIZES,
+  IMAGE_ANNOTATION_TOOLS,
+  parseImageAnnotations,
+  serializeImageAnnotations,
+  type ImageAnnotationColour,
+  type ImageAnnotationPoint,
+  type ImageAnnotationStroke,
+  type ImageAnnotationTool,
+} from './imageAnnotations';
 
 export const IMAGE_ALIGNMENTS = ['left', 'center', 'right'] as const;
 export type ImageAlign = (typeof IMAGE_ALIGNMENTS)[number];
@@ -47,9 +82,89 @@ export type ImageFrame = (typeof IMAGE_FRAMES)[number];
 
 export const MIN_WIDTH_PCT = 10;
 export const MAX_WIDTH_PCT = 100;
+export const MAX_STANDALONE_IMAGE_WIDTH_PCT = 132;
 
 export function clampWidthPct(value: number): number {
   return Math.min(MAX_WIDTH_PCT, Math.max(MIN_WIDTH_PCT, value));
+}
+
+function clampStandaloneImageWidthPct(
+  value: number,
+  maximum = MAX_STANDALONE_IMAGE_WIDTH_PCT,
+): number {
+  return Math.min(maximum, Math.max(MIN_WIDTH_PCT, value));
+}
+
+function annotationColourValue(colour: ImageAnnotationColour): string {
+  return (
+    IMAGE_ANNOTATION_COLOURS.find((candidate) => candidate.id === colour)?.value ??
+    IMAGE_ANNOTATION_COLOURS[0].value
+  );
+}
+
+function annotationStrokeAppearance(stroke: ImageAnnotationStroke): {
+  readonly width: number;
+  readonly opacity: number;
+  readonly linecap: 'round' | 'square';
+  readonly dash?: string;
+} {
+  if (stroke.tool === 'pencil') {
+    return { width: Math.max(1, stroke.size * 0.62), opacity: 0.72, linecap: 'round' };
+  }
+  if (stroke.tool === 'brush') {
+    return { width: stroke.size * 1.75, opacity: 0.9, linecap: 'round' };
+  }
+  if (stroke.tool === 'highlighter') {
+    return { width: stroke.size * 3.2, opacity: 0.3, linecap: 'square' };
+  }
+  return { width: stroke.size, opacity: 0.96, linecap: 'round' };
+}
+
+function annotationPath(
+  stroke: ImageAnnotationStroke,
+  viewHeight: number,
+): string {
+  return stroke.points
+    .map((point, index) => {
+      const x = Math.round(point.x * 1000 * 10) / 10;
+      const y = Math.round(point.y * viewHeight * 10) / 10;
+      return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
+    })
+    .join(' ');
+}
+
+function ImageAnnotationLayer(props: {
+  readonly strokes: readonly ImageAnnotationStroke[];
+  readonly aspect: number;
+  readonly class?: string;
+}): JSX.Element {
+  const viewHeight = (): number => Math.max(1, 1000 * props.aspect);
+  return (
+    <svg
+      class={props.class ?? 'nb-image-annotations'}
+      viewBox={`0 0 1000 ${viewHeight()}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <For each={props.strokes}>
+        {(stroke) => {
+          const appearance = annotationStrokeAppearance(stroke);
+          return (
+            <path
+              d={annotationPath(stroke, viewHeight())}
+              fill="none"
+              stroke={annotationColourValue(stroke.colour)}
+              stroke-width={appearance.width}
+              stroke-opacity={appearance.opacity}
+              stroke-linecap={appearance.linecap}
+              stroke-linejoin="round"
+              stroke-dasharray={appearance.dash}
+            />
+          );
+        }}
+      </For>
+    </svg>
+  );
 }
 
 type ImageToolGlyphKind =
@@ -137,7 +252,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     isFrame(props.node.attrs.frame) ? props.node.attrs.frame : 'plain';
   const widthPct = (): number | null =>
     typeof props.node.attrs.widthPct === 'number'
-      ? clampWidthPct(props.node.attrs.widthPct)
+      ? clampStandaloneImageWidthPct(props.node.attrs.widthPct)
       : null;
   const caption = (): string =>
     typeof props.node.attrs.caption === 'string' ? props.node.attrs.caption : '';
@@ -149,15 +264,31 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [replacementError, setReplacementError] = createSignal<string | null>(null);
   const [portableNotice, setPortableNotice] = createSignal<string | null>(null);
   const [viewerOpen, setViewerOpen] = createSignal(false);
+  const [viewerFullscreen, setViewerFullscreen] = createSignal(false);
   const [viewerZoom, setViewerZoom] = createSignal(100);
   const [viewerPan, setViewerPan] = createSignal<ViewerPan>({ x: 0, y: 0 });
   const [viewerDragging, setViewerDragging] = createSignal(false);
+  const [viewerMode, setViewerMode] = createSignal<'move' | 'mark'>('move');
+  const [annotationTool, setAnnotationTool] =
+    createSignal<ImageAnnotationTool>('pen');
+  const [annotationColour, setAnnotationColour] =
+    createSignal<ImageAnnotationColour>('terracotta');
+  const [annotationSize, setAnnotationSize] = createSignal<number>(7);
+  const [annotations, setAnnotations] = createSignal<ImageAnnotationStroke[]>(
+    parseImageAnnotations(props.node.attrs.annotations),
+  );
+  const [annotationUndo, setAnnotationUndo] =
+    createSignal<ImageAnnotationStroke[][]>([]);
+  const [annotationRedo, setAnnotationRedo] =
+    createSignal<ImageAnnotationStroke[][]>([]);
+  const [imageAspect, setImageAspect] = createSignal(1);
   const [viewerBaseSize, setViewerBaseSize] = createSignal<{
     width: number;
     height: number;
   } | null>(null);
   let viewerStageEl: HTMLDivElement | undefined;
   let viewerImageEl: HTMLImageElement | undefined;
+  let viewerArtEl: HTMLDivElement | undefined;
   let viewerDrag:
     | {
         pointerId: number;
@@ -167,11 +298,33 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
         panY: number;
       }
     | undefined;
+  let annotationGesture:
+    | {
+        pointerId: number;
+        before: ImageAnnotationStroke[];
+        strokeId?: string;
+        changed: boolean;
+      }
+    | undefined;
   let alive = true;
   let sourceGeneration = 0;
   onCleanup(() => {
     alive = false;
     sourceGeneration += 1;
+  });
+
+  createEffect(() => {
+    const raw = props.node.attrs.annotations;
+    if (annotationGesture !== undefined) return;
+    const incoming = parseImageAnnotations(raw);
+    if (
+      serializeImageAnnotations(incoming) !==
+      serializeImageAnnotations(untrack(annotations))
+    ) {
+      setAnnotations(incoming);
+      setAnnotationUndo([]);
+      setAnnotationRedo([]);
+    }
   });
 
   /*
@@ -248,7 +401,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       width: Math.max(1, image.naturalWidth * scale),
       height: Math.max(1, image.naturalHeight * scale),
     });
-    settleViewerPan();
+    setImageAspect(image.naturalHeight / image.naturalWidth);
   };
 
   const observeViewerStage = (stage: HTMLDivElement): void => {
@@ -264,6 +417,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setViewerPan({ x: 0, y: 0 });
   };
 
+  const recenterViewer = (): void => {
+    setViewerPan({ x: 0, y: 0 });
+  };
+
   const changeViewerZoom = (delta: number): void => {
     setViewerZoom((current) => Math.max(50, Math.min(300, current + delta)));
     settleViewerPan();
@@ -272,6 +429,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const openViewer = (): void => {
     if (placeholder() !== null) return;
     resetViewer();
+    setViewerMode('move');
     setViewerOpen(true);
   };
 
@@ -282,6 +440,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   };
 
   const beginViewerDrag = (event: PointerEvent): void => {
+    if (viewerMode() === 'mark') {
+      beginAnnotationGesture(event);
+      return;
+    }
     if (event.button !== 0) return;
     event.preventDefault();
     const pan = viewerPan();
@@ -298,6 +460,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   };
 
   const moveViewerDrag = (event: PointerEvent): void => {
+    if (annotationGesture !== undefined) {
+      moveAnnotationGesture(event);
+      return;
+    }
     const drag = viewerDrag;
     if (drag === undefined || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
@@ -310,6 +476,10 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   };
 
   const endViewerDrag = (event: PointerEvent): void => {
+    if (annotationGesture !== undefined) {
+      endAnnotationGesture(event);
+      return;
+    }
     if (viewerDrag?.pointerId !== event.pointerId) return;
     const target = event.currentTarget;
     if (target instanceof Element && target.hasPointerCapture(event.pointerId)) {
@@ -319,13 +489,182 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     setViewerDragging(false);
   };
 
+  const annotationPointAt = (event: PointerEvent): ImageAnnotationPoint | null => {
+    const art = viewerArtEl;
+    if (art === undefined) return null;
+    const rect = art.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  };
+
+  const persistAnnotations = (next: readonly ImageAnnotationStroke[]): void => {
+    props.updateAttributes({ annotations: serializeImageAnnotations(next) });
+  };
+
+  const recordAnnotationChange = (
+    before: ImageAnnotationStroke[],
+    next: ImageAnnotationStroke[],
+  ): void => {
+    if (serializeImageAnnotations(before) === serializeImageAnnotations(next)) return;
+    setAnnotationUndo((history) => [...history.slice(-49), before]);
+    setAnnotationRedo([]);
+    setAnnotations(next);
+    persistAnnotations(next);
+  };
+
+  const eraseAt = (
+    source: ImageAnnotationStroke[],
+    point: ImageAnnotationPoint,
+  ): ImageAnnotationStroke[] => {
+    const aspect = Math.max(0.1, imageAspect());
+    const radius = Math.max(0.009, annotationSize() / 500);
+    return source.filter((stroke) =>
+      !stroke.points.some((candidate) => {
+        const dx = candidate.x - point.x;
+        const dy = (candidate.y - point.y) * aspect;
+        return Math.hypot(dx, dy) <= radius;
+      }),
+    );
+  };
+
+  const beginAnnotationGesture = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    const point = annotationPointAt(event);
+    if (point === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const before = annotations();
+    const tool = annotationTool();
+    if (tool === 'eraser') {
+      const next = eraseAt(before, point);
+      annotationGesture = {
+        pointerId: event.pointerId,
+        before,
+        changed: next.length !== before.length,
+      };
+      setAnnotations(next);
+    } else {
+      const stroke: ImageAnnotationStroke = {
+        id: `mark-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        tool,
+        colour: annotationColour(),
+        size: annotationSize(),
+        points: [point],
+      };
+      annotationGesture = {
+        pointerId: event.pointerId,
+        before,
+        strokeId: stroke.id,
+        changed: true,
+      };
+      setAnnotations([...before, stroke]);
+    }
+    event.currentTarget instanceof Element &&
+      event.currentTarget.setPointerCapture(event.pointerId);
+    setViewerDragging(true);
+  };
+
+  const moveAnnotationGesture = (event: PointerEvent): void => {
+    const gesture = annotationGesture;
+    if (gesture === undefined || gesture.pointerId !== event.pointerId) return;
+    const point = annotationPointAt(event);
+    if (point === null) return;
+    event.preventDefault();
+    const tool = annotationTool();
+    if (tool === 'eraser') {
+      setAnnotations((current) => {
+        const next = eraseAt(current, point);
+        if (next.length !== current.length) gesture.changed = true;
+        return next;
+      });
+      return;
+    }
+    setAnnotations((current) =>
+      current.map((stroke) => {
+        if (stroke.id !== gesture.strokeId) return stroke;
+        const last = stroke.points[stroke.points.length - 1];
+        const minStep = Math.max(0.0008, 1 / Math.max(800, viewerZoom() * 12));
+        if (last !== undefined && Math.hypot(last.x - point.x, last.y - point.y) < minStep) {
+          return stroke;
+        }
+        return { ...stroke, points: [...stroke.points, point] };
+      }),
+    );
+  };
+
+  const endAnnotationGesture = (event: PointerEvent): void => {
+    const gesture = annotationGesture;
+    if (gesture === undefined || gesture.pointerId !== event.pointerId) return;
+    const target = event.currentTarget;
+    if (target instanceof Element && target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+    annotationGesture = undefined;
+    setViewerDragging(false);
+    if (gesture.changed) {
+      recordAnnotationChange(gesture.before, annotations());
+    }
+  };
+
+  const undoAnnotation = (): void => {
+    const history = annotationUndo();
+    const previous = history[history.length - 1];
+    if (previous === undefined) return;
+    const current = annotations();
+    setAnnotationUndo(history.slice(0, -1));
+    setAnnotationRedo((redo) => [...redo.slice(-49), current]);
+    setAnnotations(previous);
+    persistAnnotations(previous);
+  };
+
+  const redoAnnotation = (): void => {
+    const history = annotationRedo();
+    const next = history[history.length - 1];
+    if (next === undefined) return;
+    const current = annotations();
+    setAnnotationRedo(history.slice(0, -1));
+    setAnnotationUndo((undo) => [...undo.slice(-49), current]);
+    setAnnotations(next);
+    persistAnnotations(next);
+  };
+
+  const clearAnnotations = (): void => {
+    if (annotations().length === 0) return;
+    recordAnnotationChange(annotations(), []);
+  };
+
   createEffect(() => {
     if (!viewerOpen()) return;
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setViewerOpen(false);
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (viewerFullscreen()) setViewerFullscreen(false);
+        else setViewerOpen(false);
+      }
       if (event.key === '+' || event.key === '=') changeViewerZoom(25);
       if (event.key === '-') changeViewerZoom(-25);
       if (event.key === '0') resetViewer();
+      if (event.key.toLowerCase() === 'm') {
+        setViewerMode((current) => (current === 'mark' ? 'move' : 'mark'));
+      }
+      if (event.key.toLowerCase() === 'f') {
+        setViewerFullscreen((current) => !current);
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redoAnnotation();
+        else undoAnnotation();
+      }
       if (event.key === 'ArrowLeft') nudgeViewerPan(40, 0);
       if (event.key === 'ArrowRight') nudgeViewerPan(-40, 0);
       if (event.key === 'ArrowUp') nudgeViewerPan(0, 40);
@@ -397,10 +736,15 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
 
   /** Live width during a corner drag (null = use the persisted attr). */
   const [dragPct, setDragPct] = createSignal<number | null>(null);
-  const effectivePct = (): number | null => dragPct() ?? widthPct();
 
   let wrapperEl: HTMLElement | undefined;
   const [rowHost, setRowHost] = createSignal<HTMLElement | undefined>();
+  const effectivePct = (): number | null => {
+    const value = dragPct() ?? widthPct();
+    return value === null || rowHost() === undefined
+      ? value
+      : Math.min(MAX_WIDTH_PCT, value);
+  };
 
   const detectRowHost = (): void => {
     const host = wrapperEl?.parentElement;
@@ -409,6 +753,30 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
         host.parentElement?.classList.contains('nb-image-row-track')
         ? host
         : undefined,
+    );
+  };
+
+  /**
+   * The prose column is intentionally narrower than the paper. Standalone
+   * pictures may use that quiet margin, but never the binding, dog-ear, or
+   * outer paper edge. This is measured from the live leaf so focus zoom and
+   * responsive book sizing produce the same physical inset.
+   */
+  const leafSafeStandaloneWidthPct = (): number => {
+    if (rowHost() !== undefined) return MAX_WIDTH_PCT;
+    const root = wrapperEl?.closest('.nb-prose');
+    const leaf = wrapperEl?.closest('.nb-leaf-paper');
+    if (!(root instanceof HTMLElement) || !(leaf instanceof HTMLElement)) {
+      return MAX_STANDALONE_IMAGE_WIDTH_PCT;
+    }
+    const rootWidth = root.getBoundingClientRect().width;
+    const leafWidth = leaf.getBoundingClientRect().width;
+    if (rootWidth <= 0 || leafWidth <= 0) return MAX_STANDALONE_IMAGE_WIDTH_PCT;
+    const safeInset = Math.max(24, leafWidth * 0.055);
+    const safeWidth = Math.max(rootWidth, leafWidth - safeInset * 2);
+    return Math.max(
+      MAX_WIDTH_PCT,
+      Math.min(MAX_STANDALONE_IMAGE_WIDTH_PCT, (safeWidth / rootWidth) * 100),
     );
   };
 
@@ -450,17 +818,23 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       wrapperEl?.querySelector<HTMLImageElement>('.nb-image-img')?.getBoundingClientRect()
         .height ?? 0;
     const startBlockHeight = wrapperEl?.getBoundingClientRect().height ?? 0;
+    const maximumPct = leafSafeStandaloneWidthPct();
 
     const onMove = (move: PointerEvent): void => {
       const deltaPct = ((move.clientX - startX) * direction * 100) / containerWidth;
-      const requested = clampWidthPct(startPct + deltaPct);
+      const requested = clampStandaloneImageWidthPct(
+        startPct + deltaPct,
+        maximumPct,
+      );
       const fitted = fitManualResizeMeasurement(
         startPct,
         requested,
         startImageHeight,
         startBlockHeight,
       );
-      setDragPct(clampWidthPct(Math.min(requested, fitted)));
+      setDragPct(
+        clampStandaloneImageWidthPct(Math.min(requested, fitted), maximumPct),
+      );
     };
     const onUp = (): void => {
       window.removeEventListener('pointermove', onMove);
@@ -689,6 +1063,11 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       data-nb-block-flow="feature"
       data-align={align()}
       data-media-frame={frame()}
+      data-wide={
+        rowHost() === undefined && (effectivePct() ?? 0) > MAX_WIDTH_PCT
+          ? ''
+          : undefined
+      }
       data-image-placeholder={placeholder() === null ? undefined : ''}
       /*
        * Whether anything is actually written under the picture. A polaroid's
@@ -715,19 +1094,34 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
           when={placeholder()}
           keyed
           fallback={
-            <img
-              class="nb-image-img"
-              src={displaySrc()}
-              alt={alt()}
-              draggable={false}
-              ref={observeWidth}
-              onLoad={(event) => fitNewUploadToPage(event.currentTarget)}
-              onDblClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openViewer();
-              }}
-            />
+            <span class="nb-image-visual">
+              <img
+                class="nb-image-img"
+                src={displaySrc()}
+                alt={alt()}
+                draggable={false}
+                ref={observeWidth}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                    setImageAspect(image.naturalHeight / image.naturalWidth);
+                  }
+                  fitNewUploadToPage(image);
+                }}
+                onDblClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openViewer();
+                }}
+              />
+              <Show when={annotations().length > 0}>
+                <ImageAnnotationLayer
+                  strokes={annotations()}
+                  aspect={imageAspect()}
+                  class="nb-image-annotations"
+                />
+              </Show>
+            </span>
           }
         >
           {(prompt) => (
@@ -912,11 +1306,15 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
             class="nb-image-viewer-backdrop"
             role="presentation"
             onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setViewerOpen(false);
+              if (event.target === event.currentTarget) {
+                setViewerFullscreen(false);
+                setViewerOpen(false);
+              }
             }}
           >
             <section
               class="nb-image-viewer"
+              classList={{ 'is-fullscreen': viewerFullscreen() }}
               role="dialog"
               aria-modal="true"
               aria-label={alt().trim() === '' ? 'Image viewer' : `Image viewer: ${alt()}`}
@@ -926,37 +1324,142 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                   <strong>{caption().trim() || alt().trim() || 'Image'}</strong>
                   <span class="font-ui">{viewerZoom()}%</span>
                 </div>
+                <div class="nb-image-viewer-mode" role="group" aria-label="Image workspace mode">
+                  <button
+                    type="button"
+                    classList={{ 'is-active': viewerMode() === 'move' }}
+                    aria-pressed={viewerMode() === 'move'}
+                    aria-label="Move image"
+                    onClick={() => setViewerMode('move')}
+                  >
+                    <span aria-hidden="true">↔</span> Move
+                  </button>
+                  <button
+                    type="button"
+                    classList={{ 'is-active': viewerMode() === 'mark' }}
+                    aria-pressed={viewerMode() === 'mark'}
+                    aria-label="Mark up image"
+                    onClick={() => setViewerMode('mark')}
+                  >
+                    <span aria-hidden="true">✎</span> Mark up
+                  </button>
+                </div>
                 <div class="nb-image-viewer-actions">
-                  <button type="button" aria-label="Copy image" onClick={() => void runPortableAction('copy')}>Copy</button>
-                  <button type="button" aria-label="Download original image" onClick={() => void runPortableAction('download')}>Save</button>
+                  <button
+                    type="button"
+                    class="is-recenter"
+                    aria-label="Back to image"
+                    onClick={recenterViewer}
+                  >
+                    <span aria-hidden="true">⌖</span> Back to image
+                  </button>
                   <button type="button" aria-label="Zoom out" onClick={() => changeViewerZoom(-25)}>−</button>
                   <button type="button" aria-label="Reset zoom and position" onClick={resetViewer}>100%</button>
                   <button type="button" aria-label="Zoom in" onClick={() => changeViewerZoom(25)}>+</button>
-                  <button type="button" class="is-close" aria-label="Close image viewer" onClick={() => setViewerOpen(false)}>×</button>
+                  <button
+                    type="button"
+                    aria-label={viewerFullscreen() ? 'Exit full screen' : 'Full screen image workspace'}
+                    onClick={() => setViewerFullscreen((current) => !current)}
+                  >
+                    {viewerFullscreen() ? 'Restore' : 'Full screen'}
+                  </button>
+                  <button
+                    type="button"
+                    class="is-close"
+                    aria-label="Close image viewer"
+                    onClick={() => {
+                      setViewerFullscreen(false);
+                      setViewerOpen(false);
+                    }}
+                  >×</button>
                 </div>
               </header>
+              <Show when={viewerMode() === 'mark'}>
+                <div class="nb-image-annotation-bar font-ui" aria-label="Marker tools">
+                  <div class="nb-image-annotation-tools" role="group" aria-label="Brush type">
+                    <For each={IMAGE_ANNOTATION_TOOLS}>
+                      {(tool) => (
+                        <button
+                          type="button"
+                          class="nb-image-annotation-tool"
+                          classList={{ 'is-active': annotationTool() === tool }}
+                          aria-pressed={annotationTool() === tool}
+                          aria-label={tool === 'eraser' ? 'Eraser' : `${tool} brush`}
+                          onClick={() => setAnnotationTool(tool)}
+                        >
+                          <span class={`is-${tool}`} aria-hidden="true" />
+                          {tool}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <span class="nb-image-annotation-divider" aria-hidden="true" />
+                  <div class="nb-image-annotation-colours" role="group" aria-label="Marker colour">
+                    <For each={IMAGE_ANNOTATION_COLOURS}>
+                      {(colour) => (
+                        <button
+                          type="button"
+                          class="nb-image-colour"
+                          classList={{ 'is-active': annotationColour() === colour.id }}
+                          style={{ '--marker-colour': colour.value }}
+                          aria-label={`${colour.label} marker`}
+                          aria-pressed={annotationColour() === colour.id}
+                          title={colour.label}
+                          onClick={() => setAnnotationColour(colour.id)}
+                        />
+                      )}
+                    </For>
+                  </div>
+                  <span class="nb-image-annotation-divider" aria-hidden="true" />
+                  <div class="nb-image-annotation-sizes" role="group" aria-label="Marker size">
+                    <For each={IMAGE_ANNOTATION_SIZES}>
+                      {(size, index) => (
+                        <button
+                          type="button"
+                          class="nb-image-marker-size"
+                          classList={{ 'is-active': annotationSize() === size }}
+                          aria-label={`Marker size ${index() + 1}, ${size} pixels`}
+                          aria-pressed={annotationSize() === size}
+                          onClick={() => setAnnotationSize(size)}
+                        >
+                          <span style={{ width: `${Math.max(3, size)}px`, height: `${Math.max(3, size)}px` }} />
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <span class="nb-image-annotation-divider" aria-hidden="true" />
+                  <div class="nb-image-annotation-history" role="group" aria-label="Annotation history">
+                    <button type="button" disabled={annotationUndo().length === 0} aria-label="Undo marker stroke" onClick={undoAnnotation}>↶ Undo</button>
+                    <button type="button" disabled={annotationRedo().length === 0} aria-label="Redo marker stroke" onClick={redoAnnotation}>↷ Redo</button>
+                    <button type="button" disabled={annotations().length === 0} aria-label="Clear all image marks" onClick={clearAnnotations}>Clear</button>
+                  </div>
+                </div>
+              </Show>
               <div
                 ref={observeViewerStage}
                 class="nb-image-viewer-stage"
+                data-mode={viewerMode()}
                 data-dragging={viewerDragging() ? '' : undefined}
                 tabindex={0}
-                aria-label="Zoomed image. Drag to move around."
+                aria-label={
+                  viewerMode() === 'mark'
+                    ? 'Image annotation canvas. Draw directly on the image.'
+                    : 'Image canvas. Drag freely in any direction.'
+                }
                 onWheel={(event) => {
                   event.preventDefault();
-                  changeViewerZoom(event.deltaY < 0 ? 10 : -10);
+                  const action = viewerWheelAction(event);
+                  if (action.kind === 'zoom') changeViewerZoom(action.delta);
+                  else nudgeViewerPan(action.x, action.y);
                 }}
                 onPointerDown={beginViewerDrag}
                 onPointerMove={moveViewerDrag}
                 onPointerUp={endViewerDrag}
                 onPointerCancel={endViewerDrag}
               >
-                <img
-                  ref={viewerImageEl}
-                  class="nb-image-viewer-image"
-                  src={displaySrc()}
-                  alt={alt()}
-                  draggable={false}
-                  onLoad={fitViewerImage}
+                <div
+                  ref={viewerArtEl}
+                  class="nb-image-viewer-art"
                   style={{
                     width:
                       viewerBaseSize() === null
@@ -968,10 +1471,29 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
                         : `${viewerBaseSize()?.height}px`,
                     transform: `translate3d(${viewerPan().x}px, ${viewerPan().y}px, 0) scale(${viewerZoom() / 100})`,
                   }}
-                />
+                >
+                  <img
+                    ref={viewerImageEl}
+                    class="nb-image-viewer-image"
+                    src={displaySrc()}
+                    alt={alt()}
+                    draggable={false}
+                    onLoad={fitViewerImage}
+                  />
+                  <ImageAnnotationLayer
+                    strokes={annotations()}
+                    aspect={imageAspect()}
+                    class="nb-image-viewer-annotations"
+                  />
+                </div>
               </div>
               <footer class="nb-image-viewer-help font-ui">
-                Drag to move around. Wheel or +/− zooms; 0 resets; Esc closes.
+                <Show
+                  when={viewerMode() === 'mark'}
+                  fallback={<>Drag anywhere — even at 100% — to explore the blank canvas. Wheel or +/− zooms; arrows nudge; 0 fits.</>}
+                >
+                  Draw on the picture with pen, pencil, brush or highlighter. Marks save with the image; Ctrl+Z undoes.
+                </Show>
               </footer>
             </section>
           </div>
@@ -996,7 +1518,9 @@ export const MediaImage = Image.extend({
         parseHTML: (element: HTMLElement) => {
           const raw = element.getAttribute('data-width-pct');
           const parsed = raw === null ? NaN : Number(raw);
-          return Number.isFinite(parsed) ? clampWidthPct(parsed) : null;
+          return Number.isFinite(parsed)
+            ? clampStandaloneImageWidthPct(parsed)
+            : null;
         },
         renderHTML: (attributes: Record<string, unknown>) => {
           const value = attributes.widthPct;
@@ -1026,6 +1550,25 @@ export const MediaImage = Image.extend({
           typeof attributes.caption === 'string' && attributes.caption.length > 0
             ? { 'data-caption': attributes.caption }
             : {},
+      },
+
+      /**
+       * Versioned vector strokes in normalised image coordinates. Keeping the
+       * small JSON document on the node makes marks survive page turns,
+       * restarts, library export/import, and source URL regeneration.
+       */
+      annotations: {
+        default: null,
+        parseHTML: (element: HTMLElement) => {
+          const raw = element.getAttribute('data-image-annotations');
+          return serializeImageAnnotations(parseImageAnnotations(raw));
+        },
+        renderHTML: (attributes: Record<string, unknown>) => {
+          const normalized = serializeImageAnnotations(
+            parseImageAnnotations(attributes.annotations),
+          );
+          return normalized === null ? {} : { 'data-image-annotations': normalized };
+        },
       },
 
       /** Stable path relative to the active library's assets root. */

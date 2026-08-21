@@ -70,13 +70,16 @@ export interface ManualImageResizeMeasurement
 }
 
 /**
- * Clamp a live resize to the largest display width that still fits this page.
+ * Clamp a live resize to the largest display width that can fit on an empty
+ * leaf.
  *
  * The image's intrinsic bytes never enter this calculation. Its measured page
  * height scales linearly with display width; frame/caption chrome is retained
  * as a fixed conservative allowance. Returning the safe percentage to the
- * pointer loop makes the handle visibly stop at the page boundary instead of
- * committing an oversize node and asking pagination to repair it afterwards.
+ * Following blocks are intentionally not charged against the image. They are
+ * allowed to flow to the next page through the normal pagination contract.
+ * This keeps pagination authoritative while still preventing a single image
+ * from becoming taller than a leaf by itself.
  */
 export function safeManualImageResizeWidth({
   measuredWidthPct,
@@ -98,6 +101,8 @@ export function safeManualImageResizeWidth({
   const projectedImageHeightPx = imageHeightPx * scale;
   return initialImageWidthForPage({
     ...page,
+    blockTopPx: 0,
+    followingContentHeightPx: 0,
     currentWidthPct: requestedWidthPct,
     imageHeightPx: projectedImageHeightPx,
     blockHeightPx: projectedImageHeightPx + chromeHeightPx,

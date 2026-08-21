@@ -36,6 +36,7 @@ import { createRigidFold, crossfadeSpread, type RigidFoldHandle } from './cssFal
 import { refreshPaperTone } from './paperTone';
 import { waitForLandingMedia } from './landingMedia';
 import type { PageRasterCache } from './rasterCache';
+import { FlipReadinessGate, flipStartPath } from './readiness';
 import {
   FLIP_SCENE_OVERSCAN_PX,
   FLIP_CORNER_OVERSCAN_HEIGHT_FRAC,
@@ -85,7 +86,7 @@ export interface PageFlipControllerOptions {
   prefersReducedMotion?: () => boolean;
 }
 
-type Phase = 'rest' | 'dragging' | 'settling';
+type Phase = 'rest' | 'preparing' | 'dragging' | 'settling';
 
 interface LeafGeometry {
   x: number;
@@ -196,8 +197,18 @@ export class PageFlipController {
   private downY = 0;
   private downTime = 0;
   private pointerId: number | null = null;
-  /** Pointer-up navigation for reduced motion or a still-cold curl face. */
+  /** Pointer-up navigation for the explicit reduced-motion path only. */
   private reducedPendingDir: FlipDirection | null = null;
+  private preparing:
+    | {
+        readonly dir: FlipDirection;
+        readonly grip: FlipGrip;
+        readonly sceneKey: string;
+        released: boolean;
+        ready: boolean;
+      }
+    | null = null;
+  private readonly readiness: FlipReadinessGate<FlipPages>;
 
   /** Absolute post-transform screen rect used only for pointer gesture math. */
   private pointerLeaf: LeafGeometry = { ...UNIT_LEAF };
@@ -235,6 +246,21 @@ export class PageFlipController {
   private savedActive: HTMLElement | null = null;
 
   constructor(private readonly options: PageFlipControllerOptions) {
+    this.readiness = new FlipReadinessGate<FlipPages>({
+      ensure: (pageId) => this.options.cache.ensure(pageId),
+      sceneKeyNow: () => {
+        const pending = this.preparing;
+        if (pending === null) return null;
+        const pages = this.options.getFlipPages(pending.dir);
+        return pages === null ? null : this.flipPagesKey(pages);
+      },
+      isReady: (pages) => this.curlFacesReady(pages, false),
+      // Custom node views can finish intrinsic layout immediately after their
+      // first capture. Give those mutations two paint boundaries to settle
+      // before asking for the next transaction-valid bitmap.
+      scheduleRetry: (run) => requestAnimationFrame(() => requestAnimationFrame(run)),
+      maxPasses: 4,
+    });
     // WebGL2 context created once at book-open (doc: avoid context-creation
     // jank at gesture start). null → CSS rigid-fold fallback path.
     this.ctx = createFlipContext(options.canvas, {
@@ -294,6 +320,7 @@ export class PageFlipController {
     this.tween?.kill();
     this.tween = null;
     this.cancelCrossfade?.();
+    this.cancelPreparation();
     // A flip torn down mid-flight never reaches land(), so release the
     // capture hold here or the cache stays frozen for the rest of its life.
     this.options.cache.resume();
@@ -345,14 +372,19 @@ export class PageFlipController {
     const pages = this.options.getFlipPages(hit.dir);
     if (!pages) return;
 
-    if (this.reducedMotion() || (this.usesWebGL && !this.curlFacesReady(pages, true))) {
-      // No curl under reduced motion. A cold destination also cannot use the
-      // rigid fold: only the current live leaf is mounted, so rotating it
-      // exposes the book cover instead of the page being turned toward. Keep
-      // the pointer contract, use the short paper veil on release, and warm
-      // the missing rasters so the next turn gets the real curl.
+    const path = flipStartPath(
+      this.reducedMotion(),
+      this.usesWebGL,
+      this.curlFacesReady(pages, false),
+    );
+    if (path === 'crossfade') {
       this.reducedPendingDir = hit.dir;
       this.capturePointer(event);
+      return;
+    }
+    if (path === 'prepare') {
+      this.capturePointer(event);
+      this.beginPreparation(hit.dir, hit.grip, pages, false);
       return;
     }
     this.beginGesture(hit.dir, hit.grip, event);
@@ -386,6 +418,11 @@ export class PageFlipController {
       this.crossfadeNavigate(dir);
       return;
     }
+    if (this.preparing !== null) {
+      this.preparing.released = true;
+      this.startPreparedFlipIfReady();
+      return;
+    }
     if (this.phase !== 'dragging') return;
 
     const isTap =
@@ -415,6 +452,10 @@ export class PageFlipController {
     if (event.pointerId !== this.pointerId) return;
     this.pointerId = null;
     this.reducedPendingDir = null;
+    if (this.preparing !== null) {
+      this.cancelPreparation();
+      return;
+    }
     if (this.phase === 'dragging') this.settle(0, flipDuration(0), 'power3.out', null);
   };
 
@@ -490,6 +531,103 @@ export class PageFlipController {
     return missing.length === 0;
   }
 
+  private flipPagesKey(pages: FlipPages): string {
+    return [pages.stationary, pages.front, pages.back, pages.revealed]
+      .map((id) => id ?? '-')
+      .join('|');
+  }
+
+  private curlFaceIds(pages: FlipPages): string[] {
+    return [pages.front, pages.back, pages.revealed].filter(
+      (id): id is string =>
+        typeof id === 'string' &&
+        id.length > 0,
+    );
+  }
+
+  /**
+   * Keep a cold turn as a pending ordinary-motion turn.  Capture may take
+   * hundreds of milliseconds on image-heavy pages, so it starts at the press,
+   * but navigation is withheld until the exact scene has become usable.
+   */
+  private beginPreparation(
+    dir: FlipDirection,
+    grip: FlipGrip,
+    pages: FlipPages,
+    released: boolean,
+  ): void {
+    this.cancelPreparation();
+    const pending = {
+      dir,
+      grip,
+      sceneKey: this.flipPagesKey(pages),
+      released,
+      ready: false,
+    };
+    this.preparing = pending;
+    this.phase = 'preparing';
+    this.options.root.classList.add('is-flip-preparing');
+    this.readiness.prepare(
+      {
+        scene: pages,
+        sceneKey: pending.sceneKey,
+        // Pass every required face, not only those cold at admission. A node
+        // view can invalidate a formerly ready mounted face while a neighbour
+        // is being captured; ensure() is a cheap no-op when it stayed fresh
+        // and repairs it on the next bounded pass when it did not.
+        missingIds: this.curlFaceIds(pages),
+      },
+      {
+        ready: () => {
+          if (this.preparing !== pending) return;
+          pending.ready = true;
+          this.startPreparedFlipIfReady();
+        },
+        unavailable: () => {
+          if (this.preparing !== pending) return;
+          // A rejected/failed raster must not leave the controller wedged.
+          // Keep the existing safe veil only as the terminal failure path.
+          const shouldNavigate = pending.released;
+          const failedDir = pending.dir;
+          this.cancelPreparation();
+          if (shouldNavigate) this.crossfadeNavigate(failedDir);
+        },
+        stale: () => {
+          if (this.preparing !== pending) return;
+          this.cancelPreparation();
+        },
+      },
+    );
+  }
+
+  private startPreparedFlipIfReady(): void {
+    const pending = this.preparing;
+    if (pending === null || !pending.released || !pending.ready) return;
+    const pages = this.options.getFlipPages(pending.dir);
+    if (
+      pages === null ||
+      this.flipPagesKey(pages) !== pending.sceneKey ||
+      !this.curlFacesReady(pages, false)
+    ) {
+      this.cancelPreparation();
+      return;
+    }
+    const dir = pending.dir;
+    const grip = pending.grip;
+    this.preparing = null;
+    this.options.root.classList.remove('is-flip-preparing');
+    this.phase = 'rest';
+    if (!this.beginFlip(dir, grip)) return;
+    this.settle(1, TAP_FLIP_DURATION_S, 'power3.out', null);
+  }
+
+  private cancelPreparation(): void {
+    this.readiness?.cancel();
+    this.preparing = null;
+    this.options.root.classList.remove('is-flip-preparing');
+    if (this.phase === 'preparing') this.phase = 'rest';
+  }
+
   /**
    * Shared flip setup: geometry, selection save + editor blur, texture
    * upload, leaf hide + canvas reveal — all synchronous in one frame.
@@ -560,12 +698,10 @@ export class PageFlipController {
      * capture here is not an option either: one is 200ms+ of synchronous main
      * thread, which is a stall in the middle of the gesture.
      *
-     * So when a texture is missing, this turn takes the rigid CSS fold instead,
-     * which needs no snapshot at all — its front face IS the live leaf, with
-     * the real words on it. A slightly plainer fold beats a blank page every
-     * time, and the reader never learns there were two paths. The missing page
-     * is also requested outright rather than left to idle, so the NEXT turn has
-     * its bitmap and gets the curl.
+     * Ordinary cold turns are now held by the tokenized preparation barrier
+     * before they reach this method. This local check remains the last guard
+     * against a face invalidated in the few instructions between readiness and
+     * upload; that rare race takes the rigid fallback rather than blank paper.
      */
     const cachedFor = (id: string | null): ImageBitmap | null =>
       id === null ? null : (this.options.cache.getUsable(id)?.bitmap ?? null);
@@ -596,14 +732,10 @@ export class PageFlipController {
      * leaves are `visibility: hidden` WITH their text still in them, so a leaf
      * reads as inked while the reader is looking at a blank canvas.
      *
-     * `back` is deliberately optional: it is the underside of the turning
-     * sheet and missing it degrades to plain paper inside the curl. Requiring
-     * it would instead switch rapid turns to the rigid CSS fallback, whose
-     * rotating live leaf can visibly pass behind the cover.
-     *
-     * The alternative when this says no is not "nothing" — it is the rigid CSS
-     * fold, whose faces are the live leaves, so it always has the real words on
-     * it. A plainer turn beats a blank one.
+     * All three moving faces are required. A plain underside was once allowed,
+     * but it made a prepared curl visibly lose the destination's inner leaf.
+     * The alternative when this says no is the rigid fallback, never a blank
+     * WebGL texture.
      */
     const faceReady = (id: string | null): boolean =>
       id === null || cachedFor(id) !== null;
@@ -693,12 +825,17 @@ export class PageFlipController {
     if (this.destroyed || this.phase !== 'rest') return;
     const pages = this.options.getFlipPages(dir);
     if (!pages) return;
-    if (this.reducedMotion()) {
+    const path = flipStartPath(
+      this.reducedMotion(),
+      this.usesWebGL,
+      this.curlFacesReady(pages, false),
+    );
+    if (path === 'crossfade') {
       this.crossfadeNavigate(dir);
       return;
     }
-    if (this.usesWebGL && !this.curlFacesReady(pages, true)) {
-      this.crossfadeNavigate(dir);
+    if (path === 'prepare') {
+      this.beginPreparation(dir, 'edge', pages, true);
       return;
     }
     if (!this.beginFlip(dir, 'edge')) return;

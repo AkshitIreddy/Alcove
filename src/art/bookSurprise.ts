@@ -822,7 +822,7 @@ function profile(value: DirectionProfile): DirectionProfile {
 const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = {
   formal: profile({
     formats: ['quarto', 'octavo'], fonts: [0, 1], thickness: [25, 45], bands: [0, 3], wear: [0, 0.18],
-    plates: ['label', 'morocco-label', 'ivory-plate', 'gilt-band', 'stepped-frame'],
+    plates: ['label', 'morocco-label', 'presentation-shoulder', 'double-fillet', 'split-binding-band'],
     ornaments: [0, 8, 12, 17, 20, 26, 51, 61, 62, 63, 64],
     frames: [0, 2, 5, 15, 24, 28, 30], edges: ['plain', 'top-gilt', 'all-edges-gilt', 'stained-red'],
     charms: ['ribbon', 'clasp'], charmChance: 0.14, ornamentChance: 0.58,
@@ -830,7 +830,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   grand: profile({
     formats: ['folio', 'quarto'], fonts: [0, 1], thickness: [34, 54], bands: [0, 3], wear: [0, 0.13],
-    plates: ['gilt-cartouche', 'shield-plate', 'gilt-band', 'crest-plate', 'pedimented', 'gothic-panel'],
+    plates: ['presentation-shoulder', 'split-binding-band', 'gilt-direct', 'oxford-compartment'],
     ornaments: [12, 20, 21, 26, 32, 51, 61, 63, 64],
     frames: [16, 19, 21, 26, 30, 34, 38, 42, 44, 45, 47, 48],
     edges: ['all-edges-gilt', 'gauffered', 'antique-gilt', 'red-under-gold'],
@@ -839,7 +839,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   antique: profile({
     formats: ['folio', 'quarto', 'octavo'], fonts: [0, 1, 2], thickness: [25, 47], bands: [0, 3], wear: [0.26, 0.66],
-    plates: ['morocco-label', 'copper-plate', 'paper-slip', 'vellum-slip', 'bead-frame'],
+    plates: ['morocco-label', 'calf-compartment', 'vellum-ink-field', 'oxford-compartment'],
     ornaments: [8, 9, 13, 17, 20, 22, 26, 38, 50, 61],
     frames: [0, 2, 5, 15, 24, 28, 29], edges: ['rough-cut', 'deckle', 'uncut', 'antique-gilt', 'tea-stained', 'foxed'],
     charms: ['ribbon', 'pressed-flower', 'wax-seal'], charmChance: 0.2, ornamentChance: 0.55,
@@ -847,7 +847,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   storybook: profile({
     formats: ['quarto', 'octavo', 'duodecimo'], fonts: [0, 1, 2], thickness: [21, 40], bands: [0, 2], wear: [0.06, 0.31],
-    plates: ['label', 'paper-slip', 'roundel', 'scroll-plate', 'arched-plate', 'ribbon-band'],
+    plates: ['label', 'vellum-ink-field', 'printer-imprint', 'inlay-strip', 'split-binding-band'],
     ornaments: [2, 5, 6, 9, 21, 33, 34, 36, 40, 41, 45, 49, 52, 53, 54, 58, 64, 65],
     frames: [1, 3, 4, 6, 8, 12, 19, 21], edges: ['plain', 'speckled', 'stained-blue', 'yellow-edges', 'rose-edge'],
     charms: ['ribbon', 'tassel', 'pressed-flower', 'tag'], charmChance: 0.28, ornamentChance: 0.7,
@@ -855,7 +855,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   botanical: profile({
     formats: ['quarto', 'octavo', 'duodecimo'], fonts: [0, 1, 2], thickness: [22, 41], bands: [0, 2], wear: [0.1, 0.38],
-    plates: ['label', 'lozenge-plate', 'wreathed-plate', 'stippled-ground', 'linen-tag'],
+    plates: ['label', 'vellum-ink-field', 'printer-imprint', 'double-fillet', 'oxford-compartment'],
     ornaments: [1, 8, 10, 13, 14, 23, 27, 28, 29, 31, 38, 40, 55, 56, 57, 58],
     frames: [1, 4, 6, 11, 16, 21, 25, 26], edges: ['plain', 'speckled', 'sprinkled', 'sea-green-edge', 'tea-stained'],
     charms: ['ribbon', 'pressed-flower', 'tag'], charmChance: 0.24, ornamentChance: 0.72,
@@ -863,7 +863,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   cosy: profile({
     formats: ['octavo', 'duodecimo', 'pocket'], fonts: [0, 1, 2], thickness: [19, 37], bands: [0, 2], wear: [0.14, 0.43],
-    plates: ['label', 'paper-slip', 'linen-tag', 'roundel', 'scallop-edge'],
+    plates: ['label', 'vellum-ink-field', 'printer-imprint', 'twin-rules', 'inlay-strip'],
     ornaments: [9, 13, 19, 23, 27, 34, 35, 36, 37, 40, 49, 50, 52, 53, 54, 58, 65],
     frames: [0, 1, 3, 4, 6, 11, 12], edges: ['plain', 'speckled', 'yellow-edges', 'rose-edge', 'tea-stained'],
     charms: ['ribbon', 'tassel', 'pressed-flower', 'tag'], charmChance: 0.3, ornamentChance: 0.62,
@@ -871,7 +871,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   rustic: profile({
     formats: ['quarto', 'octavo', 'duodecimo'], fonts: [1, 2], thickness: [22, 44], bands: [0, 2], wear: [0.36, 0.72],
-    plates: ['paper-slip', 'leather-onlay', 'linen-tag', 'rope-frame', 'copper-plate'],
+    plates: ['label', 'morocco-label', 'calf-compartment', 'split-binding-band', 'oxford-compartment'],
     ornaments: [10, 13, 14, 15, 22, 28, 29, 35, 38, 39, 43, 46, 51, 56, 58],
     frames: [0, 1, 5, 7, 10, 13, 24], edges: ['rough-cut', 'deckle', 'uncut', 'tea-stained', 'spattered', 'well-thumbed'],
     charms: ['ribbon', 'pressed-flower', 'clasp', 'tag'], charmChance: 0.18, ornamentChance: 0.5,
@@ -879,7 +879,7 @@ const DIRECTIONS: Readonly<Record<BookSurpriseDirectionId, DirectionProfile>> = 
   }),
   quiet: profile({
     formats: ['octavo', 'duodecimo', 'pocket'], fonts: [1, 2], thickness: [19, 36], bands: [0, 1], wear: [0.02, 0.22],
-    plates: ['label', 'vellum-slip', 'paper-slip', 'chamfered-plate', 'stippled-ground'],
+    plates: ['label', 'vellum-ink-field', 'printer-imprint', 'debossed', 'twin-rules'],
     ornaments: [0, 8, 9, 17, 22, 23, 24, 37, 48, 50, 60, 61],
     frames: [0, 2, 4, 9, 10, 13, 28], edges: ['plain', 'top-gilt', 'stained-blue', 'ink-edge'],
     charms: ['ribbon'], charmChance: 0.05, ornamentChance: 0.3,
@@ -957,7 +957,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'formal-library',
       presetIds: ['lettered-cloth', 'college-buckram'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['label', 'morocco-label', 'ivory-plate', 'stepped-frame'],
+      plates: ['label', 'morocco-label', 'presentation-shoulder', 'double-fillet'],
       frames: [0, 2, 5, 15, 24, 28],
       ornaments: [0, 8, 17, 61],
       edges: ['plain', 'top-gilt', 'stained-red'],
@@ -968,7 +968,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'formal-gilt',
       presetIds: ['gilt-quarto', 'banded-cloth', 'full-morocco', 'tips-and-bands'],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['morocco-label', 'gilt-band', 'ivory-plate', 'stepped-frame'],
+      plates: ['morocco-label', 'split-binding-band', 'presentation-shoulder', 'gilt-direct'],
       frames: [0, 2, 5, 15, 24, 28, 30],
       ornaments: [8, 12, 20, 26, 51, 61, 63],
       edges: ['top-gilt', 'all-edges-gilt', 'stained-red'],
@@ -982,7 +982,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'launder-patterned-sides',
       ],
       modes: ['balanced', 'balanced', 'statement'],
-      plates: ['morocco-label', 'gilt-cartouche', 'ivory-plate', 'stepped-frame'],
+      plates: ['morocco-label', 'presentation-shoulder', 'oxford-compartment'],
       frames: [15, 19, 24, 28, 30, 34],
       ornaments: [12, 20, 26, 51, 61, 62, 63, 64],
       edges: ['top-gilt', 'all-edges-gilt', 'red-under-gold'],
@@ -995,7 +995,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'grand-presentation',
       presetIds: ['panelled-cloth', 'presentation-binding', 'gilt-quarto'],
       modes: ['balanced', 'statement', 'statement'],
-      plates: ['gilt-band', 'stepped-frame', 'gilt-cartouche', 'shield-plate', 'crest-plate', 'pedimented'],
+      plates: ['split-binding-band', 'gilt-direct', 'presentation-shoulder', 'oxford-compartment'],
       frames: [19, 21, 26, 30, 34, 38, 42, 44],
       ornaments: [12, 20, 21, 26, 32, 51, 61, 63, 64],
       edges: ['all-edges-gilt', 'gauffered', 'red-under-gold'],
@@ -1012,8 +1012,8 @@ const COMPOSITION_GRAMMARS: Readonly<
       ],
       modes: ['balanced', 'statement', 'statement'],
       plates: [
-        'gilt-band', 'morocco-label', 'gilt-cartouche', 'shield-plate',
-        'crest-plate', 'pedimented', 'gothic-panel',
+        'split-binding-band', 'morocco-label',
+        'presentation-shoulder', 'calf-compartment', 'oxford-compartment',
       ],
       frames: [0, 2, 5, 16, 19, 21, 26, 30, 34, 38, 42, 44, 45, 47, 48],
       ornaments: [12, 20, 21, 26, 32, 51, 61, 63, 64],
@@ -1027,7 +1027,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'grand-textile',
       presetIds: ['damask-presentation', 'velvet-presentation'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['gilt-band', 'morocco-label', 'ivory-plate', 'stepped-frame'],
+      plates: ['split-binding-band', 'morocco-label', 'presentation-shoulder', 'double-fillet'],
       frames: [0, 2, 5, 15, 19, 21, 26],
       ornaments: [12, 20, 21, 26, 32, 51, 61, 63],
       edges: ['all-edges-gilt', 'antique-gilt'],
@@ -1042,7 +1042,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'blind-calf', 'plain-calf', 'half-calf', 'russia-folio', 'quarter-calf',
       ],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['morocco-label', 'copper-plate', 'paper-slip', 'bead-frame'],
+      plates: ['morocco-label', 'calf-compartment', 'vellum-ink-field', 'oxford-compartment'],
       frames: [0, 2, 5, 15, 24, 28, 29],
       ornaments: [8, 9, 13, 17, 20, 22, 26, 38, 50, 61],
       edges: ['rough-cut', 'uncut', 'antique-gilt', 'tea-stained', 'foxed'],
@@ -1053,7 +1053,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'antique-vellum-archive',
       presetIds: ['gilt-vellum', 'stiff-vellum-quarto'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['paper-slip', 'vellum-slip', 'copper-plate'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint'],
       frames: [0, 2, 5, 9, 13],
       ornaments: [8, 9, 13, 17, 22, 38, 50, 61],
       edges: ['rough-cut', 'deckle', 'uncut', 'tea-stained', 'foxed'],
@@ -1064,7 +1064,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'antique-reading-room',
       presetIds: ['marbled-boards', 'launder-patterned-sides', 'quarter-cloth'],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['morocco-label', 'paper-slip', 'vellum-slip', 'bead-frame'],
+      plates: ['morocco-label', 'label', 'vellum-ink-field', 'double-fillet'],
       frames: [0, 2, 5, 15, 24, 28],
       ornaments: [8, 9, 13, 17, 20, 22, 26, 38, 50, 61],
       edges: ['rough-cut', 'deckle', 'uncut', 'antique-gilt', 'tea-stained'],
@@ -1077,7 +1077,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'storybook-patterned-tale',
       presetIds: ['patterned-boards', 'diaper-paper'],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'paper-slip', 'roundel', 'ribbon-band'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'split-binding-band'],
       frames: [1, 3, 4, 6, 8, 12, 19],
       ornaments: [2, 5, 6, 9, 21, 33, 34, 36, 40, 41, 45, 49, 52, 53, 54, 58, 64, 65],
       edges: ['plain', 'speckled', 'stained-blue', 'yellow-edges', 'rose-edge'],
@@ -1091,7 +1091,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'felt-common-room', 'cased-nature-diary', 'linen-quarto',
       ],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'paper-slip', 'roundel', 'arched-plate'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'inlay-strip'],
       frames: [1, 3, 4, 6, 8, 12, 19, 21],
       ornaments: [2, 5, 6, 9, 21, 33, 34, 36, 40, 41, 45, 49, 52, 53, 54, 58, 64, 65],
       edges: ['plain', 'speckled', 'stained-blue', 'yellow-edges', 'rose-edge'],
@@ -1102,7 +1102,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'storybook-keepsake',
       presetIds: ['paste-paper-keepsake', 'rounded-roan-almanac'],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'paper-slip', 'roundel', 'scroll-plate', 'ribbon-band'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'presentation-shoulder', 'split-binding-band'],
       frames: [1, 3, 4, 6, 8, 12, 19],
       ornaments: [2, 5, 6, 9, 21, 33, 34, 36, 40, 41, 45, 49, 52, 53, 54, 58, 64, 65],
       edges: ['plain', 'speckled', 'yellow-edges', 'rose-edge'],
@@ -1115,7 +1115,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'botanical-field-journal',
       presetIds: ['linen-quarto', 'linen-herbarium', 'suede-field-book'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['label', 'linen-tag', 'stippled-ground'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint'],
       frames: [1, 4, 6, 11, 16],
       ornaments: [1, 8, 10, 13, 14, 27, 28, 29, 31, 38, 40, 55, 56, 57, 58],
       edges: ['plain', 'speckled', 'sprinkled', 'sea-green-edge', 'tea-stained'],
@@ -1129,7 +1129,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'cased-nature-diary', 'paste-paper-keepsake', 'launder-patterned-sides',
       ],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'lozenge-plate', 'wreathed-plate', 'linen-tag'],
+      plates: ['label', 'vellum-ink-field', 'double-fillet', 'oxford-compartment'],
       frames: [1, 4, 6, 11, 16, 21, 25, 26],
       ornaments: [1, 8, 10, 13, 14, 27, 28, 29, 31, 38, 40, 55, 56, 57, 58],
       edges: ['plain', 'speckled', 'sprinkled', 'sea-green-edge', 'tea-stained'],
@@ -1140,7 +1140,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'botanical-prize-binding',
       presetIds: ['laurel-prize'],
       modes: ['balanced', 'balanced', 'statement'],
-      plates: ['lozenge-plate', 'wreathed-plate', 'stippled-ground'],
+      plates: ['double-fillet', 'oxford-compartment', 'presentation-shoulder'],
       frames: [4, 6, 11, 16, 21, 25, 26],
       ornaments: [1, 8, 10, 13, 14, 27, 28, 29, 31, 38, 40, 55, 56, 57, 58],
       edges: ['plain', 'top-gilt', 'sea-green-edge'],
@@ -1153,7 +1153,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'cosy-pocket-diary',
       presetIds: ['rounded-roan-almanac', 'linen-quarto'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['label', 'paper-slip', 'linen-tag'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint'],
       frames: [0, 1, 3, 4, 6, 11],
       ornaments: [9, 13, 19, 23, 27, 34, 35, 36, 37, 40, 49, 50, 52, 53, 54, 58, 65],
       edges: ['plain', 'speckled', 'yellow-edges', 'rose-edge', 'tea-stained'],
@@ -1164,7 +1164,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'cosy-cloth-companion',
       presetIds: ['tweed-gilt', 'felt-common-room', 'half-cloth', 'plain-cloth'],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'paper-slip', 'linen-tag', 'roundel', 'scallop-edge'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'twin-rules', 'inlay-strip'],
       frames: [0, 1, 3, 4, 6, 11, 12],
       ornaments: [9, 13, 19, 23, 27, 34, 35, 36, 37, 40, 49, 50, 52, 53, 54, 58, 65],
       edges: ['plain', 'speckled', 'yellow-edges', 'rose-edge', 'tea-stained'],
@@ -1178,7 +1178,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'launder-patterned-sides', 'cased-nature-diary',
       ],
       modes: ['restrained', 'balanced', 'balanced'],
-      plates: ['label', 'paper-slip', 'roundel', 'scallop-edge'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'twin-rules'],
       frames: [0, 1, 3, 4, 6, 11, 12],
       ornaments: [9, 13, 19, 23, 27, 34, 35, 36, 37, 40, 49, 50, 52, 53, 54, 58, 65],
       edges: ['plain', 'speckled', 'yellow-edges', 'rose-edge'],
@@ -1194,7 +1194,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'sailcloth-field-ledger', 'half-roan',
       ],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['paper-slip', 'leather-onlay', 'linen-tag', 'copper-plate'],
+      plates: ['label', 'morocco-label', 'calf-compartment', 'split-binding-band'],
       frames: [0, 1, 5, 7, 10, 13, 24],
       ornaments: [10, 13, 14, 15, 22, 28, 29, 35, 38, 39, 43, 46, 51, 56, 58],
       edges: ['rough-cut', 'deckle', 'uncut', 'tea-stained', 'spattered', 'well-thumbed'],
@@ -1205,7 +1205,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'rustic-sewn-journal',
       presetIds: ['suede-field-book', 'linen-sewn-journal'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['paper-slip', 'leather-onlay', 'linen-tag', 'rope-frame'],
+      plates: ['label', 'morocco-label', 'calf-compartment', 'oxford-compartment'],
       frames: [0, 1, 5, 7, 10, 13],
       ornaments: [10, 13, 14, 15, 22, 28, 29, 35, 38, 39, 43, 46, 51, 56, 58],
       edges: ['rough-cut', 'deckle', 'uncut', 'tea-stained', 'well-thumbed'],
@@ -1216,7 +1216,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'rustic-cased-field-book',
       presetIds: ['rounded-roan-almanac', 'cased-nature-diary'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['paper-slip', 'leather-onlay', 'linen-tag'],
+      plates: ['label', 'morocco-label', 'calf-compartment'],
       frames: [0, 1, 5, 7, 10, 13],
       ornaments: [10, 13, 14, 15, 22, 28, 29, 35, 38, 39, 43, 46, 51, 56, 58],
       edges: ['rough-cut', 'deckle', 'uncut', 'tea-stained', 'well-thumbed'],
@@ -1232,7 +1232,7 @@ const COMPOSITION_GRAMMARS: Readonly<
         'plain-buckram', 'reading-room-buckram',
       ],
       modes: ['restrained', 'restrained', 'restrained', 'balanced'],
-      plates: ['label', 'paper-slip', 'chamfered-plate', 'stippled-ground'],
+      plates: ['label', 'printer-imprint', 'debossed', 'twin-rules'],
       frames: [0, 2, 4, 9, 10, 13, 28],
       ornaments: [0, 8, 9, 17, 22, 23, 24, 37, 48, 50, 60, 61],
       edges: ['plain', 'top-gilt', 'stained-blue', 'ink-edge'],
@@ -1243,7 +1243,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'quiet-sober-leather',
       presetIds: ['plain-calf', 'roan-schoolbook', 'quarter-cloth'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['label', 'vellum-slip', 'paper-slip', 'chamfered-plate'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint', 'debossed'],
       frames: [0, 2, 4, 9, 10, 13, 28],
       ornaments: [0, 8, 9, 17, 22, 23, 24, 37, 48, 50, 60, 61],
       edges: ['plain', 'top-gilt', 'stained-blue', 'ink-edge'],
@@ -1254,7 +1254,7 @@ const COMPOSITION_GRAMMARS: Readonly<
       id: 'quiet-vellum-note',
       presetIds: ['stiff-vellum-quarto', 'launder-patterned-sides'],
       modes: ['restrained', 'restrained', 'balanced'],
-      plates: ['label', 'vellum-slip', 'paper-slip'],
+      plates: ['label', 'vellum-ink-field', 'printer-imprint'],
       frames: [0, 2, 4, 9],
       ornaments: [0, 8, 9, 17, 22, 23, 24, 37, 48, 50, 60, 61],
       edges: ['plain', 'stained-blue', 'ink-edge'],
@@ -1797,17 +1797,41 @@ function compositionMode(direction: BookSurpriseDirectionId, rnd: RandomFn): Cov
   return roll < restrained ? 'restrained' : roll < balanced ? 'balanced' : 'statement';
 }
 
+function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boolean {
+  const materialGroup = preset === undefined ? null : MATERIALS[preset.material].group;
+    // Manual Studio choices stay reader-owned, but Surprise treats physical
+    // labels as physical materials. A calf/morocco piece belongs on leather
+    // or a split binding; dyed cross-bands belong on cloth/leather, while a
+    // vellum ticket is welcome on the paper/vellum archive families.
+    if (materialGroup === null) return true;
+    if (
+      plate === 'morocco-label' ||
+      plate === 'presentation-shoulder' ||
+      plate === 'calf-compartment'
+    ) return materialGroup === 'leather' || materialGroup === 'split';
+    if (plate === 'split-binding-band') {
+      return materialGroup === 'leather' || materialGroup === 'cloth' || materialGroup === 'split';
+    }
+    if (plate === 'vellum-ink-field') {
+      return materialGroup === 'vellum' || materialGroup === 'paper' || materialGroup === 'split';
+    }
+    return true;
+}
+
 function platePoolForComposition(
   values: readonly TitlePlateStyle[],
   mode: CoverCompositionMode,
+  preset?: BookPreset,
 ): readonly TitlePlateStyle[] {
-  const selected = values.filter((plate) => {
+  const materialEligible = values.filter((plate) => plateMaterialEligible(plate, preset));
+  const candidates = materialEligible.length > 0 ? materialEligible : values;
+  const selected = candidates.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0).family;
     if (mode === 'restrained') return family === 'direct' || family === 'ticket' || family === 'band';
     if (mode === 'statement') return family === 'heraldic' || family === 'round' || family === 'panel' || family === 'band';
     return family !== 'direct';
   });
-  return selected.length > 0 ? selected : values;
+  return selected.length > 0 ? selected : candidates;
 }
 
 function framePoolForComposition(
@@ -1896,7 +1920,7 @@ function generatedStyle(
     String,
     request,
   );
-  const titlePlate = pick(platePoolForComposition(curatedPlates, composition), rnd);
+  const titlePlate = pick(platePoolForComposition(curatedPlates, composition, preset), rnd);
   const curatedFrames = curatedGrammarValues(
     grammar?.frames ?? p.frames,
     p.frames,
@@ -2236,15 +2260,20 @@ function quietPlateForProgramme(
     wider,
     'title-plate',
     request,
-    (plate) => titlePlateStatement(plate) <= 0.62,
+    (plate) => titlePlateStatement(plate) <= 0.62 && plateMaterialEligible(plate, preset),
   );
-  const values = quiet.length > 0 ? quiet : curatedGrammarValues(
+  const authored = quiet.length > 0 ? quiet : curatedGrammarValues(
     preferred,
     DIRECTIONS[directionId].plates,
     'title-plate',
     String,
     request,
   );
+  const eligible = authored.filter((plate) => plateMaterialEligible(plate, preset));
+  const values = eligible.length > 0
+    ? eligible
+    : ACTIVE_TITLE_PLATES.filter((plate) =>
+        plateMaterialEligible(plate, preset) && titlePlateStatement(plate) <= 0.62);
   return deterministicMember(values, `${preset.id}:${salt}:plate`)
     ?? 'label';
 }
@@ -2482,7 +2511,11 @@ function focusGeneratedTreatment(
       String,
       request,
     );
-    const titlePool = platePoolForComposition(plates, composition === 'restrained' ? 'balanced' : 'statement');
+    const titlePool = platePoolForComposition(
+      plates,
+      composition === 'restrained' ? 'balanced' : 'statement',
+      preset,
+    );
     out.titlePlate = deterministicMember(titlePool, `${preset.id}:${salt}:title`) ?? 'label';
     out.coverFrame = quietFrameForProgramme(
       grammar,
@@ -2743,9 +2776,18 @@ function calmerPlate(
   const authored = grammar?.plates ?? DIRECTIONS[directionId].plates;
   const eligible = authored.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0, false).family;
-    return family === 'direct' || family === 'ticket' || family === 'band';
+    return plateMaterialEligible(plate, preset)
+      && (family === 'direct' || family === 'ticket' || family === 'band');
   });
-  return deterministicMember(eligible, `${preset.id}:plate:${current}`) ?? 'label';
+  const wider = ACTIVE_TITLE_PLATES.filter((plate) => {
+    const family = coverCompositionLayout(plate, 0, 0, false).family;
+    return plateMaterialEligible(plate, preset)
+      && (family === 'direct' || family === 'ticket' || family === 'band');
+  });
+  return deterministicMember(
+    eligible.length > 0 ? eligible : wider,
+    `${preset.id}:plate:${current}`,
+  ) ?? 'label';
 }
 
 /**

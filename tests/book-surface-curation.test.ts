@@ -39,8 +39,8 @@ import {
 const APPROVED_ORNAMENTS = [
   0, 1, 2, 5, 12, 13, 14, 20,
   23, 26, 28, 29, 30, 31, 43, 56,
-  66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-  76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
+  66, 67, 68, 70, 71, 74, 75, 78,
+  80, 81, 83, 84, 85,
 ] as const;
 
 const APPROVED_FRAMES = [
@@ -90,6 +90,13 @@ describe('book-surface apocalypse catalogue', () => {
     expect(normalizeOrnamentIndex(27)).toBe(1);
     expect(normalizeOrnamentIndex(38)).toBe(13);
     expect(normalizeOrnamentIndex(57)).toBe(31);
+    expect(normalizeOrnamentIndex(69)).toBe(13);
+    expect(normalizeOrnamentIndex(72)).toBe(13);
+    expect(normalizeOrnamentIndex(73)).toBe(1);
+    expect(normalizeOrnamentIndex(76)).toBe(1);
+    expect(normalizeOrnamentIndex(77)).toBe(1);
+    expect(normalizeOrnamentIndex(79)).toBe(31);
+    expect(normalizeOrnamentIndex(82)).toBe(13);
     expect(ACTIVE_ORNAMENT_INDICES).not.toContain(48); // snowflake never re-enters by name
   });
 
@@ -113,7 +120,7 @@ describe('book-surface apocalypse catalogue', () => {
   });
 
   it('keeps only continuous cover-title treatments and unpatterned physical page edges', () => {
-    const forbiddenTitles = /bead|rope|dot|scallop|ribbon|hatch|stipple|slip|tag|copper|enamel|crest|roundel|wreath|star/i;
+    const forbiddenTitles = /bead|rope|dot|scallop|ribbon|hatch|stipple|slip|tag|copper|enamel|crest|roundel|wreath|star|shield|oval/i;
     for (const title of ACTIVE_TITLE_PLATES) expect(title).not.toMatch(forbiddenTitles);
     for (const historical of TITLE_PLATES) {
       expect(ACTIVE_TITLE_PLATES).toContain(normalizeTitlePlateStyle(historical));
@@ -177,7 +184,7 @@ describe('book-surface hard normalization', () => {
       ornament: 1,
       coverMedallion: 1,
       coverFrame: 26,
-      titlePlate: 'ruled-box',
+      titlePlate: 'printer-imprint',
       edge: 'plain',
       charm: 'none',
       raisedBands: MAX_RAISED_BANDS,
@@ -210,7 +217,7 @@ describe('book-surface hard normalization', () => {
     ).toMatchObject({
       frame: 36,
       medallion: 23,
-      titlePlate: 'blind-panel',
+      titlePlate: 'oxford-compartment',
       edge: 'plain',
       charm: 'none',
       cornerProtectors: false,

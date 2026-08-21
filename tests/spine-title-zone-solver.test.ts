@@ -108,7 +108,7 @@ describe('spine-title retirement contract', () => {
     });
 
     expect(normalized).toEqual({
-      titlePlate: 'gilt-cartouche',
+      titlePlate: 'presentation-shoulder',
       titleFont: 2,
     });
 
@@ -146,7 +146,7 @@ describe('spine-title retirement contract', () => {
       titleFont: 0,
     });
 
-    expect(first.cover.titlePlate).toBe('gilt-cartouche');
+    expect(first.cover.titlePlate).toBe('presentation-shoulder');
     expect(first.cover.titleFont).toBe(2);
     expect(second.cover.titlePlate).toBe('label');
     expect(second.cover.titleFont).toBe(0);

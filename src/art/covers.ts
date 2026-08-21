@@ -875,16 +875,26 @@ export function resolveCoverTitleColours(
   const [face, dark] = board;
   const pale = isPaleCovering(coveringSpecFor(params));
   const style: TitlePlateStyle = title.trim() ? (params.titlePlate ?? 'label') : 'label';
-  const paper = style === 'label';
+  const paper = style === 'label' || style === 'vellum-ink-field';
+  const blindField =
+    style === 'debossed' ||
+    style === 'blind-panel' ||
+    style === 'oxford-compartment';
+  const openField =
+    style === 'gilt' ||
+    style === 'gilt-cartouche' ||
+    style === 'ruled-box';
   const direct =
     style === 'none' ||
     style === 'gilt-direct' ||
+    style === 'printer-imprint' ||
     style === 'double-fillet' ||
     style === 'twin-rules';
   const giltBand = style === 'gilt-band';
+  const dyedBand = style === 'split-binding-band';
   const inkBlock = style === 'ink-panel';
   const ground =
-    direct
+    direct || blindField || openField
       ? face
       : paper
         ? pale
@@ -892,11 +902,15 @@ export function resolveCoverTitleColours(
           : FLAT.cream
         : giltBand
           ? normaliseHex(params.toolingHex) ?? FLAT.gilt
+          : dyedBand
+            ? normaliseHex(params.coverAccentHex) ?? dark
           : inkBlock
             ? FLAT.ink
             : dark;
   const authored =
-    direct
+    blindField
+      ? dark
+      : direct || openField
       ? pale
         ? FLAT.inkSoft
         : params.gilt || style === 'gilt-direct'
@@ -906,12 +920,14 @@ export function resolveCoverTitleColours(
         ? FLAT.ink
         : giltBand
           ? FLAT.ink
+          : dyedBand
+            ? params.gilt ? FLAT.giltPale : FLAT.cream
           : inkBlock
             ? FLAT.cream
-            : params.gilt || style === 'gilt'
+            : params.gilt
               ? FLAT.giltPale
               : FLAT.cream;
-  const preferred = params.toolingHex ?? authored;
+  const preferred = blindField ? dark : params.toolingHex ?? authored;
   const resolved = resolveTitleColours(preferred, ground, !direct);
   if (!direct || colourContrast(resolved.ink, resolved.ground) >= TITLE_TEXT_MIN_CONTRAST) {
     return resolved;
@@ -5278,16 +5294,22 @@ function fitCoverTitle(
  */
 export type CoverTitleFurniture =
   | 'direct-lettering'
+  | 'press-imprint'
   | 'stepped-gilt-panel'
   | 'paper-ticket'
+  | 'vellum-ticket'
   | 'debossed-field'
   | 'morocco-ticket'
+  | 'double-morocco-ticket'
+  | 'calf-lettering-piece'
   | 'open-double-fillet'
   | 'blind-stepped-panel'
+  | 'oxford-blind-compartment'
   | 'open-cartouche'
   | 'ruled-square'
   | 'leather-onlay'
   | 'inlay-strip'
+  | 'dyed-leather-band'
   | 'gilt-band'
   | 'open-twin-rules'
   | 'direct-gilt'
@@ -5295,17 +5317,17 @@ export type CoverTitleFurniture =
 
 export function coverTitleFurniture(style: TitlePlateStyle): CoverTitleFurniture {
   switch (normalizeTitlePlateStyle(style)) {
-    case 'gilt': return 'stepped-gilt-panel';
+    case 'printer-imprint': return 'press-imprint';
     case 'label': return 'paper-ticket';
+    case 'vellum-ink-field': return 'vellum-ticket';
     case 'debossed': return 'debossed-field';
     case 'morocco-label': return 'morocco-ticket';
+    case 'presentation-shoulder': return 'double-morocco-ticket';
+    case 'calf-compartment': return 'calf-lettering-piece';
     case 'double-fillet': return 'open-double-fillet';
-    case 'blind-panel': return 'blind-stepped-panel';
-    case 'gilt-cartouche': return 'open-cartouche';
-    case 'ruled-box': return 'ruled-square';
-    case 'leather-onlay': return 'leather-onlay';
+    case 'oxford-compartment': return 'oxford-blind-compartment';
     case 'inlay-strip': return 'inlay-strip';
-    case 'gilt-band': return 'gilt-band';
+    case 'split-binding-band': return 'dyed-leather-band';
     case 'twin-rules': return 'open-twin-rules';
     case 'gilt-direct': return 'direct-gilt';
     case 'ink-panel': return 'ink-block';
@@ -5428,6 +5450,15 @@ function paintTitleFurniture(
     case 'direct-gilt':
       return;
 
+    case 'press-imprint': {
+      // A printer's imprint is direct ink, not a box. Two unequal hairlines
+      // establish a press-mark cadence without enclosing the title.
+      const rule = spec.titleColours.ink;
+      stroke(ctx, x + w * 0.18, y + h * 0.14, x + w * 0.82, y + h * 0.14, rule, line * 0.5, spec.seed + 1);
+      stroke(ctx, x + w * 0.31, y + h * 0.86, x + w * 0.69, y + h * 0.86, rule, line * 0.72, spec.seed + 2);
+      return;
+    }
+
     case 'paper-ticket': {
       const lift = Math.max(1, h * 0.075);
       wobbleRect(ctx, x + lift * 0.5, y + lift, w, h, 0, spec.seed + 8);
@@ -5438,11 +5469,28 @@ function paintTitleFurniture(
       return;
     }
 
+    case 'vellum-ticket': {
+      // Vellum sits flatter and is cut squarer than the lifted paper ticket.
+      // A narrow darker pasted edge is a second flat face, not a shadow.
+      const edge = Math.max(1, h * 0.055);
+      wobbleRect(ctx, x + edge * 0.45, y + edge, w, h, 0, spec.seed + 10);
+      ctx.fillStyle = spec.sunk;
+      ctx.fill();
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 11);
+      fillAndRuleTitleShape(ctx, fill, spec.titleColours.ink, line * 0.66);
+      const g = h * 0.13;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 12);
+      pen(ctx, spec.titleColours.ink, line * 0.35);
+      ctx.stroke();
+      return;
+    }
+
     case 'stepped-gilt-panel': {
       traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.26);
-      fillAndRuleTitleShape(ctx, fill, tooling, line);
+      pen(ctx, tooling, line * 0.82);
+      ctx.stroke();
       const g = h * 0.13;
-      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 3);
+      traceSteppedTitlePanel(ctx, x + g, y + g, w - g * 2, h - g * 2, h * 0.1);
       pen(ctx, tooling, line * 0.48);
       ctx.stroke();
       return;
@@ -5450,7 +5498,8 @@ function paintTitleFurniture(
 
     case 'debossed-field': {
       wobbleRect(ctx, x, y, w, h, 0, spec.seed + 5);
-      fillAndRuleTitleShape(ctx, fill, blind, line * 1.02);
+      pen(ctx, blind, line * 0.82);
+      ctx.stroke();
       const g = h * 0.12;
       wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 6);
       pen(ctx, mixHex(blind, spec.face, 0.3), line * 0.52);
@@ -5459,11 +5508,45 @@ function paintTitleFurniture(
     }
 
     case 'morocco-ticket': {
-      traceClippedTitleTicket(ctx, x, y, w, h, h * 0.24);
+      // A traditional single-rule lettering piece is rectangular. Its small
+      // knife-cut corners distinguish the material without turning the label
+      // into a long octagonal UI badge.
+      traceClippedTitleTicket(ctx, x, y, w, h, h * 0.07);
       fillAndRuleTitleShape(ctx, fill, tooling, line);
       const g = h * 0.13;
-      traceClippedTitleTicket(ctx, x + g, y + g, w - g * 2, h - g * 2, h * 0.1);
+      traceClippedTitleTicket(ctx, x + g, y + g, w - g * 2, h - g * 2, h * 0.03);
       pen(ctx, tooling, line * 0.5);
+      ctx.stroke();
+      return;
+    }
+
+    case 'double-morocco-ticket': {
+      // A low rectangular morocco ticket. The corner cuts are deliberately
+      // shallow: enough to show a binder's knife, never enough to become an
+      // octagonal badge.
+      traceClippedTitleTicket(ctx, x, y, w, h, h * 0.065);
+      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.88);
+      const outer = h * 0.12;
+      traceClippedTitleTicket(
+        ctx,
+        x + outer,
+        y + outer,
+        w - outer * 2,
+        h - outer * 2,
+        h * 0.03,
+      );
+      pen(ctx, tooling, line * 0.42);
+      ctx.stroke();
+      return;
+    }
+
+    case 'calf-lettering-piece': {
+      // Square dyed calf with one blind outer keyline and one gilt inner rule.
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 15);
+      fillAndRuleTitleShape(ctx, fill, blind, line * 0.86);
+      const g = h * 0.14;
+      wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 16);
+      pen(ctx, tooling, line * 0.46);
       ctx.stroke();
       return;
     }
@@ -5474,7 +5557,8 @@ function paintTitleFurniture(
 
     case 'blind-stepped-panel': {
       traceSteppedTitlePanel(ctx, x, y, w, h, h * 0.3);
-      fillAndRuleTitleShape(ctx, fill, blind, line * 0.9);
+      pen(ctx, blind, line * 0.82);
+      ctx.stroke();
       const c = h * 0.19;
       const arm = h * 0.28;
       pen(ctx, tooling, line * 0.5);
@@ -5493,32 +5577,60 @@ function paintTitleFurniture(
       return;
     }
 
-    case 'open-cartouche': {
-      const shoulder = Math.min(w * 0.18, h * 0.78);
+    case 'oxford-blind-compartment': {
+      // The board itself remains the field. Two separated stepped fillets
+      // define head and tail; there are deliberately no vertical corners,
+      // handles or closed selection-box geometry.
+      const step = Math.min(w * 0.08, h * 0.22);
       ctx.beginPath();
-      ctx.moveTo(x + shoulder, y);
-      ctx.quadraticCurveTo(x + shoulder * 0.62, y + h * 0.1, x + shoulder * 0.3, y + h * 0.24);
-      ctx.quadraticCurveTo(x - shoulder * 0.08, y + h * 0.36, x + shoulder * 0.18, y + h * 0.5);
-      ctx.quadraticCurveTo(x - shoulder * 0.08, y + h * 0.64, x + shoulder * 0.3, y + h * 0.76);
-      ctx.quadraticCurveTo(x + shoulder * 0.62, y + h * 0.9, x + shoulder, y + h);
-      ctx.lineTo(x + w - shoulder, y + h);
-      ctx.quadraticCurveTo(x + w - shoulder * 0.62, y + h * 0.9, x + w - shoulder * 0.3, y + h * 0.76);
-      ctx.quadraticCurveTo(x + w + shoulder * 0.08, y + h * 0.64, x + w - shoulder * 0.18, y + h * 0.5);
-      ctx.quadraticCurveTo(x + w + shoulder * 0.08, y + h * 0.36, x + w - shoulder * 0.3, y + h * 0.24);
-      ctx.quadraticCurveTo(x + w - shoulder * 0.62, y + h * 0.1, x + w - shoulder, y);
-      ctx.closePath();
-      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.9);
-      // The concave shoulders themselves are the cartouche. External curls
-      // became knob-like hardware at true size, so the open programme stops
-      // at two clean lateral pallets within the title field.
-      stroke(ctx, x + shoulder * 0.18, y + h * 0.5, x + shoulder * 0.72, y + h * 0.5, tooling, line * 0.5, spec.seed + 15);
-      stroke(ctx, x + w - shoulder * 0.72, y + h * 0.5, x + w - shoulder * 0.18, y + h * 0.5, tooling, line * 0.5, spec.seed + 16);
+      ctx.moveTo(x + w * 0.08, y + h * 0.24);
+      ctx.lineTo(x + w * 0.08 + step, y + h * 0.08);
+      ctx.lineTo(x + w * 0.92 - step, y + h * 0.08);
+      ctx.lineTo(x + w * 0.92, y + h * 0.24);
+      ctx.moveTo(x + w * 0.08, y + h * 0.76);
+      ctx.lineTo(x + w * 0.08 + step, y + h * 0.92);
+      ctx.lineTo(x + w * 0.92 - step, y + h * 0.92);
+      ctx.lineTo(x + w * 0.92, y + h * 0.76);
+      pen(ctx, blind, line * 0.82);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.22, y + h * 0.23);
+      ctx.lineTo(x + w * 0.78, y + h * 0.23);
+      ctx.moveTo(x + w * 0.22, y + h * 0.77);
+      ctx.lineTo(x + w * 0.78, y + h * 0.77);
+      pen(ctx, mixHex(blind, spec.face, 0.28), line * 0.44);
+      ctx.stroke();
+      return;
+    }
+
+    case 'open-cartouche': {
+      // A restrained inscription cartouche: open lateral braces, not a filled
+      // scroll badge. The centre remains the binding's own cloth.
+      const shoulder = Math.min(w * 0.14, h * 0.64);
+      ctx.beginPath();
+      ctx.moveTo(x + shoulder * 1.9, y + h * 0.1);
+      ctx.lineTo(x + w - shoulder * 1.9, y + h * 0.1);
+      ctx.moveTo(x + shoulder * 1.9, y + h * 0.9);
+      ctx.lineTo(x + w - shoulder * 1.9, y + h * 0.9);
+      for (const side of [-1, 1] as const) {
+        const edge = side < 0 ? x + shoulder * 1.35 : x + w - shoulder * 1.35;
+        const elbow = side < 0 ? x + shoulder * 0.48 : x + w - shoulder * 0.48;
+        const tip = side < 0 ? x + shoulder * 0.18 : x + w - shoulder * 0.18;
+        ctx.moveTo(edge, y + h * 0.22);
+        ctx.lineTo(elbow, y + h * 0.25);
+        ctx.lineTo(tip, y + h * 0.5);
+        ctx.lineTo(elbow, y + h * 0.75);
+        ctx.lineTo(edge, y + h * 0.78);
+      }
+      pen(ctx, tooling, line * 0.72);
+      ctx.stroke();
       return;
     }
 
     case 'ruled-square': {
       wobbleRect(ctx, x, y, w, h, 0, spec.seed + 17);
-      fillAndRuleTitleShape(ctx, fill, tooling, line * 0.85);
+      pen(ctx, tooling, line * 0.76);
+      ctx.stroke();
       const g = h * 0.14;
       wobbleRect(ctx, x + g, y + g, w - g * 2, h - g * 2, 0, spec.seed + 18);
       pen(ctx, tooling, line * 0.46);
@@ -5545,6 +5657,20 @@ function paintTitleFurniture(
       ctx.fillStyle = fill;
       ctx.fill();
       paintTitleFillets(ctx, x, y, w, h, tooling, line * 0.68, spec.seed + 24, false);
+      return;
+    }
+
+    case 'dyed-leather-band': {
+      wobbleRect(ctx, x, y, w, h, 0, spec.seed + 25);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      const rule = spec.titleColours.ink;
+      const edge = h * 0.12;
+      stroke(ctx, x, y + edge, x + w, y + edge, rule, line * 0.52, spec.seed + 26);
+      stroke(ctx, x, y + h - edge, x + w, y + h - edge, rule, line * 0.52, spec.seed + 27);
+      // Tiny square returns at the joint/fore-edge make the strip structural.
+      stroke(ctx, x + w * 0.055, y + edge, x + w * 0.055, y + h - edge, rule, line * 0.42, spec.seed + 28);
+      stroke(ctx, x + w * 0.945, y + edge, x + w * 0.945, y + h - edge, rule, line * 0.42, spec.seed + 29);
       return;
     }
 
@@ -5628,6 +5754,7 @@ function paintLabel(
   const directStyle =
     furniture === 'direct-lettering' ||
     furniture === 'direct-gilt' ||
+    furniture === 'press-imprint' ||
     furniture === 'open-double-fillet' ||
     furniture === 'open-twin-rules';
   const expandedDirectTitle =
@@ -5683,7 +5810,7 @@ function paintLabel(
   const openRuleField =
     furniture === 'open-double-fillet' || furniture === 'open-twin-rules';
   const materialBand =
-    furniture === 'inlay-strip' || furniture === 'gilt-band' || furniture === 'ink-block';
+    furniture === 'inlay-strip' || furniture === 'dyed-leather-band' || furniture === 'gilt-band' || furniture === 'ink-block';
   const verticalShare =
     furniture === 'direct-gilt' ? 0.74 : openRuleField || materialBand ? 0.64 : 0.58;
   let layout = fitCoverTitle(
@@ -5765,6 +5892,7 @@ function paintLabel(
     furniture !== 'open-double-fillet' &&
     furniture !== 'open-twin-rules' &&
     furniture !== 'inlay-strip' &&
+    furniture !== 'dyed-leather-band' &&
     furniture !== 'gilt-band' &&
     furniture !== 'ink-block'
   ) {
@@ -6095,10 +6223,12 @@ export interface CoverCompositionLayout {
 const BAND_TITLE_PLATES = new Set<TitlePlateStyle>([
   'gilt-band', 'ribbon-band', 'inlay-strip', 'twin-rules', 'double-fillet',
   'triple-fillet', 'dotted-rule', 'starred-ends', 'fleuron-ends', 'lozenge-ends',
+  'split-binding-band',
 ]);
 const TICKET_TITLE_PLATES = new Set<TitlePlateStyle>([
   'label', 'morocco-label', 'paper-slip', 'vellum-slip', 'linen-tag',
   'ivory-plate', 'ebony-plate', 'copper-plate', 'enamel-plate', 'leather-onlay',
+  'vellum-ink-field', 'calf-compartment', 'presentation-shoulder',
 ]);
 const HERALDIC_TITLE_PLATES = new Set<TitlePlateStyle>([
   'shield-plate', 'crest-plate', 'scroll-plate', 'arched-plate', 'pedimented',
@@ -6112,6 +6242,7 @@ const PANEL_TITLE_PLATES = new Set<TitlePlateStyle>([
   'blind-panel', 'ruled-box', 'corner-brackets', 'notched-corners', 'sunk-panel',
   'stepped-frame', 'chamfered-plate', 'hatched-ground', 'stippled-ground',
   'rope-frame', 'stone-tablet', 'ink-panel',
+  'oxford-compartment',
 ]);
 
 export function coverCompositionLayout(
@@ -6124,7 +6255,7 @@ export function coverCompositionLayout(
   frame = normalizeCoverFrameIndex(frame);
   medallion = normalizeCoverEmblemIndex(medallion);
   let layout: CoverCompositionLayout;
-  if (plate === 'gilt-direct') {
+  if (plate === 'gilt-direct' || plate === 'printer-imprint') {
     layout = {
       // There is no physical ticket here: this is an invisible lettering
       // field on the board. Its extra height lets a long direct title use two
@@ -6137,7 +6268,7 @@ export function coverCompositionLayout(
       family: 'direct', titleWidth: 0.82, titleHeight: 0.22,
       titleCenterY: 0.29, medallionCenterY: 0.59, medallionScale: 0.094,
     };
-  } else if (plate === 'debossed' || plate === 'gilt') {
+  } else if (plate === 'debossed') {
     layout = {
       family: 'panel', titleWidth: 0.76, titleHeight: 0.18,
       titleCenterY: 0.34, medallionCenterY: 0.7, medallionScale: 0.082,

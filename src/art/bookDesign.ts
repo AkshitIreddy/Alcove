@@ -7977,40 +7977,35 @@ export function drawOpenBinderTool(
       break;
     }
     case 'fleuron': {
-      // Three broad open petals share a continuous waist and ledge. There are
-      // no interior veins to alias into an insect-sized knot on pale vellum.
-      const base = cy + r * 0.68;
-      shoulders(base, 0.58);
+      // A broad three-lobed printer's fleuron: the lateral petals own almost
+      // the full tool width and the open C-scroll foot keeps it out of the
+      // tulip family at shelf scale.
+      const base = cy + r * 0.58;
+      shoulders(base, 0.66);
       ctx.beginPath();
-      ctx.moveTo(cx, base - r * 0.1);
-      ctx.quadraticCurveTo(cx - r * 0.22, cy - r * 0.28, cx, cy - r * 0.88);
-      ctx.quadraticCurveTo(cx + r * 0.22, cy - r * 0.28, cx, base - r * 0.1);
-      ctx.moveTo(cx - r * 0.1, base - r * 0.08);
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cx - r * 0.3, cy - r * 0.18, cx, cy - r * 0.98);
+      ctx.quadraticCurveTo(cx + r * 0.3, cy - r * 0.18, cx, base);
+      ctx.moveTo(cx - r * 0.08, base - r * 0.02);
       ctx.bezierCurveTo(
-        cx - r * 0.28,
-        cy + r * 0.16,
-        cx - r * 0.75,
-        cy + r * 0.04,
-        cx - r * 0.68,
-        cy - r * 0.42,
+        cx - r * 0.36, cy + r * 0.06,
+        cx - r * 0.92, cy - r * 0.04,
+        cx - r * 0.82, cy - r * 0.58,
       );
-      ctx.quadraticCurveTo(cx - r * 0.36, cy - r * 0.2, cx - r * 0.1, base - r * 0.08);
-      ctx.moveTo(cx + r * 0.1, base - r * 0.08);
+      ctx.quadraticCurveTo(cx - r * 0.44, cy - r * 0.32, cx - r * 0.08, base - r * 0.02);
+      ctx.moveTo(cx + r * 0.08, base - r * 0.02);
       ctx.bezierCurveTo(
-        cx + r * 0.28,
-        cy + r * 0.16,
-        cx + r * 0.75,
-        cy + r * 0.04,
-        cx + r * 0.68,
-        cy - r * 0.42,
+        cx + r * 0.36, cy + r * 0.06,
+        cx + r * 0.92, cy - r * 0.04,
+        cx + r * 0.82, cy - r * 0.58,
       );
-      ctx.quadraticCurveTo(cx + r * 0.36, cy - r * 0.2, cx + r * 0.1, base - r * 0.08);
+      ctx.quadraticCurveTo(cx + r * 0.44, cy - r * 0.32, cx + r * 0.08, base - r * 0.02);
       strike();
       ctx.beginPath();
-      ctx.moveTo(cx - r * 0.54, base - r * 0.03);
-      ctx.lineTo(cx + r * 0.54, base - r * 0.03);
-      ctx.moveTo(cx - r * 0.46, base - r * 0.19);
-      ctx.lineTo(cx + r * 0.46, base - r * 0.19);
+      ctx.moveTo(cx, base - r * 0.02);
+      ctx.bezierCurveTo(cx - r * 0.12, cy + r * 0.84, cx - r * 0.72, cy + r * 0.84, cx - r * 0.68, cy + r * 0.48);
+      ctx.moveTo(cx, base - r * 0.02);
+      ctx.bezierCurveTo(cx + r * 0.12, cy + r * 0.84, cx + r * 0.72, cy + r * 0.84, cx + r * 0.68, cy + r * 0.48);
       strike(Math.max(0.9, tool * 0.76));
       break;
     }
@@ -8232,28 +8227,35 @@ export function drawOpenBinderTool(
       break;
     }
     case 'oak-volutes': {
-      // Paired volutes are anchored by a visible central staff and lower
-      // scrolls. The first proof omitted that mass and read as a flying bird.
-      const base = cy + r * 0.65;
-      shoulders(base, 0.48);
+      // One unmistakable acanthus arabesque: a spearhead rises through two
+      // broad open S-volutes. Leaf pips were removed because they made the
+      // earlier version read as a bird or paired animals at rest.
+      const base = cy + r * 0.66;
+      shoulders(base, 0.62);
       ctx.beginPath();
       ctx.moveTo(cx, base);
-      ctx.lineTo(cx, cy - r * 0.72);
-      ctx.moveTo(cx, base);
-      ctx.bezierCurveTo(cx - r * 0.1, cy + r * 0.15, cx - r * 0.72, cy + r * 0.18, cx - r * 0.72, cy - r * 0.26);
-      ctx.quadraticCurveTo(cx - r * 0.7, cy - r * 0.62, cx - r * 0.36, cy - r * 0.55);
-      ctx.moveTo(cx, base);
-      ctx.bezierCurveTo(cx + r * 0.1, cy + r * 0.15, cx + r * 0.72, cy + r * 0.18, cx + r * 0.72, cy - r * 0.26);
-      ctx.quadraticCurveTo(cx + r * 0.7, cy - r * 0.62, cx + r * 0.36, cy - r * 0.55);
-      ctx.moveTo(cx - r * 0.48, cy + r * 0.34);
-      ctx.quadraticCurveTo(cx - r * 0.72, cy + r * 0.57, cx - r * 0.42, cy + r * 0.59);
-      ctx.moveTo(cx + r * 0.48, cy + r * 0.34);
-      ctx.quadraticCurveTo(cx + r * 0.72, cy + r * 0.57, cx + r * 0.42, cy + r * 0.59);
+      ctx.lineTo(cx, cy - r * 0.9);
+      for (const side of [-1, 1] as const) {
+        ctx.moveTo(cx, cy + r * 0.42);
+        ctx.bezierCurveTo(
+          cx + side * r * 0.2, cy + r * 0.12,
+          cx + side * r * 0.92, cy + r * 0.28,
+          cx + side * r * 0.82, cy - r * 0.26,
+        );
+        ctx.bezierCurveTo(
+          cx + side * r * 0.76, cy - r * 0.62,
+          cx + side * r * 0.3, cy - r * 0.56,
+          cx + side * r * 0.38, cy - r * 0.2,
+        );
+      }
       strike();
-      leaf(cx - r * 0.55, cy - r * 0.5, -0.88, r * 0.4, r * 0.19);
-      leaf(cx + r * 0.55, cy - r * 0.5, 0.88, r * 0.4, r * 0.19);
-      leaf(cx - r * 0.34, cy + r * 0.12, -1.05, r * 0.32, r * 0.15);
-      leaf(cx + r * 0.34, cy + r * 0.12, 1.05, r * 0.32, r * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 1.02);
+      ctx.lineTo(cx - r * 0.22, cy - r * 0.64);
+      ctx.lineTo(cx, cy - r * 0.42);
+      ctx.lineTo(cx + r * 0.22, cy - r * 0.64);
+      ctx.closePath();
+      strike(Math.max(0.9, tool * 0.72));
       break;
     }
     case 'wheat-saltire': {
@@ -8262,17 +8264,21 @@ export function drawOpenBinderTool(
       // shelf size and the ledge reads as the binder's tied foot.
       const base = cy + r * 0.7;
       shoulders(base, 0.5);
-      ctx.beginPath();
-      ctx.moveTo(cx, base);
-      ctx.quadraticCurveTo(cx - r * 0.08, cy, cx, cy - r * 0.82);
-      strike();
-      for (const [px, py, angle] of [
-        [-0.28, 0.3, -0.92], [0.28, 0.08, 0.92],
-        [-0.27, -0.18, -0.88], [0.27, -0.4, 0.88],
-      ] as const) {
-        leaf(cx + r * px, cy + r * py, angle, r * 0.4, r * 0.2);
+      for (const [x, top] of [[-0.3, -0.56], [0, -0.9], [0.3, -0.65]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(cx + r * x * 0.38, base);
+        ctx.quadraticCurveTo(cx + r * x, cy, cx + r * x, cy + r * top);
+        strike();
+        for (const [side, dy] of [[-1, 0.16], [1, -0.03]] as const) {
+          leaf(
+            cx + r * (x + side * 0.14),
+            cy + r * (top + 0.2 + dy),
+            side * 0.92,
+            r * 0.3,
+            r * 0.16,
+          );
+        }
       }
-      leaf(cx, cy - r * 0.76, 0, r * 0.42, r * 0.2);
       ctx.beginPath();
       ctx.moveTo(cx - r * 0.32, cy + r * 0.5);
       ctx.lineTo(cx + r * 0.32, cy + r * 0.5);
@@ -8297,8 +8303,12 @@ export function drawOpenBinderTool(
       ctx.lineTo(cx + r * 0.12, cy - r * 0.8);
       ctx.lineTo(cx + r * 0.28, cy - r * 0.5);
       strike();
-      leaf(cx - r * 0.52, cy + r * 0.34, -1.08, r * 0.32, r * 0.14);
-      leaf(cx + r * 0.52, cy + r * 0.22, 1.08, r * 0.32, r * 0.14);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.46);
+      ctx.lineTo(cx, cy + r * 0.55);
+      ctx.moveTo(cx - r * 0.3, cy + r * 0.08);
+      ctx.quadraticCurveTo(cx, cy + r * 0.3, cx + r * 0.3, cy + r * 0.08);
+      strike(Math.max(0.9, tool * 0.68));
       break;
     }
     case 'tulip': {
@@ -8426,8 +8436,8 @@ export function drawOpenBinderTool(
       break;
     }
     case 'carnation': {
-      // One ruffled flower head on a quiet stem. Five generous scallops read
-      // as a carnation at shelf size without a stippled or dotted centre.
+      // One broad ruffled head with an irregular cut edge. The previous round
+      // blossom on a stick was a generic lollipop at shelf size.
       const base = cy + r * 0.76;
       shoulders(base, 0.54);
       ctx.beginPath();
@@ -8437,13 +8447,14 @@ export function drawOpenBinderTool(
       leaf(cx - r * 0.36, cy + r * 0.24, -0.98, r * 0.38, r * 0.15);
       leaf(cx + r * 0.38, cy + r * 0.1, 0.98, r * 0.38, r * 0.15);
       ctx.beginPath();
-      ctx.moveTo(cx - r * 0.58, cy - r * 0.28);
-      ctx.quadraticCurveTo(cx - r * 0.66, cy - r * 0.58, cx - r * 0.36, cy - r * 0.56);
-      ctx.quadraticCurveTo(cx - r * 0.3, cy - r * 0.84, cx, cy - r * 0.66);
-      ctx.quadraticCurveTo(cx + r * 0.3, cy - r * 0.84, cx + r * 0.36, cy - r * 0.56);
-      ctx.quadraticCurveTo(cx + r * 0.66, cy - r * 0.58, cx + r * 0.58, cy - r * 0.28);
-      ctx.quadraticCurveTo(cx + r * 0.3, cy, cx, cy - r * 0.18);
-      ctx.quadraticCurveTo(cx - r * 0.3, cy, cx - r * 0.58, cy - r * 0.28);
+      ctx.moveTo(cx - r * 0.72, cy - r * 0.24);
+      ctx.quadraticCurveTo(cx - r * 0.86, cy - r * 0.56, cx - r * 0.5, cy - r * 0.54);
+      ctx.quadraticCurveTo(cx - r * 0.52, cy - r * 0.9, cx - r * 0.15, cy - r * 0.72);
+      ctx.quadraticCurveTo(cx, cy - r, cx + r * 0.18, cy - r * 0.72);
+      ctx.quadraticCurveTo(cx + r * 0.56, cy - r * 0.9, cx + r * 0.5, cy - r * 0.52);
+      ctx.quadraticCurveTo(cx + r * 0.86, cy - r * 0.5, cx + r * 0.7, cy - r * 0.2);
+      ctx.quadraticCurveTo(cx + r * 0.34, cy + r * 0.04, cx, cy - r * 0.18);
+      ctx.quadraticCurveTo(cx - r * 0.34, cy + r * 0.04, cx - r * 0.72, cy - r * 0.24);
       strike();
       break;
     }
@@ -8456,11 +8467,13 @@ export function drawOpenBinderTool(
       ctx.moveTo(cx, base);
       ctx.lineTo(cx, cy + r * 0.05);
       strike();
-      leaf(cx, cy - r * 0.35, 0, r * 0.58, r * 0.2);
-      leaf(cx - r * 0.3, cy - r * 0.25, -0.48, r * 0.48, r * 0.2);
-      leaf(cx + r * 0.3, cy - r * 0.25, 0.48, r * 0.48, r * 0.2);
-      leaf(cx - r * 0.47, cy + r * 0.02, -1.08, r * 0.48, r * 0.19);
-      leaf(cx + r * 0.47, cy + r * 0.02, 1.08, r * 0.48, r * 0.19);
+      // Tall centre standard, two narrow uprights and two broad drooping falls
+      // create an iris silhouette rather than a second seated lotus.
+      leaf(cx, cy - r * 0.38, 0, r * 0.7, r * 0.18);
+      leaf(cx - r * 0.32, cy - r * 0.28, -0.36, r * 0.56, r * 0.16);
+      leaf(cx + r * 0.32, cy - r * 0.28, 0.36, r * 0.56, r * 0.16);
+      leaf(cx - r * 0.56, cy + r * 0.02, -1.34, r * 0.62, r * 0.22);
+      leaf(cx + r * 0.56, cy + r * 0.02, 1.34, r * 0.62, r * 0.22);
       break;
     }
     case 'artichoke': {
@@ -8611,13 +8624,13 @@ export function drawOpenBinderTool(
     case 'lotus-palmette': {
       // A broad seated lotus: three rising petals, two low sepals and twin
       // water fillets. The low horizontal architecture prevents crown reading.
-      const water = cy + r * 0.55;
+      const water = cy + r * 0.52;
       shoulders(water, 0.78, 1.18);
-      leaf(cx, cy - r * 0.14, 0, r * 0.7, r * 0.23);
-      leaf(cx - r * 0.34, cy - r * 0.04, -0.58, r * 0.54, r * 0.22);
-      leaf(cx + r * 0.34, cy - r * 0.04, 0.58, r * 0.54, r * 0.22);
-      leaf(cx - r * 0.5, cy + r * 0.24, -1.2, r * 0.42, r * 0.16);
-      leaf(cx + r * 0.5, cy + r * 0.24, 1.2, r * 0.42, r * 0.16);
+      leaf(cx, cy - r * 0.12, 0, r * 0.78, r * 0.27);
+      leaf(cx - r * 0.38, cy - r * 0.01, -0.62, r * 0.64, r * 0.25);
+      leaf(cx + r * 0.38, cy - r * 0.01, 0.62, r * 0.64, r * 0.25);
+      leaf(cx - r * 0.63, cy + r * 0.25, -1.26, r * 0.52, r * 0.18);
+      leaf(cx + r * 0.63, cy + r * 0.25, 1.26, r * 0.52, r * 0.18);
       ctx.beginPath();
       ctx.moveTo(cx - r * 0.62, water + r * 0.16);
       ctx.lineTo(cx + r * 0.62, water + r * 0.16);
@@ -8802,15 +8815,15 @@ export function drawOpenBinderTool(
       // The vertical skyline is architectural and unmistakable at narrow size.
       const base = cy + r * 0.72;
       shoulders(base, 0.58);
-      for (const [x, top] of [[-0.26, -0.54], [0, -0.88], [0.28, -0.68]] as const) {
+      for (const [x, top] of [[-0.38, -0.58], [0, -0.98], [0.38, -0.7]] as const) {
         ctx.beginPath();
         ctx.moveTo(cx + r * x * 0.45, base);
         ctx.quadraticCurveTo(cx + r * x, cy, cx + r * x, cy + r * top);
         strike();
-        leaf(cx + r * x, cy + r * (top - 0.08), 0, r * 0.28, r * 0.11);
+        leaf(cx + r * x, cy + r * (top - 0.04), 0, r * 0.36, r * 0.14);
       }
-      leaf(cx - r * 0.34, cy + r * 0.2, -1.12, r * 0.48, r * 0.14);
-      leaf(cx + r * 0.35, cy + r * 0.08, 1.12, r * 0.48, r * 0.14);
+      leaf(cx - r * 0.48, cy + r * 0.18, -1.18, r * 0.6, r * 0.16);
+      leaf(cx + r * 0.5, cy + r * 0.02, 1.18, r * 0.6, r * 0.16);
       ctx.beginPath();
       ctx.moveTo(cx - r * 0.4, cy + r * 0.48);
       ctx.lineTo(cx + r * 0.4, cy + r * 0.48);
@@ -8843,11 +8856,11 @@ export function drawOpenBinderTool(
       strike();
       leaf(cx - r * 0.38, cy + r * 0.26, -0.98, r * 0.36, r * 0.16);
       leaf(cx + r * 0.38, cy + r * 0.15, 0.98, r * 0.36, r * 0.16);
-      const flowerY = cy - r * 0.38;
+      const flowerY = cy - r * 0.36;
       ctx.beginPath();
       for (let i = 0; i <= 10; i += 1) {
         const a = -Math.PI / 2 + (i * Math.PI * 2) / 10;
-        const radius = r * (i % 2 === 0 ? 0.62 : 0.39);
+        const radius = r * (i % 2 === 0 ? 0.72 : 0.43);
         const x = cx + Math.cos(a) * radius;
         const y = flowerY + Math.sin(a) * radius;
         if (i === 0) ctx.moveTo(x, y);
@@ -8858,8 +8871,8 @@ export function drawOpenBinderTool(
       ctx.beginPath();
       for (let i = 0; i <= 5; i += 1) {
         const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-        const x = cx + Math.cos(a) * r * 0.25;
-        const y = flowerY + Math.sin(a) * r * 0.25;
+        const x = cx + Math.cos(a) * r * 0.3;
+        const y = flowerY + Math.sin(a) * r * 0.3;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }

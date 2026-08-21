@@ -97,20 +97,13 @@ const EXPECTED_PROGRAMMES = new Map<number, CoverEmblemProgramme>([
   [66, 'acanthus-spearhead'],
   [67, 'carnation-standard'],
   [68, 'iris-triptych'],
-  [69, 'artichoke-finial'],
   [70, 'poppy-capsule'],
   [71, 'olive-cutting'],
-  [72, 'strawberry-sprig'],
-  [73, 'vine-cluster'],
   [74, 'honeysuckle-scroll'],
   [75, 'lotus-waterline'],
-  [76, 'samara-spray'],
-  [77, 'willow-catkin'],
   [78, 'rowan-spray'],
-  [79, 'columbine-bell'],
   [80, 'primrose-stem'],
   [81, 'dog-rose-branch'],
-  [82, 'cedar-cone-spray'],
   [83, 'reed-bundle'],
   [84, 'moresque-knot'],
   [85, 'tudor-rose-standard'],
@@ -171,6 +164,13 @@ describe('authored cover emblem programmes', () => {
     expect(normalizeCoverEmblemIndex(27)).toBe(1);
     expect(normalizeCoverEmblemIndex(38)).toBe(13);
     expect(normalizeCoverEmblemIndex(57)).toBe(31);
+    expect(normalizeCoverEmblemIndex(69)).toBe(13);
+    expect(normalizeCoverEmblemIndex(72)).toBe(13);
+    expect(normalizeCoverEmblemIndex(73)).toBe(1);
+    expect(normalizeCoverEmblemIndex(76)).toBe(1);
+    expect(normalizeCoverEmblemIndex(77)).toBe(1);
+    expect(normalizeCoverEmblemIndex(79)).toBe(31);
+    expect(normalizeCoverEmblemIndex(82)).toBe(13);
   });
 
   it('keeps every true-size centrepiece open, authored and clear of the title', () => {

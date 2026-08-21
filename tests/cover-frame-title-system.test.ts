@@ -6,6 +6,7 @@ import {
   ACTIVE_COVER_FRAME_INDICES,
   ACTIVE_COVER_FRAMES,
   COVER_FONTS,
+  coverCacheKey,
   coverCompositionLayout,
   coverTitleFurniture,
   normalizeCoverHandIndex,
@@ -102,19 +103,19 @@ const BASE: CoverParams = {
 
 const EXPECTED_FURNITURE = new Map<string, CoverTitleFurniture>([
   ['none', 'direct-lettering'],
-  ['gilt', 'stepped-gilt-panel'],
-  ['label', 'paper-ticket'],
-  ['debossed', 'debossed-field'],
-  ['morocco-label', 'morocco-ticket'],
-  ['double-fillet', 'open-double-fillet'],
-  ['blind-panel', 'blind-stepped-panel'],
-  ['gilt-cartouche', 'open-cartouche'],
-  ['ruled-box', 'ruled-square'],
-  ['leather-onlay', 'leather-onlay'],
-  ['inlay-strip', 'inlay-strip'],
-  ['gilt-band', 'gilt-band'],
-  ['twin-rules', 'open-twin-rules'],
   ['gilt-direct', 'direct-gilt'],
+  ['printer-imprint', 'press-imprint'],
+  ['debossed', 'debossed-field'],
+  ['label', 'paper-ticket'],
+  ['vellum-ink-field', 'vellum-ticket'],
+  ['morocco-label', 'morocco-ticket'],
+  ['presentation-shoulder', 'double-morocco-ticket'],
+  ['calf-compartment', 'calf-lettering-piece'],
+  ['double-fillet', 'open-double-fillet'],
+  ['twin-rules', 'open-twin-rules'],
+  ['oxford-compartment', 'oxford-blind-compartment'],
+  ['inlay-strip', 'inlay-strip'],
+  ['split-binding-band', 'dyed-leather-band'],
   ['ink-panel', 'ink-block'],
 ]);
 
@@ -182,6 +183,12 @@ describe('authored cover title furniture', () => {
     }
     expect(new Set(EXPECTED_FURNITURE.values()).size).toBe(ACTIVE_TITLE_PLATES.length);
     expect([...EXPECTED_FURNITURE.values()].join(' ')).not.toMatch(/pill|capsule|badge/i);
+  });
+
+  it('keys every curated title treatment independently in the cover cache', () => {
+    const keys = ACTIVE_TITLE_PLATES.map((titlePlate) =>
+      coverCacheKey(142, 197, { ...BASE, titlePlate }, 'A Quiet Ledger'));
+    expect(new Set(keys).size).toBe(ACTIVE_TITLE_PLATES.length);
   });
 
   it('allocates full lateral bands and broad authored panels', () => {

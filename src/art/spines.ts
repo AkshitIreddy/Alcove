@@ -247,7 +247,7 @@ export const SPINE_TAGS: readonly SpineTag[] = [
 /**
  * Front-cover title treatments.
  *
- * Fifty lettering-piece treatments, from "nothing at all" through paper slips,
+ * An append-only lettering-piece archive, from "nothing at all" through paper slips,
  * sunk morocco labels, ruled boxes, roundels and gilt cartouches. The first
  * four ids are the originals and are pinned in that order: they are persisted
  * per book in `cover_meta.style`, and renaming one would silently redress
@@ -310,6 +310,16 @@ export const TITLE_PLATES = [
   'fleuron-ends',
   'lozenge-ends',
   'gothic-panel',
+  // Curated wave: append-only ids for historically plausible title
+  // furniture. These are deliberately material/construction names rather
+  // than silhouette names: a title treatment should read as binding work,
+  // never as a UI badge pasted onto the board.
+  'oxford-compartment',
+  'calf-compartment',
+  'vellum-ink-field',
+  'printer-imprint',
+  'split-binding-band',
+  'presentation-shoulder',
 ] as const;
 export type TitlePlateStyle = (typeof TITLE_PLATES)[number];
 
@@ -579,8 +589,8 @@ export const ORNAMENT_COUNT = ORNAMENT_LABELS.length;
 export const ACTIVE_ORNAMENT_INDICES = [
   0, 1, 2, 5, 12, 13, 14, 20,
   23, 26, 28, 29, 30, 31, 43, 56,
-  66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
-  76, 77, 78, 79, 80, 81, 82, 83, 84, 85,
+  66, 67, 68, 70, 71, 74, 75, 78,
+  80, 81, 83, 84, 85,
 ] as const;
 
 export interface ActiveOrnamentOption {
@@ -618,20 +628,13 @@ const ACTIVE_ORNAMENT_GLYPHS: Readonly<Record<(typeof ACTIVE_ORNAMENT_INDICES)[n
   66: 'acanthus-spear',
   67: 'carnation',
   68: 'iris-fan',
-  69: 'artichoke',
   70: 'poppy-seedhead',
   71: 'olive-spray',
-  72: 'strawberry-sprig',
-  73: 'vine-cluster',
   74: 'honeysuckle-scroll',
   75: 'lotus-palmette',
-  76: 'maple-samara',
-  77: 'willow-catkin',
   78: 'rowan-spray',
-  79: 'columbine-bell',
   80: 'primrose-stem',
   81: 'dog-rose',
-  82: 'cedar-cone',
   83: 'reed-bundle',
   84: 'moresque-knot',
   85: 'tudor-rose',
@@ -697,6 +700,16 @@ const RETIRED_ORNAMENT_REPLACEMENTS: Readonly<Record<number, number>> = {
   63: 0,  // scales -> lozenge
   64: 20, // castle -> crown
   65: 0,  // lamp hardware -> lozenge
+  // The late botanical tail was judged at the resting shelf's real 15–27 px.
+  // These seven depended on a fruit/seed/wing detail that disappeared there;
+  // fold them into a broader silhouette of the same botanical register.
+  69: 13, // artichoke pendant -> oak-and-acorn spray
+  72: 13, // strawberry badge -> oak-and-acorn spray
+  73: 1,  // grape cluster -> open laurel branch
+  76: 1,  // samara Y -> open laurel branch
+  77: 1,  // willow scratch -> open laurel branch
+  79: 31, // columbine bell -> open tulip
+  82: 13, // cedar-cone scratch -> oak-and-acorn spray
 };
 
 export function isActiveOrnamentIndex(value: unknown): value is number {
@@ -850,7 +863,7 @@ type PlateShape =
  * strip, a band wrapped round the spine, ink laid straight on.
  *
  * Every plate with a ground used to be `flush` by omission, and that is most of
- * why fifty labels read as fifty stickers.
+ * why a large label archive read as a stack of stickers.
  */
 type PlateSeat = 'proud' | 'flush' | 'sunk';
 
@@ -936,11 +949,11 @@ function plate(
 }
 
 /**
- * The fifty front-cover title treatments, keyed by id.
+ * The append-only front-cover title-treatment archive, keyed by id.
  *
  * Composed rather than drawn: a plate is (ground × silhouette × frame × ends ×
  * grain × lettering ink), and every one of those pieces was drawn once and
- * checked at 24 world px. That is what makes fifty of them worth having — each
+ * checked at 24 world px. That is what makes the archive worth having — each
  * entry is a composition somebody chose, not a number somebody incremented,
  * and no two share all six slots.
  */
@@ -1233,6 +1246,62 @@ const COVER_TITLE_TREATMENT_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSp
     ['gilded', 'plain', 'formal'],
     { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'none',
       letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+
+  /* ---- curated binding compartments, append-only persistence ids ---- */
+
+  'oxford-compartment': plate(
+    'oxford-compartment',
+    'Oxford compartment',
+    'A broad blind-tooled compartment with stepped shoulders and an open inner fillet.',
+    ['scholarly', 'severe', 'antique'],
+    { ground: 'none', shape: 'stepped', frame: 'double', frameInk: 'soft', ends: 'none',
+      letter: 'soft', grain: 'none', outline: 0, radius: 0.03, seat: 'sunk' },
+  ),
+
+  'calf-compartment': plate(
+    'calf-compartment',
+    'Calf compartment',
+    'A warm calf lettering piece ruled once in blind and once in gilt.',
+    ['antique', 'warm', 'formal'],
+    { ground: 'terracotta', shape: 'rect', frame: 'double', frameInk: 'gilt', ends: 'rule',
+      letter: 'cream', grain: 'none', outline: 0.9, radius: 0.04, seat: 'sunk' },
+  ),
+
+  'vellum-ink-field': plate(
+    'vellum-ink-field',
+    'Vellum ticket',
+    'A square vellum ticket with a hand-ruled ink keyline and quiet pasted edge.',
+    ['pale', 'scholarly', 'antique'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'none',
+      letter: 'ink', grain: 'none', outline: 0.75, radius: 0.02, seat: 'proud' },
+  ),
+
+  'printer-imprint': plate(
+    'printer-imprint',
+    'Press imprint',
+    'An inked title and small press rule struck directly into the covering.',
+    ['scholarly', 'plain', 'utilitarian'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'ink', ends: 'rule',
+      letter: 'ink', grain: 'none', outline: 0, radius: 0, seat: 'flush' },
+  ),
+
+  'split-binding-band': plate(
+    'split-binding-band',
+    'Dyed leather band',
+    'A full-width strip of dyed leather, divided by two restrained finishing rules.',
+    ['warm', 'formal', 'antique'],
+    { ground: 'plum', shape: 'rect', frame: 'none', frameInk: 'gilt', ends: 'double-rule',
+      letter: 'gilt', grain: 'none', outline: 0, radius: 0, seat: 'flush' },
+  ),
+
+  'presentation-shoulder': plate(
+    'presentation-shoulder',
+    'Presentation label',
+    'A clipped morocco label with a double gilt keyline and restrained square shoulders.',
+    ['formal', 'gilded', 'refined'],
+    { ground: 'plum', shape: 'rect', frame: 'double', frameInk: 'gilt', ends: 'none',
+      letter: 'gilt', grain: 'none', outline: 1, radius: 0.03, seat: 'sunk' },
+  ),
 };
 
 /** Display names for the title-plate treatments. */
@@ -1251,19 +1320,19 @@ export const TITLE_PLATE_LABELS: Readonly<Record<TitlePlateStyle, string>> =
  */
 export const ACTIVE_TITLE_PLATES = [
   'none',
-  'gilt',
-  'label',
-  'debossed',
-  'morocco-label',
-  'double-fillet',
-  'blind-panel',
-  'gilt-cartouche',
-  'ruled-box',
-  'leather-onlay',
-  'inlay-strip',
-  'gilt-band',
-  'twin-rules',
   'gilt-direct',
+  'printer-imprint',
+  'debossed',
+  'label',
+  'vellum-ink-field',
+  'morocco-label',
+  'presentation-shoulder',
+  'calf-compartment',
+  'double-fillet',
+  'twin-rules',
+  'oxford-compartment',
+  'inlay-strip',
+  'split-binding-band',
   'ink-panel',
 ] as const satisfies readonly TitlePlateStyle[];
 
@@ -1275,40 +1344,46 @@ export const ACTIVE_TITLE_PLATE_OPTIONS = ACTIVE_TITLE_PLATES.map((id) => ({
 const ACTIVE_TITLE_PLATE_SET: ReadonlySet<string> = new Set(ACTIVE_TITLE_PLATES);
 
 const RETIRED_TITLE_PLATE_REPLACEMENTS: Readonly<Partial<Record<TitlePlateStyle, TitlePlateStyle>>> = {
+  gilt: 'gilt-direct',
+  'ruled-box': 'printer-imprint',
+  'blind-panel': 'oxford-compartment',
+  'gilt-cartouche': 'presentation-shoulder',
+  'leather-onlay': 'morocco-label',
+  'gilt-band': 'split-binding-band',
   'paper-slip': 'label',
-  roundel: 'ruled-box',
-  'scroll-plate': 'gilt-cartouche',
-  'stone-tablet': 'blind-panel',
-  'oval-medallion': 'ruled-box',
+  roundel: 'printer-imprint',
+  'scroll-plate': 'presentation-shoulder',
+  'stone-tablet': 'oxford-compartment',
+  'oval-medallion': 'printer-imprint',
   'bead-frame': 'double-fillet',
   'rope-frame': 'double-fillet',
-  'dotted-rule': 'ruled-box',
-  'notched-corners': 'ruled-box',
-  'scallop-edge': 'ruled-box',
+  'dotted-rule': 'printer-imprint',
+  'notched-corners': 'printer-imprint',
+  'scallop-edge': 'printer-imprint',
   'vellum-slip': 'label',
   'linen-tag': 'label',
-  'ribbon-band': 'gilt-band',
+  'ribbon-band': 'split-binding-band',
   'ivory-plate': 'label',
   'ebony-plate': 'ink-panel',
   'copper-plate': 'morocco-label',
   'enamel-plate': 'morocco-label',
-  'crest-plate': 'gilt-cartouche',
-  'hatched-ground': 'blind-panel',
-  'stippled-ground': 'blind-panel',
-  'wreathed-plate': 'gilt-cartouche',
-  'starred-ends': 'gilt-cartouche',
+  'crest-plate': 'presentation-shoulder',
+  'hatched-ground': 'oxford-compartment',
+  'stippled-ground': 'oxford-compartment',
+  'wreathed-plate': 'presentation-shoulder',
+  'starred-ends': 'presentation-shoulder',
   'triple-fillet': 'double-fillet',
-  'lozenge-plate': 'ruled-box',
-  'shield-plate': 'gilt-cartouche',
-  'corner-brackets': 'ruled-box',
-  'sunk-panel': 'blind-panel',
+  'lozenge-plate': 'printer-imprint',
+  'shield-plate': 'presentation-shoulder',
+  'corner-brackets': 'printer-imprint',
+  'sunk-panel': 'oxford-compartment',
   'blind-lettered': 'debossed',
-  'arched-plate': 'ruled-box',
-  pedimented: 'ruled-box',
-  'chamfered-plate': 'ruled-box',
+  'arched-plate': 'printer-imprint',
+  pedimented: 'printer-imprint',
+  'chamfered-plate': 'printer-imprint',
   'stepped-frame': 'double-fillet',
-  'fleuron-ends': 'gilt-cartouche',
-  'lozenge-ends': 'ruled-box',
+  'fleuron-ends': 'presentation-shoulder',
+  'lozenge-ends': 'printer-imprint',
   'gothic-panel': 'morocco-label',
 };
 

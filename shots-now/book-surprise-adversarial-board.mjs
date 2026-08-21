@@ -14,6 +14,7 @@ import { chromium } from 'playwright';
 
 const hit = process.argv.find((arg) => arg.startsWith('--url='));
 const url = hit?.slice('--url='.length) || 'http://localhost:1420';
+const sabotage = process.argv.includes('--sabotage');
 const outputDir = 'shots-now/out';
 const nativePath = `${outputDir}/book-surprise-adversarial-native.png`;
 const shelfPath = `${outputDir}/book-surprise-adversarial-shelf.png`;
@@ -30,7 +31,7 @@ page.on('pageerror', (error) => console.error('[pageerror]', error.message));
 await page.goto(`${url}/?fx=force`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
 
-const report = await page.evaluate(async () => {
+const report = await page.evaluate(async (sabotage) => {
   const design = await import('/src/art/bookDesign.ts');
   const surprise = await import('/src/art/bookSurprise.ts');
   const style = await import('/src/art/bookStyle.ts');
@@ -244,6 +245,26 @@ const report = await page.evaluate(async () => {
   });
   document.body.append(native, shelf);
 
+  const hierarchyRows = enriched.map((row) => ({
+    title: row.title,
+    titlePlate: row.recipe.style.titlePlate,
+    frame: row.recipe.style.coverFrame ?? 0,
+    emblem: row.recipe.style.ornament ?? -1,
+  }));
+  if (sabotage) {
+    hierarchyRows.push({
+      title: 'SABOTAGE: shaped title + ornate frame + large emblem',
+      titlePlate: 'oxford-compartment',
+      frame: 48,
+      emblem: 20,
+    });
+  }
+  const hierarchyViolations = hierarchyRows.filter((row) => {
+    const family = covers.coverCompositionLayout(row.titlePlate, row.frame, row.emblem).family;
+    const shapedTitle = family === 'heraldic' || family === 'round' || family === 'panel';
+    return shapedTitle && row.frame >= 30 && row.emblem >= 0;
+  });
+
   return {
     generatedAt: new Date().toISOString(),
     automaticSweep: {
@@ -264,7 +285,9 @@ const report = await page.evaluate(async () => {
       minimumNativeSpineWidth: Math.min(...enriched.map((row) => row.resolved.style.thickness)),
       minimumSpineRatio: Math.min(...enriched.map((row) =>
         row.resolved.style.thickness / row.resolved.style.height)),
+      hierarchyViolations: hierarchyViolations.length,
     },
+    hierarchyViolations,
     specimens: enriched.map((row) => ({
       kind: row.kind,
       title: row.title,
@@ -297,7 +320,7 @@ const report = await page.evaluate(async () => {
       },
     })),
   };
-});
+}, sabotage);
 
 const failures = [];
 if (report.summary.minimumScore < 90) failures.push(`minimum score ${report.summary.minimumScore} < 90`);
@@ -310,6 +333,9 @@ if (report.summary.widenedSelections > 0) {
 if (report.summary.retiredConstructionSelections > 0) {
   failures.push(`${report.summary.retiredConstructionSelections} retired construction selections`);
 }
+if (report.summary.hierarchyViolations > 0) {
+  failures.push(`${report.summary.hierarchyViolations} shaped-title/frame/emblem hierarchy violations`);
+}
 report.gate = { passed: failures.length === 0, failures };
 
 await page.locator('#adversarial-native').screenshot({ path: nativePath });
@@ -319,6 +345,7 @@ console.log(`-> ${nativePath}`);
 console.log(`-> ${shelfPath}`);
 console.log(`-> ${reportPath}`);
 console.log(JSON.stringify(report.summary, null, 2));
+console.log(sabotage && !report.gate.passed ? 'GATE ALIVE' : report.gate.passed ? 'GATE PASSED' : 'GATE FAILED');
 await browser.close();
 if (!report.gate.passed) {
   throw new Error(`Surprise adversarial gate failed:\n${report.gate.failures.join('\n')}`);

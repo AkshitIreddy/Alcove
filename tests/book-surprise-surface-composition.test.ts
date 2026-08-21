@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BOOK_PRESET_IDS,
   BOOK_SURPRISE_DIRECTIONS,
+  MATERIALS,
   ROLLABLE_DECORATIONS,
   ROLLABLE_MATERIALS,
   ROLLABLE_SHAPES,
@@ -83,6 +84,16 @@ describe('Surprise surface composition', () => {
         expect(ACTIVE_HEAD_TAIL_STYLES, at).toContain(recipe.style.headTailStyle);
         expect(ACTIVE_COVER_FRAME_INDICES, at).toContain(recipe.style.coverFrame);
         expect(ACTIVE_TITLE_PLATES, at).toContain(recipe.style.titlePlate);
+        const materialGroup = MATERIALS[preset.material].group;
+        if (['morocco-label', 'presentation-shoulder', 'calf-compartment'].includes(recipe.style.titlePlate)) {
+          expect(['leather', 'split'], `${at}:${recipe.style.titlePlate}`).toContain(materialGroup);
+        }
+        if (recipe.style.titlePlate === 'split-binding-band') {
+          expect(['leather', 'cloth', 'split'], at).toContain(materialGroup);
+        }
+        if (recipe.style.titlePlate === 'vellum-ink-field') {
+          expect(['vellum', 'paper', 'split'], at).toContain(materialGroup);
+        }
         expect(ACTIVE_EDGE_TREATMENTS, at).toContain(recipe.style.edge);
 
         const ornament = recipe.style.ornament ?? -1;

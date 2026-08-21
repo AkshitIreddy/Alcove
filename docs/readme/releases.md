@@ -21,6 +21,25 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.9 — freer pages and better-bound books
+
+**Focus mode is now a real page workspace.** A single leaf centres in the
+window, the book can move freely across an open canvas, and mouse writing has
+several pens, colours and sizes with undo, redo, explicit save, discard and
+clear. The image viewer has matching pan and zoom freedom, fullscreen viewing
+and durable annotations.
+
+**Navigation is quieter and clearer.** The table of contents lists only real
+headings, marks one active destination and can collapse to major sections.
+Books reopen where the reader left them, heavy page turns wait for their art,
+context and slash menus use Alcove's own scrolling, and Book Studio can step
+back through previous generated looks.
+
+**Picture-assisted pages and bindings are more dependable.** Multi-image Agent
+requests preserve every attachment in order. Title plates and emblems now come
+from a smaller, carefully vetted catalogue built around plausible bookbinding
+forms rather than badge-like decoration.
+
 ## 0.7.8 — steadier image-assisted pages
 
 **Picture requests recover cleanly from malformed or incomplete provider

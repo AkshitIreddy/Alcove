@@ -29,8 +29,10 @@ let fixtureCaseId = null;
 
 async function drawStroke(from, to) {
   const canvas = page.locator('.nb-focus-writing-canvas').first();
-  const box = await canvas.boundingBox();
-  if (box === null) throw new Error('focus writing canvas missing');
+  await canvas.waitFor({ state: 'visible' });
+  const plane = page.locator('.nb-leaf-paper:visible .nb-page').first();
+  const box = await plane.boundingBox();
+  if (box === null) throw new Error('focus writing page plane missing');
   await page.mouse.move(box.x + box.width * from.x, box.y + box.height * from.y);
   await page.mouse.down();
   await page.mouse.move(
@@ -91,29 +93,48 @@ try {
 
   const stage = page.locator('.nb-spread-stage');
   const beforePan = await view.evaluate((node) => getComputedStyle(node).getPropertyValue('--nb-focus-pan-x'));
-  await view.dispatchEvent('wheel', { deltaX: 260, deltaY: -180, deltaMode: 0 });
-  const afterPlainPan = await view.evaluate((node) => ({
+  const prose = page.locator('.nb-leaf-paper:visible .nb-prose').first();
+  const proseBox = await prose.boundingBox();
+  if (proseBox === null) throw new Error('visible prose missing');
+  await page.mouse.move(proseBox.x + proseBox.width * 0.7, proseBox.y + proseBox.height * 0.4);
+  await page.mouse.wheel(0, -120);
+  const afterPlainWheel = await view.evaluate((node) => ({
     x: getComputedStyle(node).getPropertyValue('--nb-focus-pan-x'),
     y: getComputedStyle(node).getPropertyValue('--nb-focus-pan-y'),
     zoom: getComputedStyle(node).getPropertyValue('--nb-focus-zoom'),
   }));
-  await view.dispatchEvent('wheel', { deltaY: -120, deltaMode: 0, ctrlKey: true });
+  await view.dispatchEvent('wheel', {
+    deltaY: 120,
+    deltaMode: 0,
+    ctrlKey: true,
+    clientX: proseBox.x + proseBox.width * 0.7,
+    clientY: proseBox.y + proseBox.height * 0.4,
+  });
   const afterCtrlZoom = await view.evaluate((node) => ({
     x: getComputedStyle(node).getPropertyValue('--nb-focus-pan-x'),
     y: getComputedStyle(node).getPropertyValue('--nb-focus-pan-y'),
     zoom: getComputedStyle(node).getPropertyValue('--nb-focus-zoom'),
   }));
-  for (let index = 0; index < 10; index += 1) {
-    await view.dispatchEvent('wheel', { deltaX: 430, deltaY: 310, deltaMode: 0 });
-  }
-  const deepPan = await view.evaluate((node) => ({
+  await page.mouse.move(proseBox.x + 80, proseBox.y + 90);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(proseBox.x + 520, proseBox.y + 360, { steps: 18 });
+  await page.mouse.up({ button: 'middle' });
+  const middlePan = await view.evaluate((node) => ({
     x: Number.parseFloat(getComputedStyle(node).getPropertyValue('--nb-focus-pan-x')),
     y: Number.parseFloat(getComputedStyle(node).getPropertyValue('--nb-focus-pan-y')),
+    panning: node.classList.contains('is-focus-panning'),
   }));
   await page.getByRole('button', { name: /Centre the page and reset zoom/i }).click();
-  report.camera = { beforePan, afterPlainPan, afterCtrlZoom, deepPan };
+  report.camera = { beforePan, afterPlainWheel, afterCtrlZoom, middlePan };
 
   await page.getByRole('button', { name: 'Write with the mouse' }).click();
+  const paletteInitiallyOpen = await page.locator('.nb-focus-writing-palette').isVisible();
+  await page.getByRole('button', { name: 'Close writing tools' }).click();
+  const paletteClosed = await page.locator('.nb-focus-writing-palette').count() === 0;
+  const writeStillActive = await page.getByRole('button', { name: 'Write with the mouse' }).getAttribute('aria-pressed');
+  await page.getByRole('button', { name: 'Write with the mouse' }).click();
+  const paletteReopened = await page.locator('.nb-focus-writing-palette').isVisible();
+  report.palette = { paletteInitiallyOpen, paletteClosed, writeStillActive, paletteReopened };
   await page.getByRole('button', { name: 'highlighter', exact: true }).click();
   await page.getByRole('button', { name: 'Moss', exact: true }).click();
   await page.getByRole('button', { name: '12 pixel pen' }).click();
@@ -129,7 +150,14 @@ try {
   await page.getByRole('button', { name: 'pen', exact: true }).click();
   await page.getByRole('button', { name: 'Terracotta', exact: true }).click();
   await page.getByRole('button', { name: '7 pixel pen' }).click();
-  await drawStroke({ x: 0.2, y: 0.48 }, { x: 0.72, y: 0.6 });
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  // Begin in the open margin to the right of the paper (clear of the tools
+  // pocket), then cross onto the prose plane without surrendering capture.
+  await drawStroke({ x: 1.18, y: 0.48 }, { x: 0.72, y: 0.6 });
+  const selectionAfterMarginStroke = await page.evaluate(() => ({
+    text: window.getSelection()?.toString() ?? '',
+    editing: document.activeElement?.getAttribute('contenteditable') === 'true',
+  }));
   const beforeUndo = await page.locator('.nb-focus-writing-preview path').count();
   await page.getByRole('button', { name: '↶ Undo', exact: true }).click();
   const afterUndo = await page.locator('.nb-focus-writing-preview path').count();
@@ -145,7 +173,18 @@ try {
     const pages = await import('/src/data/pages.ts');
     return (await pages.getPage(id))?.doc.attrs?.mouseWritings ?? null;
   });
-  report.history = { beforeUndo, afterUndo, afterRedo, savedPaths, storedAfterSave };
+  const marginPointPersisted = typeof storedAfterSave === 'string' &&
+    JSON.parse(storedAfterSave).strokes.some((stroke) =>
+      stroke.points.some((point) => point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1));
+  report.history = {
+    beforeUndo,
+    afterUndo,
+    afterRedo,
+    savedPaths,
+    storedAfterSave,
+    marginPointPersisted,
+    selectionAfterMarginStroke,
+  };
   await page.screenshot({ path: `${OUT}/01-centered-saved-page.png`, caret: 'hide' });
 
   await page.getByRole('button', { name: 'Write with the mouse' }).click();
@@ -160,7 +199,13 @@ try {
   }, fixture.bookId);
   await page.waitForSelector('.nb-book-view .nb-page-writing path');
   const reopenedPaths = await page.locator('.nb-page-writing path').count();
-  report.reopen = { reopenedPaths };
+  const reopenedOwners = await page.locator('.nb-page-writing path').evaluateAll((paths) =>
+    paths.map((path) => ({
+      pageId: path.closest('.nb-leaf-paper')?.getAttribute('data-page-id') ?? null,
+      side: path.closest('.nb-leaf-paper')?.getAttribute('data-side') ?? null,
+      connected: path.isConnected,
+    })));
+  report.reopen = { reopenedPaths, reopenedOwners };
 
   await page.waitForTimeout(1_200);
   await page.locator('.nb-rail-button[data-tool="focus"]').click();
@@ -186,15 +231,15 @@ try {
   report.ok =
     centered.errorPx < 3 &&
     beforePan.trim() === '0px' &&
-    afterPlainPan.x.trim() !== '0px' &&
-    afterPlainPan.y.trim() !== '0px' &&
-    afterPlainPan.zoom.trim() === '1' &&
-    afterCtrlZoom.zoom.trim() !== '1' &&
-    Math.abs(deepPan.x) > 3000 && Math.abs(deepPan.y) > 2500 &&
+    afterPlainWheel.zoom.trim() !== '1' &&
+    afterCtrlZoom.zoom.trim() === '1' &&
+    Math.abs(middlePan.x) > 300 && Math.abs(middlePan.y) > 150 && middlePan.panning === false &&
+    paletteInitiallyOpen && paletteClosed && writeStillActive === 'true' && paletteReopened &&
     unsavedPaths === 1 && savedBefore === 0 && exitBlocked === 'true' && discardedPaths === 0 &&
     beforeUndo === 1 && afterUndo === 0 && afterRedo === 1 && savedPaths === 1 &&
     typeof storedAfterSave === 'string' && storedAfterSave.includes('"version":1') &&
-    reopenedPaths === 1 && confirmVisible === 1 && clearedPaths === 0 && storedAfterClear === null &&
+    marginPointPersisted && selectionAfterMarginStroke.text === '' && !selectionAfterMarginStroke.editing &&
+    reopenedPaths >= 1 && confirmVisible === 1 && clearedPaths === 0 && storedAfterClear === null &&
     errors.length === 0;
 } catch (error) {
   report.error = error.stack ?? error.message;

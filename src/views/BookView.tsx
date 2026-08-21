@@ -179,6 +179,7 @@ import FocusRail from './rail/FocusRail';
 import {
   ZOOM_REST,
   clampZoom,
+  focusPanForAnchoredZoom,
   moveFocusPan,
   stepFocusLevel,
   stepZoom,
@@ -190,11 +191,12 @@ import {
 } from '../editor/media/imageAnnotations';
 import {
   PAGE_WRITINGS_ATTR,
-  PageWritingLayer,
+  PageWritingWorkspaceLayer,
   erasePageWritingsAt,
   parsePageWritings,
   serializePageWritings,
   type PageWritingPoint,
+  type PageWritingWorkspaceGeometry,
   type PageWritingStroke,
 } from '../editor/media/pageWritings';
 import {
@@ -2347,7 +2349,11 @@ export default function BookView(): JSX.Element {
   const [deskZoom, setDeskZoom] = createSignal(DESK_ZOOM_REST);
   const [deskWheelArmed, setDeskWheelArmed] = createSignal(false);
   const [focusPan, setFocusPan] = createSignal({ x: 0, y: 0 });
+  const [focusPanning, setFocusPanning] = createSignal(false);
   const [focusInteraction, setFocusInteraction] = createSignal<'move' | 'write'>('move');
+  const [writingPaletteOpen, setWritingPaletteOpen] = createSignal(false);
+  const [writingGeometry, setWritingGeometry] =
+    createSignal<PageWritingWorkspaceGeometry | null>(null);
   const [writingTool, setWritingTool] = createSignal<ImageAnnotationTool>('pen');
   const [writingColour, setWritingColour] = createSignal<ImageAnnotationColour>('graphite');
   const [writingSize, setWritingSize] = createSignal<number>(7);
@@ -2370,6 +2376,7 @@ export default function BookView(): JSX.Element {
         readonly pointerId: number;
         readonly pageId: string;
         readonly before: readonly PageWritingStroke[];
+        readonly geometry: PageWritingWorkspaceGeometry;
         readonly strokeId?: string;
         changed: boolean;
       }
@@ -2396,6 +2403,35 @@ export default function BookView(): JSX.Element {
 
   const changeZoom = (direction: 1 | -1): void => {
     const next = stepZoom(focusZoom(), direction);
+    setFocusZoom(next);
+  };
+
+  const zoomFocusAt = (
+    clientX: number,
+    clientY: number,
+    direction: 1 | -1,
+  ): void => {
+    const current = focusZoom();
+    const next = stepZoom(current, direction);
+    if (next === current) return;
+    setFocusPan((pan) => {
+      const stage = viewElement?.querySelector('.nb-spread-stage');
+      const rect = stage?.getBoundingClientRect();
+      // The transformed centre already includes the current translation.
+      // Subtract it to recover the stage's true 50% transform origin.
+      const origin = rect === undefined
+        ? { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+        : {
+            x: rect.left + rect.width / 2 - pan.x,
+            y: rect.top + rect.height / 2 - pan.y,
+          };
+      return focusPanForAnchoredZoom(
+        pan,
+        current,
+        next,
+        { x: clientX - origin.x, y: clientY - origin.y },
+      );
+    });
     setFocusZoom(next);
   };
 
@@ -2444,7 +2480,10 @@ export default function BookView(): JSX.Element {
   const pickFocusInteraction = (mode: 'move' | 'write'): void => {
     setClearWritingArmed(false);
     setFocusInteraction(mode);
-    if (mode === 'write') startWritingSession(focusedSide());
+    setWritingPaletteOpen(mode === 'write');
+    if (mode === 'write') {
+      startWritingSession(focusedSide());
+    }
   };
 
   const discardFocusWriting = (): void => {
@@ -2554,6 +2593,8 @@ export default function BookView(): JSX.Element {
       return;
     }
     setFocusInteraction('move');
+    setWritingPaletteOpen(false);
+    setWritingGeometry(null);
     setFocusWriting(null);
     writingGesture = null;
     setFocus(false);
@@ -3002,18 +3043,13 @@ export default function BookView(): JSX.Element {
       armDeskWheelUntil(DESK_WHEEL_GESTURE_WINDOW_MS);
       return;
     }
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      changeZoom(event.deltaY < 0 ? 1 : -1);
-      return;
-    }
-    // Plain wheel/touchpad motion always moves the infinite focus canvas —
-    // including at 100%. Ctrl/pinch is the only wheel gesture that zooms.
+    if (Math.abs(event.deltaY) < 0.01) return;
+    // Focus follows the familiar strategy-map camera: wheel rotation zooms
+    // toward the pointer; holding the wheel button and dragging owns pan.
+    // Ctrl/pinch reaches this same path, so trackpads never turn into a second
+    // vertical scrolling surface inside the book.
     event.preventDefault();
-    const step = event.shiftKey
-      ? { x: -event.deltaY, y: 0 }
-      : { x: -event.deltaX, y: -event.deltaY };
-    setFocusPan((pan) => moveFocusPan(pan, step));
+    zoomFocusAt(event.clientX, event.clientY, event.deltaY < 0 ? 1 : -1);
   };
   const onDeskPointerMove = (event: PointerEvent): void => {
     if (!deskWheelArmed()) return;
@@ -3025,6 +3061,10 @@ export default function BookView(): JSX.Element {
     if (movedAway || !isEmptyDeskTarget(event.target)) disarmDeskWheel();
   };
   const onDeskPointerDownCapture = (event: PointerEvent): void => {
+    if (focusMode() && event.button === 1) {
+      onPanDown(event);
+      return;
+    }
     if (deskWheelArmed() && (event.button !== 0 || !isEmptyDeskTarget(event.target))) {
       disarmDeskWheel();
     }
@@ -3062,7 +3102,7 @@ export default function BookView(): JSX.Element {
       return;
     }
     disarmDeskWheel();
-    onPanDown(event);
+    if (event.button === 1) onPanDown(event);
   };
 
   const onViewClick = (event: MouseEvent): void => {
@@ -3083,28 +3123,17 @@ export default function BookView(): JSX.Element {
     if (activePanel() !== null || focusMode()) disarmDeskWheel();
   });
 
-  /**
-   * Drag the focus canvas around at every zoom, including 100%. Only off the paper, too: a drag that
-   * starts inside the prose is the browser's own sweep-to-select and the page
-   * turn's own grab, and stealing either would be worse than not panning.
-   */
+  /** Hold the mouse wheel and drag anywhere, including directly over prose. */
   const onPanDown = (event: PointerEvent): void => {
     if (
       !focusMode() ||
-      focusInteraction() !== 'move' ||
-      event.button !== 0 ||
+      event.button !== 1 ||
+      focusPanning() ||
       event.pointerType === 'touch'
     ) return;
-    const target = event.target;
-    if (
-      target instanceof Element &&
-      (isTypingTarget(target) ||
-        target.closest('button, a, input, .nb-free-sticker, .nb-flip-hotspot') !==
-          null)
-    ) {
-      return;
-    }
     event.preventDefault();
+    event.stopPropagation();
+    setFocusPanning(true);
     const from = { px: event.clientX, py: event.clientY, ...focusPan() };
     const onMove = (move: PointerEvent): void => {
       setFocusPan(
@@ -3115,6 +3144,7 @@ export default function BookView(): JSX.Element {
       );
     };
     const onUp = (): void => {
+      setFocusPanning(false);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
@@ -3122,6 +3152,10 @@ export default function BookView(): JSX.Element {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
+  };
+
+  const onViewAuxClick = (event: MouseEvent): void => {
+    if (focusMode() && event.button === 1) event.preventDefault();
   };
 
   // -------------------------------------------------------------------------
@@ -4923,22 +4957,61 @@ export default function BookView(): JSX.Element {
     onCleanup(() => el.removeEventListener('pointerdown', onDown, true));
   };
 
-  const writingPointAt = (
-    element: Element,
-    event: PointerEvent,
-  ): PageWritingPoint | null => {
-    const rect = element.getBoundingClientRect();
+  const pagePlaneFor = (side: LeafSide): HTMLElement | null =>
+    (paperElements[side]?.querySelector('.nb-page') as HTMLElement | null) ??
+    paperElements[side] ?? null;
+
+  const geometryForWritingSide = (
+    side: LeafSide,
+  ): PageWritingWorkspaceGeometry | null => {
+    const plane = pagePlaneFor(side);
+    if (plane === null) return null;
+    const rect = plane.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
-    const x = (event.clientX - rect.left) / rect.width;
-    const y = (event.clientY - rect.top) / rect.height;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    return { x, y };
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    };
   };
 
-  const beginFocusWriting = (
-    side: LeafSide,
+  const measureFocusWritingGeometry = (): PageWritingWorkspaceGeometry | null => {
+    const side = focusWriting()?.side ?? focusedSide();
+    const geometry = geometryForWritingSide(side);
+    setWritingGeometry(geometry);
+    return geometry;
+  };
+
+  const writingSideAt = (event: PointerEvent): LeafSide => {
+    const candidates: readonly LeafSide[] = focusLevel() === 'leaf'
+      ? [soloLeaf()]
+      : ['left', 'right'];
+    for (const side of candidates) {
+      if (pageForFocusSide(side) === null) continue;
+      const geometry = geometryForWritingSide(side);
+      if (
+        geometry !== null &&
+        event.clientX >= geometry.left &&
+        event.clientX <= geometry.left + geometry.width &&
+        event.clientY >= geometry.top &&
+        event.clientY <= geometry.top + geometry.height
+      ) return side;
+    }
+    return focusWriting()?.side ?? focusedSide();
+  };
+
+  const writingPointAt = (
+    geometry: PageWritingWorkspaceGeometry,
     event: PointerEvent,
-  ): void => {
+  ): PageWritingPoint => ({
+    x: (event.clientX - geometry.left) / geometry.width,
+    y: (event.clientY - geometry.top) / geometry.height,
+  });
+
+  const beginFocusWriting = (event: PointerEvent): void => {
     if (
       focusInteraction() !== 'write' ||
       event.button !== 0 ||
@@ -4948,21 +5021,23 @@ export default function BookView(): JSX.Element {
     }
     const target = event.currentTarget;
     if (!(target instanceof HTMLElement)) return;
+    const side = writingSideAt(event);
     const current = startWritingSession(side);
     if (current === null) return;
-    const point = writingPointAt(target, event);
-    if (point === null) return;
+    const geometry = geometryForWritingSide(side);
+    if (geometry === null) return;
+    setWritingGeometry(geometry);
+    const point = writingPointAt(geometry, event);
     event.preventDefault();
     event.stopPropagation();
     const tool = writingTool();
     let next: readonly PageWritingStroke[] = current.strokes;
     let strokeId: string | undefined;
     if (tool === 'eraser') {
-      const rect = target.getBoundingClientRect();
       next = erasePageWritingsAt(
         current.strokes,
         point,
-        rect.width > 0 ? rect.height / rect.width : 1.414,
+        geometry.height / geometry.width,
         writingSize(),
       );
     } else {
@@ -4982,6 +5057,7 @@ export default function BookView(): JSX.Element {
       pointerId: event.pointerId,
       pageId: current.pageId,
       before: current.strokes,
+      geometry,
       strokeId,
       changed:
         serializePageWritings(next) !== serializePageWritings(current.strokes),
@@ -5000,23 +5076,18 @@ export default function BookView(): JSX.Element {
     target.setPointerCapture(event.pointerId);
   };
 
-  const moveFocusWritingOn = (
-    target: HTMLElement,
-    event: PointerEvent,
-  ): void => {
+  const moveFocusWritingOn = (event: PointerEvent): void => {
     const gesture = writingGesture;
     if (gesture === null || gesture.pointerId !== event.pointerId) return;
-    const point = writingPointAt(target, event);
-    if (point === null) return;
+    const point = writingPointAt(gesture.geometry, event);
     event.preventDefault();
     const current = focusWriting();
     if (current === null || current.pageId !== gesture.pageId) return;
     if (gesture.strokeId === undefined) {
-      const rect = target.getBoundingClientRect();
       const next = erasePageWritingsAt(
         current.strokes,
         point,
-        rect.width > 0 ? rect.height / rect.width : 1.414,
+        gesture.geometry.height / gesture.geometry.width,
         writingSize(),
       );
       if (next.length !== current.strokes.length) gesture.changed = true;
@@ -5059,6 +5130,23 @@ export default function BookView(): JSX.Element {
     const current = focusWriting();
     return current?.pageId === page.id ? current.strokes : pageWritings(page);
   };
+
+  createEffect(
+    on(
+      [focusInteraction, focusZoom, focusPan, soloLeaf, spreadIndex],
+      () => {
+        if (focusInteraction() !== 'write') return;
+        queueMicrotask(measureFocusWritingGeometry);
+      },
+    ),
+  );
+  onMount(() => {
+    const measure = (): void => {
+      if (focusInteraction() === 'write') measureFocusWritingGeometry();
+    };
+    window.addEventListener('resize', measure);
+    onCleanup(() => window.removeEventListener('resize', measure));
+  });
 
   const leafFace = (side: LeafSide, page: () => Page | null): JSX.Element => (
     <div
@@ -5164,39 +5252,6 @@ export default function BookView(): JSX.Element {
           ) : null;
         }}
       </Show>
-      <Show when={focusMode() && focusInteraction() === 'write' && page() !== null}>
-        <div
-          class="nb-focus-writing-canvas"
-          data-page-id={page()?.id}
-          aria-label={`Temporary mouse writing canvas for the ${side} page`}
-          ref={(el) => {
-            const down = (event: PointerEvent): void => beginFocusWriting(side, event);
-            const move = (event: PointerEvent): void => moveFocusWritingOn(el, event);
-            const end = (event: PointerEvent): void => endFocusWritingOn(el, event);
-            el.addEventListener('pointerdown', down);
-            el.addEventListener('pointermove', move);
-            el.addEventListener('pointerup', end);
-            el.addEventListener('pointercancel', end);
-            onCleanup(() => {
-              el.removeEventListener('pointerdown', down);
-              el.removeEventListener('pointermove', move);
-              el.removeEventListener('pointerup', end);
-              el.removeEventListener('pointercancel', end);
-            });
-          }}
-        >
-          <PageWritingLayer
-            class="nb-focus-writing-preview"
-            strokes={focusOverlayStrokes(page())}
-            aspect={
-              paperElements[side]?.offsetWidth
-                ? (paperElements[side]!.offsetHeight - 72) /
-                  paperElements[side]!.offsetWidth
-                : 1.414
-            }
-          />
-        </div>
-      </Show>
     </div>
   );
 
@@ -5207,6 +5262,7 @@ export default function BookView(): JSX.Element {
       classList={{
         'is-focus-mode': focusMode(),
         'is-zoomed': focusMode() && focusZoom() !== ZOOM_REST,
+        'is-focus-panning': focusMode() && focusPanning(),
         'is-focus-writing': focusMode() && focusInteraction() === 'write',
         'is-placing': armedMark() !== null,
       }}
@@ -5232,10 +5288,48 @@ export default function BookView(): JSX.Element {
         '--nb-spread-fit': String(spreadFit().scale * deskZoom()),
       }}
       onPointerDown={onViewPointerDown}
+      onAuxClick={onViewAuxClick}
       onClick={onViewClick}
     >
       {/* Ctrl+K quick switcher (single-instance; safe if also mounted in App). */}
       <QuickSwitcher />
+      <Show
+        when={
+          focusMode() && focusInteraction() === 'write'
+            ? writingGeometry()
+            : null
+        }
+      >
+        {(geometry) => (
+          <div
+            class="nb-focus-writing-workspace nb-focus-writing-canvas"
+            data-page-id={focusWriting()?.pageId}
+            aria-label="Temporary mouse writing canvas for the focus workspace"
+            ref={(el) => {
+              const down = (event: PointerEvent): void => beginFocusWriting(event);
+              const move = (event: PointerEvent): void => moveFocusWritingOn(event);
+              const end = (event: PointerEvent): void => endFocusWritingOn(el, event);
+              el.addEventListener('pointerdown', down);
+              el.addEventListener('pointermove', move);
+              el.addEventListener('pointerup', end);
+              el.addEventListener('pointercancel', end);
+              onCleanup(() => {
+                el.removeEventListener('pointerdown', down);
+                el.removeEventListener('pointermove', move);
+                el.removeEventListener('pointerup', end);
+                el.removeEventListener('pointercancel', end);
+              });
+            }}
+          >
+            <PageWritingWorkspaceLayer
+              strokes={focusOverlayStrokes(
+                pageForFocusSide(focusWriting()?.side ?? focusedSide()),
+              )}
+              geometry={geometry()}
+            />
+          </div>
+        )}
+      </Show>
       {/* The only way out of a book, top-left, and quiet about it. It is not
           removed when it recedes — a control you cannot Tab to is not a way
           out — it just stops being ink you have to look past.
@@ -5273,6 +5367,8 @@ export default function BookView(): JSX.Element {
           onRecentre={recentre}
           interaction={focusInteraction()}
           onPickInteraction={pickFocusInteraction}
+          writingPaletteOpen={writingPaletteOpen()}
+          onCloseWritingPalette={() => setWritingPaletteOpen(false)}
           writingTool={writingTool()}
           onPickWritingTool={setWritingTool}
           writingColour={writingColour()}

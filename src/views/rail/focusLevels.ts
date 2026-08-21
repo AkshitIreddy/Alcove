@@ -168,3 +168,24 @@ export function moveFocusPan(
     y: whole(pan.y + delta.y),
   };
 }
+
+/**
+ * Keep the point under the wheel fixed while the focus camera changes scale.
+ * `point` is measured from the viewport centre because the stage's transform
+ * origin is 50% 50%; `pan` remains screen-pixel translation at every zoom.
+ */
+export function focusPanForAnchoredZoom(
+  pan: { x: number; y: number },
+  currentZoom: number,
+  nextZoom: number,
+  point: { x: number; y: number },
+): { x: number; y: number } {
+  const from = clampZoom(currentZoom);
+  const to = clampZoom(nextZoom);
+  if (from === to) return pan;
+  const ratio = to / from;
+  return {
+    x: whole(point.x - ratio * (point.x - pan.x)),
+    y: whole(point.y - ratio * (point.y - pan.y)),
+  };
+}

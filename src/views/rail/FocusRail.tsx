@@ -39,6 +39,8 @@ export interface FocusRailProps {
   onRecentre(): void;
   interaction: 'move' | 'write';
   onPickInteraction(mode: 'move' | 'write'): void;
+  writingPaletteOpen: boolean;
+  onCloseWritingPalette(): void;
   writingTool: ImageAnnotationTool;
   onPickWritingTool(tool: ImageAnnotationTool): void;
   writingColour: ImageAnnotationColour;
@@ -265,20 +267,31 @@ export default function FocusRail(props: FocusRailProps): JSX.Element {
         </button>
       </div>
 
-      <Show when={props.interaction === 'write'}>
+      <Show when={props.interaction === 'write' && props.writingPaletteOpen}>
         <section class="nb-focus-writing-palette" aria-label="Mouse writing tools">
           <header class="nb-focus-writing-head">
             <div>
               <span class="font-accent">Writing on</span>
               <strong class="font-ui">{props.writingPageLabel}</strong>
             </div>
-            <span
-              class="nb-focus-writing-state font-ui"
-              classList={{ 'is-unsaved': props.writingDirty }}
-              role="status"
-            >
-              {props.writingDirty ? 'unsaved' : 'saved'}
-            </span>
+            <div class="nb-focus-writing-head-actions">
+              <span
+                class="nb-focus-writing-state font-ui"
+                classList={{ 'is-unsaved': props.writingDirty }}
+                role="status"
+              >
+                {props.writingDirty ? 'unsaved' : 'saved'}
+              </span>
+              <button
+                type="button"
+                class="nb-focus-writing-close"
+                aria-label="Close writing tools"
+                title="Close writing tools"
+                onClick={props.onCloseWritingPalette}
+              >
+                <CloseIcon />
+              </button>
+            </div>
           </header>
 
           <div class="nb-focus-writing-tools" role="group" aria-label="Pen type">

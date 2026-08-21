@@ -9,7 +9,7 @@
 import { For, type JSX } from 'solid-js';
 import {
   IMAGE_ANNOTATION_COLOURS,
-  parseImageAnnotations,
+  IMAGE_ANNOTATION_TOOLS,
   serializeImageAnnotations,
   type ImageAnnotationPoint,
   type ImageAnnotationStroke,
@@ -20,8 +20,67 @@ export const PAGE_WRITINGS_ATTR = 'mouseWritings';
 export type PageWritingPoint = ImageAnnotationPoint;
 export type PageWritingStroke = ImageAnnotationStroke;
 
-export const parsePageWritings = parseImageAnnotations;
 export const serializePageWritings = serializeImageAnnotations;
+
+const pageWritingColours = new Set<string>(
+  IMAGE_ANNOTATION_COLOURS.map((colour) => colour.id),
+);
+const pageWritingTools = new Set<string>(
+  IMAGE_ANNOTATION_TOOLS.filter((tool) => tool !== 'eraser'),
+);
+
+/**
+ * Total parser for page and focus-workspace ink.
+ *
+ * Unlike image annotations, focus ink may deliberately live beyond the paper
+ * edge. Its finite x/y values therefore remain page-relative but are not
+ * clamped to 0..1: the normal page renderer clips them, while focus mode can
+ * reconstruct the surrounding margin from the same durable data.
+ */
+export function parsePageWritings(raw: unknown): PageWritingStroke[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const source =
+      parsed !== null && typeof parsed === 'object' && 'strokes' in parsed
+        ? (parsed as { strokes?: unknown }).strokes
+        : null;
+    if (!Array.isArray(source)) return [];
+    return source.flatMap((candidate, index) => {
+      if (candidate === null || typeof candidate !== 'object') return [];
+      const stroke = candidate as Record<string, unknown>;
+      if (
+        typeof stroke.tool !== 'string' ||
+        !pageWritingTools.has(stroke.tool) ||
+        typeof stroke.colour !== 'string' ||
+        !pageWritingColours.has(stroke.colour) ||
+        typeof stroke.size !== 'number' ||
+        !Number.isFinite(stroke.size) ||
+        !Array.isArray(stroke.points)
+      ) return [];
+      const points = stroke.points.flatMap((point) => {
+        if (point === null || typeof point !== 'object') return [];
+        const { x, y } = point as { x?: unknown; y?: unknown };
+        return typeof x === 'number' && Number.isFinite(x) &&
+          typeof y === 'number' && Number.isFinite(y)
+          ? [{ x, y }]
+          : [];
+      });
+      if (points.length === 0) return [];
+      return [{
+        id: typeof stroke.id === 'string' && stroke.id.trim() !== ''
+          ? stroke.id
+          : `restored-${index}`,
+        tool: stroke.tool as PageWritingStroke['tool'],
+        colour: stroke.colour as PageWritingStroke['colour'],
+        size: Math.max(1, Math.min(40, stroke.size)),
+        points,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
 
 export function pageWritingColour(stroke: PageWritingStroke): string {
   return (
@@ -102,6 +161,58 @@ export function PageWritingLayer(props: {
               fill="none"
               stroke={pageWritingColour(stroke)}
               stroke-width={appearance.width}
+              stroke-opacity={appearance.opacity}
+              stroke-linecap={appearance.linecap}
+              stroke-linejoin="round"
+            />
+          );
+        }}
+      </For>
+    </svg>
+  );
+}
+
+export interface PageWritingWorkspaceGeometry {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly viewportWidth: number;
+  readonly viewportHeight: number;
+}
+
+/**
+ * Focus-mode renderer for paper ink plus the surrounding blank canvas.
+ * Stored points stay relative to the page; only this projection is viewport
+ * based, so resize, zoom and middle-drag panning never rewrite the document.
+ */
+export function PageWritingWorkspaceLayer(props: {
+  readonly strokes: readonly PageWritingStroke[];
+  readonly geometry: PageWritingWorkspaceGeometry;
+}): JSX.Element {
+  const path = (stroke: PageWritingStroke): string =>
+    stroke.points.map((point, index) => {
+      const x = Math.round((props.geometry.left + point.x * props.geometry.width) * 10) / 10;
+      const y = Math.round((props.geometry.top + point.y * props.geometry.height) * 10) / 10;
+      return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
+    }).join(' ');
+  return (
+    <svg
+      class="nb-focus-writing-preview"
+      viewBox={`0 0 ${Math.max(1, props.geometry.viewportWidth)} ${Math.max(1, props.geometry.viewportHeight)}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <For each={props.strokes}>
+        {(stroke) => {
+          const appearance = pageWritingAppearance(stroke);
+          const width = appearance.width * Math.max(0.1, props.geometry.width / 1000);
+          return (
+            <path
+              d={path(stroke)}
+              fill="none"
+              stroke={pageWritingColour(stroke)}
+              stroke-width={width}
               stroke-opacity={appearance.opacity}
               stroke-linecap={appearance.linecap}
               stroke-linejoin="round"

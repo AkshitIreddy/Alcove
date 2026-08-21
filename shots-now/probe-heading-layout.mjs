@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 
 const hit = process.argv.find((arg) => arg.startsWith('--url='));
 const base = hit?.slice('--url='.length) || 'http://127.0.0.1:1420';
+const sabotage = process.argv.includes('--sabotage');
 const out = 'shots-now/out/heading-layout';
 mkdirSync(out, { recursive: true });
 
@@ -24,7 +25,7 @@ try {
     import('/src/styles/effects.css'),
   ]));
   await page.waitForFunction(() => document.fonts.status === 'loaded');
-  await page.evaluate(() => {
+  await page.evaluate((breakCardHeadings) => {
     const style = document.createElement('style');
     style.textContent = `
       body { overflow: auto !important; background: #f4ead9 !important; }
@@ -77,7 +78,17 @@ try {
       }).join('')}</div></section>`).join('')}
     `;
     document.body.appendChild(board);
-  });
+    if (breakCardHeadings) {
+      const sabotageStyle = document.createElement('style');
+      sabotageStyle.textContent = `
+        [data-type='card'] :is(h1, h2, h3, h4) {
+          transform: translateY(-30px) !important;
+          margin-bottom: -26px !important;
+        }
+      `;
+      document.head.appendChild(sabotageStyle);
+    }
+  }, sabotage);
 
   const measurements = await page.evaluate(() => {
     const round = (value) => Math.round(value * 10) / 10;
@@ -121,10 +132,10 @@ try {
   });
 
   const card = measurements.containers.filter((item) => item.type === 'card');
-  check(card.length === 4 && card.every((item) => !item.overlapTop && !item.overlapsNext),
-    'card-scoped heading correction did not keep all H1-H4 inside the card');
-  check(card.every((item) => item.topGap >= item.expectedPaddingTop - 2 && item.topGap < 55),
-    'card heading top whitespace does not match its padding');
+  const cardPass =
+    card.length === 4 &&
+    card.every((item) => !item.overlapTop && !item.overlapsNext) &&
+    card.every((item) => item.topGap >= item.expectedPaddingTop - 2 && item.topGap < 55);
 
   await page.screenshot({ path: `${out}/heading-layout-board.png`, fullPage: true, caret: 'hide' });
   const issues = [
@@ -135,7 +146,7 @@ try {
       item.overlapTop || (item.afterGap ?? 0) < -18 ||
       item.topGap < -0.5 || item.topGap > 70),
   ];
-  const report = { ok: issues.length === 0, measurements, issues, pageErrors };
+  const report = { ok: issues.length === 0 && cardPass, sabotage, measurements, issues, pageErrors };
   writeFileSync(`${out}/report.json`, `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify({
     ok: report.ok,
@@ -146,6 +157,13 @@ try {
     screenshot: `${out}/heading-layout-board.png`,
     pageErrors,
   }, null, 2));
+  if (sabotage) {
+    check(!cardPass, 'GATE INERT: sabotaged card headings were accepted');
+    console.log('GATE ALIVE: sabotaged headings crossed the card border');
+  } else {
+    check(cardPass, 'card-scoped heading correction did not keep all H1-H4 inside the card');
+    check(report.ok, 'heading board contains unexpected overlap or whitespace');
+  }
 } finally {
   await browser.close();
 }

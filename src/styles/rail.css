@@ -1375,6 +1375,13 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   white-space: nowrap;
 }
 
+.nb-book-preview-head-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .nb-book-preview-measure {
   flex: 0 0 auto;
   padding: 2px 5px;
@@ -1382,6 +1389,48 @@ body:has(.nb-book-view .nb-rail-panel.is-sliding) .nbs-gear-button {
   background: var(--wash-lemon-light);
   border: 1px solid var(--ink-line-soft);
   border-radius: 7px 9px 6px 8px / 8px 6px 9px 7px;
+}
+
+.nb-book-preview-previous {
+  width: 27px;
+  height: 27px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink-sepia);
+  background: var(--paper-aged);
+  border: 1px solid var(--ink-line-soft);
+  border-radius: 8px 10px 7px 9px / 9px 7px 10px 8px;
+  cursor: pointer;
+  transform: rotate(-1deg);
+  transition:
+    color var(--dur-xs) var(--ease-out),
+    background var(--dur-xs) var(--ease-out),
+    transform var(--dur-xs) var(--ease-spring);
+}
+
+.nb-book-preview-previous > span {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.nb-book-preview-previous:hover:not(:disabled),
+.nb-book-preview-previous:focus-visible:not(:disabled) {
+  color: var(--accent-deep);
+  background: var(--wash-amber-light);
+  transform: translateY(-1px) rotate(2deg);
+}
+
+.nb-book-preview-previous:focus-visible {
+  outline: 2px solid var(--wash-amber);
+  outline-offset: 2px;
+}
+
+.nb-book-preview-previous:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 
 .nb-book-preview-art {

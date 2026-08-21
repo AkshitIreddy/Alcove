@@ -188,8 +188,8 @@ try {
   await openBook(alpha);
   const previous = await historyButton();
   check(await previous.isDisabled(), 'Previous look must be disabled before the first Dress');
-  check((await previous.innerText()).includes('dress the book to begin a history'),
-    'empty-history explanation is missing');
+  check((await previous.getAttribute('title')) === 'Dress this book to begin a history',
+    'empty-history tooltip is missing');
   await page.screenshot({ path: `${out}/01-alpha-disabled.png`, caret: 'hide' });
 
   const alphaOriginal = await persisted(alpha.id);
@@ -199,8 +199,9 @@ try {
     button.click();
     button.click();
   });
-  await page.getByText('3 saved looks for this book', { exact: true }).waitFor();
   await waitForHistory(alpha.id, 3);
+  check((await previous.getAttribute('title')) === 'Restore previous look · 3 saved',
+    'compact history arrow did not expose the three-look count');
   const alphaAfterThree = await persisted(alpha.id);
   check(alphaAfterThree.history.length === 3, 'three rapid Dress clicks did not save three looks');
   check(same(alphaAfterThree.history[0].style, alphaOriginal.style),
@@ -212,7 +213,8 @@ try {
   // A close/reopen of the same Studio must retain its count immediately.
   await closeStudio();
   await reopenStudio();
-  await page.getByText('3 saved looks for this book', { exact: true }).waitFor();
+  check((await previous.getAttribute('title')) === 'Restore previous look · 3 saved',
+    'compact history arrow lost its count after panel reopen');
   await page.screenshot({ path: `${out}/03-alpha-panel-reopened.png`, caret: 'hide' });
 
   // Each undo restores the exact whole appearance at the top of the stack.
@@ -244,8 +246,9 @@ try {
   await page.getByRole('button', { name: /dress this book/i }).evaluate((button) => {
     for (let index = 0; index < 14; index += 1) button.click();
   });
-  await page.getByText('12 saved looks for this book', { exact: true }).waitFor();
   await waitForHistory(beta.id, 12);
+  check((await betaPrevious.getAttribute('title')) === 'Restore previous look · 12 saved',
+    'compact history arrow did not expose the capped count');
   const betaCapped = await persisted(beta.id);
   check(betaCapped.history.length === 12, 'beta history was not capped at 12');
   await page.screenshot({ path: `${out}/06-beta-cap-12.png`, caret: 'hide' });
@@ -253,7 +256,8 @@ try {
   // Force a component remount through the shelf, proving localStorage hydration.
   await reloadShelf();
   await openBook(beta);
-  await page.getByText('12 saved looks for this book', { exact: true }).waitFor();
+  check((await betaPrevious.getAttribute('title')) === 'Restore previous look · 12 saved',
+    'compact history arrow lost the capped count after remount');
   await page.screenshot({ path: `${out}/07-beta-remounted.png`, caret: 'hide' });
   await reloadShelf();
   await openBook(alpha);

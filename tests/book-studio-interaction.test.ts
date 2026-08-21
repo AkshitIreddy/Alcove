@@ -67,6 +67,30 @@ function overlaps(
 }
 
 describe('Book Studio interaction contract', () => {
+  it('keeps previous-generation history as a compact preview-corner action', () => {
+    const source = readFileSync(resolve(ROOT, 'src/views/rail/BookStudio.tsx'), 'utf8');
+    const css = readFileSync(resolve(ROOT, 'src/styles/rail.css'), 'utf8');
+
+    expect(source).toContain('class="nb-book-preview-previous"');
+    expect(source).toContain('aria-label="Restore previous generated book look"');
+    expect(source).not.toContain('class="nb-book-surprise-previous"');
+    expect(source).not.toContain('<strong>previous look</strong>');
+    expect(css).toMatch(/\.nb-book-preview-previous\s*\{[\s\S]*?width:\s*27px;[\s\S]*?height:\s*27px;/);
+  });
+
+  it('keeps each custom-colour home as one picker without a duplicate swatch shelf', () => {
+    const picker = readFileSync(resolve(ROOT, 'src/views/rail/OwnColour.tsx'), 'utf8');
+    const library = readFileSync(resolve(ROOT, 'src/views/rail/LibraryStudio.tsx'), 'utf8');
+    const css = readFileSync(resolve(ROOT, 'src/styles/studio.css'), 'utf8');
+
+    expect(library.match(/<OwnColour/g)).toHaveLength(2);
+    expect(picker).toContain('class="nb-own-colour-well"');
+    expect(picker).toContain('class="nb-own-colour-hex font-ui"');
+    expect(picker).not.toContain('nb-swatch-grid-own');
+    expect(picker).not.toContain('colours you have used');
+    expect(css).not.toContain('.nb-swatch-grid-own');
+  });
+
   it('offers no spine-title control while retaining the cover title control', () => {
     const source = readFileSync(resolve(ROOT, 'src/views/rail/BookStudio.tsx'), 'utf8');
     expect(source).not.toContain('data-book-control="title-size"');
@@ -141,31 +165,29 @@ describe('Book Studio interaction contract', () => {
 
   it('projects active cover title and unified emblem targets from the renderer composition family', () => {
     const direct = bookPreviewGeometry(input({
-      coverTitlePlate: 'gilt-direct',
+      coverTitlePlate: 'direct-gilt-title',
       coverFrame: 24,
       coverMedallion: 5,
     }));
     const ticket = bookPreviewGeometry(input({
-      coverTitlePlate: 'label',
+      coverTitlePlate: 'laid-paper-ticket',
       coverFrame: 24,
       coverMedallion: 5,
     }));
 
     const directTitle = direct.hotspots.find((row) => row.id === 'cover-title');
     const ticketTitle = ticket.hotspots.find((row) => row.id === 'cover-title');
-    const directEmblem = direct.hotspots.find((row) => row.id === 'cover-emblem');
     const ticketEmblem = ticket.hotspots.find((row) => row.id === 'cover-emblem');
     const exactTicket = coverCompositionTargetRects(ticket.cover, {
-      coverTitlePlate: 'label',
+      coverTitlePlate: 'laid-paper-ticket',
       coverFrame: 24,
       coverMedallion: 5,
     });
 
-    // A label ticket moves lower and narrows relative to direct lettering;
-    // the transparent controls must travel with those real active pixels.
+    // A paper ticket narrows and the transparent controls must travel with
+    // its exact authored locus rather than an assumed generic lower plate.
     expect(ticketTitle?.rect.width).toBeLessThan(directTitle?.rect.width ?? 0);
-    expect(centerY(ticketTitle!.rect)).toBeGreaterThan(centerY(directTitle!.rect));
-    expect(centerY(ticketEmblem!.rect)).toBeGreaterThan(centerY(directEmblem!.rect));
+    expect(centerY(ticketTitle!.rect)).not.toBe(centerY(directTitle!.rect));
     expect(ticketTitle?.rect.left).toBeCloseTo(exactTicket.title.left, 5);
     expect(ticketTitle?.rect.top).toBeCloseTo(exactTicket.title.top, 5);
     expect(centerY(ticketEmblem!.rect)).toBeCloseTo(centerY(exactTicket.medallion), 5);
@@ -189,13 +211,13 @@ describe('Book Studio interaction contract', () => {
 
     expect(resolved).toBeDefined();
     expect(resolved!.style.titlePlate).toBe('none');
-    expect(resolved!.cover.titlePlate).toBe('label');
+    expect(resolved!.cover.titlePlate).toBe('laid-paper-ticket');
 
     const rendered = bookPreviewGeometry(input({
       coverTitlePlate: resolved!.cover.titlePlate,
     })).hotspots.find((row) => row.id === 'cover-title');
     const label = bookPreviewGeometry(input({
-      coverTitlePlate: 'label',
+      coverTitlePlate: 'laid-paper-ticket',
     })).hotspots.find((row) => row.id === 'cover-title');
     const latentNone = bookPreviewGeometry(input({
       coverTitlePlate: resolved!.style.titlePlate,

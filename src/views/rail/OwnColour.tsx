@@ -18,16 +18,12 @@
  *
  *  - a half-typed hex is NEVER overwritten with a default (`normaliseHex`
  *    returning null means "leave the reader's field alone", not "fall back");
- *  - a committed colour is REMEMBERED (`rememberCustomColour`), so the second
- *    book bound in it is one press rather than a hunt through a system dialog;
- *  - the remembered shelf is shared across every picker in the app, which is
- *    the whole reason it lives in `art/customColour.ts` rather than in a
- *    component — a green mixed for a callout can bind a book.
+ *  - a committed colour is remembered in the shared custom-colour store even
+ *    though this compact studio control does not repeat those colours as a
+ *    second swatch grid.
  *
- * Writing it a third and fourth time inline would have given the studios their
- * own drift: the callout picker's remembered swatches and the studio's would
- * have been the same store rendered two ways, and the day one of them stopped
- * subscribing nobody would notice.
+ * Writing the input/validation path again inline would still give the studios
+ * their own drift, so both logical homes share this one compact picker.
  *
  * ## What it does NOT do
  *
@@ -36,17 +32,12 @@
  * because the clamp is different in each case and a picker that pre-clamped
  * would show the reader one colour and paint another.
  */
-import { For, Show, createEffect, createSignal, onCleanup, type JSX } from 'solid-js';
+import { Show, createSignal, onCleanup, type JSX } from 'solid-js';
 import {
-  customColours,
   normaliseHex,
   rememberCustomColour,
-  subscribeCustomColours,
 } from '../../art/customColour';
 import { copyColour, pasteColour } from './colourClipboard';
-
-/** How many remembered colours a studio row shows before it stops. */
-const SHOWN = 12;
 
 export interface ColourClipboardActionsProps {
   /** Names the colour role in button announcements. */
@@ -143,14 +134,6 @@ export interface OwnColourProps {
 
 export default function OwnColour(props: OwnColourProps): JSX.Element {
   const [draft, setDraft] = createSignal('');
-  const [own, setOwn] = createSignal<readonly string[]>(customColours());
-
-  createEffect(() => {
-    const stop = subscribeCustomColours(() => setOwn([...customColours()]));
-    onCleanup(stop);
-  });
-
-  const shown = (): readonly string[] => own().slice(0, SHOWN);
   const legal = (): string | null => normaliseHex(draft());
 
   const commit = (value: unknown): void => {
@@ -176,34 +159,6 @@ export default function OwnColour(props: OwnColourProps): JSX.Element {
       <p class="nb-panel-row-label nb-strip-label nb-own-colour-title font-ui">
         or a colour of your own
       </p>
-      <Show when={shown().length > 0}>
-        {/*
-          The reader's own shelf, and it is a `nb-swatch-grid` on purpose: these
-          are colours in exactly the sense the grid above them is, and giving
-          them a second shape would say they are a lesser kind of choice.
-        */}
-        <div
-          class="nb-swatch-grid nb-swatch-grid-own"
-          role="group"
-          aria-label={`${props.label}: colours you have used`}
-        >
-          <For each={shown()}>
-            {(hex) => (
-              <button
-                type="button"
-                class="nb-swatch"
-                style={{ background: hex }}
-                aria-label={`Your colour ${hex.toUpperCase()}`}
-                data-tooltip={hex.toUpperCase()}
-                aria-pressed={props.value === hex}
-                classList={{ 'is-active': props.value === hex }}
-                onClick={() => commit(hex)}
-              />
-            )}
-          </For>
-        </div>
-      </Show>
-
       <div class="nb-own-colour-entry">
         {/*
           The native well. It is the one control in the studio that is not

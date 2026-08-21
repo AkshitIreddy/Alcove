@@ -1465,8 +1465,22 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             <strong>your book</strong>
             <small>{bookPreset(design().preset).label.toLowerCase()}</small>
           </span>
-          <span class="nb-book-preview-measure font-ui">
-            {Math.round(style().thickness)} × {Math.round(style().height)} px
+          <span class="nb-book-preview-head-actions">
+            <span class="nb-book-preview-measure font-ui">
+              {Math.round(style().thickness)} × {Math.round(style().height)} px
+            </span>
+            <button
+              type="button"
+              class="nb-book-preview-previous"
+              disabled={surpriseHistory().length === 0}
+              aria-label="Restore previous generated book look"
+              title={surpriseHistory().length === 0
+                ? 'Dress this book to begin a history'
+                : `Restore previous look · ${surpriseHistory().length} saved`}
+              onClick={restorePreviousSurprise}
+            >
+              <span aria-hidden="true">↶</span>
+            </button>
           </span>
         </header>
         <div class="nb-book-preview-art">
@@ -1762,35 +1776,16 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
             </button>
           </Show>
         </div>
-        <div class="nb-book-surprise-actions">
-          <button type="button" class="nb-library-surprise-action" onClick={surprise}>
-            <span aria-hidden="true">⚄</span>
-            <span>
-              <strong>dress this book</strong>
-              <small>
-                binding, cloth, proportions and finishing together
-                <Show when={surpriseLocks().length > 0}> — except what you locked</Show>
-              </small>
-            </span>
-          </button>
-          <button
-            type="button"
-            class="nb-book-surprise-previous"
-            disabled={surpriseHistory().length === 0}
-            aria-label="Restore previous generated book look"
-            onClick={restorePreviousSurprise}
-          >
-            <span class="nb-book-surprise-previous-mark" aria-hidden="true">↶</span>
-            <span>
-              <strong>previous look</strong>
-              <small class="font-ui">
-                {surpriseHistory().length === 0
-                  ? 'dress the book to begin a history'
-                  : `${surpriseHistory().length} saved ${surpriseHistory().length === 1 ? 'look' : 'looks'} for this book`}
-              </small>
-            </span>
-          </button>
-        </div>
+        <button type="button" class="nb-library-surprise-action" onClick={surprise}>
+          <span aria-hidden="true">⚄</span>
+          <span>
+            <strong>dress this book</strong>
+            <small>
+              binding, cloth, proportions and finishing together
+              <Show when={surpriseLocks().length > 0}> — except what you locked</Show>
+            </small>
+          </span>
+        </button>
       </section>
 
       {/* Height remains prominent, but below the whole-book shortcut. */}

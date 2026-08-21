@@ -83,88 +83,6 @@
   line-height: 1.3;
 }
 
-.nb-book-surprise-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(132px, 0.85fr);
-  gap: var(--space-8);
-  margin-top: var(--space-8);
-}
-
-.nb-book-surprise-actions .nb-library-surprise-action {
-  margin-top: 0;
-}
-
-.nb-book-surprise-previous {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-8) var(--space-10);
-  text-align: left;
-  color: var(--ink-sepia);
-  background: var(--paper-cream);
-  border: 1.5px dashed var(--ink-sepia-soft);
-  border-radius: 12px 9px 14px 10px / 10px 14px 9px 13px;
-  cursor: pointer;
-  transform: rotate(-0.25deg);
-  transition:
-    background var(--dur-xs) var(--ease-out),
-    border-color var(--dur-xs) var(--ease-out),
-    transform var(--dur-xs) var(--ease-spring);
-}
-
-.nb-book-surprise-previous:hover:not(:disabled),
-.nb-book-surprise-previous:focus-visible:not(:disabled) {
-  background: var(--wash-amber-light);
-  border-color: var(--ink-sepia);
-  transform: translateY(-1px) rotate(0.3deg);
-}
-
-.nb-book-surprise-previous:disabled {
-  cursor: default;
-  opacity: 0.52;
-}
-
-.nb-book-surprise-previous-mark {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  color: var(--accent-deep);
-  background: var(--wash-amber-light);
-  border: var(--stroke-ink-thin);
-  border-radius: 48% 55% 46% 58%;
-  font-family: var(--font-heading);
-  font-size: 24px;
-  line-height: 1;
-}
-
-.nb-book-surprise-previous > span:last-child {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nb-book-surprise-previous strong {
-  font-family: var(--font-heading);
-  font-size: 18px;
-  line-height: 1;
-}
-
-.nb-book-surprise-previous small {
-  color: var(--ink-graphite-soft);
-  font-size: var(--text-ui-xs);
-  line-height: 1.25;
-}
-
-@media (max-width: 760px) {
-  .nb-book-surprise-actions {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ----------------------------------------------------------------------------
    The strip — eight previews and a way through
    -------------------------------------------------------------------------- */
@@ -793,9 +711,8 @@
 
    The studios' grids are vocabularies — fifty book cloths, sixty room schemes —
    and no vocabulary contains the colour a particular reader already has in
-   mind. This is the door out of the table: the remembered shelf from
-   art/customColour.ts, a native colour well, and the hex spelled out so a
-   colour can be read off one picker and typed into another.
+   mind. This is the door out of the table: a native colour well and the hex
+   spelled out so a colour can be read off one picker and typed into another.
 
    It sits UNDER the grid it belongs to and is deliberately quiet — a dashed
    hairline rather than a heading, the same rule every other soft break in the
@@ -806,15 +723,6 @@
   margin-top: var(--space-8);
   padding-top: var(--space-8);
   border-top: 1px dashed var(--ink-line-soft);
-}
-
-/* Wider cells than the six-across cloth grid: these are a shelf of colours the
-   reader has actually used, and at six across a dozen of them became two rows
-   of confetti. Twelve is the row cap in OwnColour.tsx, so the grid never wraps
-   past two ranks. */
-.nb-swatch-grid-own {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin-bottom: var(--space-8);
 }
 
 .nb-own-colour-entry {

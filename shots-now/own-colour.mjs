@@ -16,7 +16,12 @@ mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
   headless: true,
-  args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
+  args: [
+    '--mute-audio',
+    '--enable-unsafe-swiftshader',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+  ],
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 
@@ -104,12 +109,12 @@ await page.locator('.nb-rail-button[data-tool="customize"]').click();
 await page.waitForSelector('.nb-book-studio', { timeout: 30000 });
 await page.waitForTimeout(1200);
 
-const swatchCount = await page.locator('[aria-label="Spine pigment"] .nb-swatch').count();
+const swatchCount = await page.locator('[aria-label="Book base pigment"] .nb-swatch').count();
 console.log('  pigment swatches shown:', swatchCount);
 const moreLabel = await page.locator('.nb-book-studio .nb-chip[aria-expanded]').first().textContent();
 console.log('  fold button says:', JSON.stringify(moreLabel?.trim()));
 
-await page.locator('[aria-label="Spine pigment"]').scrollIntoViewIfNeeded();
+await page.locator('[aria-label="Book base pigment"]').scrollIntoViewIfNeeded();
 await page.waitForTimeout(400);
 await shot('own-01-pigment-grid');
 
@@ -122,7 +127,7 @@ const beforeSpine = await canvasHash('.nb-studio-face-spine');
 // made in the Book Studio after it opens never reaches SQLite — verified with
 // the plain pigment swatch too, so it is nothing to do with the colour entry.
 // Burn it on a pigment click so what follows tests this feature and not that.
-await page.locator('[aria-label="Spine pigment"] .nb-swatch').nth(3).click();
+await page.locator('[aria-label="Book base pigment"] .nb-swatch').nth(3).click();
 await page.waitForTimeout(600);
 const hex = page.locator('.nb-book-studio .nb-own-colour-hex');
 await hex.click();
@@ -138,10 +143,12 @@ console.log('  db right after commit:', JSON.stringify(await page.evaluate(async
   return (await books.getBook(id))?.coverMeta?.style ?? null;
 }, opened.id)));
 
-const remembered = await page.locator('.nb-book-studio .nb-swatch-grid-own .nb-swatch').count();
-console.log('  remembered swatches:', remembered);
+const duplicateOwnSwatches = await page.locator('.nb-own-colour .nb-swatch').count();
+if (duplicateOwnSwatches !== 0) {
+  throw new Error(`custom colour picker repeated ${duplicateOwnSwatches} redundant swatches`);
+}
 const anyPigmentPressed = await page.evaluate(
-  () => [...document.querySelectorAll('[aria-label="Spine pigment"] .nb-swatch')]
+  () => [...document.querySelectorAll('[aria-label="Book base pigment"] .nb-swatch')]
     .filter((b) => b.getAttribute('aria-pressed') === 'true').length,
 );
 console.log('  named pigments still pressed:', anyPigmentPressed, '(want 0)');

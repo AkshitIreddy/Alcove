@@ -38,8 +38,12 @@ const SETTINGS_KEY = 'app';
 type MutableSettings = { -readonly [K in keyof Settings]: Settings[K] };
 
 function cloneSettings(source: Settings): MutableSettings {
-  // All fields are primitives except `keybindings`.
-  return { ...source, keybindings: { ...source.keybindings } };
+  // Keep the two mutable collection fields outside Solid/store callers.
+  return {
+    ...source,
+    keybindings: { ...source.keybindings },
+    contextMenuHiddenItems: [...source.contextMenuHiddenItems],
+  };
 }
 
 const [store, setStore] = createStore<MutableSettings>(
@@ -88,6 +92,12 @@ function takeNumber(value: unknown, fallback: number): number {
 
 function takeString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+function takeStringArray(value: unknown, fallback: readonly string[]): string[] {
+  if (!Array.isArray(value)) return [...fallback];
+  return [...new Set(value.filter((item): item is string =>
+    typeof item === 'string' && /^[a-z0-9-]{1,80}$/i.test(item)))];
 }
 
 function takeEnum<T extends string>(
@@ -158,6 +168,12 @@ function mergeStored(raw: unknown): MutableSettings {
     ),
     spellcheck: takeBoolean(s.spellcheck, d.spellcheck),
     keybindings: takeKeybindings(s.keybindings, d.keybindings),
+    contextMenuHiddenItems: takeStringArray(
+      s.contextMenuHiddenItems,
+      d.contextMenuHiddenItems,
+    ),
+    contextMenuCompact: takeBoolean(s.contextMenuCompact, d.contextMenuCompact),
+    contextMenuShowIcons: takeBoolean(s.contextMenuShowIcons, d.contextMenuShowIcons),
     wheelMode: takeEnum(s.wheelMode, ['zoom', 'scroll'] as const, d.wheelMode),
     shelfSort: takeEnum(
       s.shelfSort,
@@ -271,7 +287,7 @@ export function load(): Promise<Settings> {
 
 /**
  * Apply a partial patch, update the reactive store, and persist the full
- * merged blob. `keybindings` merges per-action; `telemetry` is immutable.
+ * merged blob. Collections are copied; `telemetry` is immutable.
  */
 export async function save(patch: Partial<Settings>): Promise<Settings> {
   await load(); // never clobber stored settings with unhydrated defaults
@@ -284,9 +300,9 @@ export async function save(patch: Partial<Settings>): Promise<Settings> {
         ...next.keybindings,
         ...(value as Record<string, string>),
       };
+    } else if (key === 'contextMenuHiddenItems') {
+      next.contextMenuHiddenItems = [...(value as string[])];
     } else {
-      // Keys other than the two above are primitives; the Partial<Settings>
-      // input already guarantees value matches the field's type.
       (next as Record<string, unknown>)[key] = value;
     }
   }

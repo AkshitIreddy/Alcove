@@ -21,8 +21,6 @@ import {
   blockTextRange,
   deleteBlock,
   duplicateBlock,
-  insertParagraphNear,
-  linkUrlAt,
   toggleEffectAt,
   topLevelBlockAt,
   withBlockSelection,
@@ -37,6 +35,7 @@ import {
   copyUsefulBlock,
   copyUsefulSelection,
   downloadUsefulBlock,
+  structuredBlockForClipboardText,
 } from './blockPortability';
 
 export interface ContextMenuContext {
@@ -550,8 +549,9 @@ const INSERT_ITEMS: readonly ContextMenuItem[] = [
         // The context menu Node-selects the clicked block before it opens.
         // Plain insertContent would replace that selected block; Paste belongs
         // beside Copy, so it inserts after the block the reader clicked.
-        editor.chain().focus().insertContentAt(insertPos, text).run();
-        notify?.('paste completed');
+        const structured = structuredBlockForClipboardText(text);
+        editor.chain().focus().insertContentAt(insertPos, structured ?? text).run();
+        notify?.(structured === null ? 'paste completed' : 'block pasted');
       })();
     },
   },
@@ -589,8 +589,30 @@ export interface PageContextMenuActions {
   readonly onDeletePage?: () => void;
 }
 
+export interface ContextMenuPreferences {
+  readonly hiddenItems?: readonly string[];
+}
+
+function customizeEntries(
+  entries: readonly ContextMenuEntry[],
+  preferences?: ContextMenuPreferences,
+): ContextMenuEntry[] {
+  const hidden = new Set(preferences?.hiddenItems ?? []);
+  const filtered = entries.flatMap((entry): ContextMenuEntry[] => {
+    if (entry.kind === 'divider') return [entry];
+    if (hidden.has(entry.id)) return [];
+    if (entry.kind === 'item') return [entry];
+    const items = entry.items.filter((item) => !hidden.has(item.id));
+    return items.length === 0 ? [] : [{ ...entry, items }];
+  });
+  return filtered.filter((entry, index) =>
+    entry.kind !== 'divider' ||
+    (index > 0 && index < filtered.length - 1 && filtered[index - 1]?.kind !== 'divider'));
+}
+
 export function buildBlockContextMenu(
   pageActions?: PageContextMenuActions,
+  preferences?: ContextMenuPreferences,
 ): ContextMenuEntry[] {
   const entries: ContextMenuEntry[] = [
     { kind: 'submenu', id: 'insert', title: 'Insert', glyph: '＋', items: INSERT_ITEMS },
@@ -603,26 +625,8 @@ export function buildBlockContextMenu(
     { kind: 'divider' },
     {
       kind: 'item',
-      id: 'insert-above',
-      title: 'Insert line above',
-      glyph: '↥',
-      run: ({ editor, pos }) => {
-        insertParagraphNear(editor, pos, 'above');
-      },
-    },
-    {
-      kind: 'item',
-      id: 'insert-below',
-      title: 'Insert line below',
-      glyph: '↧',
-      run: ({ editor, pos }) => {
-        insertParagraphNear(editor, pos, 'below');
-      },
-    },
-    {
-      kind: 'item',
       id: 'duplicate',
-      title: 'Duplicate selection / block',
+      title: 'Duplicate',
       glyph: '⧉',
       selectionAware: true,
       run: ({ editor, pos, selectionRange }) => {
@@ -662,23 +666,6 @@ export function buildBlockContextMenu(
         void downloadUsefulBlock(editor, pos)
           .then((message) => notify?.(message))
           .catch(() => notify?.('could not save this block'));
-      },
-    },
-    {
-      kind: 'item',
-      id: 'copy-link',
-      title: 'Copy link',
-      glyph: '↗',
-      run: ({ editor, pos, notify }) => {
-        const url = linkUrlAt(editor, pos);
-        if (url === null) {
-          notify?.('no link on this block');
-          return;
-        }
-        void navigator.clipboard
-          .writeText(url)
-          .then(() => notify?.('link copied'))
-          .catch(() => notify?.('could not reach the clipboard'));
       },
     },
     {
@@ -752,5 +739,5 @@ export function buildBlockContextMenu(
     }
   }
 
-  return entries;
+  return customizeEntries(entries, preferences);
 }

@@ -22,6 +22,7 @@ import {
   type ContextMenuSubmenu,
 } from './registry';
 import { selectBlock, topLevelBlockAt } from './blockOps';
+import { settings } from '../../data/settings';
 
 interface OpenMenu {
   close(): void;
@@ -80,7 +81,9 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
   // the explicit `pos` under the pointer.
   if (options.preserveSelection !== true) selectBlock(editor, pos);
 
-  const entries = buildBlockContextMenu(options.pageActions);
+  const entries = buildBlockContextMenu(options.pageActions, {
+    hiddenItems: settings.contextMenuHiddenItems,
+  });
   const candidates = selectableIndexes(entries);
   const context: ContextMenuContext = {
     editor,
@@ -108,6 +111,8 @@ export function openBlockContextMenu(options: OpenContextMenuOptions): void {
 
   const host = document.createElement('div');
   host.className = 'nb-ctx-portal';
+  host.classList.toggle('is-compact', settings.contextMenuCompact);
+  host.classList.toggle('is-iconless', !settings.contextMenuShowIcons);
   host.style.position = 'fixed';
   host.style.top = '0';
   host.style.left = '0';

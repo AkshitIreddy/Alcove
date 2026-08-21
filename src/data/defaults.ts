@@ -67,6 +67,11 @@ export const DEFAULT_SETTINGS: Settings = {
 
   // Input
   keybindings: { ...SHIPPED_KEYBINDINGS },
+  // Duplicate remains available in the context-menu customizer, but the
+  // shipped menu keeps the more common actions in view by default.
+  contextMenuHiddenItems: ['duplicate'],
+  contextMenuCompact: false,
+  contextMenuShowIcons: true,
 
   // Wave 2 — library & shelf
   wheelMode: 'zoom',

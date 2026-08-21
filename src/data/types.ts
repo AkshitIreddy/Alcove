@@ -297,6 +297,12 @@ export interface Settings {
   // Input
   /** Action id -> shortcut (e.g. 'command-palette' -> 'mod+k'). */
   keybindings: Record<string, string>;
+  /** Context-menu commands or whole groups the reader has chosen to hide. */
+  contextMenuHiddenItems: string[];
+  /** Tighter rows for readers who keep a large context-menu vocabulary. */
+  contextMenuCompact: boolean;
+  /** Show the hand-drawn leading command glyphs. */
+  contextMenuShowIcons: boolean;
 
   // Wave 2 — library & shelf
   /** Plain-wheel behavior on the shelf. */

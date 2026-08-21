@@ -2519,6 +2519,7 @@ html[data-nb-col-resizing='true'] {
    Slash menu — an aged-paper card with Kalam labels
    -------------------------------------------------------------------------- */
 .nb-slash-menu {
+  position: relative;
   width: 272px;
   max-width: calc(100vw - 24px);
   max-height: 324px;
@@ -2534,8 +2535,13 @@ html[data-nb-col-resizing='true'] {
 .nb-slash-list {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: var(--space-4);
-  scrollbar-width: thin;
+  padding: var(--space-4) 15px var(--space-4) var(--space-4);
+}
+
+.nb-slash-scrollbar {
+  top: 7px;
+  right: 3px;
+  bottom: 7px;
 }
 
 .nb-slash-section {
@@ -2632,7 +2638,7 @@ html[data-nb-col-resizing='true'] {
 }
 
 .nb-slash-portal.is-narrow .nb-slash-list {
-  padding: 2px;
+  padding: 2px 13px 2px 2px;
 }
 
 .nb-slash-portal.is-narrow .nb-slash-item {
@@ -2737,6 +2743,21 @@ html[data-nb-col-resizing='true'] {
     border-color var(--dur-xs) var(--ease-out);
 }
 
+.nb-ctx-portal.is-compact .nb-ctx-item {
+  min-height: 25px;
+  gap: 5px;
+  padding: 2px 5px;
+}
+
+.nb-ctx-portal.is-compact .nb-ctx-title {
+  font-size: 13px;
+}
+
+.nb-ctx-portal.is-iconless .nb-ctx-glyph,
+.nb-ctx-portal.is-iconless .nb-ctx-swatch {
+  display: none;
+}
+
 .nb-ctx-item.is-selected,
 .nb-ctx-item:hover,
 .nb-ctx-parent.is-open {
@@ -2802,27 +2823,38 @@ html[data-nb-col-resizing='true'] {
   position: relative;
 }
 
-.nb-ctx-sub {
+.nb-ctx-sub-wrap {
   position: absolute;
   left: calc(100% - var(--space-4));
   top: calc(-1 * var(--space-4));
   z-index: 1;
   width: 216px;
-  max-height: 320px;
-  overflow-y: auto;
-  scrollbar-width: thin;
   background: var(--paper-aged);
   border: 1.5px solid var(--ink-sepia-soft);
   border-radius: 10px 14px 12px 16px / 14px 10px 16px 12px;
   box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.nb-ctx-sub {
+  position: relative;
+  max-height: 320px;
+  overflow-y: auto;
   padding: var(--space-4);
+  padding-right: 15px;
 }
 
 /* When the menu card sits near the right viewport edge, the controller adds
    .is-left so submenus fly out the other way. */
-.nb-ctx-menu.is-left .nb-ctx-sub {
+.nb-ctx-menu.is-left .nb-ctx-sub-wrap {
   left: auto;
   right: calc(100% - var(--space-4));
+}
+
+.nb-ctx-scrollbar {
+  top: 6px;
+  right: 3px;
+  bottom: 6px;
 }
 
 /* ----------------------------------------------------------------------------

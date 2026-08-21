@@ -5,6 +5,7 @@
  */
 import { For, Show, createEffect, type JSX } from 'solid-js';
 import { createHoverIntent } from '../menu/hoverIntent';
+import AppScrollbar from '../../views/AppScrollbar';
 import { stickerSvg } from '../nodes/stickers';
 import {
   SLASH_SECTION_LABELS,
@@ -116,6 +117,11 @@ export default function SlashMenu(props: SlashMenuProps): JSX.Element {
             )}
           </For>
         </div>
+        <AppScrollbar
+          target={() => listElement}
+          label="Slash menu position"
+          class="nb-slash-scrollbar"
+        />
       </Show>
     </div>
   );

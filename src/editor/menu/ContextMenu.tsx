@@ -6,6 +6,7 @@
  * and drives selection through props).
  */
 import { For, Show, createEffect, type JSX } from 'solid-js';
+import AppScrollbar from '../../views/AppScrollbar';
 import type {
   ContextMenuEntry,
   ContextMenuItem,
@@ -115,6 +116,7 @@ export default function ContextMenu(props: ContextMenuProps): JSX.Element {
               return <div class="nb-ctx-divider" role="separator" />;
             }
             if (entry.kind === 'submenu') {
+              let submenuElement: HTMLDivElement | undefined;
               return (
                 <div
                   class="nb-ctx-parent-wrap"
@@ -148,18 +150,30 @@ export default function ContextMenu(props: ContextMenuProps): JSX.Element {
                     </span>
                   </button>
                   <Show when={submenuOpen(entry)}>
-                    <div class="nb-ctx-sub" role="menu" aria-label={entry.title}>
-                      <For each={entry.items}>
-                        {(item, subIndex) => (
-                          <Row
-                            item={item}
-                            inSubmenu
-                            selected={subIndex() === props.selection.subIndex}
-                            onHover={() => props.onHoverSubItem(subIndex())}
-                            onRun={() => props.onRunItem(item)}
-                          />
-                        )}
-                      </For>
+                    <div class="nb-ctx-sub-wrap">
+                      <div
+                        class="nb-ctx-sub"
+                        role="menu"
+                        aria-label={entry.title}
+                        ref={submenuElement}
+                      >
+                        <For each={entry.items}>
+                          {(item, subIndex) => (
+                            <Row
+                              item={item}
+                              inSubmenu
+                              selected={subIndex() === props.selection.subIndex}
+                              onHover={() => props.onHoverSubItem(subIndex())}
+                              onRun={() => props.onRunItem(item)}
+                            />
+                          )}
+                        </For>
+                      </div>
+                      <AppScrollbar
+                        target={() => submenuElement}
+                        label={`${entry.title} menu position`}
+                        class="nb-ctx-scrollbar"
+                      />
                     </div>
                   </Show>
                 </div>

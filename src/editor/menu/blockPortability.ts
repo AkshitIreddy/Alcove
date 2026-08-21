@@ -21,6 +21,21 @@ export interface PortableBlockPayload {
   readonly mediaRelPath?: string;
   readonly matrix?: MatrixPayload;
   readonly language?: string;
+  /** Exact in-app structure retained for a later Alcove context-menu paste. */
+  readonly structuredContent?: object;
+}
+
+let structuredBlockClipboard: { readonly text: string; readonly content: object } | null = null;
+
+export function structuredBlockForClipboardText(text: string): object | null {
+  if (structuredBlockClipboard === null || structuredBlockClipboard.text !== text) return null;
+  return structuredClone(structuredBlockClipboard.content);
+}
+
+function rememberStructuredBlock(payload: PortableBlockPayload): void {
+  structuredBlockClipboard = payload.structuredContent === undefined
+    ? null
+    : { text: payload.text, content: structuredClone(payload.structuredContent) };
 }
 
 type MediaAttrs = Readonly<Record<string, unknown>>;
@@ -91,7 +106,11 @@ export function portableBlockPayload(node: ProseMirrorNode, script: string): Por
 function blockPayload(editor: Editor, pos: number): PortableBlockPayload | null {
   const block = topLevelBlockAt(editor, pos + 1) ?? topLevelBlockAt(editor, pos);
   const script = blockToScript(editor, pos);
-  return block === null || script === null ? null : portableBlockPayload(block.node, script);
+  if (block === null || script === null) return null;
+  return {
+    ...portableBlockPayload(block.node, script),
+    structuredContent: block.node.toJSON() as object,
+  };
 }
 
 async function mediaBlob(payload: PortableBlockPayload): Promise<Blob> {
@@ -182,6 +201,7 @@ export async function copyUsefulBlock(editor: Editor, pos: number): Promise<stri
   if (payload.kind === 'image') {
     const png = await imagePng(await mediaBlob(payload));
     await writeClipboard({ 'image/png': png }, payload.text);
+    structuredBlockClipboard = null;
     return 'image copied';
   }
   if (payload.kind === 'video') {
@@ -192,9 +212,11 @@ export async function copyUsefulBlock(editor: Editor, pos: number): Promise<stri
       ClipboardItem.supports(blob.type)
     ) {
       await writeClipboard({ [blob.type]: blob }, payload.text);
+      structuredBlockClipboard = null;
       return 'video copied';
     }
     await navigator.clipboard.writeText(payload.text);
+    rememberStructuredBlock(payload);
     return 'video block copied as portable script — use Download for the original file';
   }
   if (payload.matrix !== undefined) {
@@ -202,9 +224,11 @@ export async function copyUsefulBlock(editor: Editor, pos: number): Promise<stri
       'text/plain': new Blob([payload.matrix.tsv], { type: 'text/plain' }),
       'text/html': new Blob([payload.matrix.html], { type: 'text/html' }),
     }, payload.matrix.tsv);
+    rememberStructuredBlock(payload);
     return 'table copied for spreadsheets and documents';
   }
   await navigator.clipboard.writeText(payload.text);
+  rememberStructuredBlock(payload);
   return payload.kind === 'code' ? 'code copied' : 'block copied';
 }
 
@@ -216,6 +240,7 @@ export async function copyUsefulSelection(
 ): Promise<string> {
   const text = editor.state.doc.textBetween(range.from, range.to, '\n\n', '\n');
   await navigator.clipboard.writeText(text);
+  structuredBlockClipboard = null;
   return 'selection copied';
 }
 

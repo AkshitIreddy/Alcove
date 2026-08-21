@@ -1766,6 +1766,51 @@ body:has(.nb-book-view.is-focus-mode) .nbs-gear-button {
   cursor: not-allowed;
 }
 
+.nbs-context-menu-grid {
+  width: min(100%, 520px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.nbs-context-menu-choice {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--paper-cream) 72%, transparent);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: 8px 11px 9px 12px;
+}
+
+.nbs-context-menu-choice > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.nbs-context-menu-choice strong {
+  color: var(--ink-sepia);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.nbs-context-menu-choice small {
+  overflow: hidden;
+  color: var(--ink-graphite-soft);
+  font-size: var(--text-ui-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .nbs-context-menu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .nbs-action-btn--danger {
   color: var(--ink-sepia);
   background: var(--wash-blush-light);

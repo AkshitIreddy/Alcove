@@ -1301,6 +1301,40 @@ type SettingsChapterId =
   | 'files'
   | 'help';
 
+const CONTEXT_MENU_FEATURES = [
+  { id: 'insert', label: 'Insert tools', hint: 'paste, pictures and video' },
+  { id: 'turn-into', label: 'Turn into', hint: 'change the block type' },
+  { id: 'color', label: 'Ink colour', hint: 'text pigment choices' },
+  { id: 'lettering', label: 'Handwriting', hint: 'block lettering choices' },
+  { id: 'highlight', label: 'Highlights', hint: 'marker and wash colours' },
+  { id: 'columns', label: 'Columns', hint: 'column layout commands' },
+  { id: 'effects', label: 'Effects', hint: 'tape, frame and paper' },
+  { id: 'duplicate', label: 'Duplicate', hint: 'copy in place' },
+  { id: 'copy-useful-content', label: 'Copy content', hint: 'portable copy' },
+  { id: 'download-useful-content', label: 'Download / save', hint: 'block export' },
+  { id: 'copy-script', label: 'Copy as script', hint: 'Notebook Script copy' },
+  { id: 'delete', label: 'Delete', hint: 'remove selection or block' },
+  { id: 'move-block-to-previous-page', label: 'Move backward', hint: 'previous page flow' },
+  { id: 'insert-page-before', label: 'Page before', hint: 'page creation' },
+  { id: 'insert-page-after', label: 'Page after', hint: 'page creation' },
+  { id: 'delete-page', label: 'Delete page', hint: 'page removal' },
+] as const;
+
+const CONTEXT_MENU_FOCUSED_HIDDEN = [
+  'duplicate', 'lettering', 'columns', 'download-useful-content', 'copy-script',
+  'insert-page-before', 'insert-page-after', 'delete-page',
+] as const;
+const CONTEXT_MENU_MINIMAL_VISIBLE = new Set([
+  'insert', 'turn-into', 'copy-useful-content', 'delete',
+]);
+const CONTEXT_MENU_MINIMAL_HIDDEN = CONTEXT_MENU_FEATURES
+  .map((feature) => feature.id)
+  .filter((id) => !CONTEXT_MENU_MINIMAL_VISIBLE.has(id));
+
+function sameMenuChoices(left: readonly string[], right: readonly string[]): boolean {
+  return [...new Set(left)].sort().join('|') === [...new Set(right)].sort().join('|');
+}
+
 const SETTINGS_CHAPTERS: readonly {
   readonly id: SettingsChapterId;
   readonly label: string;
@@ -3503,6 +3537,94 @@ export default function SettingsPanel(props: {
               checked={settings.thumbnailsStrip}
               onChange={(v) => put({ thumbnailsStrip: v })}
             />
+          </Row>
+          <Row
+            label="context menu preset"
+            hint="start broad, focused or minimal"
+            words="right click menu commands actions customise customize"
+            wide
+          >
+            <Seg
+              label="context menu preset"
+              options={[
+                { value: 'full', label: 'full' },
+                { value: 'focused', label: 'focused' },
+                { value: 'minimal', label: 'minimal' },
+                { value: 'custom', label: 'custom' },
+              ]}
+              value={
+                sameMenuChoices(settings.contextMenuHiddenItems, ['duplicate'])
+                  ? 'full'
+                  : sameMenuChoices(settings.contextMenuHiddenItems, CONTEXT_MENU_FOCUSED_HIDDEN)
+                    ? 'focused'
+                    : sameMenuChoices(settings.contextMenuHiddenItems, CONTEXT_MENU_MINIMAL_HIDDEN)
+                      ? 'minimal'
+                      : 'custom'
+              }
+              onSelect={(value) => {
+                if (value === 'full') put({ contextMenuHiddenItems: ['duplicate'] });
+                else if (value === 'focused') {
+                  put({ contextMenuHiddenItems: [...CONTEXT_MENU_FOCUSED_HIDDEN] });
+                } else if (value === 'minimal') {
+                  put({ contextMenuHiddenItems: [...CONTEXT_MENU_MINIMAL_HIDDEN] });
+                }
+              }}
+            />
+          </Row>
+          <Row
+            label="context menu density"
+            hint="comfortable or space-saving rows"
+            words="compact tight small right click menu"
+          >
+            <Toggle
+              label="compact context menu"
+              checked={settings.contextMenuCompact}
+              onChange={(value) => put({ contextMenuCompact: value })}
+            />
+          </Row>
+          <Row
+            label="context menu icons"
+            hint="show the hand-drawn command marks"
+            words="glyphs symbols right click menu"
+          >
+            <Toggle
+              label="context menu icons"
+              checked={settings.contextMenuShowIcons}
+              onChange={(value) => put({ contextMenuShowIcons: value })}
+            />
+          </Row>
+          <Row
+            label="commands shown"
+            hint="each switch changes the next right-click menu"
+            words="context menu individual actions tools choose customize customise"
+            wide
+          >
+            <div class="nbs-context-menu-grid">
+              <For each={CONTEXT_MENU_FEATURES}>
+                {(feature) => {
+                  const enabled = (): boolean =>
+                    !settings.contextMenuHiddenItems.includes(feature.id);
+                  return (
+                    <div class="nbs-context-menu-choice">
+                      <span>
+                        <strong>{feature.label}</strong>
+                        <small class="font-ui">{feature.hint}</small>
+                      </span>
+                      <Toggle
+                        label={`show ${feature.label}`}
+                        checked={enabled()}
+                        onChange={(show) => {
+                          const hidden = new Set(settings.contextMenuHiddenItems);
+                          if (show) hidden.delete(feature.id);
+                          else hidden.add(feature.id);
+                          put({ contextMenuHiddenItems: [...hidden] });
+                        }}
+                      />
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
           </Row>
         </Section>
 

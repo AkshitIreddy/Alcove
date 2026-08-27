@@ -384,6 +384,9 @@ const MAX_BROWSER_DEV_ATTACHMENT_BYTES = 32 * 1024 * 1024;
 function browserDevAttachmentKind(bytes: Uint8Array): Pick<AiAttachmentMetadata, 'kind' | 'mimeType'> {
   const matches = (...signature: number[]): boolean =>
     signature.every((byte, index) => bytes[index] === byte);
+  if (matches(0x25, 0x50, 0x44, 0x46, 0x2d)) {
+    return { kind: 'pdf', mimeType: 'application/pdf' };
+  }
   if (matches(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) {
     return { kind: 'png', mimeType: 'image/png' };
   }
@@ -396,7 +399,7 @@ function browserDevAttachmentKind(bytes: Uint8Array): Pick<AiAttachmentMetadata,
     matches(0x47, 0x49, 0x46, 0x38, 0x37, 0x61) ||
     matches(0x47, 0x49, 0x46, 0x38, 0x39, 0x61)
   ) return { kind: 'gif', mimeType: 'image/gif' };
-  throw new Error('Localhost source attachments currently support PNG, JPEG, WebP, or GIF images');
+  throw new Error('Localhost source attachments currently support PDF, PNG, JPEG, WebP, or GIF files');
 }
 
 async function saveBrowserDevAttachment(
@@ -501,6 +504,103 @@ export interface AiExtractedPdfSource {
 
 export function extractAiPdfSource(attachmentId: string): Promise<AiExtractedPdfSource> {
   return invoke<AiExtractedPdfSource>('ai_extract_pdf_source', { attachmentId });
+}
+
+export interface AiParseImageResponse {
+  readonly id: string;
+  readonly markdown: string;
+  readonly billedPages?: number;
+}
+
+function normalizeBrowserParseResponse(value: unknown): AiParseImageResponse {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
+  const response = value as {
+    id?: unknown;
+    pages?: unknown;
+    meta?: { billed_units?: { pages?: unknown } };
+  };
+  if (typeof response.id !== 'string' || response.id.trim() === '' ||
+      !Array.isArray(response.pages) || response.pages.length !== 1) {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
+  const page = response.pages[0] as {
+    type?: unknown;
+    markdown?: { content?: unknown };
+  } | undefined;
+  const markdown = page?.markdown?.content;
+  if (page?.type !== 'markdown' || typeof markdown !== 'string' || markdown.trim() === '') {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
+  const billed = response.meta?.billed_units?.pages;
+  return {
+    id: response.id,
+    markdown: markdown.replace(/\r\n?/g, '\n').trim(),
+    ...(typeof billed === 'number' && Number.isSafeInteger(billed) && billed >= 0
+      ? { billedPages: billed }
+      : {}),
+  };
+}
+
+/** Parse one locally managed page raster without exposing the credential. */
+export async function parseAiImage(input: {
+  readonly runId: string;
+  readonly attachmentId: string;
+}, signal?: AbortSignal): Promise<AiParseImageResponse> {
+  if (signal?.aborted) throw abortError();
+  if (import.meta.env.DEV && !isTauri()) {
+    if (browserDevRuns.has(input.runId)) throw new Error('AI run is already active');
+    const stored = browserDevAttachments.get(input.attachmentId);
+    if (stored === undefined || !['png', 'jpeg', 'webp'].includes(stored.metadata.kind)) {
+      throw new Error('Cohere Parse requires a managed PNG, JPEG, or WebP image');
+    }
+    const controller = new AbortController();
+    browserDevRuns.set(input.runId, controller);
+    const abort = (): void => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      const response = await fetch('https://api.cohere.com/v2/parse', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${browserDevKey()}`,
+          'Content-Type': 'application/json',
+          'X-Client-Name': 'Alcove localhost',
+        },
+        body: JSON.stringify({
+          model: 'parse-v5.0',
+          document: {
+            type: 'image_url',
+            image_url: bytesToDataUri(stored.bytes, stored.metadata.mimeType),
+          },
+          output_format: 'markdown',
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw gatewayError(response.status, `Cohere rejected the request (HTTP ${response.status})`);
+      }
+      return normalizeBrowserParseResponse(await response.json());
+    } finally {
+      browserDevRuns.delete(input.runId);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+
+  const abort = (): void => {
+    void cancelAiGatewayRun(input.runId).catch(() => false);
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const result = await invoke<AiParseImageResponse>('ai_parse_image', {
+      request: input,
+    });
+    if (signal?.aborted) throw abortError();
+    return result;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 export interface AiExtractedDocumentSource {

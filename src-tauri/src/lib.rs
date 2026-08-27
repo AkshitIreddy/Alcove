@@ -149,6 +149,7 @@ pub fn run() {
             ai::ai_chat_stream,
             ai::ai_embed,
             ai::ai_rerank,
+            ai::ai_parse_image,
             ai::ai_cancel_run,
             ai::ai_attachment_save,
             ai::ai_attachment_read,

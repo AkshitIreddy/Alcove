@@ -52,6 +52,8 @@ const MAX_IMAGES: usize = 20;
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 const MAX_JSON_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PARSE_MARKDOWN_BYTES: usize = 2 * 1024 * 1024;
+const MAX_PARSE_RESPONSE_IMAGES: usize = 2_048;
 const MAX_STREAM_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SSE_FRAME_BYTES: usize = 512 * 1024;
 // Stop may cross the WebView -> native boundary before the matching provider
@@ -2034,6 +2036,228 @@ impl AiRerankRequest {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiParseRequest {
+    run_id: String,
+    attachment_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiParseResponse {
+    pub id: String,
+    pub markdown: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billed_pages: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseResponse {
+    id: String,
+    pages: Vec<CohereParsePage>,
+    #[serde(default)]
+    meta: Option<CohereParseMeta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParsePage {
+    #[serde(rename = "type")]
+    kind: String,
+    index: usize,
+    markdown: CohereParseMarkdown,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseMarkdown {
+    content: String,
+    #[serde(default)]
+    images: Vec<CohereParseImage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseImage {
+    id: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    bounding_box: Option<CohereParseBoundingBox>,
+    #[serde(default)]
+    bounding_box_normalized: Option<CohereParseNormalizedBoundingBox>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseBoundingBox {
+    top_left_x: u32,
+    top_left_y: u32,
+    bottom_right_x: u32,
+    bottom_right_y: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseNormalizedBoundingBox {
+    top_left_x: f64,
+    top_left_y: f64,
+    bottom_right_x: f64,
+    bottom_right_y: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseMeta {
+    #[serde(default)]
+    billed_units: Option<CohereParseBilledUnits>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereParseBilledUnits {
+    pages: u32,
+}
+
+fn build_parse_body(data: &AiAttachmentData) -> Result<JsonValue, AiError> {
+    let mime_type = match data.metadata.kind {
+        AiAttachmentKind::Png => "image/png",
+        AiAttachmentKind::Jpeg => "image/jpeg",
+        AiAttachmentKind::Webp => "image/webp",
+        _ => {
+            return Err(AiError::invalid(
+                "Cohere Parse requires a managed PNG, JPEG, or WebP image attachment",
+            ))
+        }
+    };
+    if data.bytes.is_empty() || data.bytes.len() > MAX_IMAGE_BYTES {
+        return Err(AiError::invalid(
+            "Cohere Parse images must be between 1 byte and 20 MB",
+        ));
+    }
+    if data.metadata.mime_type != mime_type
+        || sniff_attachment(&data.bytes)?.kind() != data.metadata.kind
+    {
+        return Err(AiError::new(
+            AiErrorCode::AttachmentInvalid,
+            "The managed Parse image does not match its recorded format",
+            false,
+        ));
+    }
+
+    let image_url = format!("data:{mime_type};base64,{}", BASE64.encode(&data.bytes));
+    let body = json!({
+        "model": "parse-v5.0",
+        "document": {
+            "type": "image_url",
+            "image_url": image_url,
+        },
+        "output_format": "markdown",
+    });
+    if serialized_len(&body)? > MAX_REQUEST_BYTES {
+        return Err(AiError::invalid(
+            "Cohere Parse request exceeds the 32 MB body cap",
+        ));
+    }
+    Ok(body)
+}
+
+fn normalize_parse_response(response: CohereParseResponse) -> Result<AiParseResponse, AiError> {
+    validate_identifier(&response.id, "Cohere Parse response id", 256).map_err(|_| {
+        AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere returned an invalid Parse response id",
+            false,
+        )
+    })?;
+    if response.pages.len() != 1 {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned an unexpected number of pages",
+            false,
+        ));
+    }
+    let page = response.pages.into_iter().next().ok_or_else(|| {
+        AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned no page",
+            false,
+        )
+    })?;
+    if page.kind != "markdown" || page.index != 0 {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned an invalid Markdown page",
+            false,
+        ));
+    }
+    if page.markdown.content.trim().is_empty()
+        || page.markdown.content.len() > MAX_PARSE_MARKDOWN_BYTES
+        || page.markdown.images.len() > MAX_PARSE_RESPONSE_IMAGES
+    {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned invalid or oversized Markdown",
+            false,
+        ));
+    }
+    validate_parse_images(&page.markdown.images)?;
+    let billed_pages = response
+        .meta
+        .and_then(|meta| meta.billed_units)
+        .map(|units| units.pages);
+    if billed_pages.is_some_and(|pages| pages != 1) {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned invalid billing metadata",
+            false,
+        ));
+    }
+    Ok(AiParseResponse {
+        id: response.id,
+        markdown: page.markdown.content,
+        billed_pages,
+    })
+}
+
+fn validate_parse_images(images: &[CohereParseImage]) -> Result<(), AiError> {
+    let invalid = images.iter().any(|image| {
+        image.id.is_empty()
+            || image.id.len() > 256
+            || image
+                .description
+                .as_ref()
+                .is_some_and(|value| value.len() > 16 * 1024)
+            || image
+                .category
+                .as_ref()
+                .is_some_and(|value| value.len() > 256)
+            || image.bounding_box.as_ref().is_some_and(|bounds| {
+                bounds.bottom_right_x < bounds.top_left_x
+                    || bounds.bottom_right_y < bounds.top_left_y
+            })
+            || image
+                .bounding_box_normalized
+                .as_ref()
+                .is_some_and(|bounds| {
+                    [
+                        bounds.top_left_x,
+                        bounds.top_left_y,
+                        bounds.bottom_right_x,
+                        bounds.bottom_right_y,
+                    ]
+                    .iter()
+                    .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+                        || bounds.bottom_right_x < bounds.top_left_x
+                        || bounds.bottom_right_y < bounds.top_left_y
+                })
+    });
+    if invalid {
+        return Err(AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere Parse returned invalid image metadata",
+            false,
+        ));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // HTTP, retry, streaming, and cancellation
 // ---------------------------------------------------------------------------
@@ -2799,6 +3023,49 @@ pub async fn ai_rerank(
             false,
         )
     })
+}
+
+#[tauri::command]
+pub async fn ai_parse_image(
+    state: tauri::State<'_, AiState>,
+    paths: tauri::State<'_, LibraryPaths>,
+    request: AiParseRequest,
+) -> Result<AiParseResponse, AiError> {
+    validate_run_id(&request.run_id)?;
+    let run_id = request.run_id;
+    let attachment_id = request.attachment_id;
+    let paths = paths.inner().clone();
+    let data = tauri::async_runtime::spawn_blocking(move || {
+        validate_attachment_id(&attachment_id)?;
+        read_attachment(&paths, &attachment_id)
+    })
+    .await
+    .map_err(|_| AiError::internal())??;
+    let body = build_parse_body(&data)?;
+
+    let state = state.inner().clone();
+    let state_for_auth = state.clone();
+    let run_id_for_auth = run_id.clone();
+    let (key, control, _active_run) = tauri::async_runtime::spawn_blocking(move || {
+        state_for_auth.register_authenticated_run(&run_id_for_auth)
+    })
+    .await
+    .map_err(|_| AiError::internal())??;
+
+    let bytes = tokio::time::timeout(
+        JSON_DEADLINE,
+        send_json_with_retry(&state, &key, &control, "/v2/parse", &body),
+    )
+    .await
+    .map_err(|_| AiError::new(AiErrorCode::Timeout, "Cohere Parse timed out", true))??;
+    let response: CohereParseResponse = serde_json::from_slice(&bytes).map_err(|_| {
+        AiError::new(
+            AiErrorCode::ProviderProtocol,
+            "Cohere returned an invalid Parse response",
+            false,
+        )
+    })?;
+    normalize_parse_response(response)
 }
 
 // ---------------------------------------------------------------------------
@@ -4532,6 +4799,108 @@ mod tests {
             serde_json::to_value(response).expect("response should serialize"),
             json!({"index": 0, "relevanceScore": 0.75})
         );
+    }
+
+    #[test]
+    fn cohere_parse_gateway_is_fixed_to_managed_markdown_images() {
+        let bytes = BASE64
+            .decode(ONE_PIXEL_PNG)
+            .expect("PNG fixture should decode");
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let data = AiAttachmentData {
+            metadata: metadata_for(
+                format!("att_{digest}.png"),
+                AttachmentFormat::Png,
+                bytes.len() as u64,
+            ),
+            bytes,
+        };
+        let body = build_parse_body(&data).expect("managed PNG should build a Parse request");
+        assert_eq!(body["model"], "parse-v5.0");
+        assert_eq!(body["document"]["type"], "image_url");
+        assert!(body["document"]["image_url"]
+            .as_str()
+            .expect("image URL should be a string")
+            .starts_with("data:image/png;base64,"));
+        assert_eq!(body["output_format"], "markdown");
+        assert!(!body.to_string().contains(&data.metadata.id));
+
+        let response: CohereParseResponse = serde_json::from_value(json!({
+            "id": "8f2a1c3e-4b5d-6e7f-8091-a2b3c4d5e6f7",
+            "pages": [{
+                "type": "markdown",
+                "index": 0,
+                "markdown": {
+                    "content": "# Parsed page\n\nA table.",
+                    "images": [{
+                        "id": "img-0",
+                        "description": "A diagram",
+                        "category": "diagram",
+                        "bounding_box": {
+                            "top_left_x": 1,
+                            "top_left_y": 2,
+                            "bottom_right_x": 10,
+                            "bottom_right_y": 20
+                        },
+                        "bounding_box_normalized": {
+                            "top_left_x": 0.1,
+                            "top_left_y": 0.2,
+                            "bottom_right_x": 0.8,
+                            "bottom_right_y": 0.9
+                        }
+                    }]
+                }
+            }],
+            "meta": {"billed_units": {"pages": 1}}
+        }))
+        .expect("documented Parse response should deserialize");
+        assert_eq!(
+            normalize_parse_response(response).expect("response should normalize"),
+            AiParseResponse {
+                id: "8f2a1c3e-4b5d-6e7f-8091-a2b3c4d5e6f7".into(),
+                markdown: "# Parsed page\n\nA table.".into(),
+                billed_pages: Some(1),
+            }
+        );
+    }
+
+    #[test]
+    fn cohere_parse_rejects_unsupported_inputs_and_malformed_responses() {
+        let text = b"not an image".to_vec();
+        let digest = format!("{:x}", Sha256::digest(&text));
+        let data = AiAttachmentData {
+            metadata: metadata_for(
+                format!("att_{digest}.txt"),
+                AttachmentFormat::Text,
+                text.len() as u64,
+            ),
+            bytes: text,
+        };
+        assert!(build_parse_body(&data).is_err());
+
+        for value in [
+            json!({"id":"valid-id","pages":[]}),
+            json!({
+                "id":"valid-id",
+                "pages":[{
+                    "type":"markdown",
+                    "index":0,
+                    "markdown":{"content":"   "}
+                }]
+            }),
+            json!({
+                "id":"valid-id",
+                "pages":[{
+                    "type":"blocks",
+                    "index":0,
+                    "markdown":{"content":"unexpected"}
+                }]
+            }),
+        ] {
+            let response: CohereParseResponse =
+                serde_json::from_value(value).expect("fixture should deserialize");
+            assert!(normalize_parse_response(response).is_err());
+        }
     }
 
     #[test]

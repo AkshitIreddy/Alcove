@@ -322,6 +322,7 @@ describe('AI agent production read/source adapters', () => {
     const chunks = new Map<string, StoredAiAgentChunk[]>();
     const deletedAttachments: string[] = [];
     let abortDuringPdfExtraction: AbortController | null = null;
+    let pdfAllowCloud: boolean | undefined;
     let chunkCounter = 0;
     const store = {
       async saveSource<Meta>(source: StoredAiAgentSource<Meta>): Promise<void> {
@@ -397,7 +398,8 @@ describe('AI agent production read/source adapters', () => {
           bytes: [37, 80, 68, 70],
         };
       },
-      async extractPdf() {
+      async extractPdf(_attachmentId: string, _signal?: AbortSignal, allowCloud?: boolean) {
+        pdfAllowCloud = allowCloud;
         abortDuringPdfExtraction?.abort();
         return {
           attachmentId: 'managed-source.pdf',
@@ -436,9 +438,8 @@ describe('AI agent production read/source adapters', () => {
             unresolvedVisualCount: 1,
             visuals: [],
           }, {
-            // Even an apparently complete text-only page is unresolved until
-            // Alcove has a verified full-page raster: positioned layout can
-            // carry information absent from extracted text.
+            // A local extractor may explicitly prove that no visual evidence
+            // is needed for an apparently complete text-only page.
             pageNumber: 3,
             text: 'A complete text-only PDF page whose positioned layout is not rasterized.',
             textBytes: 74,
@@ -500,6 +501,7 @@ describe('AI agent production read/source adapters', () => {
       gateway,
       semanticIndex: false,
       providerRerank: false,
+      providerPrivacyReady: () => false,
     });
     const manifest = await bundle.ingestion.ingest([
       {
@@ -559,11 +561,12 @@ describe('AI agent production read/source adapters', () => {
       capability,
     )).rejects.toThrow(/outside the current task manifest/i);
     expect(pdf.quarantined).toBe(true);
+    expect(pdfAllowCloud).toBe(false);
     expect(pdf.promptInjectionWarnings).toHaveLength(2);
     expect(pdf.units.map((unit) => unit.visualEvidence)).toEqual([
+      'available',
       'unresolved',
-      'unresolved',
-      'unresolved',
+      'none',
       'unresolved',
     ]);
     const pdfRead = await bundle.sources.readFullSource(pdf.id, 60_000, idleSignal(), capability);
@@ -576,7 +579,10 @@ describe('AI agent production read/source adapters', () => {
       },
       anchor: { pageNumber: 1 },
     }]);
-    expect(pdfRead.unresolvedVisualUnitIds).toEqual(pdf.units.map((unit) => unit.id));
+    expect(pdfRead.unresolvedVisualUnitIds).toEqual([
+      pdf.units[1]!.id,
+      pdf.units[3]!.id,
+    ]);
     const coverage = recordSourceReads(
       createSourceCoverageLedger(manifest, 'complete', '2026-08-12T08:00:00.000Z'),
       manifest,
@@ -584,7 +590,10 @@ describe('AI agent production read/source adapters', () => {
       '2026-08-12T08:00:01.000Z',
     );
     expect(coverage.complete).toBe(false);
-    expect(coverage.omittedUnitIds).toEqual(expect.arrayContaining(pdf.units.map((unit) => unit.id)));
+    expect(coverage.omittedUnitIds).toEqual(expect.arrayContaining([
+      pdf.units[1]!.id,
+      pdf.units[3]!.id,
+    ]));
     const textOnlyPage = pdf.units.find((unit) => unit.anchor.pageNumber === 3)!;
     const relevantCoverage = recordSourceReads(
       createSourceCoverageLedger(

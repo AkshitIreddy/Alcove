@@ -9,7 +9,6 @@
 import {
   deleteAiAttachment,
   extractAiDocumentSource,
-  extractAiPdfSource,
   readAiAttachment,
   embedAiTexts,
   rerankAiTexts,
@@ -60,6 +59,7 @@ import type {
   SourceRead,
   SourceUnitDescriptor,
 } from './types';
+import { extractAiPdfSourceWithCohere } from './coherePdfParser';
 
 const SOURCE_SCHEMA_VERSION = 2;
 const INDEX_VERSION = 'alcove-lexical-v1+cohere-embed-v4-512';
@@ -107,7 +107,11 @@ interface ProductionSourceStore {
 
 interface ProductionSourceGateway {
   readonly readAttachment: typeof readAiAttachment;
-  readonly extractPdf: typeof extractAiPdfSource;
+  readonly extractPdf: (
+    attachmentId: string,
+    signal?: AbortSignal,
+    allowCloud?: boolean,
+  ) => Promise<AiExtractedPdfSource>;
   readonly extractDocument?: typeof extractAiDocumentSource;
   readonly embedTexts: typeof embedAiTexts;
   readonly rerankTexts: typeof rerankAiTexts;
@@ -175,7 +179,7 @@ const DEFAULT_STORE: ProductionSourceStore = {
 
 const DEFAULT_GATEWAY: ProductionSourceGateway = {
   readAttachment: readAiAttachment,
-  extractPdf: extractAiPdfSource,
+  extractPdf: extractAiPdfSourceWithCohere,
   extractDocument: extractAiDocumentSource,
   embedTexts: embedAiTexts,
   rerankTexts: rerankAiTexts,
@@ -542,12 +546,9 @@ function pdfUnits(pdf: AiExtractedPdfSource): UnitInput[] {
       end: part.end,
       hasText: page.text.trim().length > 0,
       hasVisual: true,
-      // Embedded image XObjects are useful supporting evidence, but they are
-      // not a raster of the composed PDF page. Positioned text, clipping,
-      // forms, and page layout can therefore still be missing even when plain
-      // text extraction looks complete. Until Alcove has a verified full-page
-      // raster, preserve-all must fail closed on every PDF page.
-      visualEvidence: 'unresolved',
+      // Cohere-enhanced pages carry a complete local raster; pages where local
+      // rendering failed remain unresolved and preserve-all still fails closed.
+      visualEvidence: page.visualEvidence === 'notNeeded' ? 'none' : page.visualEvidence,
     }));
   });
   if (pdf.truncated) {
@@ -828,7 +829,11 @@ async function attachmentSource(
   const sourceId = await sourceIdFor(taskId, referenceKey, deps.hash);
 
   if (data.metadata.kind === 'pdf') {
-    const pdf = await deps.gateway.extractPdf(data.metadata.id);
+    const pdf = await deps.gateway.extractPdf(
+      data.metadata.id,
+      signal,
+      deps.providerPrivacyReady(),
+    );
     const derivedAttachmentIds = unique(
       pdf.pages.flatMap((page) => page.visuals.map((visual) => visual.attachmentId)),
     );

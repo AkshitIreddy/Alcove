@@ -67,6 +67,7 @@
     "html-to-image": "^1.11.13",
     "lowlight": "^3.3.0",
     "nanoid": "^5.1.16",
+    "pdfjs-dist": "5.5.207",
     "pixi.js": "^8.19.0",
     "simplex-noise": "^4.0.3",
     "solid-js": "^1.9.3",

@@ -1923,7 +1923,7 @@ function KeySetupSheet(props: {
               <div><span class="nb-ai-card-kicker font-ui">first use · your own connection</span><h2 id="nb-ai-key-title">Invite the agent into this book</h2></div>
             </div>
           </header>
-          <p class="nb-ai-key-intro">Alcove can plan, build and review notebook pages with Cohere. Connecting sends only a credential-validation request; no notebook or source content is sent until you start a task. On localhost, the key stays only in page memory and is forgotten on reload.</p>
+          <p class="nb-ai-key-intro">Alcove can plan, build and review notebook pages with Cohere. Connecting sends only a credential-validation request; no notebook or source content is sent until you start a task. When a task uses a PDF, Alcove renders it locally and sends one page image at a time to Cohere Parse by default, falling back to local extraction if parsing fails. On localhost, the key stays only in page memory and is forgotten on reload.</p>
 
           <fieldset class="nb-ai-key-kind">
             <legend class="font-ui">Which key are you using?</legend>

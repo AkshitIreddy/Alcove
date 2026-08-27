@@ -130,6 +130,58 @@ describe('AI gateway localhost development transport', () => {
     await expect(gateway.saveAiAttachment(new Uint8Array())).rejects.toThrow(/between 1 byte and 32 MB/i);
   });
 
+  it('keeps localhost PDFs managed and sends only page images to Cohere Parse', async () => {
+    let requestUrl = '';
+    let requestBody: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      requestUrl = url;
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        id: 'parse-browser-1',
+        pages: [{
+          type: 'markdown',
+          index: 0,
+          markdown: { content: '# Parsed page\r\n\r\n| A | B |' },
+        }],
+        meta: { billed_units: { pages: 1 } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const credentials = await import('../src/data/aiCredentials');
+    await credentials.saveAiCredential('trial_key_that_is_long_enough', 'session');
+    const gateway = await import('../src/data/aiGateway');
+    const pdf = await gateway.saveAiAttachment(new Uint8Array([
+      0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37,
+    ]));
+    const jpeg = await gateway.saveAiAttachment(new Uint8Array([
+      0xff, 0xd8, 0xff, 0xdb, 0x00, 0x01, 0xff, 0xd9,
+    ]));
+
+    expect(pdf).toMatchObject({ kind: 'pdf', mimeType: 'application/pdf' });
+    await expect(gateway.parseAiImage({
+      runId: 'browser-parse-pdf-rejected',
+      attachmentId: pdf.id,
+    })).rejects.toThrow(/managed PNG, JPEG, or WebP/i);
+    await expect(gateway.parseAiImage({
+      runId: 'browser-parse-image-1',
+      attachmentId: jpeg.id,
+    })).resolves.toEqual({
+      id: 'parse-browser-1',
+      markdown: '# Parsed page\n\n| A | B |',
+      billedPages: 1,
+    });
+
+    expect(requestUrl).toBe('https://api.cohere.com/v2/parse');
+    expect(requestBody).toMatchObject({
+      model: 'parse-v5.0',
+      document: {
+        type: 'image_url',
+        image_url: expect.stringMatching(/^data:image\/jpeg;base64,/),
+      },
+      output_format: 'markdown',
+    });
+    expect(JSON.stringify(requestBody)).not.toContain(jpeg.id);
+  });
+
   it('translates embed fields to Cohere snake case without leaking the run id', async () => {
     let body: Record<string, unknown> = {};
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {

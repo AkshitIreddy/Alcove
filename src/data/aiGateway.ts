@@ -512,6 +512,101 @@ export interface AiParseImageResponse {
   readonly billedPages?: number;
 }
 
+const MAX_BROWSER_JSON_RESPONSE_BYTES = 16 * 1024 * 1024;
+const MAX_PARSE_MARKDOWN_BYTES = 2 * 1024 * 1024;
+const MAX_PARSE_RESPONSE_IMAGES = 2_048;
+const utf8 = new TextEncoder();
+
+function utf8Length(value: string): number {
+  return utf8.encode(value).byteLength;
+}
+
+function optionalStringWithin(value: unknown, maxBytes: number): boolean {
+  return value === undefined || value === null || (
+    typeof value === 'string' && utf8Length(value) <= maxBytes
+  );
+}
+
+function uint32(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) &&
+    value >= 0 && value <= 0xffff_ffff;
+}
+
+function validPixelBounds(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== 'object' || Array.isArray(value)) return false;
+  const bounds = value as Record<string, unknown>;
+  const left = bounds.top_left_x;
+  const top = bounds.top_left_y;
+  const right = bounds.bottom_right_x;
+  const bottom = bounds.bottom_right_y;
+  return uint32(left) && uint32(top) && uint32(right) && uint32(bottom) &&
+    right >= left && bottom >= top;
+}
+
+function normalizedCoordinate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function validNormalizedBounds(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== 'object' || Array.isArray(value)) return false;
+  const bounds = value as Record<string, unknown>;
+  const left = bounds.top_left_x;
+  const top = bounds.top_left_y;
+  const right = bounds.bottom_right_x;
+  const bottom = bounds.bottom_right_y;
+  return normalizedCoordinate(left) && normalizedCoordinate(top) &&
+    normalizedCoordinate(right) && normalizedCoordinate(bottom) &&
+    right >= left && bottom >= top;
+}
+
+function validParseImage(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const image = value as Record<string, unknown>;
+  return typeof image.id === 'string' &&
+    utf8Length(image.id) > 0 && utf8Length(image.id) <= 256 &&
+    optionalStringWithin(image.description, 16 * 1024) &&
+    optionalStringWithin(image.category, 256) &&
+    validPixelBounds(image.bounding_box) &&
+    validNormalizedBounds(image.bounding_box_normalized);
+}
+
+async function readResponseTextCapped(response: Response, cap: number): Promise<string> {
+  const declared = response.headers.get('content-length');
+  if (declared !== null) {
+    const parsed = Number(declared);
+    if (Number.isFinite(parsed) && parsed > cap) {
+      throw new Error('Cohere response exceeded the allowed size');
+    }
+  }
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (total + value.byteLength > cap) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error('Cohere response exceeded the allowed size');
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
 function normalizeBrowserParseResponse(value: unknown): AiParseImageResponse {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Cohere returned an invalid Parse response');
@@ -521,25 +616,42 @@ function normalizeBrowserParseResponse(value: unknown): AiParseImageResponse {
     pages?: unknown;
     meta?: { billed_units?: { pages?: unknown } };
   };
-  if (typeof response.id !== 'string' || response.id.trim() === '' ||
+  if (typeof response.id !== 'string' ||
+      !/^[A-Za-z0-9_.:-]{1,256}$/.test(response.id) ||
       !Array.isArray(response.pages) || response.pages.length !== 1) {
     throw new Error('Cohere returned an invalid Parse response');
   }
   const page = response.pages[0] as {
     type?: unknown;
-    markdown?: { content?: unknown };
+    index?: unknown;
+    markdown?: { content?: unknown; images?: unknown };
   } | undefined;
   const markdown = page?.markdown?.content;
-  if (page?.type !== 'markdown' || typeof markdown !== 'string' || markdown.trim() === '') {
+  const images = page?.markdown?.images ?? [];
+  if (page?.type !== 'markdown' || page.index !== 0 ||
+      typeof markdown !== 'string' || markdown.trim() === '' ||
+      utf8Length(markdown) > MAX_PARSE_MARKDOWN_BYTES ||
+      !Array.isArray(images) || images.length > MAX_PARSE_RESPONSE_IMAGES ||
+      !images.every(validParseImage)) {
     throw new Error('Cohere returned an invalid Parse response');
   }
-  const billed = response.meta?.billed_units?.pages;
+  if (response.meta !== undefined && response.meta !== null &&
+      (typeof response.meta !== 'object' || Array.isArray(response.meta))) {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
+  const billedUnits = response.meta?.billed_units;
+  if (billedUnits !== undefined && billedUnits !== null &&
+      (typeof billedUnits !== 'object' || Array.isArray(billedUnits))) {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
+  const billed = billedUnits?.pages;
+  if (billedUnits !== undefined && billedUnits !== null && billed !== 1) {
+    throw new Error('Cohere returned an invalid Parse response');
+  }
   return {
     id: response.id,
     markdown: markdown.replace(/\r\n?/g, '\n').trim(),
-    ...(typeof billed === 'number' && Number.isSafeInteger(billed) && billed >= 0
-      ? { billedPages: billed }
-      : {}),
+    ...(billed === 1 ? { billedPages: 1 } : {}),
   };
 }
 
@@ -581,7 +693,14 @@ export async function parseAiImage(input: {
       if (!response.ok) {
         throw gatewayError(response.status, `Cohere rejected the request (HTTP ${response.status})`);
       }
-      return normalizeBrowserParseResponse(await response.json());
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await readResponseTextCapped(response, MAX_BROWSER_JSON_RESPONSE_BYTES));
+      } catch (error) {
+        if (error instanceof Error && /exceeded the allowed size/i.test(error.message)) throw error;
+        throw new Error('Cohere returned an invalid Parse response');
+      }
+      return normalizeBrowserParseResponse(parsed);
     } finally {
       browserDevRuns.delete(input.runId);
       signal?.removeEventListener('abort', abort);

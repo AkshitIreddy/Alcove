@@ -398,9 +398,18 @@ describe('AI agent production read/source adapters', () => {
           bytes: [37, 80, 68, 70],
         };
       },
-      async extractPdf(_attachmentId: string, _signal?: AbortSignal, allowCloud?: boolean) {
+      async extractPdf(
+        _attachmentId: string,
+        _signal?: AbortSignal,
+        allowCloud?: boolean,
+        lifecycle?: { onPageImageSaved?: (attachmentId: string) => void | Promise<void> },
+      ) {
         pdfAllowCloud = allowCloud;
-        abortDuringPdfExtraction?.abort();
+        if (abortDuringPdfExtraction !== null) {
+          await lifecycle?.onPageImageSaved?.('att_pdf-page-1.jpg');
+          abortDuringPdfExtraction.abort();
+          throw new DOMException('The operation was aborted', 'AbortError');
+        }
         return {
           attachmentId: 'managed-source.pdf',
           sha256: 'pdf-digest',
@@ -501,7 +510,6 @@ describe('AI agent production read/source adapters', () => {
       gateway,
       semanticIndex: false,
       providerRerank: false,
-      providerPrivacyReady: () => false,
     });
     const manifest = await bundle.ingestion.ingest([
       {
@@ -969,6 +977,7 @@ describe('AI agent production read/source adapters', () => {
       gateway,
       semanticIndex: true,
       providerRerank: false,
+      providerPrivacyReady: () => true,
     });
     const manifest = await bundle.ingestion.ingest([{
       kind: 'notebook_page',
@@ -1116,6 +1125,7 @@ describe('AI agent production read/source adapters', () => {
       gateway,
       semanticIndex: true,
       providerRerank: false,
+      providerPrivacyReady: () => true,
       localIndex: null,
     });
     const bookRef = {

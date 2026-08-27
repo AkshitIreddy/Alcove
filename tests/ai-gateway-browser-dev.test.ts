@@ -182,6 +182,100 @@ describe('AI gateway localhost development transport', () => {
     expect(JSON.stringify(requestBody)).not.toContain(jpeg.id);
   });
 
+  it('rejects malformed or oversized Parse responses with native-validator parity', async () => {
+    const credentials = await import('../src/data/aiCredentials');
+    await credentials.saveAiCredential('trial_key_that_is_long_enough', 'session');
+    const gateway = await import('../src/data/aiGateway');
+    const jpeg = await gateway.saveAiAttachment(new Uint8Array([
+      0xff, 0xd8, 0xff, 0xdb, 0x00, 0x01, 0xff, 0xd9,
+    ]));
+    const valid = (): Record<string, any> => ({
+      id: 'parse-browser-valid',
+      pages: [{
+        type: 'markdown',
+        index: 0,
+        markdown: {
+          content: '# Parsed page',
+          images: [{
+            id: 'image-1',
+            description: 'A compact table',
+            category: 'table',
+            bounding_box: {
+              top_left_x: 1,
+              top_left_y: 2,
+              bottom_right_x: 100,
+              bottom_right_y: 200,
+            },
+            bounding_box_normalized: {
+              top_left_x: 0.1,
+              top_left_y: 0.2,
+              bottom_right_x: 0.8,
+              bottom_right_y: 0.9,
+            },
+          }],
+        },
+      }],
+      meta: { billed_units: { pages: 1 } },
+    });
+    const invalid: Record<string, any>[] = [];
+    const badId = valid();
+    badId.id = 'parse id with spaces';
+    invalid.push(badId);
+    const badIndex = valid();
+    badIndex.pages[0].index = 1;
+    invalid.push(badIndex);
+    const oversizedMarkdown = valid();
+    oversizedMarkdown.pages[0].markdown.content = 'x'.repeat(2 * 1024 * 1024 + 1);
+    invalid.push(oversizedMarkdown);
+    const excessiveImages = valid();
+    excessiveImages.pages[0].markdown.images = Array.from(
+      { length: 2_049 },
+      (_, index) => ({ id: `image-${index}` }),
+    );
+    invalid.push(excessiveImages);
+    const reversedPixelBounds = valid();
+    reversedPixelBounds.pages[0].markdown.images[0].bounding_box.bottom_right_x = 0;
+    invalid.push(reversedPixelBounds);
+    const invalidNormalizedBounds = valid();
+    invalidNormalizedBounds.pages[0].markdown.images[0]
+      .bounding_box_normalized.bottom_right_y = 1.1;
+    invalid.push(invalidNormalizedBounds);
+    const badBilling = valid();
+    badBilling.meta.billed_units.pages = 2;
+    invalid.push(badBilling);
+    const malformedMeta = valid();
+    malformedMeta.meta = 'not-an-object';
+    invalid.push(malformedMeta);
+
+    for (const [index, body] of invalid.entries()) {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })));
+      await expect(gateway.parseAiImage({
+        runId: `browser-parse-invalid-${index}`,
+        attachmentId: jpeg.id,
+      })).rejects.toThrow(/invalid Parse response/i);
+    }
+
+    let chunks = 0;
+    const megabyte = new Uint8Array(1024 * 1024).fill(0x20);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+      pull(controller) {
+        if (chunks >= 17) {
+          controller.close();
+          return;
+        }
+        chunks += 1;
+        controller.enqueue(megabyte);
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    await expect(gateway.parseAiImage({
+      runId: 'browser-parse-oversized-body',
+      attachmentId: jpeg.id,
+    })).rejects.toThrow(/exceeded the allowed size/i);
+  });
+
   it('translates embed fields to Cohere snake case without leaking the run id', async () => {
     let body: Record<string, unknown> = {};
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {

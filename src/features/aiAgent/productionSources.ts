@@ -59,7 +59,10 @@ import type {
   SourceRead,
   SourceUnitDescriptor,
 } from './types';
-import { extractAiPdfSourceWithCohere } from './coherePdfParser';
+import {
+  extractAiPdfSourceWithCohere,
+  type CoherePdfPageImageLifecycle,
+} from './coherePdfParser';
 
 const SOURCE_SCHEMA_VERSION = 2;
 const INDEX_VERSION = 'alcove-lexical-v1+cohere-embed-v4-512';
@@ -111,6 +114,7 @@ interface ProductionSourceGateway {
     attachmentId: string,
     signal?: AbortSignal,
     allowCloud?: boolean,
+    pageImageLifecycle?: CoherePdfPageImageLifecycle,
   ) => Promise<AiExtractedPdfSource>;
   readonly extractDocument?: typeof extractAiDocumentSource;
   readonly embedTexts: typeof embedAiTexts;
@@ -733,6 +737,7 @@ async function attachmentSource(
   attachment: SourceAttachmentRef,
   deps: ProductionSourceDependencies,
   signal: AbortSignal,
+  pageImageLifecycle?: CoherePdfPageImageLifecycle,
 ): Promise<BuiltSource> {
   abortIfNeeded(signal);
   if (attachment.kind === 'canonical_spec') return canonicalSource(taskId, deps);
@@ -833,6 +838,7 @@ async function attachmentSource(
       data.metadata.id,
       signal,
       deps.providerPrivacyReady(),
+      pageImageLifecycle,
     );
     const derivedAttachmentIds = unique(
       pdf.pages.flatMap((page) => page.visuals.map((visual) => visual.attachmentId)),
@@ -1125,7 +1131,9 @@ export function createProductionSourceAdapters(
     gateway: input.gateway ?? DEFAULT_GATEWAY,
     semanticIndex: input.semanticIndex ?? true,
     providerRerank: input.providerRerank ?? true,
-    providerPrivacyReady: input.providerPrivacyReady ?? (() => true),
+    // Provider transmission must be explicitly enabled by the live controller.
+    // Tests, alternate shells and future callers fail closed by default.
+    providerPrivacyReady: input.providerPrivacyReady ?? (() => false),
     localIndex: 'localIndex' in input
       ? input.localIndex ?? null
       : input.store === undefined ? DEFAULT_LOCAL_INDEX : null,
@@ -1367,6 +1375,14 @@ export function createProductionSourceAdapters(
             attachment,
             deps,
             context.signal,
+            {
+              onPageImageSaved(attachmentId) {
+                stagedDerivedAttachmentIds.add(attachmentId);
+              },
+              deletePageImage(attachmentId) {
+                return cleanupUnreferencedDerivedAttachments([attachmentId], deps);
+              },
+            },
           );
           const meta = sourceMeta(source.stored);
           for (const id of meta === null ? [] : derivedPdfAttachmentIds(meta)) {

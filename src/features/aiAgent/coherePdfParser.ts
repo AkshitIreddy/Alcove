@@ -31,6 +31,14 @@ const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 4;
 let parseRunCounter = 0;
 
+export const DEFAULT_COHERE_PDF_RESOURCE_LIMITS = {
+  maxParsedPages: 24,
+  maxProviderCalls: 24,
+  maxPageTextBytes: 256 * 1024,
+  maxTotalTextBytes: 8 * 1024 * 1024,
+  maxDerivedRasterBytes: 48 * 1024 * 1024,
+} as const;
+
 export const DEFAULT_PDF_RASTER_LIMITS = {
   preferredScale: 2.25,
   maxEdge: 2_200,
@@ -80,12 +88,28 @@ export interface CoherePdfParsePageInput {
   readonly signal: AbortSignal;
 }
 
+export interface CoherePdfResourceLimits {
+  readonly maxParsedPages: number;
+  readonly maxProviderCalls: number;
+  readonly maxPageTextBytes: number;
+  readonly maxTotalTextBytes: number;
+  readonly maxDerivedRasterBytes: number;
+}
+
+export interface CoherePdfPageImageLifecycle {
+  /** Called immediately after a content-addressed image id is returned. */
+  readonly onPageImageSaved?: (attachmentId: string) => void | Promise<void>;
+  /** Must be reference-aware: identical rasters can share an attachment id. */
+  readonly deletePageImage?: (attachmentId: string) => void | boolean | Promise<void | boolean>;
+}
+
 export interface CoherePdfPipelineInput {
   readonly runId: string;
   readonly pdfBytes: Uint8Array;
   readonly localSource: AiExtractedPdfSource;
   readonly signal: AbortSignal;
   readonly concurrency?: number;
+  readonly resourceLimits?: Partial<CoherePdfResourceLimits>;
   readonly openRasterSession?: OpenPdfRasterSession;
   /** Save bytes in Alcove's managed store; the callback must not expose a path or key. */
   readonly savePageImage: (bytes: Uint8Array) => Promise<SavedPdfPageImage>;
@@ -93,6 +117,9 @@ export interface CoherePdfPipelineInput {
   readonly parsePage: (
     input: CoherePdfParsePageInput,
   ) => Promise<CohereParsedPdfPage | string>;
+  /** Optional ownership hooks supplied by the source repository. */
+  readonly onPageImageSaved?: CoherePdfPageImageLifecycle['onPageImageSaved'];
+  readonly deletePageImage?: CoherePdfPageImageLifecycle['deletePageImage'];
 }
 
 function abortError(): DOMException {
@@ -116,8 +143,77 @@ function normalizedConcurrency(value: number | undefined): number {
   return Math.max(1, Math.min(MAX_CONCURRENCY, Math.floor(value)));
 }
 
+function boundedInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.floor(value));
+}
+
+function resourceLimits(
+  overrides: Partial<CoherePdfResourceLimits> | undefined,
+): CoherePdfResourceLimits {
+  return {
+    maxParsedPages: boundedInteger(
+      overrides?.maxParsedPages,
+      DEFAULT_COHERE_PDF_RESOURCE_LIMITS.maxParsedPages,
+    ),
+    maxProviderCalls: boundedInteger(
+      overrides?.maxProviderCalls,
+      DEFAULT_COHERE_PDF_RESOURCE_LIMITS.maxProviderCalls,
+    ),
+    maxPageTextBytes: boundedInteger(
+      overrides?.maxPageTextBytes,
+      DEFAULT_COHERE_PDF_RESOURCE_LIMITS.maxPageTextBytes,
+    ),
+    maxTotalTextBytes: boundedInteger(
+      overrides?.maxTotalTextBytes,
+      DEFAULT_COHERE_PDF_RESOURCE_LIMITS.maxTotalTextBytes,
+    ),
+    maxDerivedRasterBytes: boundedInteger(
+      overrides?.maxDerivedRasterBytes,
+      DEFAULT_COHERE_PDF_RESOURCE_LIMITS.maxDerivedRasterBytes,
+    ),
+  };
+}
+
 function utf8Bytes(text: string): number {
   return new TextEncoder().encode(text).byteLength;
+}
+
+function truncateUtf8(text: string, maxBytes: number): {
+  readonly text: string;
+  readonly textBytes: number;
+} {
+  if (maxBytes <= 0 || text.length === 0) return { text: '', textBytes: 0 };
+  const encoded = new TextEncoder().encode(text);
+  if (encoded.byteLength <= maxBytes) return { text, textBytes: encoded.byteLength };
+  let boundary = Math.min(maxBytes, encoded.byteLength);
+  // `boundary` is the first omitted byte. If that byte is a UTF-8
+  // continuation, walk back to the lead byte and omit the whole code point.
+  while (boundary > 0 && (encoded[boundary]! & 0xc0) === 0x80) boundary -= 1;
+  const truncated = new TextDecoder('utf-8', { fatal: true }).decode(encoded.slice(0, boundary));
+  return { text: truncated, textBytes: boundary };
+}
+
+function capMergedPdfText(
+  pages: readonly AiExtractedPdfPage[],
+  maxTotalTextBytes: number,
+): AiExtractedPdfPage[] {
+  let remaining = maxTotalTextBytes;
+  return pages.map((page) => {
+    const actualBytes = utf8Bytes(page.text);
+    if (actualBytes <= remaining) {
+      remaining -= actualBytes;
+      return page.textBytes === actualBytes ? page : { ...page, textBytes: actualBytes };
+    }
+    const truncated = truncateUtf8(page.text, remaining);
+    remaining -= truncated.textBytes;
+    return {
+      ...page,
+      text: truncated.text,
+      textBytes: truncated.textBytes,
+      truncated: true,
+    };
+  });
 }
 
 function parsedMarkdown(value: CohereParsedPdfPage | string): string | null {
@@ -202,10 +298,27 @@ async function mapBounded<T>(
     }
   }
 
-  await Promise.all(
+  const settled = await Promise.allSettled(
     Array.from({ length: Math.min(count, concurrency) }, () => worker()),
   );
+  const rejected = settled.find(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  if (rejected !== undefined) throw rejected.reason;
   return results;
+}
+
+async function cleanupStagedImages(
+  stagedIds: ReadonlySet<string>,
+  retainedIds: ReadonlySet<string>,
+  deletePageImage: CoherePdfPageImageLifecycle['deletePageImage'],
+): Promise<void> {
+  if (deletePageImage === undefined) return;
+  await Promise.allSettled(
+    [...stagedIds]
+      .filter((attachmentId) => !retainedIds.has(attachmentId))
+      .map((attachmentId) => Promise.resolve().then(() => deletePageImage(attachmentId))),
+  );
 }
 
 /**
@@ -226,11 +339,27 @@ export async function enrichPdfSourceWithCohere(
     return input.localSource;
   }
 
+  const limits = resourceLimits(input.resourceLimits);
+  const stagedImageIds = new Set<string>();
   try {
     abortIfNeeded(input.signal);
     const localPages = new Map(
       input.localSource.pages.map((page) => [page.pageNumber, page] as const),
     );
+    // Reserving the full per-page allowance before work makes the aggregate
+    // text cap deterministic under concurrency. With defaults, 24 pages can
+    // each use the complete 256 KiB allowance and remain below 8 MiB.
+    const textCapacityPages = limits.maxPageTextBytes === 0
+      ? 0
+      : Math.floor(limits.maxTotalTextBytes / limits.maxPageTextBytes);
+    const workPageCount = Math.min(
+      session.pageCount,
+      limits.maxParsedPages,
+      limits.maxProviderCalls,
+      textCapacityPages,
+    );
+    let derivedRasterBytes = 0;
+    let rasterBudgetExhausted = limits.maxDerivedRasterBytes === 0;
     const processed = await mapBounded(
       session.pageCount,
       normalizedConcurrency(input.concurrency),
@@ -240,6 +369,9 @@ export async function enrichPdfSourceWithCohere(
         readonly parsedByProvider: boolean;
       }> => {
         const localPage = localPages.get(pageNumber) ?? unresolvedPage(pageNumber);
+        if (pageNumber > workPageCount || rasterBudgetExhausted) {
+          return { page: localPage, parsedByProvider: false };
+        }
         let raster: RasterizedPdfPage;
         try {
           raster = await session.renderPage(pageNumber, input.signal);
@@ -249,11 +381,25 @@ export async function enrichPdfSourceWithCohere(
           return { page: localPage, parsedByProvider: false };
         }
 
+        if (
+          rasterBudgetExhausted ||
+          raster.bytes.byteLength > limits.maxDerivedRasterBytes - derivedRasterBytes
+        ) {
+          rasterBudgetExhausted = true;
+          return { page: localPage, parsedByProvider: false };
+        }
+        derivedRasterBytes += raster.bytes.byteLength;
+
         let saved: SavedPdfPageImage;
         try {
           saved = await input.savePageImage(raster.bytes);
+          if (saved.attachmentId.trim() === '') {
+            throw new Error('The managed page image did not return an id and digest');
+          }
+          stagedImageIds.add(saved.attachmentId);
+          await input.onPageImageSaved?.(saved.attachmentId);
           abortIfNeeded(input.signal);
-          if (saved.attachmentId.trim() === '' || saved.sha256.trim() === '') {
+          if (saved.sha256.trim() === '') {
             throw new Error('The managed page image did not return an id and digest');
           }
         } catch (error) {
@@ -271,12 +417,16 @@ export async function enrichPdfSourceWithCohere(
           });
           abortIfNeeded(input.signal);
           const markdown = parsedMarkdown(parsed);
-          return markdown === null
-            ? { page: rasterizedPage, parsedByProvider: false }
-            : {
-                page: pageWithParsedMarkdown(rasterizedPage, markdown),
-                parsedByProvider: true,
-              };
+          if (markdown === null) {
+            return { page: rasterizedPage, parsedByProvider: false };
+          }
+          if (utf8Bytes(markdown) > limits.maxPageTextBytes) {
+            return { page: localPage, parsedByProvider: false };
+          }
+          return {
+            page: pageWithParsedMarkdown(rasterizedPage, markdown),
+            parsedByProvider: true,
+          };
         } catch (error) {
           if (isAbort(error, input.signal)) throw abortError();
           return { page: rasterizedPage, parsedByProvider: false };
@@ -284,8 +434,16 @@ export async function enrichPdfSourceWithCohere(
       },
     );
 
-    const pages = processed.map((result) => result.page);
+    const pages = capMergedPdfText(
+      processed.map((result) => result.page),
+      limits.maxTotalTextBytes,
+    );
     const totalTextBytes = pages.reduce((total, page) => total + page.textBytes, 0);
+    const retainedImageIds = new Set(
+      pages.flatMap((page) => page.visuals.map((visual) => visual.attachmentId)),
+    );
+    await cleanupStagedImages(stagedImageIds, retainedImageIds, input.deletePageImage);
+    abortIfNeeded(input.signal);
     return {
       ...input.localSource,
       pageCount: session.pageCount,
@@ -296,6 +454,10 @@ export async function enrichPdfSourceWithCohere(
       ),
       pages,
     };
+  } catch (error) {
+    await cleanupStagedImages(stagedImageIds, new Set(), input.deletePageImage);
+    if (isAbort(error, input.signal)) throw abortError();
+    throw error;
   } finally {
     await session.destroy().catch(() => undefined);
   }
@@ -315,7 +477,8 @@ function nextParseRunId(): string {
 export async function extractAiPdfSourceWithCohere(
   attachmentId: string,
   signal: AbortSignal = new AbortController().signal,
-  allowCloud = true,
+  allowCloud = false,
+  pageImageLifecycle: CoherePdfPageImageLifecycle = {},
 ): Promise<AiExtractedPdfSource> {
   abortIfNeeded(signal);
   const localSource = await extractAiPdfSource(attachmentId);
@@ -340,6 +503,8 @@ export async function extractAiPdfSourceWithCohere(
       const saved = await saveAiAttachment(bytes);
       return { attachmentId: saved.id, sha256: saved.sha256 };
     },
+    onPageImageSaved: pageImageLifecycle.onPageImageSaved,
+    deletePageImage: pageImageLifecycle.deletePageImage,
     async parsePage(input): Promise<AiParseImageResponse> {
       // Pages run concurrently, while the native run registry requires each
       // active provider request to have a distinct cancellation id.

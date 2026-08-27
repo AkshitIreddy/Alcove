@@ -201,10 +201,12 @@ try {
   const payload = await page.evaluate(async ({ bornBytes, scanBytes, bornMarker, scanMarker }) => {
     const gateway = await import('/src/data/aiGateway.ts');
     const credentials = await import('/src/data/aiCredentials.ts');
+    const appSettings = await import('/src/data/settings.ts');
     const sound = await import('/src/sound/engine.ts');
     const parser = await import('/src/features/aiAgent/coherePdfParser.ts');
     const library = await globalThis.__TAURI_INTERNALS__.invoke('library_info');
     const credential = await credentials.aiCredentialStatus();
+    const declaredSettings = await appSettings.load();
     if (!/alcove-qa-/i.test(library.root)) {
       throw new Error(`Refusing non-isolated library root: ${library.root}`);
     }
@@ -216,6 +218,11 @@ try {
     }
     const created = [];
     const derived = [];
+    const rememberDerived = (source) => {
+      for (const item of source.pages.flatMap((pageItem) => pageItem.visuals)) {
+        if (!created.includes(item.attachmentId)) derived.push(item.attachmentId);
+      }
+    };
     try {
       const bornAttachment = await gateway.saveAiAttachment(new Uint8Array(bornBytes));
       const scanAttachment = await gateway.saveAiAttachment(new Uint8Array(scanBytes));
@@ -224,13 +231,18 @@ try {
       const scanRoundTrip = await gateway.readAiAttachment(scanAttachment.id);
       const bornLocal = await gateway.extractAiPdfSource(bornAttachment.id);
       const scanLocal = await gateway.extractAiPdfSource(scanAttachment.id);
-      const bornEnhanced = await parser.extractAiPdfSourceWithCohere(bornAttachment.id);
-      const scanEnhanced = await parser.extractAiPdfSourceWithCohere(scanAttachment.id);
-      for (const source of [bornEnhanced, scanEnhanced]) {
-        for (const item of source.pages.flatMap((pageItem) => pageItem.visuals)) {
-          if (!created.includes(item.attachmentId)) derived.push(item.attachmentId);
-        }
-      }
+      const bornEnhanced = await parser.extractAiPdfSourceWithCohere(
+        bornAttachment.id,
+        new AbortController().signal,
+        true,
+      );
+      rememberDerived(bornEnhanced);
+      const scanEnhanced = await parser.extractAiPdfSourceWithCohere(
+        scanAttachment.id,
+        new AbortController().signal,
+        true,
+      );
+      rememberDerived(scanEnhanced);
 
       // Induce a provider failure through the pipeline's provider callback.
       // The same page orchestration used above must retain local text and the
@@ -254,14 +266,17 @@ try {
           };
         },
       });
-      for (const item of fallback.pages.flatMap((pageItem) => pageItem.visuals)) {
-        if (!created.includes(item.attachmentId)) derived.push(item.attachmentId);
-      }
+      rememberDerived(fallback);
 
       return {
         boundary: {
           library,
           credential,
+          credentialTier: {
+            declaredKeyKind: declaredSettings.aiAgentKeyKind,
+            providerVerified: false,
+            note: 'Cohere credential status does not expose account tier; the live call proves Parse access, not the key tier.',
+          },
           qaAudioForcedSilent: sound.qaAudioForcedSilent(),
         },
         roundTrip: {

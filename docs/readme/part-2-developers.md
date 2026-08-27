@@ -69,11 +69,11 @@ shortest useful thing on this page.
 Alcove is a [Tauri 2](https://tauri.app/) app: a Rust host process, a system
 webview window, and a [SolidJS](https://www.solidjs.com/) frontend built by
 Vite. Almost everything interesting happens in the frontend. The Rust side is
-<!--f:rustCommands-->29<!--/f--> commands — image assets, link previews, backups,
+<!--f:rustCommands-->30<!--/f--> commands — image assets, link previews, backups,
 tray, PDF export, Markdown import, bundle read/write, and the narrow Cohere and
 AI-attachment gateway — plus the SQLite
 migrations, in <!--f:rustFiles-->11<!--/f--> files and
-<!--f:rustLines-->7903<!--/f--> lines.
+<!--f:rustLines-->8273<!--/f--> lines.
 
 ### The shape of the thing, in four facts
 
@@ -399,8 +399,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->350<!--/f--> of <!--f:srcFiles-->391<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7362<!--/f--> lines of it.
+<!--f:srcDocstrings-->351<!--/f--> of <!--f:srcFiles-->392<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7369<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.

@@ -1,6 +1,6 @@
 [package]
 name = "alcove"
-version = "0.7.10"
+version = "0.7.11"
 description = "Alcove — a storybook library for notes, diagrams, tape, and stickers"
 authors = ["Akshit"]
 edition = "2021"

@@ -21,6 +21,20 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.11 — clearer PDF sources for the Agent
+
+**PDF attachments now use Cohere Parse automatically when the Agent is
+connected.** Alcove renders each page locally, then asks Cohere to preserve its
+reading order, headings and tables as structured text. Scanned pages gain OCR,
+so material that previously looked blank to local text extraction can now
+participate in explanations and page building.
+
+**The cloud path remains bounded and recoverable.** PDF pages are sent only
+after a task starts and the existing provider privacy permission is ready. A
+rendering or Parse failure falls back page by page to Alcove's local extraction
+instead of rejecting the attachment, while complete local page images remain
+available as visual evidence.
+
 ## 0.7.10 — freer canvases and better-bound books
 
 **Focus and image workspaces now share a deliberate strategy-map camera.** The

@@ -1,5 +1,29 @@
 # Alcove — running TODO
 
+## ✅ 0.7.11 — clearer PDF sources for the Agent (released 2026-08-27)
+
+PDF attachments now render locally and use Cohere Parse by default after the
+reader has connected Cohere and accepted its data notice. Structured Markdown
+from scans, tables and forms reaches the Agent alongside complete page-image
+evidence; if rendering or Parse fails, the local extractor and raster remain
+available instead of losing the source. The gateway keeps credentials native
+and bounds page count, response size, retained images, retries and cancellation.
+
+Commits `6e9dc8e` through `192d04d` plus annotated tag `v0.7.11` were pushed to
+`main`. GitHub Actions run `33108665585` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets and 12 published checksums; signed `latest.json`
+reports version 0.7.11 with immutable updater URLs for Windows, Linux and both
+macOS architectures.
+
+- [x] Make Cohere Parse the default PDF path after explicit provider consent.
+- [x] Preserve complete local page rasters and deterministic local fallback.
+- [x] Bound provider calls, retained media, parsed text and response validation.
+- [x] Pass a hidden, silent, isolated localhost probe with born-digital and
+      scan-only PDFs, including an induced provider-failure fallback.
+- [x] Pass frontend, Rust, security, packaging and live release verification;
+      publish all installers, checksums and signed updater data.
+
 ## ✅ 0.7.10 — freer canvases and better-bound books (released 2026-08-21)
 
 The release makes wheel rotation zoom and a held middle mouse button pan in

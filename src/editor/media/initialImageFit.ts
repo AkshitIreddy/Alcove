@@ -75,11 +75,11 @@ export interface ManualImageResizeMeasurement
  *
  * The image's intrinsic bytes never enter this calculation. Its measured page
  * height scales linearly with display width; frame/caption chrome is retained
- * as a fixed conservative allowance. Returning the safe percentage to the
- * Following blocks are intentionally not charged against the image. They are
- * allowed to flow to the next page through the normal pagination contract.
- * This keeps pagination authoritative while still preventing a single image
- * from becoming taller than a leaf by itself.
+ * as a fixed conservative allowance. Following blocks are intentionally not
+ * charged against the image: they may flow through the normal pagination
+ * contract. Content above the image is charged, however, because a live drag
+ * must never move the image itself to another leaf and leave it there after
+ * the final width is clamped back down.
  */
 export function safeManualImageResizeWidth({
   measuredWidthPct,
@@ -101,12 +101,73 @@ export function safeManualImageResizeWidth({
   const projectedImageHeightPx = imageHeightPx * scale;
   return initialImageWidthForPage({
     ...page,
-    blockTopPx: 0,
     followingContentHeightPx: 0,
     currentWidthPct: requestedWidthPct,
     imageHeightPx: projectedImageHeightPx,
     blockHeightPx: projectedImageHeightPx + chromeHeightPx,
   });
+}
+
+export interface FitImageToRemainingPageMeasurement
+  extends Omit<InitialImageFitMeasurement, 'currentWidthPct'> {
+  /** Width represented by the measured image/block heights. */
+  readonly measuredWidthPct: number;
+  /** Horizontal leaf-safe ceiling supplied by the live node view. */
+  readonly maximumWidthPct: number;
+}
+
+/**
+ * Enlarge an image into the genuinely unused space around it on this leaf.
+ *
+ * Unlike manual resizing, this action reserves both preceding and following
+ * content. It therefore cannot change either neighbour's page. The result is
+ * growth-only: a crowded or already overfull leaf leaves the current width
+ * untouched instead of unexpectedly shrinking the reader's picture.
+ */
+export function fitImageWidthToRemainingPage({
+  measuredWidthPct,
+  maximumWidthPct,
+  imageHeightPx,
+  blockHeightPx,
+  blockTopPx,
+  followingContentHeightPx,
+  pageCapacityPx,
+  pagePaddingBottomPx,
+}: FitImageToRemainingPageMeasurement): number {
+  if (
+    !Number.isFinite(measuredWidthPct) ||
+    !Number.isFinite(maximumWidthPct) ||
+    !Number.isFinite(imageHeightPx) ||
+    !Number.isFinite(blockHeightPx) ||
+    !Number.isFinite(blockTopPx) ||
+    !Number.isFinite(followingContentHeightPx) ||
+    !Number.isFinite(pageCapacityPx) ||
+    !Number.isFinite(pagePaddingBottomPx) ||
+    measuredWidthPct <= 0 ||
+    maximumWidthPct <= 0 ||
+    imageHeightPx <= 0 ||
+    blockHeightPx <= 0 ||
+    pageCapacityPx <= 0
+  ) {
+    return measuredWidthPct;
+  }
+
+  const chromeHeightPx = Math.max(0, blockHeightPx - imageHeightPx);
+  const availableImageHeightPx =
+    pageCapacityPx -
+    Math.max(0, blockTopPx) -
+    Math.max(0, followingContentHeightPx) -
+    Math.max(0, pagePaddingBottomPx) -
+    chromeHeightPx;
+  if (availableImageHeightPx <= imageHeightPx) return measuredWidthPct;
+
+  const fittedWidthPct = Math.floor(
+    measuredWidthPct * (availableImageHeightPx / imageHeightPx),
+  );
+  return Math.max(
+    measuredWidthPct,
+    Math.min(maximumWidthPct, fittedWidthPct),
+  );
 }
 
 export interface SafeStandaloneUploadMeasurement {

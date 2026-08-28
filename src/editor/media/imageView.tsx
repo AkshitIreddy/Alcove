@@ -16,6 +16,7 @@ import {
   createEffect,
   createSignal,
   onCleanup,
+  onMount,
   untrack,
   type JSX,
 } from 'solid-js';
@@ -42,6 +43,7 @@ import {
   type ViewerPan,
 } from './imageViewerPan';
 import {
+  fitImageWidthToRemainingPage,
   imageFileDimensions,
   initialImageWidthForPage,
   safeManualImageResizeWidth,
@@ -172,6 +174,7 @@ type ImageToolGlyphKind =
   | 'align-center'
   | 'align-right'
   | 'frame'
+  | 'fit-page'
   | 'expand'
   | 'copy'
   | 'download';
@@ -200,6 +203,13 @@ function ImageToolGlyph(props: { readonly kind: ImageToolGlyphKind }): JSX.Eleme
       </svg>
     );
   }
+  if (props.kind === 'fit-page') {
+    return (
+      <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 3.8 H19 V20.2 H5 Z M8 7 H16 M12 7 V16 M8.8 12.8 L12 16 L15.2 12.8 M8 18 H16" />
+      </svg>
+    );
+  }
   if (props.kind === 'expand') {
     return (
       <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
@@ -207,21 +217,22 @@ function ImageToolGlyph(props: { readonly kind: ImageToolGlyphKind }): JSX.Eleme
       </svg>
     );
   }
-  const left = props.kind === 'align-left';
-  const right = props.kind === 'align-right';
-  const segment = (length: number): { x1: number; x2: number } => {
-    if (left) return { x1: 4.5, x2: 4.5 + length };
-    if (right) return { x1: 19.5 - length, x2: 19.5 };
-    return { x1: 12 - length / 2, x2: 12 + length / 2 };
+  const alignmentPath = (): string => {
+    const left = props.kind === 'align-left';
+    const right = props.kind === 'align-right';
+    const segment = (length: number): { x1: number; x2: number } => {
+      if (left) return { x1: 4.5, x2: 4.5 + length };
+      if (right) return { x1: 19.5 - length, x2: 19.5 };
+      return { x1: 12 - length / 2, x2: 12 + length / 2 };
+    };
+    const long = segment(15);
+    const medium = segment(11);
+    const short = segment(8);
+    return `M${long.x1} 6 H${long.x2} M${medium.x1} 10 H${medium.x2} M${long.x1} 14 H${long.x2} M${short.x1} 18 H${short.x2}`;
   };
-  const long = segment(15);
-  const medium = segment(11);
-  const short = segment(8);
   return (
     <svg class="nb-image-tool-glyph" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d={`M${long.x1} 6 H${long.x2} M${medium.x1} 10 H${medium.x2} M${long.x1} 14 H${long.x2} M${short.x1} 18 H${short.x2}`}
-      />
+      <path d={alignmentPath()} />
     </svg>
   );
 }
@@ -263,6 +274,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   const [draggingOver, setDraggingOver] = createSignal(false);
   const [replacementError, setReplacementError] = createSignal<string | null>(null);
   const [portableNotice, setPortableNotice] = createSignal<string | null>(null);
+  const [directlySelected, setDirectlySelected] = createSignal(false);
   const [viewerOpen, setViewerOpen] = createSignal(false);
   const [viewerFullscreen, setViewerFullscreen] = createSignal(false);
   const [viewerZoom, setViewerZoom] = createSignal(100);
@@ -315,6 +327,23 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
   onCleanup(() => {
     alive = false;
     sourceGeneration += 1;
+  });
+
+  onMount(() => {
+    const dismissControlsOutsideImage = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node) || wrapperEl?.contains(target) !== true) {
+        setDirectlySelected(false);
+      }
+    };
+    document.addEventListener('pointerdown', dismissControlsOutsideImage, true);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', dismissControlsOutsideImage, true);
+    });
+  });
+
+  createEffect(() => {
+    if (!props.selected) setDirectlySelected(false);
   });
 
   createEffect(() => {
@@ -892,6 +921,34 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
     });
   };
 
+  const fitToRemainingPage = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (rowHost() !== undefined) return;
+    const image = wrapperEl?.querySelector<HTMLImageElement>('.nb-image-img');
+    const context = pageFitContext();
+    if (!(image instanceof HTMLImageElement) || context === null) return;
+
+    const imageHeightPx = image.getBoundingClientRect().height / context.scale;
+    const blockHeightPx =
+      (wrapperEl?.getBoundingClientRect().height ?? 0) / context.scale;
+    const currentPct = effectivePct() ?? widthPct() ?? 100;
+    const fittedPct = fitImageWidthToRemainingPage({
+      measuredWidthPct: currentPct,
+      maximumWidthPct: leafSafeStandaloneWidthPct(),
+      imageHeightPx,
+      blockHeightPx,
+      blockTopPx: context.blockTopPx,
+      followingContentHeightPx: context.followingContentHeightPx,
+      pageCapacityPx: context.pageCapacityPx,
+      pagePaddingBottomPx: context.pagePaddingBottomPx,
+      minimumWidthPct: MIN_WIDTH_PCT,
+    });
+    if (fittedPct > currentPct) {
+      props.updateAttributes({ widthPct: Math.round(fittedPct) });
+    }
+  };
+
   const runPortableAction = async (kind: 'copy' | 'download'): Promise<void> => {
     setPortableNotice(kind === 'copy' ? 'copying…' : 'opening save dialog…');
     try {
@@ -1091,6 +1148,8 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
       }}
       class="nb-image"
       classList={{ 'is-selected': props.selected, 'is-resizing': dragPct() !== null }}
+      data-direct-selected={directlySelected() ? '' : undefined}
+      onPointerDown={() => setDirectlySelected(true)}
       data-nb-block-flow="feature"
       data-align={align()}
       data-media-frame={frame()}
@@ -1220,7 +1279,7 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
           )}
         </Show>
 
-        <Show when={props.selected}>
+        <Show when={props.selected && directlySelected()}>
           <div class="nb-image-controls">
             <button
               type="button"
@@ -1241,6 +1300,17 @@ function ImageView(props: SolidNodeViewProps): JSX.Element {
               <ImageToolGlyph kind="frame" />
             </button>
             <Show when={placeholder() === null}>
+              <Show when={rowHost() === undefined}>
+                <button
+                  type="button"
+                  class="nb-image-tool"
+                  data-tooltip="Fit to remaining page"
+                  aria-label="Fit image to remaining page"
+                  onClick={fitToRemainingPage}
+                >
+                  <ImageToolGlyph kind="fit-page" />
+                </button>
+              </Show>
               <button
                 type="button"
                 class="nb-image-tool"

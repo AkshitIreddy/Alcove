@@ -146,10 +146,43 @@ try {
         : null;
     }),
   );
+  const alignmentButton = page.getByRole('button', { name: /^Alignment / });
+  report.alignmentBefore = await alignmentButton.evaluate((button) => ({
+    label: button.getAttribute('aria-label'),
+    path: button.querySelector('path')?.getAttribute('d') ?? null,
+  }));
+  await alignmentButton.click();
+  report.alignmentAfter = await alignmentButton.evaluate((button) => ({
+    label: button.getAttribute('aria-label'),
+    path: button.querySelector('path')?.getAttribute('d') ?? null,
+  }));
   await page.locator('.nb-book-view').screenshot({
     path: `${OUT}/02-centred-image-tools.png`,
     caret: 'hide',
   });
+
+  await page.mouse.click(blankX, laneY);
+  await page.waitForFunction(
+    () => document.querySelector('.nb-image-controls') === null,
+  );
+  report.controlsDismissedOnBlankLane = true;
+  await image.click();
+  const fitButton = page.getByRole('button', { name: 'Fit image to remaining page' });
+  await fitButton.waitFor({ state: 'visible' });
+
+  const fitBefore = await page.locator('.nb-image').first().evaluate((node) => ({
+    widthPct: Number.parseFloat(node.style.width),
+    pageId: node.closest('.nb-leaf-paper')?.getAttribute('data-page-id') ?? null,
+    marker: node.closest('.nb-leaf-paper')?.textContent?.includes('Copy that must remain') ?? false,
+  }));
+  await fitButton.click();
+  await page.waitForTimeout(300);
+  const fitAfter = await page.locator('.nb-image').first().evaluate((node) => ({
+    widthPct: Number.parseFloat(node.style.width),
+    pageId: node.closest('.nb-leaf-paper')?.getAttribute('data-page-id') ?? null,
+    marker: node.closest('.nb-leaf-paper')?.textContent?.includes('Copy that must remain') ?? false,
+  }));
+  report.fitAction = { before: fitBefore, after: fitAfter };
 
   const wrapper = page.locator(
     '.nb-leaf-paper:not(.nb-export-sheet) .nb-image',
@@ -171,6 +204,7 @@ try {
     widthPct: Number.parseFloat(node.style.width),
     pageId: node.closest('.nb-leaf-paper')?.getAttribute('data-page-id') ?? null,
     marker: node.closest('.nb-leaf-paper')?.textContent?.includes('Copy that must remain') ?? false,
+    markerInBook: node.closest('.nb-book-view')?.textContent?.includes('Copy that must remain') ?? false,
   }));
 
   await page.getByRole('button', { name: 'View image larger' }).click();
@@ -207,10 +241,17 @@ try {
     report.directMenu &&
     report.laneMenu &&
     report.laneSelectedImage === 1 &&
+    report.controlsDismissedOnBlankLane &&
+    report.alignmentBefore.label !== report.alignmentAfter.label &&
+    report.alignmentBefore.path !== report.alignmentAfter.path &&
     centresPass &&
+    report.fitAction.before.pageId === report.fitAction.after.pageId &&
+    report.fitAction.before.marker === report.fitAction.after.marker &&
+    report.fitAction.after.widthPct >= report.fitAction.before.widthPct &&
     report.resizeBefore.marker &&
-    report.resizeAfter.marker &&
+    report.resizeAfter.markerInBook &&
     report.resizeBefore.pageId === report.resizeAfter.pageId &&
+    report.resizeAfter.widthPct > report.resizeBefore.widthPct &&
     report.resizeAfter.widthPct < 90 &&
     report.viewer?.naturalHeight === 1800 &&
     report.viewer.completeInside;

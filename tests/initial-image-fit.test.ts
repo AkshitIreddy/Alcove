@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fitImageWidthToRemainingPage,
   initialImageWidthForPage,
   safeManualImageResizeWidth,
   safeStandaloneUploadWidth,
@@ -86,7 +87,7 @@ describe('new image page-fit safety', () => {
     ).toBe(90);
   });
 
-  it('stops a tall image at the empty-leaf ceiling', () => {
+  it('stops a tall image inside the space remaining on its current leaf', () => {
     expect(
       safeManualImageResizeWidth({
         measuredWidthPct: 70,
@@ -99,7 +100,7 @@ describe('new image page-fit safety', () => {
         pagePaddingBottomPx: 24,
         minimumWidthPct: 10,
       }),
-    ).toBe(89);
+    ).toBe(54);
   });
 
   it('allows manual enlargement when the page has room', () => {
@@ -116,5 +117,53 @@ describe('new image page-fit safety', () => {
         minimumWidthPct: 10,
       }),
     ).toBe(75);
+  });
+
+  it('fits an image into only the unused space between its neighbours', () => {
+    expect(
+      fitImageWidthToRemainingPage({
+        measuredWidthPct: 40,
+        maximumWidthPct: 132,
+        imageHeightPx: 200,
+        blockHeightPx: 230,
+        blockTopPx: 100,
+        followingContentHeightPx: 150,
+        pageCapacityPx: 720,
+        pagePaddingBottomPx: 24,
+        minimumWidthPct: 10,
+      }),
+    ).toBe(83);
+  });
+
+  it('uses the rest of an otherwise empty leaf without exceeding the leaf width', () => {
+    expect(
+      fitImageWidthToRemainingPage({
+        measuredWidthPct: 40,
+        maximumWidthPct: 132,
+        imageHeightPx: 200,
+        blockHeightPx: 230,
+        blockTopPx: 100,
+        followingContentHeightPx: 0,
+        pageCapacityPx: 720,
+        pagePaddingBottomPx: 24,
+        minimumWidthPct: 10,
+      }),
+    ).toBe(113);
+  });
+
+  it('never shrinks an image when the remaining space is already exhausted', () => {
+    expect(
+      fitImageWidthToRemainingPage({
+        measuredWidthPct: 70,
+        maximumWidthPct: 132,
+        imageHeightPx: 500,
+        blockHeightPx: 530,
+        blockTopPx: 300,
+        followingContentHeightPx: 100,
+        pageCapacityPx: 720,
+        pagePaddingBottomPx: 24,
+        minimumWidthPct: 10,
+      }),
+    ).toBe(70);
   });
 });

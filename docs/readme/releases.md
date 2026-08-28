@@ -21,6 +21,25 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.12 — page-aware editing and honest previews
+
+**Pictures can grow without escaping their leaf.** Corner resizing still
+reaches into the paper's quiet margins, but now stops before the image itself
+would paginate. A new fit action uses only the free space around that picture,
+blank-cell clicks dismiss its tools, and the alignment icon follows the actual
+left, centre or right setting.
+
+**Large flowcharts now continue across real pages.** Alcove cuts only in the
+whitespace between graph ranks, preserves one editable chart source, and
+re-splits it after edits or a move back to the previous page. The thumbnail
+strip now shows low-density renders of the actual pages—including diagrams,
+images, special blocks and paper styles—instead of invented placeholder bars.
+
+**Long insertions stay visibly under control.** A full-screen Read → Prepare →
+Place → Check card masks page settlement instead of exposing white dialog/book
+repaints. Wrapped H1 and H2 lines use compact heading leading and no longer
+carry an empty-line-sized gap above them.
+
 ## 0.7.11 — clearer PDF sources for the Agent
 
 **PDF attachments now use Cohere Parse automatically when the Agent is

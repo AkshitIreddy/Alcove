@@ -412,40 +412,24 @@
   letter-spacing: 0.005em;
 }
 
-/* Big headings own two rules of the grid, and they must be WRITTEN on a rule
-   like everything else. Centred leading does not do that: Caveat sits high in
-   its em box (ascent 0.952em against descent 0.310em), so splitting the
-   leading of a 64px line box left "Make it yours" floating 17.5px above its
-   rule where the body text below it sits 7.5px above its own — the heading
-   read as hovering. Measured on the Welcome book, not guessed.
+/* H1 and H2 are larger than one writing band, but their LETTERS do not need a
+   two-band line box. That old 2 × pitch rule became 64px at the shipped page
+   settings: a wrapped 33px H2 therefore had almost another complete line of
+   blank leading between its words. Its measured ruled-page compensation also
+   inserted 19–21px before the first line, which read as an accidental empty
+   paragraph above a section.
 
-   The fix nudges the glyphs down by a lead L without moving anything else:
-   padding-top adds L, a negative margin-bottom takes it straight back, so
-   every heading — including one that wraps to two lines — still advances the
-   grid by an exact multiple of two rules and the ruled background stays in
-   step. A line box of L + (2·band − ascent − descent)/2 + ascent puts the
-   baseline the same distance above its rule that body text keeps
-   (Patrick Hand at 20px: band/2 − 8.5px), which solves to
-   L = band/2 + 8.5px − 0.321em. Both constants are font metrics — change the
-   heading or body face and they have to be re-measured.
-
-   AND BOTH SCALE WITH THE TYPE. 8.5px is half the difference between Patrick
-   Hand's ascent and descent AT 20px — it is a fraction of the body size, not a
-   fixed distance — so it is multiplied by `--page-text-scale` alongside the
-   band. 0.321em needs no help: it is already relative to the heading's own
-   size, which scales below. Left as a flat 8.5px, a reader who shrank the type
-   would have watched every heading drift off its rule while the body text sat
-   perfectly on its own, which is the exact failure this correction exists to
-   fix — just aimed at a different line. */
+   Use the page's authored heading leading for the lines themselves. The real
+   block height still participates in DOM measurement, overflow and
+   pagination; there is no transform or fake visual offset. Only a grid-snap
+   correction after an irregular feature may add top space, because that is
+   the smallest correction which puts ordinary writing back on the paper's
+   ruling and is already measured by PageEditor. */
 .nb-prose h1,
 .nb-prose h2 {
-  --nb-heading-lead: calc(
-    var(--page-line-height) / 2 + 8.5px * var(--page-text-scale, 1) - 0.321em +
-      var(--nb-rule-lead)
-  );
-  padding-top: calc(var(--nb-heading-lead) + var(--nb-grid-snap, 0px));
-  margin-bottom: calc(-1 * var(--nb-heading-lead));
-  line-height: calc(2 * var(--page-line-height));
+  padding-top: var(--nb-grid-snap, 0px);
+  margin-bottom: 0;
+  line-height: var(--leading-heading);
 }
 
 /* The heading scale rides the reading type.

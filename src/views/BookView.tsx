@@ -2741,6 +2741,7 @@ export default function BookView(): JSX.Element {
     closeRequested = true;
     setActivePanel(null);
     setInsertOpen(false);
+    setInsertPageId(null);
     if (prefersReducedMotion() || session() == null) {
       commitClose();
       return;
@@ -2924,7 +2925,7 @@ export default function BookView(): JSX.Element {
         'customize-book': togglePanel('customize'),
         thumbnails: () =>
           void saveSettings({ thumbnailsStrip: !settings.thumbnailsStrip }),
-        'insert-script': () => setInsertOpen(true),
+        'insert-script': () => openInsertDialog(),
         'export-script': () => {
           const page = activePage();
           if (page) void exportScript(page.id);
@@ -3162,6 +3163,11 @@ export default function BookView(): JSX.Element {
   // Rail actions (script tools moved off the old top toolbar)
   // -------------------------------------------------------------------------
   const [insertOpen, setInsertOpen] = createSignal(false);
+  // Pin the page that owns a manual import for the dialog's whole lifetime.
+  // The post-insert verification sweep deliberately visits other spreads; a
+  // dialog keyed directly to activePage() was therefore destroyed and rebuilt
+  // several times while its own promise was still running.
+  const [insertPageId, setInsertPageId] = createSignal<string | null>(null);
   /** Toasts carry a tone so a failure never reads like a success. */
   const [toast, setToast] = createSignal<{
     message: string;
@@ -3184,6 +3190,18 @@ export default function BookView(): JSX.Element {
       ? (rightPage() ?? leftPage())
       : (leftPage() ?? rightPage()),
   );
+
+  const openInsertDialog = (): void => {
+    const pageId = activePage()?.id;
+    if (pageId === undefined) return;
+    setInsertPageId(pageId);
+    setInsertOpen(true);
+  };
+
+  const closeInsertDialog = (): void => {
+    setInsertOpen(false);
+    setInsertPageId(null);
+  };
 
   const [aiPanelController, setAiPanelController] =
     createSignal<AiAgentPanelController | undefined>();
@@ -5629,7 +5647,7 @@ export default function BookView(): JSX.Element {
                     box is mounted against the focused leaf; page copy needs
                     that leaf; spec copy/download use this view's toast. */}
                 <SharePanel
-                  onInsertScript={() => setInsertOpen(true)}
+                  onInsertScript={() => openInsertDialog()}
                   onCopyScript={() => {
                     const page = activePage();
                     if (page) void exportScript(page.id);
@@ -5680,11 +5698,11 @@ export default function BookView(): JSX.Element {
                 </Show>
               </RailPanel>
 
-                <Show when={insertOpen() ? activePage()?.id : null} keyed>
+                <Show when={insertOpen() ? insertPageId() : null} keyed>
                   {(pageId) => (
                     <InsertScriptDialog
                       pageId={pageId}
-                      onClose={() => setInsertOpen(false)}
+                      onClose={() => closeInsertDialog()}
                       onNotify={notify}
                       onInsertionActivity={setScriptInsertionActivity}
                       onInsertComplete={armScriptInsertionUndo}

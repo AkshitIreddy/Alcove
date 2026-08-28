@@ -44,6 +44,7 @@ import {
 import { NOTEBOOK_SCRIPT_SPEC } from '../script/spec';
 import { getPageEditor } from '../instances';
 import ScriptPreview from './ScriptPreview';
+import { waitForInsertionMaskPaint } from './insertionPaint';
 
 export interface InsertScriptDialogProps {
   readonly pageId: string;
@@ -66,6 +67,30 @@ export interface InsertScriptDialogProps {
 
 const PARSE_DEBOUNCE_MS = 150;
 
+type InsertionPhase = 'preparing' | 'resolving' | 'laying-out' | 'checking';
+
+const INSERTION_PHASE_COPY: Record<
+  InsertionPhase,
+  { readonly title: string; readonly detail: string }
+> = {
+  preparing: {
+    title: 'Opening a place for your notes…',
+    detail: 'Reading the script and remembering where this insertion began.',
+  },
+  resolving: {
+    title: 'Gathering the pieces…',
+    detail: 'Preparing blocks and any requested picture cards before the pages move.',
+  },
+  'laying-out': {
+    title: 'Laying out the pages…',
+    detail: 'Placing each block onto fixed paper. A long notebook can take a moment.',
+  },
+  checking: {
+    title: 'Checking every page…',
+    detail: 'Letting headings, cards and page breaks settle before showing the result.',
+  },
+};
+
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -81,6 +106,8 @@ export default function InsertScriptDialog(
   const [source, setSource] = createSignal('');
   const [parsed, setParsed] = createSignal<ScriptDoc | null>(null);
   const [inserting, setInserting] = createSignal(false);
+  const [insertionPhase, setInsertionPhase] =
+    createSignal<InsertionPhase>('preparing');
 
   let textareaElement: HTMLTextAreaElement | undefined;
   let fileElement: HTMLInputElement | undefined;
@@ -145,7 +172,7 @@ export default function InsertScriptDialog(
 
   // Escape closes the dialog.
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape') props.onClose();
+    if (event.key === 'Escape' && !inserting()) props.onClose();
   };
   onMount(() => {
     document.addEventListener('keydown', onKeyDown);
@@ -179,11 +206,17 @@ export default function InsertScriptDialog(
   const insert = async (): Promise<void> => {
     const text = source();
     if (text.trim() === '' || inserting()) return;
+    setInsertionPhase('preparing');
     setInserting(true);
     let viewLockReleased = false;
-    await props.onInsertionActivity?.(true);
     try {
+      // The editor insertion and pagination dispatch below are synchronous.
+      // Commit an opaque, reassuring state first so WebView2 never has to
+      // paint a half-remounted dialog or a transient blank book underneath.
+      await waitForInsertionMaskPaint();
+      await props.onInsertionActivity?.(true);
       const parsedPages = parseNotebookScriptPages(text);
+      setInsertionPhase('resolving');
       // Image search is asynchronous and environment-owned. Resolve it once
       // before constructing any page JSON; in browser/offline development the
       // resolver deliberately returns clickable upload cards instead of
@@ -224,6 +257,8 @@ export default function InsertScriptDialog(
        * the tail and becomes the mysterious mostly-empty final page. BookView
        * also reuses the fresh book's blank leaves here.
        */
+      setInsertionPhase('laying-out');
+      await waitForInsertionMaskPaint();
       if (following.length > 0) {
         await props.onInsertFollowingPages?.(props.pageId, following);
       }
@@ -278,13 +313,15 @@ export default function InsertScriptDialog(
         }
       }
       await setPageScript(props.pageId, firstSource, insertedDoc);
+      setInsertionPhase('checking');
+      await waitForInsertionMaskPaint();
+      await props.onInsertionActivity?.(false);
+      viewLockReleased = true;
       props.onNotify?.(
         following.length > 0
           ? `script inserted across ${following.length + 1} pages`
           : 'script inserted',
       );
-      await props.onInsertionActivity?.(false);
-      viewLockReleased = true;
       props.onInsertComplete?.();
       props.onClose();
     } finally {
@@ -296,47 +333,51 @@ export default function InsertScriptDialog(
   return (
     <div
       class="nb-ins-overlay"
+      classList={{ 'is-inserting': inserting() }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
+        if (event.target === event.currentTarget && !inserting()) props.onClose();
       }}
     >
       <div
         class="nb-ins-card"
+        classList={{ 'is-inserting': inserting() }}
         role="dialog"
         aria-modal="true"
         aria-label="Insert script"
         aria-busy={inserting()}
       >
-        {/* A way out you can see — top-left, like every exit in this app. */}
-        <button
-          type="button"
-          class="nb-ins-close"
-          aria-label="Close insert script"
-          onClick={() => props.onClose()}
-        >
-          ×
-        </button>
-        <h2 class="nb-ins-title">Insert script</h2>
-        <p class="nb-ins-hint font-ui">
-          open the .md from your AI, or paste Notebook Script from your own pen
-        </p>
+        <div class="nb-ins-content" inert={inserting()}>
+          {/* A way out you can see — top-left, like every exit in this app. */}
+          <button
+            type="button"
+            class="nb-ins-close"
+            aria-label="Close insert script"
+            disabled={inserting()}
+            onClick={() => props.onClose()}
+          >
+            ×
+          </button>
+          <h2 class="nb-ins-title">Insert script</h2>
+          <p class="nb-ins-hint font-ui">
+            open the .md from your AI, or paste Notebook Script from your own pen
+          </p>
 
-        <input
-          ref={fileElement}
-          class="nb-ins-file-input"
-          type="file"
-          accept=".md,text/markdown,text/plain"
-          onChange={(event) => {
-            void loadFile(event.currentTarget.files?.[0]);
-            event.currentTarget.value = '';
-          }}
-        />
+          <input
+            ref={fileElement}
+            class="nb-ins-file-input"
+            type="file"
+            accept=".md,text/markdown,text/plain"
+            onChange={(event) => {
+              void loadFile(event.currentTarget.files?.[0]);
+              event.currentTarget.value = '';
+            }}
+          />
 
-        <p class="nb-ins-spec-note font-ui" role="note">
-          {NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING}
-        </p>
+          <p class="nb-ins-spec-note font-ui" role="note">
+            {NOTEBOOK_SCRIPT_SPEC_PASTE_WARNING}
+          </p>
 
-        <div class="nb-ins-body">
+          <div class="nb-ins-body">
           <div class="nb-ins-left">
             <textarea
               ref={textareaElement}
@@ -388,9 +429,9 @@ export default function InsertScriptDialog(
               {(doc) => <ScriptPreview doc={doc} />}
             </Show>
           </div>
-        </div>
+          </div>
 
-        <div class="nb-ins-actions nb-ins-spec-actions">
+          <div class="nb-ins-actions nb-ins-spec-actions">
           <button
             type="button"
             class="nb-ins-button nb-ins-button-primary font-ui"
@@ -428,7 +469,33 @@ export default function InsertScriptDialog(
           >
             {inserting() ? 'Laying out pages…' : 'Insert'}
           </button>
+          </div>
         </div>
+
+        <Show when={inserting()}>
+          <section
+            class="nb-ins-progress"
+            data-phase={insertionPhase()}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <div class="nb-ins-progress-book" aria-hidden="true">
+              <span class="nb-ins-progress-cover" />
+              <span class="nb-ins-progress-pages"><i /><i /><i /></span>
+              <span class="nb-ins-progress-ribbon" />
+            </div>
+            <span class="nb-ins-progress-kicker font-ui">Notebook Script</span>
+            <h3>{INSERTION_PHASE_COPY[insertionPhase()].title}</h3>
+            <p class="font-ui">{INSERTION_PHASE_COPY[insertionPhase()].detail}</p>
+            <ol class="nb-ins-progress-steps font-ui" aria-hidden="true">
+              <li classList={{ 'is-current': insertionPhase() === 'preparing', 'is-done': insertionPhase() !== 'preparing' }}>Read</li>
+              <li classList={{ 'is-current': insertionPhase() === 'resolving', 'is-done': insertionPhase() === 'laying-out' || insertionPhase() === 'checking' }}>Prepare</li>
+              <li classList={{ 'is-current': insertionPhase() === 'laying-out', 'is-done': insertionPhase() === 'checking' }}>Place</li>
+              <li classList={{ 'is-current': insertionPhase() === 'checking' }}>Check</li>
+            </ol>
+          </section>
+        </Show>
       </div>
     </div>
   );

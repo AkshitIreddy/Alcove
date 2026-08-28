@@ -1,185 +1,223 @@
 /**
- * src/views/ThumbStrip.tsx — the toggleable bottom filmstrip of mini page
- * renders (roadmap #10). Every page gets a lightweight miniature drawn from
- * its stored heading and block shapes, so all 48 pages remain recognisable
- * without coupling the strip to the flip engine's six-entry raster LRU. Click
- * a thumb to jump to its spread.
+ * The bottom filmstrip of real page miniatures.
  *
- * This preview is deliberately stable. The flip cache fills and evicts pages
- * out-of-band; borrowing its bitmaps made several stationary thumbnails swap
- * from preview to raster together after a turn. A navigation aid must not
- * repaint itself after the navigation has already landed.
+ * Every visible thumbnail is a low-density capture of the same staged
+ * PageEditor used by the flip engine: real text wrapping, images, diagrams,
+ * cards, free-layer marks and page ruling. The strip keeps the tiny pixels,
+ * never the full page texture, and IntersectionObserver requests only the
+ * portion the reader can actually see.
  */
-import { createEffect, For, type JSX } from 'solid-js';
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
 import type { Page } from '../data/types';
+import {
+  pageThumbnailLookSignature,
+  type PageThumbnailKey,
+} from './pageThumbnails';
 import { extractHeadings } from './toc';
 import { thumbnailPairNeedsRecentre } from './thumbScroll';
 
 export interface ThumbStripProps {
   pages: readonly Page[];
   currentSpread: number;
+  requestPreview(
+    pageId: string,
+    key: PageThumbnailKey,
+    signal?: AbortSignal,
+  ): Promise<ImageBitmap | null>;
   onJump(slot: number): void;
 }
 
-type PreviewNode = {
-  readonly type?: unknown;
-  readonly text?: unknown;
-  readonly content?: unknown;
-};
+type PreviewState = 'idle' | 'loading' | 'refreshing' | 'ready' | 'stale';
 
-function nodeText(value: unknown): string {
-  if (value === null || typeof value !== 'object') return '';
-  const node = value as PreviewNode;
-  if (typeof node.text === 'string') return node.text;
-  return Array.isArray(node.content) ? node.content.map(nodeText).join(' ') : '';
-}
-
-function topBlocks(page: Page): PreviewNode[] {
-  return Array.isArray(page.doc.content)
-    ? page.doc.content.filter(
-        (value): value is PreviewNode => value !== null && typeof value === 'object',
-      )
-    : [];
-}
-
-function cssColour(canvas: HTMLCanvasElement, name: string, fallback: string): string {
+function drawPageRaster(canvas: HTMLCanvasElement, bitmap: ImageBitmap): void {
+  const context = canvas.getContext('2d');
+  if (context === null) return;
+  let paper = '#f8f0dc';
   try {
-    return getComputedStyle(canvas).getPropertyValue(name).trim() || fallback;
+    paper = getComputedStyle(canvas).getPropertyValue('--paper-cream').trim() || paper;
   } catch {
-    return fallback;
+    // Detached test doubles use parchment.
   }
-}
-
-/**
- * Draw a cheap but content-bearing preview directly from the stored document.
- * This is deliberately not another page renderer: one title plus the stored
- * block silhouettes makes distant targets distinct at filmstrip scale.
- */
-function drawDocumentPreview(
-  canvas: HTMLCanvasElement,
-  page: Page,
-  title: string,
-): void {
-  const ctx = canvas.getContext('2d');
-  if (ctx === null) return;
-  const paper = cssColour(canvas, '--paper-cream', '#f8f0dc');
-  const rule = cssColour(canvas, '--paper-edge', '#d7bd8b');
-  const ink = cssColour(canvas, '--ink-sepia', '#513426');
-  const wash = cssColour(canvas, '--wash-amber-light', '#efd9a6');
-  const sky = cssColour(canvas, '--wash-sky-light', '#cddfe0');
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = paper;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = rule;
-  ctx.lineWidth = 1;
-  for (let y = 31; y < canvas.height; y += 16) {
-    ctx.beginPath();
-    ctx.moveTo(9, y + 0.5);
-    ctx.lineTo(95, y + 0.5);
-    ctx.stroke();
-  }
-
-  // Tiny text is UI micro-copy, so it uses Nunito rather than shrinking a
-  // handwriting face below the app's 13px readability floor.
-  ctx.fillStyle = wash;
-  ctx.fillRect(7, 7, 90, 24);
-  ctx.fillStyle = ink;
-  ctx.font = '700 13px "Nunito Sans", "Segoe UI", sans-serif';
-  ctx.textBaseline = 'top';
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = '';
-  for (const word of words) {
-    const next = line === '' ? word : `${line} ${word}`;
-    if (line !== '' && ctx.measureText(next).width > 84) {
-      lines.push(line);
-      line = word;
-      if (lines.length === 2) break;
-    } else {
-      line = next;
-    }
-  }
-  if (lines.length < 2 && line !== '') lines.push(line);
-  lines.slice(0, 2).forEach((text, index) => ctx.fillText(text, 11, 9 + index * 12));
-
-  const blocks = topBlocks(page).slice(0, 6);
-  blocks.forEach((block, index) => {
-    const type = typeof block.type === 'string' ? block.type : '';
-    const text = nodeText(block).trim();
-    const width = Math.max(22, Math.min(80, 24 + ((text.length * 7 + index * 11) % 58)));
-    const y = 39 + index * 13;
-    if (/image|diagram|tree|graph|timeline|code/i.test(type)) {
-      ctx.fillStyle = index % 2 === 0 ? sky : wash;
-      ctx.fillRect(11, y, Math.min(width, 76), 9);
-      ctx.strokeStyle = ink;
-      ctx.strokeRect(11.5, y + 0.5, Math.min(width, 76) - 1, 8);
-      return;
-    }
-    ctx.strokeStyle = ink;
-    ctx.lineWidth = type === 'heading' ? 3 : 1.5;
-    ctx.beginPath();
-    ctx.moveTo(type === 'heading' ? 12 : 15, y + 4.5);
-    ctx.lineTo(Math.min(94, 12 + width), y + 4.5);
-    ctx.stroke();
-  });
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = paper;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const scale = Math.min(canvas.width / bitmap.width, canvas.height / bitmap.height);
+  const width = bitmap.width * scale;
+  const height = bitmap.height * scale;
+  context.drawImage(
+    bitmap,
+    (canvas.width - width) / 2,
+    (canvas.height - height) / 2,
+    width,
+    height,
+  );
 }
 
 export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
   let stripEl: HTMLDivElement | undefined;
+  let intersectionObserver: IntersectionObserver | undefined;
+  let lookObserver: MutationObserver | undefined;
   const canvases = new Map<string, HTMLCanvasElement>();
-  const previewSignatures = new Map<string, string>();
+  const visible = new Set<string>();
+  const painted = new Map<string, PageThumbnailKey>();
+  const controllers = new Map<string, AbortController>();
+  const retryTimers = new Map<string, number>();
+  const retries = new Map<string, number>();
+  const [states, setStates] = createSignal<Record<string, PreviewState>>({});
+  const root = document.documentElement;
+  const [look, setLook] = createSignal(pageThumbnailLookSignature(root));
 
-  const previewSignature = (page: Page, slot: number): string =>
-    JSON.stringify([
-      label(page, slot),
-      ...topBlocks(page)
-        .slice(0, 6)
-        .map((block) => [block.type, nodeText(block)]),
-    ]);
+  const sameKey = (left: PageThumbnailKey | undefined, right: PageThumbnailKey): boolean =>
+    left !== undefined &&
+    left.doc === right.doc &&
+    left.side === right.side &&
+    left.look === right.look;
 
-  const blit = (): void => {
-    const live = new Set(props.pages.map((page) => page.id));
-    for (const id of previewSignatures.keys()) {
-      if (!live.has(id)) previewSignatures.delete(id);
+  const setState = (pageId: string, state: PreviewState): void => {
+    setStates((current) =>
+      current[pageId] === state ? current : { ...current, [pageId]: state },
+    );
+  };
+
+  const pageFor = (pageId: string): { page: Page; slot: number } | null => {
+    const slot = props.pages.findIndex((page) => page.id === pageId);
+    const page = props.pages[slot];
+    return slot >= 0 && page !== undefined ? { page, slot } : null;
+  };
+
+  const request = (pageId: string, force = false): void => {
+    if (!visible.has(pageId)) return;
+    const canvas = canvases.get(pageId);
+    const found = pageFor(pageId);
+    if (canvas === undefined || found === null) return;
+    const key: PageThumbnailKey = {
+      doc: found.page.doc,
+      side: found.slot % 2 === 0 ? 'left' : 'right',
+      look: look(),
+    };
+    if (!force && sameKey(painted.get(pageId), key)) return;
+
+    controllers.get(pageId)?.abort();
+    const controller = new AbortController();
+    controllers.set(pageId, controller);
+    setState(pageId, painted.has(pageId) ? 'refreshing' : 'loading');
+
+    void props.requestPreview(pageId, key, controller.signal)
+      .then((bitmap) => {
+        if (controller.signal.aborted || controllers.get(pageId) !== controller) return;
+        controllers.delete(pageId);
+        if (bitmap === null) throw new Error('page thumbnail capture returned no pixels');
+        drawPageRaster(canvas, bitmap);
+        painted.set(pageId, key);
+        retries.delete(pageId);
+        setState(pageId, 'ready');
+      })
+      .catch(() => {
+        if (controller.signal.aborted || controllers.get(pageId) !== controller) return;
+        controllers.delete(pageId);
+        setState(pageId, painted.has(pageId) ? 'stale' : 'idle');
+        const attempt = retries.get(pageId) ?? 0;
+        if (attempt >= 2 || !visible.has(pageId)) return;
+        retries.set(pageId, attempt + 1);
+        const timer = window.setTimeout(() => {
+          retryTimers.delete(pageId);
+          request(pageId, true);
+        }, attempt === 0 ? 250 : 1000);
+        retryTimers.set(pageId, timer);
+      });
+  };
+
+  const attachCanvas = (pageId: string, canvas: HTMLCanvasElement): void => {
+    const previous = canvases.get(pageId);
+    if (previous !== undefined && previous !== canvas) {
+      intersectionObserver?.unobserve(previous);
+      controllers.get(pageId)?.abort();
+      painted.delete(pageId);
     }
-    props.pages.forEach((page, slot) => {
-      const canvas = canvases.get(page.id);
-      if (canvas === undefined) return;
-      const signature = previewSignature(page, slot);
-      if (previewSignatures.get(page.id) === signature) return;
-      drawDocumentPreview(canvas, page, label(page, slot));
-      previewSignatures.set(page.id, signature);
-    });
+    canvas.dataset.pageId = pageId;
+    canvases.set(pageId, canvas);
+    intersectionObserver?.observe(canvas);
   };
 
   createEffect(() => {
-    // Redraw only when the stored page collection changes. Spread navigation
-    // changes selection/scroll position but never the thumbnail's pixels. Do
-    // the content-bearing paint in this effect rather than a queued microtask:
-    // the latter was observable one recorder frame after the new spread had
-    // already landed. The signature keeps ID-only editor normalisation and an
-    // unrelated page change from repainting all 48 canvases.
-    void props.pages;
-    blit();
+    const pages = props.pages;
+    void look();
+    const live = new Set(pages.map((page) => page.id));
+    for (const [pageId, canvas] of canvases) {
+      if (live.has(pageId)) continue;
+      intersectionObserver?.unobserve(canvas);
+      controllers.get(pageId)?.abort();
+      controllers.delete(pageId);
+      const timer = retryTimers.get(pageId);
+      if (timer !== undefined) window.clearTimeout(timer);
+      retryTimers.delete(pageId);
+      retries.delete(pageId);
+      canvases.delete(pageId);
+      visible.delete(pageId);
+      painted.delete(pageId);
+    }
+    for (const pageId of visible) request(pageId);
   });
 
-  /*
-   * A TOC/ribbon jump can cross twenty spreads at once. A horizontal scroller
-   * keeps its old scrollLeft, which used to leave the strip showing page 1
-   * while the current pages sat two thousand pixels off-screen beside page 41.
-   *
-   * Follow navigation only when the selected pair has actually left the
-   * viewport. Recentring every adjacent turn made the whole filmstrip jump at
-   * the exact raster-to-DOM handoff even though the next two thumbnails were
-   * already in view. A normal page turn should move only the selection ring;
-   * a distant TOC/ribbon jump still recentres the otherwise hidden target.
-   *
-   * Do not put this in `blit()` or document edits would fight a reader who is
-   * browsing the strip by hand. Rects are translated back into scroll
-   * coordinates rather than using `scrollIntoView`, which can also move the
-   * book or the window.
-   */
+  onMount(() => {
+    intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const canvas = entry.target as HTMLCanvasElement;
+          const pageId = canvas.dataset.pageId;
+          if (!pageId || canvases.get(pageId) !== canvas) continue;
+          if (entry.isIntersecting) {
+            visible.add(pageId);
+            request(pageId);
+          } else {
+            visible.delete(pageId);
+            controllers.get(pageId)?.abort();
+            controllers.delete(pageId);
+            const timer = retryTimers.get(pageId);
+            if (timer !== undefined) window.clearTimeout(timer);
+            retryTimers.delete(pageId);
+          }
+        }
+      },
+      { root: stripEl, rootMargin: '72px' },
+    );
+    for (const canvas of canvases.values()) intersectionObserver.observe(canvas);
+
+    let signature = look();
+    lookObserver = new MutationObserver(() => {
+      const next = pageThumbnailLookSignature(root);
+      if (next === signature) return;
+      signature = next;
+      setLook(next);
+    });
+    lookObserver.observe(root, {
+      attributes: true,
+      attributeFilter: [
+        'data-theme',
+        'data-ink',
+        'data-appearance',
+        'data-code-frame',
+        'data-code-numbers',
+        'style',
+        'class',
+      ],
+    });
+  });
+
+  onCleanup(() => {
+    intersectionObserver?.disconnect();
+    lookObserver?.disconnect();
+    for (const controller of controllers.values()) controller.abort();
+    for (const timer of retryTimers.values()) window.clearTimeout(timer);
+  });
+
   createEffect(() => {
     const spread = props.currentSpread;
     void props.pages.length;
@@ -190,7 +228,6 @@ export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
       const first = thumbs[spread * 2];
       const second = thumbs[spread * 2 + 1] ?? first;
       if (!first || !second) return;
-
       const stripRect = strip.getBoundingClientRect();
       const firstRect = first.getBoundingClientRect();
       const secondRect = second.getBoundingClientRect();
@@ -204,15 +241,15 @@ export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
       ) {
         return;
       }
-
       const pairCenterInContent =
         strip.scrollLeft + (firstRect.left + secondRect.right) / 2 - stripRect.left;
       strip.scrollLeft = pairCenterInContent - strip.clientWidth / 2;
     });
   });
 
-  const label = (page: Page, slot: number): string =>
-    extractHeadings(page.doc)[0]?.text ?? `page ${slot + 1}`;
+  const label = (page: Page | undefined, slot: number): string =>
+    (page === undefined ? undefined : extractHeadings(page.doc)[0]?.text) ??
+    `page ${slot + 1}`;
 
   return (
     <div
@@ -221,39 +258,43 @@ export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
       aria-label="Page thumbnails"
       ref={stripEl}
     >
-      <For each={props.pages}>
-        {(page, slot) => (
-          <button
-            type="button"
-            class="nb-thumb"
-            classList={{
-              'is-current': Math.floor(slot() / 2) === props.currentSpread,
-            }}
-            data-tooltip={label(page, slot())}
-            data-tooltip-side="top"
-            aria-label={`Jump to ${label(page, slot())}`}
-            onClick={() => props.onJump(slot())}
-          >
-            <span
-              class="nb-thumb-paper has-preview"
-              data-thumbnail-source="document"
+      <For each={props.pages.map((page) => page.id)}>
+        {(pageId, slot) => {
+          const page = (): Page | undefined => props.pages.find((item) => item.id === pageId);
+          const state = (): PreviewState => states()[pageId] ?? 'idle';
+          const hasRaster = (): boolean =>
+            state() === 'ready' || state() === 'refreshing' || state() === 'stale';
+          return (
+            <button
+              type="button"
+              class="nb-thumb"
+              classList={{
+                'is-current': Math.floor(slot() / 2) === props.currentSpread,
+              }}
+              data-tooltip={label(page(), slot())}
+              data-tooltip-side="top"
+              aria-label={`Jump to ${label(page(), slot())}`}
+              onClick={() => props.onJump(slot())}
             >
-              <canvas
-                width={104}
-                height={132}
-                ref={(el) => {
-                  canvases.set(page.id, el);
-                  drawDocumentPreview(el, page, label(page, slot()));
-                  previewSignatures.set(
-                    page.id,
-                    previewSignature(page, slot()),
-                  );
-                }}
-              />
-              <span class="nb-thumb-number font-label">{slot() + 1}</span>
-            </span>
-          </button>
-        )}
+              <span
+                class="nb-thumb-paper"
+                classList={{ 'has-raster': hasRaster() }}
+                data-thumbnail-source="page-raster"
+                data-thumbnail-state={state()}
+                data-page-id={pageId}
+                aria-busy={state() === 'loading' || state() === 'refreshing'}
+              >
+                <canvas
+                  width={104}
+                  height={132}
+                  aria-hidden="true"
+                  ref={(canvas) => attachCanvas(pageId, canvas)}
+                />
+                <span class="nb-thumb-number font-label">{slot() + 1}</span>
+              </span>
+            </button>
+          );
+        }}
       </For>
     </div>
   );

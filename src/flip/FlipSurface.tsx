@@ -60,7 +60,14 @@ import { measureUntransformedSheet } from '../editor/script/exporters/capture';
 import type { PageDoc } from '../data/types';
 import { type FlipDirection } from './math';
 import { flipSnapshotSceneIds } from './scene';
+import {
+  PageThumbnailCache,
+  type PageThumbnailKey,
+} from '../views/pageThumbnails';
 import '../styles/flip.css';
+
+const THUMBNAIL_PIXEL_WIDTH = 104;
+const THUMBNAIL_PIXEL_HEIGHT = 132;
 
 export interface SpreadPageIds {
   left: string | null;
@@ -90,6 +97,16 @@ export interface FlipSurfaceApi {
    * opened can have one — callers need a placeholder fallback.
    */
   getSnapshot(pageId: string): RasterEntry | undefined;
+  /**
+   * Render one actual page at filmstrip density. This uses the same staged
+   * PageEditor and snapshot recipe as a curl, but keeps its tiny pixels in a
+   * separate bounded cache so browsing thumbnails cannot evict flip faces.
+   */
+  requestThumbnail(
+    pageId: string,
+    key: PageThumbnailKey,
+    signal?: AbortSignal,
+  ): Promise<ImageBitmap | null>;
   /**
    * Re-stage ONE page, by id, whether or not it is in the flip's own six-page
    * window — which is how a settle chases its own target.
@@ -261,6 +278,67 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         }
       : {}),
   });
+  const thumbnailCache = new PageThumbnailCache<ImageBitmap>({
+    capacity: 96,
+    // Each capture mounts a hidden TipTap editor. Serial work keeps opening or
+    // scrolling the strip from blanking the live book with a main-thread burst.
+    concurrency: 1,
+  });
+
+  const requestThumbnail = (
+    pageId: string,
+    key: PageThumbnailKey,
+    signal?: AbortSignal,
+  ): Promise<ImageBitmap | null> => {
+    // A function read keeps TypeScript from treating the pre-await signal
+    // state as permanently narrowed across the asynchronous capture.
+    const requestAborted = (): boolean => signal?.aborted === true;
+    return thumbnailCache.request(
+      pageId,
+      key,
+      async () => {
+        if (requestAborted()) return null;
+        const pageElement = props.getPageElement(key.side);
+        const fallbackElement = props.getPageElement(
+          key.side === 'left' ? 'right' : 'left',
+        );
+        const measuringElement = pageElement ?? fallbackElement;
+        if (measuringElement === null) return null;
+        const measured = measureUntransformedSheet(measuringElement);
+        if (measured.width <= 1 || measured.height <= 1) return null;
+        // Layout remains full-size; only the resulting pixels are miniature.
+        // 0.5 is a defensive ceiling for unusually tiny/focused leaves.
+        const pixelRatio = Math.min(
+          0.5,
+          Math.max(
+            0.1,
+            THUMBNAIL_PIXEL_WIDTH / measured.width,
+            THUMBNAIL_PIXEL_HEIGHT / measured.height,
+          ),
+        );
+        const capture = createOffscreenPageCapture({
+          // Capture the immutable document named by the cache key. Reading the
+          // latest page by id after a queued edit could publish new pixels
+          // under an old key and make the next real update look like a hit.
+          loadPageDoc: async (requestedId) =>
+            requestedId === pageId ? key.doc : null,
+          pageSize: () => measured,
+          pageSide: () => key.side,
+          spreadRoot: () => rootEl?.closest<HTMLElement>('.nb-spread') ?? null,
+          pixelRatio,
+          // Deliberately no pageCapacity/onTrailingOverflow: a navigation
+          // picture is read-only and must never move the reader's blocks.
+        });
+        const bitmap = await capture(pageId);
+        if (requestAborted()) {
+          bitmap?.close();
+          return null;
+        }
+        return bitmap;
+      },
+      signal,
+    );
+  };
 
   /*
    * QA BRIDGE — what the curl will actually have to draw with.
@@ -399,6 +477,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     suspendSnapshots: () => cache.suspend(),
     resumeSnapshots: (discardDeferred = false) => cache.resume(discardDeferred),
     getSnapshot: (pageId) => cache.peek(pageId),
+    requestThumbnail,
     settlePage: (pageId) => cache.notifyEdited(pageId),
   };
 
@@ -520,6 +599,7 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
     controller?.destroy();
     controller = undefined;
     cache.dispose(); // drops every bitmap when the book closes
+    thumbnailCache.dispose();
   });
 
   return (

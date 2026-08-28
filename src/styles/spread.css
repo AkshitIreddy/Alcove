@@ -875,7 +875,8 @@
   opacity: 1;
 }
 
-/* Paper ruling beneath the semantic preview / real page bitmap. */
+/* Quiet paper while a real page miniature is being staged. Once the raster
+   lands it owns every pixel — do not print a second generic ruling over it. */
 .nb-thumb-paper::before {
   content: '';
   position: absolute;
@@ -886,6 +887,10 @@
     var(--paper-edge) 7px 8px
   );
   opacity: 0.6;
+}
+
+.nb-thumb-paper.has-raster::before {
+  display: none;
 }
 
 .nb-thumb-number {

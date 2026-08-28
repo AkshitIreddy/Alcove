@@ -5665,6 +5665,10 @@ export default function BookView(): JSX.Element {
                 <ThumbStrip
                   pages={pages()}
                   currentSpread={spreadIndex()}
+                  requestPreview={(pageId, key, signal) =>
+                    flipApi?.requestThumbnail(pageId, key, signal) ??
+                    Promise.resolve(null)
+                  }
                   onJump={jumpToSlot}
                 />
               </Show>

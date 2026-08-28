@@ -117,6 +117,11 @@ import {
   topLevelBlockAt,
   topLevelBlocksInRange,
 } from '../editor/menu/blockOps';
+import {
+  collapseDiagramContinuations,
+  isDiagramContinuationCarry,
+  type DiagramContinuationEditDetail,
+} from '../editor/nodes/diagramPagination';
 import { clearJournalJump, pendingJournalJump } from '../editor/journal';
 import { preparePageAssetsForDisplay } from '../editor/media/portableAssets';
 import { notifySaved } from '../editor/saveIndicator';
@@ -929,6 +934,57 @@ export default function BookView(): JSX.Element {
     setDocVersions((prev) => ({ ...prev, [pageId]: (prev[pageId] ?? 0) + 1 }));
   };
 
+  /**
+   * Source editing is chart-wide, even when paper currently shows several
+   * viewports. Remove the derived tails first, restore one complete graph at
+   * the earliest fragment, then let PageEditor's live layout split the edited
+   * graph again wherever its new ranks fit.
+   */
+  const editDiagramContinuation = (
+    detail: DiagramContinuationEditDetail,
+  ): void => {
+    const current = pages();
+    const collapsed = collapseDiagramContinuations(
+      current.map((page) => page.doc),
+      detail.continuationId,
+      detail.data,
+    );
+    if (collapsed.changedIndices.length === 0) return;
+    const replacements = new Map(
+      collapsed.changedIndices.map((index) => [
+        current[index]!.id,
+        collapsed.docs[index] as PageDoc,
+      ]),
+    );
+    setPages((all) =>
+      all.map((page) => {
+        const doc = replacements.get(page.id);
+        return doc === undefined ? page : { ...page, doc };
+      }),
+    );
+
+    // Clear later viewports before restoring the canonical first one. If the
+    // first editor immediately splits again, its carry therefore lands in a
+    // page mirror from which the stale old tail is already gone.
+    const ordered = [
+      ...collapsed.changedIndices.slice(1),
+      collapsed.changedIndices[0]!,
+    ];
+    for (const index of ordered) {
+      const page = current[index];
+      const doc = collapsed.docs[index] as PageDoc | undefined;
+      if (page === undefined || doc === undefined) continue;
+      const live = getPageEditor(page.id);
+      if (live?.view.dom.isConnected) {
+        live.commands.setContent(doc as JSONContent);
+      } else {
+        bumpDocVersion(page.id);
+        void savePageDoc(page.id, doc);
+      }
+    }
+    flipApi?.invalidateSnapshots();
+  };
+
   const rightHasContent = (): boolean => docHasContent(rightPage()?.doc);
 
   /**
@@ -1176,7 +1232,12 @@ export default function BookView(): JSX.Element {
   };
 
   let backwardMoveOverflowTarget:
-    | { readonly pageId: string; overflowed: boolean }
+    | {
+        readonly pageId: string;
+        readonly moved: readonly unknown[];
+        overflowed: boolean;
+        continuationBlocks: unknown[];
+      }
     | null = null;
 
   /**
@@ -1293,7 +1354,9 @@ export default function BookView(): JSX.Element {
       }
       backwardMoveOverflowTarget = {
         pageId: previous.id,
+        moved,
         overflowed: false,
+        continuationBlocks: [],
       };
       try {
         const mergedNode = destination.schema.nodeFromJSON(merged);
@@ -1310,6 +1373,7 @@ export default function BookView(): JSX.Element {
         backwardMoveOverflowTarget.overflowed = true;
       }
       const overflowed = backwardMoveOverflowTarget.overflowed;
+      const continuationBlocks = backwardMoveOverflowTarget.continuationBlocks;
       backwardMoveOverflowTarget = null;
       if (overflowed) {
         const destinationNode = destination.schema.nodeFromJSON(destinationBefore);
@@ -1359,8 +1423,9 @@ export default function BookView(): JSX.Element {
       // Publish both halves in one task. The source may have unmounted while
       // the destination was being mounted; the mirror still receives its
       // prepared deletion before either save is allowed onto appendLane.
+      const destinationAfter = destination.getJSON() as PageDoc;
       updatePageDoc(pageId, sourceAfter);
-      updatePageDoc(previous.id, merged);
+      updatePageDoc(previous.id, destinationAfter);
       // The destination is live by construction and already owns `merged`.
       // A source on the adjacent spread may have unmounted while we chased the
       // destination; remount only that absent leaf from its updated mirror.
@@ -1369,12 +1434,24 @@ export default function BookView(): JSX.Element {
 
       const pending = appendLane.then(async () => {
         await savePageDoc(pageId, sourceAfter);
-        await savePageDoc(previous.id, merged);
+        await savePageDoc(previous.id, destinationAfter);
       });
       appendLane = pending.then(
         () => undefined,
         () => undefined,
       );
+
+      /*
+       * An oversized flowchart is the one legal provisional overflow: the
+       * destination keeps the part that fits and PageEditor's ordinary carry
+       * contract puts the generated continuation back at the head of this
+       * source/next leaf. Re-enter through `handleOverflow` after clearing the
+       * provisional guard so page creation, protected boundaries, persistence
+       * and further multi-page splits all use the same path as typed content.
+       */
+      if (continuationBlocks.length > 0) {
+        handleOverflow(previous.id, continuationBlocks, false, null, null);
+      }
 
       withPageEditor(previous.id, (instance) => {
         if (relativeSelection === null) {
@@ -2082,7 +2159,13 @@ export default function BookView(): JSX.Element {
     if (!Array.isArray(blocks) || blocks.length === 0) return;
     if (reversingPagination()) return;
     if (backwardMoveOverflowTarget?.pageId === pageId) {
-      backwardMoveOverflowTarget.overflowed = true;
+      if (
+        isDiagramContinuationCarry(backwardMoveOverflowTarget.moved, blocks)
+      ) {
+        backwardMoveOverflowTarget.continuationBlocks.push(...blocks);
+      } else {
+        backwardMoveOverflowTarget.overflowed = true;
+      }
       return;
     }
     const inherited = origin ?? pendingPaginationOrigins.get(pageId) ?? null;
@@ -5252,6 +5335,7 @@ export default function BookView(): JSX.Element {
               }
               onDocChange={(doc) => handlePageDocChange(current.id, doc)}
               onAuthoredEdit={(origin) => noteAuthoredEdit(current.id, origin)}
+              onDiagramContinuationEdit={editDiagramContinuation}
               paginated={!qaNoPagination}
               pageCapacityPx={qaNoPagination ? undefined : pageCapacity()}
               onOverflow={

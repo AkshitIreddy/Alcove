@@ -56,6 +56,10 @@ export const BLOCK_ID_TYPES = [
   'photo-corner',
   'wax-seal',
   'map-pin',
+  // A tall graph may become several page viewports. Its first stable block id
+  // is the continuation group's identity; every carried viewport derives its
+  // own deterministic id from it.
+  'diagram',
 ] as const;
 
 const BLOCK_ID_TYPE_SET: ReadonlySet<string> = new Set(BLOCK_ID_TYPES);

@@ -38,6 +38,10 @@ import {
 } from '../../diagrams/source';
 import { isDiagramKind, type DiagramKind } from '../../diagrams/types';
 import type { Diag } from '../../script/types';
+import {
+  DIAGRAM_CONTINUATION_EDIT_EVENT,
+  type DiagramContinuationEditDetail,
+} from './diagramPagination';
 
 export interface DiagramAttributes {
   kind: DiagramKind;
@@ -45,6 +49,11 @@ export interface DiagramAttributes {
   data: string;
   /** Preferred block width in px (clamped 240–960). */
   width: number;
+  /** Stable identity shared by every fixed-page viewport of one graph. */
+  continuationId: string | null;
+  /** Intrinsic SVG y-window. Null/null means the complete graph. */
+  continuationStart: number | null;
+  continuationEnd: number | null;
 }
 
 declare module '@tiptap/core' {
@@ -62,6 +71,12 @@ function clampWidth(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_WIDTH;
   return Math.min(960, Math.max(240, Math.round(parsed)));
+}
+
+function finiteSlice(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 const KIND_TITLES: Record<DiagramKind, string> = {
@@ -181,6 +196,12 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
     return isDiagramKind(value) ? value : 'tree';
   };
   const width = (): number => clampWidth(props.node.attrs.width);
+  const continuationStart = (): number | null =>
+    finiteSlice(props.node.attrs.continuationStart);
+  const continuationEnd = (): number | null =>
+    finiteSlice(props.node.attrs.continuationEnd);
+  const continued = (): boolean =>
+    typeof props.node.attrs.continuationId === 'string';
   const data = createMemo(() => decodeDiagramData(kind(), props.node.attrs.data));
 
   /**
@@ -247,7 +268,25 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
   const applyDraft = (): void => {
     const parsed = parseDiagramSource(kind(), draft());
     setDiags(parsed.diagnostics);
-    props.updateAttributes({ data: encodeDiagramData(parsed.data) });
+    const encoded = encodeDiagramData(parsed.data);
+    const continuationId = props.node.attrs.continuationId;
+    const edit =
+      typeof continuationId === 'string' && wrapperEl !== undefined
+        ? new CustomEvent<DiagramContinuationEditDetail>(
+            DIAGRAM_CONTINUATION_EDIT_EVENT,
+            {
+              bubbles: true,
+              cancelable: true,
+              detail: { continuationId, data: encoded },
+            },
+          )
+        : null;
+    // A continued chart spans page editors, so the page host first reunites
+    // every viewport and applies this complete source once. In a schema-only
+    // or isolated editor with no host, fall back to the local node update.
+    if (edit === null || wrapperEl?.dispatchEvent(edit) !== false) {
+      props.updateAttributes({ data: encoded });
+    }
     setEditing(false);
   };
 
@@ -274,10 +313,17 @@ function DiagramView(props: SolidNodeViewProps): JSX.Element {
           when={visible()}
           fallback={<div class="nb-diagram-skeleton" aria-hidden="true" />}
         >
-          <DiagramRenderer data={data()} />
+          <DiagramRenderer
+            data={data()}
+            continuationStart={continuationStart()}
+            continuationEnd={continuationEnd()}
+          />
         </Show>
         <div class="nb-diagram-chrome">
-          <span class="nb-diagram-kind">{KIND_TITLES[kind()]}</span>
+          <span class="nb-diagram-kind">
+            {KIND_TITLES[kind()]}
+            {continued() ? ' · continued' : ''}
+          </span>
           <button
             type="button"
             class="nb-diagram-edit"
@@ -392,6 +438,35 @@ export const Diagram = Node.create({
         default: DEFAULT_WIDTH,
         parseHTML: (element) => clampWidth(element.getAttribute('data-width')),
         renderHTML: (attributes) => ({ 'data-width': String(attributes.width) }),
+      },
+      continuationId: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-continuation-id') || null,
+        renderHTML: (attributes) =>
+          typeof attributes.continuationId === 'string'
+            ? { 'data-continuation-id': attributes.continuationId }
+            : {},
+      },
+      continuationStart: {
+        default: null,
+        parseHTML: (element) =>
+          finiteSlice(element.getAttribute('data-continuation-start')),
+        renderHTML: (attributes) =>
+          finiteSlice(attributes.continuationStart) === null
+            ? {}
+            : {
+                'data-continuation-start': String(attributes.continuationStart),
+              },
+      },
+      continuationEnd: {
+        default: null,
+        parseHTML: (element) =>
+          finiteSlice(element.getAttribute('data-continuation-end')),
+        renderHTML: (attributes) =>
+          finiteSlice(attributes.continuationEnd) === null
+            ? {}
+            : { 'data-continuation-end': String(attributes.continuationEnd) },
       },
     };
   },

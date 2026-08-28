@@ -31,6 +31,13 @@
   overflow: visible;
 }
 
+/* A page continuation is a viewport onto one complete graph. Ordinary
+   diagrams keep overflow visible for hand-wobbled strokes; continuation
+   sheets clip only at the intentional whitespace cut between graph ranks. */
+.nb-dg-svg.is-continuation {
+  overflow: hidden;
+}
+
 /* Lazy-mount placeholder: a penciled empty frame */
 .nb-diagram-skeleton {
   min-height: 140px;

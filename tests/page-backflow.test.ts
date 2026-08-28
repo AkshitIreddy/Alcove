@@ -103,4 +103,23 @@ describe('backward page flow', () => {
     expect(move).toContain('updatePageDoc(pageId, sourceBefore)');
     expect(move).toContain('updatePageDoc(previous.id, destinationBefore)');
   });
+
+  it('accepts only a generated same-flowchart continuation during a backward move', () => {
+    const source = readFileSync(
+      new URL('../src/views/BookView.tsx', import.meta.url),
+      'utf8',
+    );
+    const start = source.indexOf('let backwardMoveOverflowTarget');
+    const end = source.indexOf('/** Undo one authored edit', start);
+    const move = source.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(move).toContain('isDiagramContinuationCarry(');
+    expect(move).toContain('continuationBlocks.push(...blocks)');
+    expect(move).toContain(
+      'handleOverflow(previous.id, continuationBlocks, false, null, null)',
+    );
+    expect(move).toContain('backwardMoveOverflowTarget.overflowed = true');
+  });
 });

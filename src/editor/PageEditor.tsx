@@ -42,7 +42,7 @@ import {
   DecorationSet,
   type EditorView,
 } from '@tiptap/pm/view';
-import type { Slice } from '@tiptap/pm/model';
+import { Fragment, type Slice } from '@tiptap/pm/model';
 import { isHistoryTransaction, undoDepth } from '@tiptap/pm/history';
 import type { Transaction } from '@tiptap/pm/state';
 import { gsap } from 'gsap';
@@ -92,6 +92,12 @@ import {
   trailingCompanionCount,
   trailingOverflowCount,
 } from './pagination';
+import {
+  DIAGRAM_CONTINUATION_EDIT_EVENT,
+  planDiagramContinuation,
+  type DiagramContinuationEditDetail,
+  type DiagramContinuationAttributes,
+} from './nodes/diagramPagination';
 
 /** Exact bookends of one native ProseMirror history event that caused a reflow. */
 export interface PaginationUndoOrigin {
@@ -245,6 +251,10 @@ export interface PageEditorProps {
   ) => void;
   /** Publish the authored history event before its layout-only drain runs. */
   readonly onAuthoredEdit?: (origin: PaginationUndoOrigin) => void;
+  /** Reunite/edit one graph whose page viewports span multiple page docs. */
+  readonly onDiagramContinuationEdit?: (
+    detail: DiagramContinuationEditDetail,
+  ) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -352,6 +362,96 @@ function splitOverflowingBlock(
   // is not an edit the reader made, and one Ctrl+Z must not half-undo one.
   try {
     view.dispatch(state.tr.split(at).setMeta('addToHistory', false));
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/** Parse the renderer's deliberately tiny JSON number-array data attribute. */
+function diagramBreaks(element: SVGElement): number[] {
+  const raw = element.dataset.diagramPageBreaks;
+  if (raw === undefined) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    return Array.isArray(value)
+      ? value.filter(
+          (entry): entry is number =>
+            typeof entry === 'number' && Number.isFinite(entry),
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Replace a too-tall graph atom with two viewports onto the exact same graph.
+ *
+ * Unlike `splitOverflowingBlock`, this does not edit the authored source. The
+ * graph renderer publishes whitespace cuts between its layered ranks; the
+ * first viewport ends at the latest one above the fold and the second starts
+ * at that exact coordinate. The ordinary trailing-block drain then carries
+ * the second viewport to the next page.
+ */
+function splitOverflowingDiagram(
+  view: EditorView,
+  limitY: number,
+  realCount: number,
+): boolean {
+  if (realCount < 1 || realCount > view.state.doc.childCount) return false;
+  const block = view.state.doc.child(realCount - 1);
+  if (block.type.name !== 'diagram') return false;
+  const attrs = block.attrs as DiagramContinuationAttributes;
+  if (attrs.kind !== 'graph' && attrs.kind !== 'flowchart') return false;
+
+  let from = 0;
+  for (let index = 0; index < realCount - 1; index += 1) {
+    from += view.state.doc.child(index).nodeSize;
+  }
+  const dom = view.nodeDOM(from);
+  const wrapper =
+    dom instanceof HTMLElement
+      ? dom
+      : dom?.parentElement instanceof HTMLElement
+        ? dom.parentElement
+        : null;
+  const svg = wrapper?.querySelector<SVGSVGElement>(
+    '.nb-dg-svg[data-diagram-intrinsic-height]',
+  );
+  if (svg === null || svg === undefined) return false;
+  const rect = svg.getBoundingClientRect();
+  const intrinsicHeight = Number(svg.dataset.diagramIntrinsicHeight);
+  const renderedStart = Number(svg.dataset.diagramSliceStart);
+  const renderedEnd = Number(svg.dataset.diagramSliceEnd);
+  // Leave a few drawn pixels for the continuation viewport's bottom wobble.
+  // This is presentation slack only; the actual source cut remains in the
+  // whitespace between graph ranks.
+  const availableHeight = limitY - rect.top - 8;
+  const plan = planDiagramContinuation({
+    attrs,
+    intrinsicHeight,
+    renderedHeight: rect.height,
+    renderedStart,
+    renderedEnd,
+    availableHeight,
+    safeBreaks: diagramBreaks(svg),
+  });
+  if (plan === null) return false;
+
+  try {
+    const head = block.type.create(plan.head);
+    const tail = block.type.create(plan.tail);
+    view.dispatch(
+      view.state.tr
+        .replaceWith(
+          from,
+          from + block.nodeSize,
+          Fragment.fromArray([head, tail]),
+        )
+        .setMeta('addToHistory', false)
+        .setMeta('diagramContinuationSplit', true),
+    );
   } catch {
     return false;
   }
@@ -732,6 +832,24 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
           trailingOverflowCount(realBottoms, capacity, padBottom),
           realCount - 1,
         );
+        /*
+         * A graph is an atom to ProseMirror but not to paper. If it alone is
+         * crossing this fold, use the space already available on this leaf by
+         * cutting at a graph-rank gap, then let the normal next pass carry the
+         * generated tail. More than one overflowing block still peels in the
+         * ordinary way first; the graph is split once it reaches the page that
+         * actually owns its available height.
+         */
+        if (
+          overflowCount === 1 &&
+          splitOverflowingDiagram(
+            view,
+            rootTop + (capacity - padBottom) * scale,
+            realCount,
+          )
+        ) {
+          continue;
+        }
         const companionCount = trailingCompanionCount(
           Array.from({ length: realCount }, (_, index) => {
             const node = doc.child(index);
@@ -749,6 +867,11 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
           // next pass carry the tail (see splitOverflowingBlock).
           if (!contentOverflows(realBottoms, capacity, padBottom)) break;
           if (
+            !splitOverflowingDiagram(
+              view,
+              rootTop + (capacity - padBottom) * scale,
+              realCount,
+            ) &&
             !splitOverflowingBlock(
               view,
               // Back into DRAWN px on the way out: this one is a client y for
@@ -1079,6 +1202,42 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     mountElement.addEventListener('alcove:backspace-block-start', moveMathBack);
     onCleanup(() => {
       mountElement.removeEventListener('alcove:backspace-block-start', moveMathBack);
+    });
+  });
+
+  onMount(() => {
+    const editContinuedDiagram = (event: Event): void => {
+      if (
+        props.onDiagramContinuationEdit === undefined ||
+        !(event instanceof CustomEvent) ||
+        event.type !== DIAGRAM_CONTINUATION_EDIT_EVENT
+      ) {
+        return;
+      }
+      const detail = event.detail as
+        | Partial<DiagramContinuationEditDetail>
+        | null;
+      if (
+        typeof detail?.continuationId !== 'string' ||
+        typeof detail.data !== 'string'
+      ) {
+        return;
+      }
+      event.preventDefault();
+      props.onDiagramContinuationEdit({
+        continuationId: detail.continuationId,
+        data: detail.data,
+      });
+    };
+    mountElement.addEventListener(
+      DIAGRAM_CONTINUATION_EDIT_EVENT,
+      editContinuedDiagram,
+    );
+    onCleanup(() => {
+      mountElement.removeEventListener(
+        DIAGRAM_CONTINUATION_EDIT_EVENT,
+        editContinuedDiagram,
+      );
     });
   });
 

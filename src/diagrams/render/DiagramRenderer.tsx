@@ -11,6 +11,8 @@ import { TreeDiagram } from './TreeDiagram';
 
 export interface DiagramRendererProps {
   data: DiagramData;
+  continuationStart?: number | null;
+  continuationEnd?: number | null;
 }
 
 export function DiagramRenderer(props: DiagramRendererProps): JSX.Element {
@@ -26,7 +28,14 @@ export function DiagramRenderer(props: DiagramRendererProps): JSX.Element {
             return <TreeDiagram roots={d.roots} kind={d.kind} />;
           case 'graph':
           case 'flowchart':
-            return <GraphDiagram graph={d.graph} kind={d.kind} />;
+            return (
+              <GraphDiagram
+                graph={d.graph}
+                kind={d.kind}
+                continuationStart={props.continuationStart}
+                continuationEnd={props.continuationEnd}
+              />
+            );
           case 'timeline':
             return <TimelineDiagram entries={d.entries} />;
         }

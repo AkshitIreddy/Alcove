@@ -1,5 +1,30 @@
 # Alcove — running TODO
 
+## ✅ 0.7.12 — page-aware editing and honest previews (released 2026-08-28)
+
+Pictures retain leaf-wide resizing without migrating to another page, gain a
+fit-to-free-space action, dismiss tools from blank-cell clicks and keep their
+alignment glyph honest. Tall flowcharts become editable page continuations and
+can move backward without a false cannot-fit error. Script insertion uses an
+opaque staged progress card, large headings have compact rhythm, and the page
+filmstrip renders actual low-density page pixels instead of synthetic bars.
+
+Commits `e70a223` through `769fbf4` plus annotated tag `v0.7.12` were pushed to
+`main`. GitHub Actions run `33164127923` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets and 12 published checksums; signed `latest.json`
+reports version 0.7.12 with immutable updater URLs for Windows, Linux and both
+macOS architectures.
+
+- [x] Keep wide image resizing on its leaf and add fit-to-free-space sizing.
+- [x] Dismiss image controls from the blank lane and update alignment glyphs.
+- [x] Replace insertion whiteouts with an accessible staged progress surface.
+- [x] Tighten wrapped H1/H2 leading and remove their accidental top gap.
+- [x] Split tall flowcharts across pages and preserve backward page movement.
+- [x] Replace synthetic filmstrip drawings with cached real page miniatures.
+- [x] Pass frontend, Rust, visual, packaging and live release verification;
+      publish all installers, checksums and signed updater data.
+
 ## ✅ 0.7.11 — clearer PDF sources for the Agent (released 2026-08-27)
 
 PDF attachments now render locally and use Cohere Parse by default after the

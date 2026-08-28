@@ -1,7 +1,15 @@
 /**
  * shots-now/demo-gif.mjs — the looping demo on the front page.
  *
- * Built with the owner's own `gifsmith`, to their storyboard:
+ * Built with the owner's own `gifsmith`. The current loop deliberately opens
+ * on the Welcome book rather than on the room: two real curls introduce the
+ * pages, the book returns to the shelf, and the established room/studio tour
+ * begins. When that tour opens Welcome again it resumes after those two
+ * already-seen spreads. The finale returns through the shelf and reopens the
+ * first Welcome spread, so the last rendered pose is the first rendered pose.
+ *
+ * The original room-first brief remains below because the body of the tour is
+ * still source-faithful to it:
  *
  *   *"start with showing the bookshelf (pick a fancy, grand-looking preset for
  *   wallpaper, books and shelves, and fill up the shelf with some books for
@@ -35,13 +43,11 @@
  *
  * `loopAnchor()` makes gifsmith trim to the best hold-to-hold seam, with no
  * visible crossfade or ghosting. That only works if the scene genuinely comes
- * home, which has one consequence worth
- * stating because it is easy to get wrong: **the studio has to finish on the
- * room it started in.** A demo that shows off four rooms and stops on the
- * fourth cannot loop, because the shelf the reader lands back on is not the
- * shelf they started from. So the tour of the presets ends by pressing The
- * House Room again, which is also just what a person does when they are
- * browsing rather than deciding.
+ * home, which has two consequences worth stating because they are easy to get
+ * wrong: **the studio has to finish on the room it started in, and the final
+ * Welcome opening has to land on spread zero with the same quiet chrome as the
+ * anchor.** The House Room press restores the room; the final reading-position
+ * reset restores the book. Neither seam is a crossfade.
  *
  * ## It is rendered, not recorded
  *
@@ -674,12 +680,12 @@ const AGENT_DEMO = Object.freeze({
 
 /*
  * The anchor sees the cursor before its first journey. Bring it back to this
- * exact quiet corner before the closing hold too, otherwise the app itself
+ * exact quiet strip of book chrome before the closing hold too, otherwise the app itself
  * loops perfectly while the synthetic pointer alone teleports at the seam.
  * This is explicit rather than relying on gifsmith's viewport-derived default
  * so a future viewport edit cannot silently move one end of the loop.
  */
-const LOOP_CURSOR_HOME = Object.freeze({ x: 54, y: 24 });
+const LOOP_CURSOR_HOME = Object.freeze({ x: 320, y: 24 });
 
 const OUT_DIR = 'docs/readme/img';
 mkdirSync(OUT_DIR, { recursive: true });
@@ -963,8 +969,325 @@ async function assertDemoShelfHome(page, label) {
   }
 }
 
+/** Persist the spread Welcome should use on its next ordinary product open. */
+async function setWelcomeReadingPosition(page, ctx, spread, label) {
+  const state = await settleScene(
+    ctx,
+    page.evaluate(async ({ wantedSpread }) => {
+      const books = globalThis.__shelfVisibleBooks?.() ?? [];
+      const welcomeBooks = books.filter((book) => /welcome/i.test(book.title));
+      const welcome = welcomeBooks.length === 1 ? welcomeBooks[0] : null;
+      if (welcome === null) {
+        return { ok: false, seen: books.length, welcomeCount: welcomeBooks.length };
+      }
+      const { setBookReadingPosition } = await import('/src/data/books.ts');
+      await setBookReadingPosition(welcome.id, wantedSpread, 'left');
+      return { ok: true, title: welcome.title, spread: wantedSpread };
+    }, { wantedSpread: spread }),
+    { capMs: 10_000, label },
+  );
+  if (!state.ok) {
+    throw new Error(
+      `demo-gif: cannot reset the one Welcome book ` +
+      `(${state.seen} visible, ${state.welcomeCount} Welcome matches)`,
+    );
+  }
+}
+
+/** The new seam is a quiet, panel-free first Welcome spread. */
+async function assertDemoWelcomeHome(page, label) {
+  const state = await page.evaluate(() => {
+    const stage = document.querySelector('[data-spread-index]');
+    const headings = [...document.querySelectorAll('.nb-leaf-paper h1')]
+      .map((heading) => heading.textContent?.trim());
+    const root = document.querySelector('#root');
+    const panelsClosed = [...document.querySelectorAll('.nb-rail-panel')].every(
+      (panel) =>
+        panel.getAttribute('aria-hidden') === 'true' &&
+        !panel.classList.contains('is-sliding'),
+    );
+    const panelEdge = Number.parseFloat(
+      document.documentElement.style.getPropertyValue('--nb-panel-edge'),
+    ) || 0;
+    const cameraQuiet = root instanceof HTMLElement &&
+      root.dataset.demoCamera === undefined &&
+      !root.style.transform;
+    const bookStage = document.querySelector('.nb-spread-stage');
+    const bookVisible = bookStage instanceof HTMLElement && (() => {
+      const rect = bookStage.getBoundingClientRect();
+      return rect.width > 100 && rect.height > 100;
+    })();
+    return {
+      ok:
+        Number(stage?.getAttribute('data-spread-index')) === 0 &&
+        headings.includes('Your first five minutes') &&
+        panelsClosed &&
+        Math.abs(panelEdge) <= 0.5 &&
+        document.querySelector('.nb-thumb-strip') === null &&
+        document.querySelector('.nb-flip-canvas.is-flipping') === null &&
+        document.querySelector('.nb-flip-surface.is-flip-landing') === null &&
+        document.querySelector('.nb-book-opening') === null &&
+        document.querySelector('.pulled-book') === null &&
+        bookVisible &&
+        document.querySelector('.nb-back-button')?.classList.contains('is-away') === true &&
+        cameraQuiet,
+      spread: Number(stage?.getAttribute('data-spread-index')),
+      headings,
+      panelsClosed,
+      panelEdge,
+      thumbnails: document.querySelector('.nb-thumb-strip') !== null,
+      flipping: document.querySelector('.nb-flip-canvas.is-flipping') !== null,
+      opening: document.querySelector('.nb-book-opening') !== null,
+      pulled: document.querySelector('.pulled-book') !== null,
+      bookVisible,
+      backAway:
+        document.querySelector('.nb-back-button')?.classList.contains('is-away') === true,
+      cameraQuiet,
+    };
+  });
+  if (!state.ok) {
+    throw new Error(`demo-gif: ${label} is not the Welcome loop home (${JSON.stringify(state)})`);
+  }
+}
+
+/** Match Puppeteer's real hover pointer and Gifsmith's drawn cursor. */
+async function returnBothPointersHome(page, ctx, label) {
+  // Every fresh BookView intentionally keeps the back plate summoned for
+  // 2.8s. Entering and then leaving its real 280×160 intent zone switches that
+  // mount linger to the ordinary 650ms leave timer at both ends of the loop.
+  // This pointer is Puppeteer's hidden event source; the drawn cursor remains
+  // where the film left it until the visible move below.
+  await page.mouse.move(54, 24);
+  await advanceSceneFrames(page, ctx, 1);
+  await settleScene(
+    ctx,
+    page.evaluate(
+      ({ x, y }) => {
+        if (typeof globalThis.__gifsmith?.cursorTo !== 'function') {
+          throw new Error('demo-gif: gifsmith cursor bridge is unavailable at the loop return');
+        }
+        return globalThis.__gifsmith.cursorTo(x, y, 280, 'easeOut');
+      },
+      LOOP_CURSOR_HOME,
+    ),
+    { capMs: 1_280, label },
+  );
+  await page.mouse.move(LOOP_CURSOR_HOME.x, LOOP_CURSOR_HOME.y);
+  // The back control collapses after the real pointer leaves its summon zone,
+  // and the drawn cursor commits on the following paints. One frame caught the
+  // closing still with an expanded back pill and no synthetic cursor even
+  // though the opening still was quiet. Ten output frames clear the 650ms
+  // product leave timer and settle both ends.
+  await advanceSceneFrames(page, ctx, 10);
+  await settleScene(
+    ctx,
+    page.waitForFunction(
+      () => document.querySelector('.nb-back-button')?.classList.contains('is-away') === true,
+      { timeout: 2_000 },
+    ),
+    { capMs: 2_000, label: `${label}: back control recedes` },
+  );
+  await advanceSceneFrames(page, ctx, 2);
+}
+
 const tl = timeline((t) => {
-  /* ----------------------------- 1. the shelf ---------------------------- */
+  /** Open Welcome through the same pull-out cover route a reader uses. */
+  const openWelcome = ({
+    expectedSpread,
+    label,
+    resetSpread = null,
+    hold = 1.25,
+    cue = null,
+  }) => {
+    if (resetSpread !== null) {
+      t.call(async function resetWelcomeReadingPosition(page, ctx) {
+        await setWelcomeReadingPosition(
+          page,
+          ctx,
+          resetSpread,
+          `${label}: reset Welcome reading position`,
+        );
+      }, { name: `${label}: reset Welcome to spread ${resetSpread}`, seconds: 0.12 });
+    }
+    t.call(async function pullOutWelcomeBook(page, ctx) {
+      const target = await page.evaluate(() => {
+        const books = globalThis.__shelfVisibleBooks?.() ?? [];
+        const welcomeBooks = books.filter((book) => /welcome/i.test(book.title));
+        const welcome = welcomeBooks.length === 1 ? welcomeBooks[0] : null;
+        if (!welcome) {
+          return { ok: false, seen: books.length, welcomeCount: welcomeBooks.length };
+        }
+        const rect = globalThis.__shelfSpineRect?.(welcome.id);
+        if (!rect) {
+          return { ok: false, seen: books.length, welcomeCount: welcomeBooks.length };
+        }
+        return {
+          ok: true,
+          title: welcome.title,
+          seen: books.length,
+          welcomeCount: welcomeBooks.length,
+          point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+        };
+      });
+      if (!target.ok) {
+        throw new Error(
+          `demo-gif: ${label} cannot find the one Welcome spine ` +
+          `(${target.seen} visible, ${target.welcomeCount} Welcome matches)`,
+        );
+      }
+      await cursorClickPoint(page, ctx, target.point, {
+        durationMs: 620,
+        label: `click ${target.title}`,
+      });
+    }, { name: `${label}: click the Welcome spine`, seconds: 0.62 });
+    t.waitFor('.pulled-book');
+    t.hold(1.1);
+    t.click('.pulled-book', { via: 'cursor' });
+    t.waitFor('.nb-prose');
+    t.call(async function settleWelcomeOpening(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          (spread) =>
+            document.querySelector('.nb-prose') instanceof HTMLElement &&
+            document.querySelector('.pulled-book') === null &&
+            document.querySelector('.nb-book-opening') === null &&
+            Number(
+              document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index'),
+            ) === spread,
+          { timeout: 20_000 },
+          expectedSpread,
+        ),
+        { capMs: 20_000, label: `${label}: settle real Welcome opening` },
+      );
+      await settleScene(
+        ctx,
+        page.evaluate(() => globalThis.__shelfSaveSettings({ thumbnailsStrip: false })),
+        { capMs: 5_000, label: `${label}: hide thumbnails` },
+      );
+      await sceneCameraSnapReset(page, ctx, `${label}: reset recording camera`);
+      await advanceSceneFrames(page, ctx, 4);
+    }, { name: `${label}: settle Welcome at spread ${expectedSpread}`, seconds: 0.5 });
+    if (hold > 0) t.hold(hold);
+    if (cue !== null) t.cue(cue);
+  };
+
+  /** Return the open book to the authored shelf while filming every real phase. */
+  const returnBookToShelf = (label) => {
+    t.click('.nb-back-button', { via: 'cursor', glideSeconds: 0.36 });
+    t.call(async function filmRealBookReturn(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForSelector('.nb-book-close-bridge.is-active', {
+          visible: true,
+          timeout: 0,
+        }),
+        { capMs: 500, label: `${label}: book close bridge starts` },
+      );
+      await settleScene(
+        ctx,
+        page.waitForSelector('[data-testid="pulled-book-return-wash"]', {
+          visible: true,
+          timeout: 0,
+        }),
+        { capMs: 900, label: `${label}: closing cover reaches return route` },
+      );
+      await settleScene(
+        ctx,
+        page.waitForSelector('.pulled-book', { hidden: true, timeout: 0 }),
+        { capMs: 1_000, label: `${label}: returning cover reaches its shelf slot` },
+      );
+      await advanceScene(page, ctx, 640);
+    }, { name: `${label}: film the real book return`, seconds: 1.5 });
+    t.waitFor('.shelf-dock');
+    t.call(async function settleReturnedShelf(page, ctx) {
+      await settleSpines(page, ctx, { label: `${label}: returned shelf spines` });
+      await settleScene(
+        ctx,
+        page.waitForSelector('.shelf-addslot', { visible: true, timeout: 0 }),
+        { capMs: 2_000, label: `${label}: returned shelf add-slot` },
+      );
+      await advanceScene(page, ctx, 220);
+      await assertDemoShelfHome(page, `${label}: authored shelf`);
+    }, { name: `${label}: settle returned shelf`, seconds: 0.22 });
+  };
+
+  /** The two opening turns use the same warm real-curl contract as the tour. */
+  const openingTurn = (
+    expectedHeading,
+    expectedSpread,
+    { requireWarmCurl = true } = {},
+  ) => {
+    if (requireWarmCurl) {
+      t.call(async function waitForOpeningCurl(page, ctx) {
+        await waitForWarmNextFlip(page, ctx, expectedHeading);
+      }, { name: `opening: warm curl before ${expectedHeading}`, seconds: 0.08 });
+    }
+    t.call(async function clickOpeningPageCorner(page, ctx) {
+      const before = await page.$eval('[data-spread-index]', (node) =>
+        Number(node.getAttribute('data-spread-index')),
+      );
+      if (before + 1 !== expectedSpread) {
+        throw new Error(
+          `demo-gif: opening storyboard drift before "${expectedHeading}" ` +
+          `(at spread ${before}, expected ${expectedSpread - 1})`,
+        );
+      }
+      const point = await page.$eval('.nb-flip-hotspot-next', (hotspot) => {
+        const rect = hotspot.getBoundingClientRect();
+        return { x: rect.right - 18, y: rect.bottom - 18 };
+      });
+      await cursorClickPoint(page, ctx, point, {
+        durationMs: 480,
+        label: 'opening: click the bottom-right page corner',
+      });
+    }, { name: `opening: turn to ${expectedHeading}`, seconds: 0.48 });
+    t.call(async function landOpeningTurn(page, ctx) {
+      await settleScene(
+        ctx,
+        page.waitForFunction(
+          ({ spread, heading }) =>
+            document.querySelector('.nb-flip-canvas.is-flipping') === null &&
+            !document.querySelector('.nb-flip-surface.is-flip-landing') &&
+            Number(
+              document.querySelector('[data-spread-index]')?.getAttribute('data-spread-index'),
+            ) === spread &&
+            [...document.querySelectorAll('.nb-leaf-paper h1')].some(
+              (node) => node.textContent?.trim() === heading,
+            ),
+          { timeout: 15_000 },
+          { spread: expectedSpread, heading: expectedHeading },
+        ),
+        { capMs: 15_000, label: `opening: land on ${expectedHeading}` },
+      );
+      await advanceSceneFrames(page, ctx, 1);
+    }, { name: `opening: land on ${expectedHeading}`, seconds: 0.6 });
+    t.hold(0.6);
+  };
+
+  /** Panels attached to the two opening spreads move here with those spreads. */
+  const openingPanel = (
+    name,
+    selector,
+    { hold = 1.25, qaStill = null } = {},
+  ) => {
+    t.click(`.nb-rail button[aria-label^="${name}"]`, { via: 'cursor' });
+    t.call(async function waitForOpeningPanel(page, ctx) {
+      await waitForPanelOpen(page, ctx, selector, {
+        label: `opening ${name}`,
+        requireBookPreview: selector === '.nb-book-studio',
+      });
+      if (qaStill !== null) await writeQaStill(page, qaStill);
+    }, { name: `opening: land ${name}`, seconds: 0.6 });
+    if (qaStill !== null) t.cue(`qa-${qaStill}`);
+    t.hold(hold);
+    t.click(`[aria-label^="Close ${name}"]`, { via: 'cursor' });
+    t.call(async function closeOpeningPanel(page, ctx) {
+      await waitForPanelClosed(page, ctx, selector, `opening ${name}`);
+    }, { name: `opening: settle ${name} close`, seconds: 0.5 });
+  };
+
+  /* ------------------------ setup: author the shelf ---------------------- */
 
   t.waitFor('.shelf-dock');
   t.call(async function stockTheShelf(page, ctx) {
@@ -1093,33 +1416,50 @@ const tl = timeline((t) => {
     await advanceScene(page, ctx, 3000);
     await settleSpines(page, ctx, { label: 'seeded shelf spines' });
   });
-  t.call(async function settleShelfForSeam(page, ctx) {
-    await settleSpines(page, ctx, { label: 'shelf seam spines' });
-    // Puppeteer's pointer owns real :hover state; the drawn cursor is separate.
-    // Start both on the same quiet point the closing shelf must reproduce.
-    await page.mouse.move(LOOP_CURSOR_HOME.x, LOOP_CURSOR_HOME.y);
-    await advanceSceneFrames(page, ctx, 1);
-    await assertDemoShelfHome(page, 'opening loop anchor');
-  }, { name: 'settle and verify opening shelf', seconds: 0.08 });
-  /*
-   * Trimmed before the loop — only needs the shelf to be still, not held long
-   * enough to read. The old 2.0s here bought nothing in the shipped WebP.
-   */
+  t.call(async function settleAuthoredShelf(page, ctx) {
+    await settleSpines(page, ctx, { label: 'authored setup shelf spines' });
+    await assertDemoShelfHome(page, 'authored setup shelf');
+  }, { name: 'settle and verify authored setup shelf', seconds: 0.08 });
+  t.hold(0.4);
+
+  /* Everything through this first product open is setup and trimmed away. */
+  openWelcome({
+    expectedSpread: 0,
+    resetSpread: 0,
+    label: 'prepare loop-opening Welcome',
+    hold: 0,
+  });
+  t.call(async function settleWelcomeForAnchor(page, ctx) {
+    await returnBothPointersHome(page, ctx, 'place both pointers at the Welcome anchor');
+    await assertDemoWelcomeHome(page, 'opening loop anchor');
+    await writeQaStill(page, 'loop-home-first');
+  }, { name: 'settle and verify opening Welcome', seconds: 1.16 });
   t.hold(0.4);
 
   /*
-   * THE SEAM. Everything above is setup the reader never sees — the trim
-   * starts here, on a quiet, fully-painted shelf, and the scene has to come
-   * back to this exact pose at the end.
+   * THE SEAM. The reader starts with Welcome already open. The final scene
+   * reopens this same spread and restores the same cursor/chrome pose.
    */
   t.loopAnchor();
-  t.cue('shelf');
-  /*
-   * The first frame a GitHub reader sees. Start moving almost immediately so
-   * a reader cannot mistake the shelf for a still and scroll past the demo.
-   * The long matching hold at the end still gives the trimmer its clean seam.
-   */
+  t.cue('welcome-opening');
   t.hold(0.1);
+
+  /* ---------------- 1. two Welcome spreads, then the shelf --------------- */
+
+  openingTurn('The shelf is a room', 1);
+  openingPanel('Customize this book', '.nb-book-studio', {
+    hold: 1.8,
+    qaStill: 'book-studio',
+  });
+  // The Book Studio remounts the neighbouring leaves. On Chromium/SwiftShader
+  // its second curl's back face can remain intentionally cold; the shipped
+  // controller's real rigid-fold fallback is preferable to blocking the film
+  // or showing blank paper while waiting for a face that never becomes warm.
+  openingTurn('Dress the room', 2, { requireWarmCurl: false });
+  openingPanel('Page style', '.nb-pagestyle', { hold: 1.25 });
+  returnBookToShelf('opening pages return');
+  t.hold(0.35);
+  t.cue('shelf');
 
   /* ---------------------------- 2. the studio ---------------------------- */
 
@@ -1245,75 +1585,19 @@ const tl = timeline((t) => {
   }, { name: 'settle Library studio close', seconds: 0.5 });
   t.hold(0.25);
 
-  /* -------------------------- 3. open a book ----------------------------- */
+  /* ---------------------- 3. resume Welcome after page two ---------------- */
 
   /*
-   * TWO BEATS, because that is what the app does.
-   *
-   * `pullOut` does NOT open a book. `world.ts:1163` flies the spine out of the
-   * case on a hinge and leaves it standing in front of the shelf, big enough to
-   * read the cover, with nothing committed — and the cover itself is then the
-   * button ("no need for the menu with read it put it back"). So the demo pulls
-   * it out, lets the flight land, and clicks the cover.
-   *
-   * Which is the better demo anyway: the reader sees the book leave the shelf
-   * and then sees it opened, rather than the shelf cutting to a spread.
+   * The opening pages deliberately persisted spread two before returning to
+   * the shelf. Reopening through the product route resumes there, so the tour
+   * can continue with spread three instead of replaying the same two moments.
    */
-  t.call(async function pullOutTheBook(page, ctx) {
-    const target = await page.evaluate(() => {
-      const books = globalThis.__shelfVisibleBooks?.() ?? [];
-      const welcome = books.find((b) => /welcome/i.test(b.title)) ?? books[0];
-      if (!welcome) return { ok: false, seen: books.length };
-      const rect = globalThis.__shelfSpineRect?.(welcome.id);
-      if (!rect) return { ok: false, seen: books.length };
-      return {
-        ok: true,
-        title: welcome.title,
-        seen: books.length,
-        point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
-      };
-    });
-    if (!target.ok) throw new Error(`demo-gif: no book spine to click (${target.seen} visible)`);
-    await cursorClickPoint(page, ctx, target.point, {
-      durationMs: 620,
-      label: `click ${target.title}`,
-    });
-  }, { name: 'click the Welcome spine', seconds: 0.62 });
-  t.waitFor('.pulled-book');
-  // Let the hinge, the arc and the overshoot finish before touching it.
-  t.hold(1.1);
-  // Use the product route exactly as a reader does. The old recording-only
-  // split-screen photograph made the cover fly apart like a slide transition
-  // and concealed the real opening fallback. Keeping the real pointer, pulled
-  // cover, BookOpening sheet and first live spread gives the film the same
-  // visual contract as the shipped app.
-  t.click('.pulled-book', { via: 'cursor' });
-  t.waitFor('.nb-prose');
-  t.call(async function settleRealBookOpening(page, ctx) {
-    await settleScene(
-      ctx,
-      page.waitForFunction(
-        () => document.querySelector('.nb-prose') instanceof HTMLElement &&
-          document.querySelector('.pulled-book') === null &&
-          document.querySelector('.nb-book-opening') === null,
-        { timeout: 20_000 },
-      ),
-      { capMs: 20_000, label: 'settle the real product book opening' },
-    );
-    await advanceSceneFrames(page, ctx, 4);
-  }, { name: 'settle the real product book opening', seconds: 0.38 });
-  t.hold(1.25);
-  t.cue('book');
-  t.call(async function normalizeBookChrome(page, ctx) {
-    // A failed prior check can leave the persistent thumbnail preference on.
-    // Start from the same chrome every time, then restore it after the finale.
-    await settleScene(
-      ctx,
-      page.evaluate(() => globalThis.__shelfSaveSettings({ thumbnailsStrip: false })),
-      { capMs: 5_000, label: 'hide thumbnails before storyboard' },
-    );
-    await advanceScene(page, ctx, 250);
-  }, { name: 'normalize book chrome', seconds: 0.25 });
+  openWelcome({
+    expectedSpread: 2,
+    label: 'resume Welcome after the opening pages',
+    hold: 0.35,
+    cue: 'book',
+  });
 
   /* --------------------- 4. the forty-eight-leaf field guide -------------- */
 
@@ -1690,17 +1974,10 @@ const tl = timeline((t) => {
     t.hold(0.25);
   };
 
-  /* Opening: nearby chapters are joined by honest curls, with a different
-     panel between them so the tour never becomes a run of repeated turns. */
-  turn('The shelf is a room', 1);
-  // spread 1: The shelf is a room · More than one bookcase
-  showPanel('Customize this book', '.nb-book-studio', {
-    hold: 1.8,
-    qaStill: 'book-studio',
-  });
-  turn('Dress the room', 2);
-  // spread 2: Dress the room · Dress this book
-  showPanel('Page style', '.nb-pagestyle', { hold: 1.25 });
+  /*
+   * Spreads one and two—and their two attached panels—were the loop's opening
+   * act. Resume with the next unseen spread rather than replaying them here.
+   */
   turn('Paper and ribbons', 3);
   // spread 3: Paper and ribbons · Four ways to begin
   turn('Write by blocks', 4);
@@ -2335,86 +2612,24 @@ const tl = timeline((t) => {
   showPanel('In and out', '.nb-share', { showFoot: true });
   t.hold(1.15);
 
-  /* --------------------------- 5. back to the shelf ----------------------- */
+  /* ---------------- 5. return through the shelf into the seam ------------ */
 
-  // The collapsed pencil/arrow is itself the affordance and remains clickable.
-  // Drive it directly: the visible cursor glide summons its label on the way,
-  // instead of holding a finished page for nearly a second before acting.
-  t.click('.nb-back-button', { via: 'cursor', glideSeconds: 0.36 });
-  t.call(async function filmRealBookReturn(page, ctx) {
-    /*
-     * The app already owns this movement: spread → closing cover, the same
-     * cover flying home over the resumed room, then the short canvas settle
-     * into its slot. A plain timeline `waitFor('.shelf-dock')` lets those
-     * animations finish while deterministic capture's clock is parked, which
-     * records only their endpoints as two hard cuts. Settle on the real phase
-     * boundaries while gifsmith advances its capture clock instead.
-     */
-    await settleScene(
-      ctx,
-      page.waitForSelector('.nb-book-close-bridge.is-active', {
-        visible: true,
-        timeout: 0,
-      }),
-      { capMs: 500, label: 'book close bridge starts' },
-    );
-    await settleScene(
-      ctx,
-      page.waitForSelector('[data-testid="pulled-book-return-wash"]', {
-        visible: true,
-        timeout: 0,
-      }),
-      { capMs: 900, label: 'closing cover reaches return route' },
-    );
-    await settleScene(
-      ctx,
-      page.waitForSelector('.pulled-book', { hidden: true, timeout: 0 }),
-      { capMs: 1_000, label: 'returning DOM cover reaches its shelf slot' },
-    );
-    // The final owner is Pixi's short insertion ghost (0.56s at motion=1).
-    // It has no DOM node to await, so spend its declared duration plus one
-    // capture frame before the still-shelf gate below is allowed to begin.
-    await advanceScene(page, ctx, 640);
-  }, { name: 'film the real book return', seconds: 1.5 });
-  t.waitFor('.shelf-dock');
-  t.call(async function settleReturnShelf(page, ctx) {
-    await settleSpines(page, ctx, { label: 'return shelf spines' });
-    // The dashed add-book affordance arrives independently of the Pixi
-    // spines. Gate on its real, visible DOM node, then spend more than its
-    // declared 180ms `shelf-addslot-arrive` animation before the final hold is
-    // allowed to begin. That keeps motion out of a beat the ledger calls still.
-    await settleScene(
-      ctx,
-      page.waitForSelector('.shelf-addslot', { visible: true, timeout: 0 }),
-      { capMs: 2_000, label: 'return shelf add-slot' },
-    );
-    await advanceScene(page, ctx, 220);
-    await assertDemoShelfHome(page, 'closing loop shelf');
-  }, { name: 'settle return shelf and add-slot', seconds: 0.22 });
-  // Match the anchor's pointer pose as well as its shelf pose. In practice the
-  // back button already leaves it close to here, so this is a small retreat,
-  // not a conspicuous cursor-only epilogue.
-  t.call(async function returnBothPointersHome(page, ctx) {
-    await settleScene(
-      ctx,
-      page.evaluate(
-        ({ x, y }) => {
-          if (typeof globalThis.__gifsmith?.cursorTo !== 'function') {
-            throw new Error('demo-gif: gifsmith cursor bridge is unavailable at the loop return');
-          }
-          return globalThis.__gifsmith.cursorTo(x, y, 280, 'easeOut');
-        },
-        LOOP_CURSOR_HOME,
-      ),
-      { capMs: 1_280, label: 'return the drawn cursor to the loop anchor' },
-    );
-    await page.mouse.move(LOOP_CURSOR_HOME.x, LOOP_CURSOR_HOME.y);
-    await advanceSceneFrames(page, ctx, 1);
-  }, { name: 'return both pointers to loop anchor', seconds: 0.36 });
+  returnBookToShelf('final tour return');
+  t.hold(0.3);
+  openWelcome({
+    expectedSpread: 0,
+    resetSpread: 0,
+    label: 'reopen Welcome for the loop seam',
+    hold: 0,
+  });
+  t.call(async function settleClosingWelcomeHome(page, ctx) {
+    await returnBothPointersHome(page, ctx, 'return both pointers to the Welcome anchor');
+    await assertDemoWelcomeHome(page, 'closing loop anchor');
+    await writeQaStill(page, 'loop-home-last');
+  }, { name: 'settle and verify closing Welcome', seconds: 1.16 });
   /*
-   * Land, and settle into the SAME pose the anchor was taken in. This hold is
-   * what gives the trimmer a matching frame to cut on; too short and the seam
-   * lands mid-animation.
+   * Land in the SAME open-book pose as the anchor. This long hold gives
+   * Gifsmith enough identical quiet frames to trim without a crossfade.
    */
   t.hold(1.8);
 });
@@ -2459,11 +2674,11 @@ const scene = {
   /*
    * A FLOOR ON THE LOOP, or the trim throws the tour away.
    *
-   * The scene holds still on the shelf for a beat after `loopAnchor()` — that
+   * The scene holds still on Welcome's first spread after `loopAnchor()` — that
    * hold is what makes an artifact-free seam possible — but it also means every
    * pair of frames inside it matches almost perfectly. gifsmith 0.2.2 answered
    * with the shortest qualifying loop: anchor 45, end 105, seam MSE 0.0, and a
-   * 4.29-second clip of a bookshelf doing nothing. Fixed in gifsmith 0.2.3
+   * 4.29-second clip of one pose doing nothing. Fixed in gifsmith 0.2.3
    * (equally-invisible seams now prefer the longest span); this floor says out
    * loud what this particular demo needs, and costs nothing if the rule already
    * gets it right.
@@ -2495,7 +2710,10 @@ const scene = {
    * walkthrough — see the gifsmith README's table.
    */
   encode: {
-    width: 900, fps: DEMO_FPS, speed: DEMO_SPEED, targetMB: 20,
+    // Chromium supplies original 1360px-wide lossless frames. Encode at 1200
+    // rather than the old 900, retaining substantially more real page ink
+    // detail without upscaling or changing the app's source-faithful framing.
+    width: 1200, fps: DEMO_FPS, speed: DEMO_SPEED, targetMB: 32,
     colors: 256, dither: 'none', palette: 'full',
   },
   // Gifsmith v0.3.4 derives a seekable H.264 review copy from the exact same

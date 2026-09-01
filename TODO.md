@@ -1,5 +1,30 @@
 # Alcove — running TODO
 
+## ✅ 0.7.13 — writing that meets the paper (released 2026-09-01)
+
+Writing on ruled pages now meets the printed baseline across headings,
+paragraphs, bullet lists and transparent columns at every reading scale.
+Headings keep their deliberate opening band without lifting the paragraph that
+follows. Margin notes, map pins and wax-seal notes mask the page ruling when
+their own typography uses a different rhythm. The repository also carries a
+safe cleanup guide for generated QA, browser and Rust output.
+
+Commits `3598e1e` through `1669bd6` plus annotated tag `v0.7.13` were pushed to
+`main`. GitHub Actions run `33492928069` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets and 12 published checksums; signed `latest.json`
+reports version 0.7.13 with immutable updater URLs for Windows, Linux and both
+macOS architectures.
+
+- [x] Align H1 and H2 opening bands while returning following prose to ruling.
+- [x] Snap bullet lists and transparent columns once without cumulative drift.
+- [x] Protect independently spaced special blocks from page-rule crossings.
+- [x] Exclude editor sentinels from picture chrome and line calculations.
+- [x] Verify the result visually and numerically at three reading scales.
+- [x] Document safe cleanup targets and the source and user data to preserve.
+- [x] Pass frontend, Rust, README, icon, packaging and live release verification;
+      publish every installer, checksum and signed updater entry.
+
 ## ✅ 0.7.12 — page-aware editing and honest previews (released 2026-08-28)
 
 Pictures retain leaf-wide resizing without migrating to another page, gain a

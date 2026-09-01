@@ -21,6 +21,23 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.13 — writing that meets the paper
+
+**Writing now settles onto the printed rules across the whole page.** Large
+headings occupy a deliberate opening band, the paragraph below returns to the
+paper rhythm, and bullet lists no longer creep higher or lower with each item.
+The correction follows the small, default and large reading settings.
+
+**Structured and decorated writing keep the right rhythm too.** Transparent
+two-column layouts join the page grid once rather than shifting each nested
+paragraph. Margin notes, map pins and wax-seal notes receive a clean paper
+surface of their own, so the page's rules cannot cut through independently
+spaced text. Inline editor sentinels are also excluded from picture styling.
+
+**The development checkout has a safer cleanup path.** `CLEANUP.md` identifies
+rebuildable QA captures, browser traces and Rust output, alongside the source,
+dependencies, release bundles and reader data that must be preserved.
+
 ## 0.7.12 — page-aware editing and honest previews
 
 **Pictures can grow without escaping their leaf.** Corner resizing still

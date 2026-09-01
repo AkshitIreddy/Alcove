@@ -395,7 +395,14 @@ export const Marginalia = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'marginalia' }), 0];
+    return [
+      'div',
+      mergeAttributes(HTMLAttributes, {
+        'data-type': 'marginalia',
+        'data-nb-ruling-surface': '',
+      }),
+      0,
+    ];
   },
 });
 
@@ -590,7 +597,10 @@ export const WaxSeal = Node.create({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const attrs: Record<string, unknown> = { 'data-type': 'wax-seal' };
+    const attrs: Record<string, unknown> = {
+      'data-type': 'wax-seal',
+      'data-nb-ruling-surface': '',
+    };
     if (!hasExplicitRotate(node)) {
       // A wider swing than the papers get: a card is placed, a seal is
       // STRUCK, and a die pressed by hand never lands square.
@@ -620,7 +630,14 @@ export const MapPin = Node.create({
   renderHTML({ HTMLAttributes }) {
     // Never tilted. A pin that is not upright does not read as pushed in,
     // it reads as fallen out.
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'map-pin' }), 0];
+    return [
+      'div',
+      mergeAttributes(HTMLAttributes, {
+        'data-type': 'map-pin',
+        'data-nb-ruling-surface': '',
+      }),
+      0,
+    ];
   },
 });
 

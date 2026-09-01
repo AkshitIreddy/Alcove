@@ -256,13 +256,17 @@
   /*
    * Patrick Hand's alphabetic baseline sits 8.5px below the centre of its
    * 20px em box. Centre the line box, then spend the remaining lead below the
-   * glyphs so the baseline lands on the printed rule. The reader's rule-gap
-   * control nudges that relationship without changing the ruling pitch or the
-   * block height, so pagination is unchanged.
+   * glyphs so the baseline lands on the printed rule. A mathematical baseline
+   * is not quite visual contact in this face: its antialiased writing edge
+   * finishes about one pixel above the rule, and the gap becomes conspicuous
+   * at the large reading setting. The scaled contact correction lets that ink
+   * meet the flat rule without changing the line box or pagination. The
+   * reader's rule-gap control still nudges the relationship independently.
    */
+  --nb-rule-contact: calc(1px * var(--page-text-scale, 1));
   --nb-rule-lead: calc(
     var(--page-line-height) / 2 - 8.5px * var(--page-text-scale, 1) -
-      var(--page-rule-gap, 0px)
+      var(--page-rule-gap, 0px) + var(--nb-rule-contact)
   );
   /* Feature blocks interrupt a ruled writing rhythm, but the interruption is
      itself measured in that rhythm: one half-line above and below. Node views
@@ -412,23 +416,16 @@
   letter-spacing: 0.005em;
 }
 
-/* H1 and H2 are larger than one writing band, but their LETTERS do not need a
-   two-band line box. That old 2 × pitch rule became 64px at the shipped page
-   settings: a wrapped 33px H2 therefore had almost another complete line of
-   blank leading between its words. Its measured ruled-page compensation also
-   inserted 19–21px before the first line, which read as an accidental empty
-   paragraph above a section.
-
-   Use the page's authored heading leading for the lines themselves. The real
-   block height still participates in DOM measurement, overflow and
-   pagination; there is no transform or fake visual offset. Only a grid-snap
-   correction after an irregular feature may add top space, because that is
-   the smallest correction which puts ordinary writing back on the paper's
-   ruling and is already measured by PageEditor. */
+/* H1 and H2 keep compact line boxes so a wrapped heading does not acquire a
+   blank ruled band between its words. Their Caveat baselines still need two
+   DIFFERENT optical placements, though: a 42px H1 belongs on the second rule
+   of its opening band, while a 33px H2 fits on the first. Padding moves the
+   ink to that rule and participates honestly in layout; returning it through
+   a negative margin made the heading's hit box overlap the following paragraph
+   at the small reading size. A measured --nb-grid-snap is additional phase
+   correction after an irregular predecessor. */
 .nb-prose h1,
 .nb-prose h2 {
-  padding-top: var(--nb-grid-snap, 0px);
-  margin-bottom: 0;
   line-height: var(--leading-heading);
 }
 
@@ -439,11 +436,17 @@
    at the bottom of the range and a whisper over 23px at the top — and it would
    still have had to fit the two-rule band above, which does scale. */
 .nb-prose h1 {
+  --nb-heading-lead: calc(26.1px * var(--page-text-scale, 1));
+  padding-top: calc(var(--nb-heading-lead) + var(--nb-grid-snap, 0px));
+  margin-bottom: 0;
   font-size: calc(42px * var(--page-text-scale, 1));
   font-weight: 700;
 }
 
 .nb-prose h2 {
+  --nb-heading-lead: calc(2.2px * var(--page-text-scale, 1));
+  padding-top: calc(var(--nb-heading-lead) + var(--nb-grid-snap, 0px));
+  margin-bottom: 0;
   font-size: calc(33px * var(--page-text-scale, 1));
   font-weight: 700;
 }
@@ -619,6 +622,20 @@
 
 .nb-prose li {
   margin: 0;
+}
+
+/* A list, quote or column set is one top-level ProseMirror block, so its
+   measured phase correction belongs to the CONTAINER once. Letting
+   --nb-grid-snap inherit into every descendant paragraph added the same
+   remainder to every row: the first bullet landed correctly, the second rose
+   by 10px, and the third fell by 12px. Spend it as container padding and reset
+   every nested copy (including headings and nested lists). */
+.nb-prose > :is(ul, ol, blockquote, [data-type='columns'])[data-nb-grid-snap] {
+  padding-top: var(--nb-grid-snap);
+}
+
+.nb-prose > :is(ul, ol, blockquote, [data-type='columns'])[data-nb-grid-snap] * {
+  --nb-grid-snap: 0px;
 }
 
 .nb-prose ul li::marker {
@@ -2293,11 +2310,27 @@ html[data-nb-col-resizing='true'] {
 /* ----------------------------------------------------------------------------
    Images + image rows — little photo prints
    -------------------------------------------------------------------------- */
-.nb-prose img {
+.nb-prose img:not(.ProseMirror-separator) {
   max-width: 100%;
   border-radius: 6px 10px 8px 12px;
   border: 3px solid var(--paper-cream);
   box-shadow: var(--shadow-sm);
+}
+
+/* ProseMirror appends this invisible sentinel after an inline atom so the
+   caret has somewhere to live. It is editor plumbing, never a photograph: a
+   border or intrinsic inline box here changes the whole line's baseline. */
+.nb-prose img.ProseMirror-separator {
+  display: inline !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: none;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+  vertical-align: baseline;
 }
 
 .nb-image-row {

@@ -526,14 +526,19 @@ function createGridSnapPlugin(
 }
 
 /**
- * Put ordinary prose back on the paper grid after an irregular-height block.
+ * Put ordinary prose back on the paper grid after any irregular-height block.
  *
  * Cards, media, diagrams and other special node views are allowed to size
- * themselves to their content. Their height is rarely an exact multiple of
- * the page pitch, though, so the next plain paragraph used to inherit that
- * remainder and float between the printed lines. Only the first ordinary text
- * block after a special block needs a spacer; once it is snapped, every later
- * line follows from the prose line-height again.
+ * themselves to their content. Compact H1/H2 headings do too: since their
+ * line-height stopped being an artificial two-rule band, an ordinary heading
+ * can legitimately leave the next paragraph at a fractional rule phase. The
+ * old special -> ordinary check skipped that heading -> paragraph transition,
+ * which put every line after the Welcome heading halfway between rules.
+ *
+ * Measure every ordinary block after the first. Grid-aligned transitions cost
+ * no decoration (`gridSnapCorrection` returns zero); only the first ordinary
+ * block after a fractional-height predecessor receives a spacer, and every
+ * later line follows from the prose line-height again.
  *
  * The correction is added INSIDE the target's top padding (editor.css), not as
  * a margin and not as a page/ruling offset. Its border-box top therefore does
@@ -561,23 +566,21 @@ function measureProseGridSnaps(
 
   /*
    * "Ordinary" means writing whose first line belongs on the paper's rule,
-   * not merely a naked paragraph. Lists and blockquotes are top-level
-   * ProseMirror nodes too; their actual words live in descendant paragraphs,
-   * which inherit the decoration's --nb-grid-snap value. Leaving those roots
-   * out is exactly how the ledger specimen failed: ledger -> blockquote meant
-   * the quoted prose kept the ledger's fractional phase and floated above the
-   * printed lines even though paragraph -> ledger -> paragraph looked right.
+   * not merely a naked paragraph. Lists, blockquotes and transparent columns
+   * are top-level ProseMirror nodes too; their actual words live in descendant
+   * paragraphs. Leaving those roots out is exactly how the ledger specimen
+   * failed, and how one Welcome column happened to align while another landed
+   * half a rule away after a different-height introduction.
    */
   const ordinary = (node: Element): boolean =>
-    node.matches('p, h1, h2, h3, h4, ul, ol, blockquote');
+    node.matches('p, h1, h2, h3, h4, ul, ol, blockquote, [data-type="columns"]');
   const rootRect = root.getBoundingClientRect();
   const scale = visualScale(rootRect.height, root.clientHeight);
   const measured: GridSnapDecoration[] = [];
 
   for (let index = 1; index < children.length; index += 1) {
     const child = children[index] as HTMLElement;
-    const previous = children[index - 1] as HTMLElement;
-    if (!ordinary(child) || ordinary(previous)) continue;
+    if (!ordinary(child)) continue;
     const laidOutTop =
       (child.getBoundingClientRect().top - rootRect.top) / scale;
     const pixels = gridSnapCorrection(laidOutTop, pitch);
@@ -1272,9 +1275,17 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
     ) {
       return;
     }
+    /* The stored attribute is the reader's unscaled pitch. The paper and prose
+       both use the rendered pitch after `--page-text-scale`; snapping against
+       the raw 32px while the page draws 27.2px or 36.8px rules fixes only the
+       default text size and leaves every other size on a different phase. */
+    const renderedPitch = Number.parseFloat(
+      getComputedStyle(instance.view.dom).lineHeight,
+    );
     const storedPitch: unknown = instance.state.doc.attrs.lineHeightPx;
-    const pitch =
-      typeof storedPitch === 'number' && Number.isFinite(storedPitch)
+    const pitch = Number.isFinite(renderedPitch) && renderedPitch > 0
+      ? renderedPitch
+      : typeof storedPitch === 'number' && Number.isFinite(storedPitch)
         ? storedPitch
         : DEFAULT_LINE_HEIGHT_PX;
     const measured = measureProseGridSnaps(

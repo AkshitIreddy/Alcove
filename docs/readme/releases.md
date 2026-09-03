@@ -21,6 +21,18 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.14 — timelines keep every colour
+
+**Timeline cards now honour the complete stationer's tint catalogue.** Colours
+such as forest and coral survive the full Notebook Script path instead of
+quietly becoming plain paper, and every tint offered by Alcove's colour picker
+is covered by the same renderer contract.
+
+**Unspecified cards receive a restrained automatic accent.** A timeline can
+remain colourful without repeating `color=...` on every line, while explicit
+colours always take priority. The exact reported weekday timeline was rendered
+headlessly with five distinct card fills and no browser errors.
+
 ## 0.7.13 — writing that meets the paper
 
 **Writing now settles onto the printed rules across the whole page.** Large

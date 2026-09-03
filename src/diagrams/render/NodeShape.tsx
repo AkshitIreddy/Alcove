@@ -9,13 +9,22 @@
 
 import { createMemo, Show, type JSX } from 'solid-js';
 import type { Attrs } from '../../script/types';
+import { TINT_ALL } from '../../editor/effects/vocabulary';
 import { shapeOf } from '../layout/size';
-import { isDiagramWash, type DiagramWash, type LaidNode } from '../types';
+import type { LaidNode } from '../types';
 import { nodeSeed, shapeStrokes } from './svgParts';
 
-export function washOf(attrs: Attrs | undefined): DiagramWash | 'paper' {
+/**
+ * Resolve the complete stationer's tint catalogue for diagram nodes.
+ *
+ * Diagrams originally predated the fifty-pigment colour shelf and checked
+ * only the seven legacy washes. The parser therefore accepted values such as
+ * `forest` and `coral`, while this last renderer boundary silently flattened
+ * them to paper.
+ */
+export function washOf(attrs: Attrs | undefined): string | 'paper' {
   const raw = attrs?.color;
-  return isDiagramWash(raw) ? raw : 'paper';
+  return typeof raw === 'string' && TINT_ALL.includes(raw) ? raw : 'paper';
 }
 
 export interface NodeShapeProps {
@@ -42,11 +51,13 @@ export function NodeShape(props: NodeShapeProps): JSX.Element {
     props.node.note !== undefined
       ? props.node.height / 2 - 8
       : props.node.height / 2;
+  const wash = createMemo(() => washOf(props.node.attrs));
 
   return (
     <g
       class="nb-dg-node"
-      data-wash={washOf(props.node.attrs)}
+      data-wash={wash()}
+      data-color={wash() === 'paper' ? undefined : wash()}
       data-shape={shapeOf(props.node.attrs)}
       transform={`translate(${left()}, ${top()})`}
     >

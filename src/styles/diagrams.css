@@ -74,6 +74,17 @@
 }
 
 /* Wash-tinted fills ({color=...} attrs) */
+/*
+ * The stationer's catalogue now has fifty tints. effects.css resolves each
+ * `data-color` name into the shared --fx-light/base/deep contract; diagrams
+ * consume that contract here. The seven direct rules below remain as stable
+ * fallbacks for the original washes and deliberately win by source order.
+ */
+.nb-dg-node[data-color] .nb-dg-fill,
+.nb-dg-tl-entry[data-color] .nb-dg-fill {
+  fill: var(--fx-light, var(--paper-cream));
+}
+
 .nb-dg-node[data-wash='amber'] .nb-dg-fill,
 .nb-dg-tl-entry[data-wash='amber'] .nb-dg-fill {
   fill: var(--wash-amber-light);

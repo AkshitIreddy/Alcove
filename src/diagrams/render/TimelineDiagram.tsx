@@ -6,7 +6,7 @@
 import { createMemo, For, Show, type JSX } from 'solid-js';
 import { fnv1a } from '../../art/noise';
 import { wobbleRect } from '../../art/wobble';
-import type { TimelineEntry } from '../../script/types';
+import type { Attrs, TimelineEntry } from '../../script/types';
 import {
   BODY_LINE_H,
   LABEL_LINE_H,
@@ -20,6 +20,30 @@ import { dotPath, edgeStrokes, nodeSeed, spineStrokes } from './svgParts';
 // The card's interior geometry belongs to the layout — it is what sized the
 // box these lines are being placed in. Re-declaring it here is how the text
 // and the box it lives in drift apart (see the note beside the definitions).
+
+/**
+ * A timeline is a sequence of cards, so an undecorated entry should still
+ * read as one member of that visual sequence rather than as an accidental
+ * unpainted hole. Explicit author colours always win; omitted colours cycle
+ * through a restrained six-wash palette.
+ */
+export const TIMELINE_DEFAULT_TINTS = [
+  'amber',
+  'sky',
+  'lemon',
+  'moss',
+  'blush',
+  'terracotta',
+] as const;
+
+export function timelineColorOf(
+  attrs: Attrs | undefined,
+  index: number,
+): string {
+  const explicit = washOf(attrs);
+  if (explicit !== 'paper') return explicit;
+  return TIMELINE_DEFAULT_TINTS[index % TIMELINE_DEFAULT_TINTS.length] ?? 'amber';
+}
 
 function TimelineCard(props: {
   card: LaidTimelineCard;
@@ -42,6 +66,9 @@ function TimelineCard(props: {
       frequency: 0.026,
     }),
   );
+  const color = createMemo(() =>
+    timelineColorOf(props.card.attrs, props.card.index),
+  );
   const connector = createMemo(() => {
     const edgeX =
       props.card.side === 'left' ? props.card.x + props.card.width : props.card.x;
@@ -56,7 +83,7 @@ function TimelineCard(props: {
   });
 
   return (
-    <g class="nb-dg-tl-entry" data-wash={washOf(props.card.attrs)}>
+    <g class="nb-dg-tl-entry" data-wash={color()} data-color={color()}>
       <For each={connector().passes}>
         {(d) => <path class="nb-dg-edge-stroke" d={d} />}
       </For>

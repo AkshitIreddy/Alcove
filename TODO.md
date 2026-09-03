@@ -1,5 +1,30 @@
 # Alcove — running TODO
 
+## ✅ 0.7.14 — timelines keep every colour (released 2026-09-03)
+
+Timeline cards now honour the complete stationer's tint catalogue, including
+forest and coral, instead of quietly falling back to plain paper. Entries
+without an explicit colour receive a restrained rotating accent while colours
+written in Notebook Script always win. The editor and SVG-rendering dependency
+families were refreshed within their existing major versions, leaving the
+production dependency audit clean.
+
+Commits `2762183` through `f5c67d3` plus annotated tag `v0.7.14` were pushed to
+`main`. GitHub Actions run `33727820098` passed the shared gate, Windows Rust
+tests, Linux, Windows and universal macOS builds, then publication. The live
+non-draft Release has 13 assets and 12 published checksums; signed `latest.json`
+reports version 0.7.14 with immutable updater URLs for Windows, Linux and both
+macOS architectures.
+
+- [x] Preserve every stationer's tint through timeline parsing and rendering.
+- [x] Give unspecified timeline cards a restrained deterministic colour cycle.
+- [x] Keep an explicit Notebook Script colour authoritative over defaults.
+- [x] Render the reported five-day example with five distinct card fills.
+- [x] Refresh TipTap and Pixi within their current majors and clear the
+      production dependency audit.
+- [x] Pass frontend, Rust, docs, packaging and live release verification;
+      publish every installer, checksum and signed updater entry.
+
 ## ✅ 0.7.13 — writing that meets the paper (released 2026-09-01)
 
 Writing on ruled pages now meets the printed baseline across headings,

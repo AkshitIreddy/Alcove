@@ -60,8 +60,8 @@ the installer. Alcove needs no account.
 <!-- gen:downloads -->
 | Platform | Take |
 | --- | --- |
-| **Windows 10 / 11** | [`Alcove_0.7.15_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 70 MB |
-| **macOS 11+** | [`Alcove_0.7.15_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
+| **Windows 10 / 11** | [`Alcove_0.7.16_x64-setup.exe`](https://github.com/AkshitIreddy/Alcove/releases/latest) · about 70 MB |
+| **macOS 11+** | [`Alcove_0.7.16_universal.dmg`](https://github.com/AkshitIreddy/Alcove/releases/latest) · Apple silicon and Intel |
 | **Linux** | [`.deb`, `.rpm` or `.AppImage`](https://github.com/AkshitIreddy/Alcove/releases/latest) |
 <!-- /gen -->
 

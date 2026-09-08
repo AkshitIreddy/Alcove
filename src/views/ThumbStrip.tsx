@@ -112,8 +112,8 @@ export default function ThumbStrip(props: ThumbStripProps): JSX.Element {
     void props.requestPreview(pageId, key, controller.signal)
       .then((bitmap) => {
         if (controller.signal.aborted || controllers.get(pageId) !== controller) return;
-        controllers.delete(pageId);
         if (bitmap === null) throw new Error('page thumbnail capture returned no pixels');
+        controllers.delete(pageId);
         drawPageRaster(canvas, bitmap);
         painted.set(pageId, key);
         retries.delete(pageId);

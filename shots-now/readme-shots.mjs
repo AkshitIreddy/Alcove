@@ -566,7 +566,7 @@ async function settle(page, selector = STAGE, tries = 40) {
   let last = '';
   let same = 0;
   for (let i = 0; i < tries; i += 1) {
-    const box = await page.locator(selector).first().boundingBox().catch(() => null);
+    const box = await page.locator(selector).first().boundingBox({ timeout: 250 }).catch(() => null);
     const now = box === null ? 'gone' : `${box.x | 0},${box.y | 0},${box.width | 0},${box.height | 0}`;
     same = now === last ? same + 1 : 0;
     last = now;
@@ -595,7 +595,7 @@ async function settle(page, selector = STAGE, tries = 40) {
  * honest signal: open means its left edge is inside the window.
  */
 async function onScreen(page, selector) {
-  const box = await page.locator(selector).first().boundingBox().catch(() => null);
+  const box = await page.locator(selector).first().boundingBox({ timeout: 250 }).catch(() => null);
   return box !== null && box.x >= 0 && box.width > 100;
 }
 

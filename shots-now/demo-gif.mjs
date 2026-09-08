@@ -1,6 +1,10 @@
 /**
  * shots-now/demo-gif.mjs — the looping demo on the front page.
  *
+ * Owner review before publication:
+ *   node shots-now/demo-gif.mjs --qa-only --mp4-review-only --keep-frames --work-dir=E:/temp/alcove-demo-review
+ * This writes only qa/demo/demo.owner-review.mp4; the README pair is untouched.
+ *
  * Built with the owner's own `gifsmith`. The current loop deliberately opens
  * on the Welcome book rather than on the room: two real curls introduce the
  * pages, the book returns to the shelf, and the established room/studio tour
@@ -659,6 +663,10 @@ const opt = (name, fallback) => {
 const CHECK = args.includes('--check');
 const QA_ONLY = args.includes('--qa-only');
 const PROMOTE_ONLY = args.includes('--promote-only');
+const MP4_REVIEW_ONLY = args.includes('--mp4-review-only');
+if (MP4_REVIEW_ONLY && (!QA_ONLY || PROMOTE_ONLY)) {
+  throw new Error('--mp4-review-only requires --qa-only and cannot promote media');
+}
 const URL_BASE = opt('url', 'http://localhost:1420');
 
 /*
@@ -702,6 +710,7 @@ const DEMO_OUT = `${OUT_DIR}/demo.webp`;
 const DEMO_STAGING = `${QA_DIR}/demo.next.webp`;
 const DEMO_MP4 = `${QA_DIR}/demo.mp4`;
 const DEMO_MP4_STAGING = `${QA_DIR}/demo.next.mp4`;
+const DEMO_OWNER_REVIEW = `${QA_DIR}/demo.owner-review.mp4`;
 
 /**
  * Publish the README film and its seekable review copy as one recoverable pair.
@@ -1904,12 +1913,27 @@ const tl = timeline((t) => {
     if (waitUntil !== null) t.waitUntil(waitUntil);
     // The current pair must have content-bearing document previews, not the
     // blank ruled shells the old, un-centred demo held for ten seconds.
-    t.waitUntil(() => {
-      const current = [...document.querySelectorAll('.nb-thumb.is-current .nb-thumb-paper')];
-      return current.length > 0 && current.every((paper) =>
-        paper.classList.contains('has-raster') &&
-        paper.getAttribute('data-thumbnail-state') === 'ready');
-    });
+    t.call(async function requireCurrentThumbnailPixels(page, ctx) {
+      // Timeline waitUntil only warns on timeout. A failed preview must stop
+      // publication rather than silently add a frozen hold to the film.
+      await settleScene(ctx, page.waitForFunction(() => {
+        const current = [...document.querySelectorAll('.nb-thumb.is-current .nb-thumb-paper')];
+        return current.length > 0 && current.every((paper) =>
+          paper.classList.contains('has-raster') &&
+          paper.getAttribute('data-thumbnail-state') === 'ready');
+      }, { timeout: 15_000 }), {
+        capMs: 15_000, label: `render current thumbnails for ${title}`,
+      });
+      const states = await page.evaluate(() =>
+        [...document.querySelectorAll('.nb-thumb.is-current .nb-thumb-paper')]
+          .map((paper) => ({
+            raster: paper.classList.contains('has-raster'),
+            state: paper.getAttribute('data-thumbnail-state'),
+          })));
+      if (states.length === 0 || states.some((item) => !item.raster || item.state !== 'ready')) {
+        throw new Error(`Current thumbnail pixels missing for ${title}: ${JSON.stringify(states)}`);
+      }
+    }, { name: `verify current thumbnails for ${title}`, seconds: 0 });
     t.hold(hold);
   };
 
@@ -2666,7 +2690,7 @@ const scene = {
   // Never let a failed late storyboard gate truncate the README's current
   // film. Gifsmith opens its destination before capture, so write the whole
   // candidate under ignored QA first and promote it only after render returns.
-  out: DEMO_STAGING,
+  out: MP4_REVIEW_ONLY ? DEMO_OWNER_REVIEW : DEMO_STAGING,
   // Optional retained source frames make a late capture failure reviewable.
   workDir: opt('work-dir', undefined),
   keepFrames: args.includes('--keep-frames'),
@@ -2775,21 +2799,26 @@ if (PROMOTE_ONLY) {
   }
 } else {
   const result = await render(scene);
-  const stagedBytes = statSync(DEMO_STAGING).size;
-  if (stagedBytes <= 0) {
-    throw new Error('demo-gif: renderer returned without a non-empty staged film');
-  }
-  const stagedMp4Bytes = statSync(DEMO_MP4_STAGING).size;
+  const reviewPath = MP4_REVIEW_ONLY ? DEMO_OWNER_REVIEW : DEMO_MP4_STAGING;
+  const stagedMp4Bytes = statSync(reviewPath).size;
   if (stagedMp4Bytes <= 0) {
     throw new Error('demo-gif: renderer returned without a non-empty seekable MP4 review copy');
   }
-  if (QA_ONLY) {
-    console.log(`QA-only candidate retained -> ${DEMO_STAGING} (${stagedBytes} bytes)`);
-    console.log(`QA-only review retained -> ${DEMO_MP4_STAGING} (${stagedMp4Bytes} bytes)`);
+  if (MP4_REVIEW_ONLY) {
+    console.log(`Owner-review MP4 retained -> ${reviewPath} (${stagedMp4Bytes} bytes)`);
   } else {
-    promoteDemoPair();
-    console.log(`promoted complete demo -> ${DEMO_OUT} (${stagedBytes} bytes)`);
-    console.log(`promoted seekable review -> ${DEMO_MP4} (${stagedMp4Bytes} bytes)`);
+    const stagedBytes = statSync(DEMO_STAGING).size;
+    if (stagedBytes <= 0) {
+      throw new Error('demo-gif: renderer returned without a non-empty staged film');
+    }
+    if (QA_ONLY) {
+      console.log(`QA-only candidate retained -> ${DEMO_STAGING} (${stagedBytes} bytes)`);
+      console.log(`QA-only review retained -> ${DEMO_MP4_STAGING} (${stagedMp4Bytes} bytes)`);
+    } else {
+      promoteDemoPair();
+      console.log(`promoted complete demo -> ${DEMO_OUT} (${stagedBytes} bytes)`);
+      console.log(`promoted seekable review -> ${DEMO_MP4} (${stagedMp4Bytes} bytes)`);
+    }
   }
   console.log(JSON.stringify(result, null, 2));
 }

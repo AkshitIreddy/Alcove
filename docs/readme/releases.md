@@ -21,6 +21,16 @@ the longer human summary beside it.
 Every number below is read out of the module that defines it and wrapped in a
 marker `npm test` recomputes, exactly as on the other three pages.
 
+## 0.7.15 — books with more character
+
+Book customisation now includes 72 new pieces of artwork: 32 emblems, 24 borders and 16 title treatments. The existing choices keep their names, with refined artwork and clearer title placement across covers and spines.
+
+Surprise me draws from a wider range of coordinated designs. Grand favours intricate ornament, Quiet leaves more breathing room, and the other directions have their own title, border and emblem combinations. More variation comes from the whole book's design as well as its colours.
+
+Leather corners and hinges now leave the cover title clear, and the crown emblem uses its refined linework. Page thumbnails now retry correctly after a capture returns no image. The README pictures and looping demo have been rerendered to show the updated books.
+
+Page turns now preserve the spacing of writing after headings and columns, including at smaller and larger reading sizes, removing the downward jump when a turning page returns to the live editor.
+
 ## 0.7.14 — timelines keep every colour
 
 **Timeline cards now honour the complete stationer's tint catalogue.** Colours

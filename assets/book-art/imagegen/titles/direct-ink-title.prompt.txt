@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster decorative rule for a storybook cover
+Primary request: create one compact under-title ink flourish: a short gently uneven hand-drawn baseline with one small round dot at each end and a tiny open circle at center. Nothing above it and nothing else. It belongs to an option named Inked title.
+Style: crisp flat vector-like raster line art, solid dark brown #432934 only, friendly printer's ink character, restrained and plain.
+Composition: centered horizontal mark, about 4.5:1 aspect ratio, ample transparent padding, no frame and no filled shape.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, gold, plaque, rectangle, border, long band, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

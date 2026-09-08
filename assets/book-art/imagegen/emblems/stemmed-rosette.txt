@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and 24 px narrow-spine finishing-tool emblem, active index 23 “stemmed-rosette”.
+Primary request: Create one original bookbinder finishing-tool ornament depicting an unmistakable stemmed rosette: one compact face-on six-petal rosette with a small solid center, raised on one short gently bowed stem, with exactly two small opposing leaves just below the bloom. The flower must read as a rosette attached to a stem, never as a detached seal, generic daisy, or heraldic badge, when reduced to 24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; restrained Grand-tier elegance, crisp and stamp-ready. Use one uniform solid dark plum-sepia ink (#432934) only. Build broad connected shapes and generous transparent cuts between petals.
+Composition/framing: centered upright emblem, about 64% of the square canvas, comfortably inset; rosette occupies the upper half, compact stem-and-leaf base below; slight hand-drawn asymmetry; strong vertical silhouette suited to a narrow book spine.
+Constraints: exactly one six-petal rosette, one solid center, one short stem, two leaves; clear negative space between every petal; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges; instantly legible at 24 px.
+Avoid: detached rosette, circular rim, ring, badge, medallion, seal, frame, title plate, rose spiral, sunflower, daisy rays, bouquet, vase, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, second color, background color, texture, grain, gradient, lighting, highlights, shading, bevel, metallic effect, glow, blur, shadow, repeated pattern, photorealism.

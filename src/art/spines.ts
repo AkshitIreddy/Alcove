@@ -1,3 +1,5 @@
+import { paintRemasteredEmblem, BOOK_EMBLEM_MASTERS } from './bookEmblemArtwork';
+import type { BookCompositionId, BookSpineCharacter } from './bookCompositions';
 /**
  * art/spines.ts — seeded book identity, and the flat drawing of one spine.
  *
@@ -347,6 +349,24 @@ export const TITLE_PLATES = [
   'ledger-open-field',
   'inscription-shoulders',
   'renaissance-title-window',
+  // Third curation: expanded authored title furniture. Existing ids above
+  // remain stable and in their original order; these add new constructions.
+  'whisper-rules',
+  'field-note-corner-ticket',
+  'sewn-linen-label',
+  'herbarium-caption',
+  'foliate-shoulder-field',
+  'storybook-scallop-cartouche',
+  'ribbon-tail-cartouche',
+  'celestial-orbit-roundel',
+  'navigator-compass-label',
+  'artisan-notched-label',
+  'archivist-index-tab',
+  'gothic-pointed-panel',
+  'cameo-wreath-label',
+  'fanfare-pediment',
+  'crown-quatrefoil',
+  'imperial-fan-panel',
 ] as const;
 export type TitlePlateStyle = (typeof TITLE_PLATES)[number];
 
@@ -595,6 +615,8 @@ export const ORNAMENT_LABELS: readonly string[] = [
   'Reed bundle',
   'Moresque knot',
   'Tudor rose standard',
+  ...Object.values(BOOK_EMBLEM_MASTERS).filter(master => master.index >= 86)
+    .sort((a, b) => a.index - b.index).map(master => master.label),
 ];
 
 /** Number of ornament stamps (a book may also have none). */
@@ -618,6 +640,10 @@ export const ACTIVE_ORNAMENT_INDICES = [
   23, 26, 28, 29, 30, 31, 43, 56,
   66, 67, 68, 70, 71, 74, 75, 78,
   80, 81, 83, 84, 85,
+  86, 87, 88, 89, 90, 91, 92, 93,
+  94, 95, 96, 97, 98, 99, 100, 101,
+  102, 103, 104, 105, 106, 107, 108, 109,
+  110, 111, 112, 113, 114, 115, 116, 117,
 ] as const;
 
 export interface ActiveOrnamentOption {
@@ -665,6 +691,14 @@ const ACTIVE_ORNAMENT_GLYPHS: Readonly<Record<(typeof ACTIVE_ORNAMENT_INDICES)[n
   83: 'reed-bundle',
   84: 'moresque-knot',
   85: 'tudor-rose',
+  86: 'shield', 87: 'fleuron', 88: 'fleur-de-lis', 89: 'rosette',
+  90: 'palmette', 91: 'palmette', 92: 'starflower', 93: 'fleur-de-lis',
+  94: 'shield', 95: 'pomegranate', 96: 'moresque-knot', 97: 'palmette',
+  98: 'oak-volutes', 99: 'fleuron', 100: 'shield', 101: 'tulip',
+  102: 'fern-palmette', 103: 'dog-rose', 104: 'olive-spray', 105: 'iris-fan',
+  106: 'rosette', 107: 'fleuron', 108: 'shield', 109: 'shield',
+  110: 'rowan-spray', 111: 'tulip', 112: 'shield', 113: 'laurel',
+  114: 'palmette', 115: 'starflower', 116: 'reed-bundle', 117: 'shield',
 };
 
 /** Total semantic lookup for the active catalogue; retired values normalise first. */
@@ -845,6 +879,15 @@ export const ORNAMENT_TAGS: readonly (readonly SpineTag[])[] = [
   ['botanical', 'scholarly', 'severe'], // 83 reed bundle
   ['ornate', 'formal', 'antique'], // 84 moresque knot
   ['botanical', 'heraldic', 'formal'], // 85 Tudor rose standard
+  ...Array.from({ length: 32 }, (_, offset): readonly SpineTag[] => {
+    const groups: readonly (readonly SpineTag[])[] = [
+      ['formal', 'heraldic', 'refined'], ['ornate', 'heraldic', 'bright'],
+      ['antique', 'scholarly', 'refined'], ['whimsical', 'romantic', 'bright'],
+      ['botanical', 'natural', 'airy'], ['cosy', 'warm', 'plain'],
+      ['rustic', 'natural', 'warm'], ['plain', 'airy', 'refined'],
+    ];
+    return groups[Math.floor(offset / 4)]!;
+  }),
 ];
 
 /* ----------------------- front-cover title metadata ---------------------- */
@@ -1411,6 +1454,55 @@ const COVER_TITLE_TREATMENT_SPECS: Readonly<Record<TitlePlateStyle, TitlePlateSp
   'renaissance-title-window': plate('renaissance-title-window', 'Renaissance quadrilobe', 'A central quadrilobe title locus with four open leaf-like returns.',
     ['formal', 'antique', 'ornate'],
     { ground: 'none', shape: 'rect', frame: 'double', frameInk: 'gilt', ends: 'lozenge', letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+
+  'whisper-rules': plate('whisper-rules', 'Whispered rules', 'Two hairline blind rules taper toward a tiny central leaf, leaving the cloth almost bare.',
+    ['plain', 'airy', 'refined'],
+    { ground: 'none', shape: 'rect', frame: 'none', frameInk: 'soft', ends: 'rule', letter: 'soft', grain: 'none', outline: 0, radius: 0 }),
+  'field-note-corner-ticket': plate('field-note-corner-ticket', 'Field-note corner ticket', 'A small offset paper ticket with a folded corner and one ruled index line.',
+    ['plain', 'scholarly', 'cosy'],
+    { ground: 'cream', shape: 'rect', frame: 'single', frameInk: 'ink', ends: 'rule', letter: 'ink', grain: 'none', outline: 0.7, radius: 0.01, seat: 'proud' }),
+  'sewn-linen-label': plate('sewn-linen-label', 'Sewn linen label', 'A broad linen lettering piece secured with visible cross-stitches at both ends.',
+    ['natural', 'rustic', 'cosy'],
+    { ground: 'creamDeep', shape: 'rect', frame: 'none', frameInk: 'soft', ends: 'none', letter: 'ink', grain: 'none', outline: 0.7, radius: 0.01, seat: 'proud', stud: 'stitches' }),
+  'herbarium-caption': plate('herbarium-caption', 'Herbarium caption', 'A botanical specimen caption with clipped shoulders and small pressed-leaf corner tools.',
+    ['botanical', 'natural', 'scholarly'],
+    { ground: 'cream', shape: 'octagon', frame: 'single', frameInk: 'ink', ends: 'fleuron', letter: 'ink', grain: 'none', outline: 0.75, radius: 0.01 }),
+  'foliate-shoulder-field': plate('foliate-shoulder-field', 'Foliate shoulder field', 'Open mirrored leaf shoulders hold a generous title field directly on the covering.',
+    ['botanical', 'refined', 'airy'],
+    { ground: 'none', shape: 'rect', frame: 'brackets', frameInk: 'gilt', ends: 'fleuron', letter: 'auto', grain: 'none', outline: 0, radius: 0 }),
+  'storybook-scallop-cartouche': plate('storybook-scallop-cartouche', 'Storybook scallop cartouche', 'A softly bowed cartouche with alternating scallops and a small storybook crown.',
+    ['whimsical', 'cosy', 'fancy'],
+    { ground: 'creamDeep', shape: 'scroll', frame: 'scallop', frameInk: 'ink', ends: 'fleuron', letter: 'ink', grain: 'none', outline: 0.8, radius: 0.04 }),
+  'ribbon-tail-cartouche': plate('ribbon-tail-cartouche', 'Ribbon-tail cartouche', 'A central curved label whose folded tails become the title field’s side brackets.',
+    ['romantic', 'whimsical', 'refined'],
+    { ground: 'plum', shape: 'scroll', frame: 'single', frameInk: 'gilt', ends: 'bracket', letter: 'cream', grain: 'none', outline: 0.85, radius: 0.03, seat: 'proud' }),
+  'celestial-orbit-roundel': plate('celestial-orbit-roundel', 'Celestial orbit roundel', 'An elliptical title locus crossed by two open orbital arcs and four tiny star tools.',
+    ['celestial', 'modern', 'refined'],
+    { ground: 'ink', shape: 'oval', frame: 'double', frameInk: 'gilt', ends: 'star', letter: 'cream', grain: 'none', outline: 0.8, radius: 0.5, seat: 'sunk' }),
+  'navigator-compass-label': plate('navigator-compass-label', 'Navigator compass label', 'A clipped chart label anchored by compass points and ruled latitude ticks.',
+    ['nautical', 'scholarly', 'antique'],
+    { ground: 'slate', shape: 'octagon', frame: 'double', frameInk: 'cream', ends: 'lozenge', letter: 'cream', grain: 'none', outline: 0.8, radius: 0.01, seat: 'flush' }),
+  'artisan-notched-label': plate('artisan-notched-label', 'Artisan notched label', 'A thick leather piece with hand-cut corner notches and sturdy double stitching.',
+    ['rustic', 'warm', 'heavy'],
+    { ground: 'terracotta', shape: 'stepped', frame: 'notched', frameInk: 'soft', ends: 'dots', letter: 'cream', grain: 'none', outline: 0.95, radius: 0.01, seat: 'proud', stud: 'stitches' }),
+  'archivist-index-tab': plate('archivist-index-tab', 'Archivist index tab', 'A narrow side-index label with a projecting tab and sober catalogue rules.',
+    ['scholarly', 'utilitarian', 'plain'],
+    { ground: 'cream', shape: 'stepped', frame: 'single', frameInk: 'ink', ends: 'rule', letter: 'ink', grain: 'none', outline: 0.7, radius: 0.01, seat: 'flush' }),
+  'gothic-pointed-panel': plate('gothic-pointed-panel', 'Gothic pointed panel', 'A tall architectural title panel with a pointed canopy and paired lancet shoulders.',
+    ['antique', 'severe', 'ornate'],
+    { ground: 'none', shape: 'arch', frame: 'gothic', frameInk: 'gilt', ends: 'fleuron', letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+  'cameo-wreath-label': plate('cameo-wreath-label', 'Cameo wreath label', 'A pale oval cameo framed by two open laurel branches and a small tied foot.',
+    ['romantic', 'refined', 'pale'],
+    { ground: 'creamDeep', shape: 'oval', frame: 'wreath', frameInk: 'gilt', ends: 'fleuron', letter: 'ink', grain: 'none', outline: 0.75, radius: 0.5, seat: 'sunk' }),
+  'fanfare-pediment': plate('fanfare-pediment', 'Fanfare pediment', 'A formal architectural title field beneath a broken pediment and central palmette.',
+    ['formal', 'gilded', 'ornate'],
+    { ground: 'none', shape: 'pediment', frame: 'triple', frameInk: 'gilt', ends: 'fleuron', letter: 'gilt', grain: 'none', outline: 0, radius: 0 }),
+  'crown-quatrefoil': plate('crown-quatrefoil', 'Crowned quatrefoil', 'A deep leather quatrefoil with a crown tool, cusped corners and double gilt contour.',
+    ['formal', 'heraldic', 'ornate'],
+    { ground: 'plum', shape: 'shield', frame: 'double', frameInk: 'gilt', ends: 'lozenge', letter: 'gilt', grain: 'none', outline: 0.9, radius: 0.02, seat: 'sunk' }),
+  'imperial-fan-panel': plate('imperial-fan-panel', 'Imperial fan panel', 'A grand sunburst fan rises behind a stepped title field with pendant corner tools.',
+    ['formal', 'fancy', 'ornate'],
+    { ground: 'ink', shape: 'stepped', frame: 'triple', frameInk: 'gilt', ends: 'fleuron', letter: 'cream', grain: 'none', outline: 0.9, radius: 0.01, seat: 'sunk' }),
 };
 
 /** Display names for the title-plate treatments. */
@@ -1456,6 +1548,22 @@ export const ACTIVE_TITLE_PLATES = [
   'ledger-open-field',
   'inscription-shoulders',
   'renaissance-title-window',
+  'whisper-rules',
+  'field-note-corner-ticket',
+  'sewn-linen-label',
+  'herbarium-caption',
+  'foliate-shoulder-field',
+  'storybook-scallop-cartouche',
+  'ribbon-tail-cartouche',
+  'celestial-orbit-roundel',
+  'navigator-compass-label',
+  'artisan-notched-label',
+  'archivist-index-tab',
+  'gothic-pointed-panel',
+  'cameo-wreath-label',
+  'fanfare-pediment',
+  'crown-quatrefoil',
+  'imperial-fan-panel',
 ] as const satisfies readonly TitlePlateStyle[];
 
 export const ACTIVE_TITLE_PLATE_OPTIONS = ACTIVE_TITLE_PLATES
@@ -1961,6 +2069,8 @@ export interface BandSpec {
 }
 
 export interface SpineParams {
+  composition?: BookCompositionId | null;
+  spineCharacter?: BookSpineCharacter | null;
   /** The seed the params were derived from (kept for render-time jitter). */
   seed: number;
   /** Silhouette template 0–6: straight/taper-top/taper-bottom/banded/scalloped/rounded-top/waist. */
@@ -2767,6 +2877,10 @@ export function drawOrnament(
   s: number,
   rnd: RandomFn,
 ): void {
+  const colour = typeof ctx.fillStyle === 'string' ? ctx.fillStyle : FLAT.ink;
+  // The geometric lozenge is a struck-line tool: keep its original broad
+  // construction rather than shrinking it into the generated icon silhouette.
+  if (kind !== 0 && paintRemasteredEmblem(ctx, kind, cx, cy, s, colour)) return;
   const j = (v: number) => v + (rnd() * 2 - 1) * s * 0.06;
   const pt = (x: number, y: number): Pt => ({ x: j(cx + x * s), y: j(cy + y * s) });
   /** Filled closed polygon in unit space. */

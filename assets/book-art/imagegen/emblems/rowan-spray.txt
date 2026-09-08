@@ -1,0 +1,22 @@
+Prompt 1 — generation
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only; match the graceful flat botanical linework and confident spacing, without reproducing books, titles, borders, layout, palette, or existing sprigs
+Primary request: create one original emblem named "Rowan spray"
+Subject: one upward diagonal rowan twig with four clearly separated pairs of serrated leaflets and a compact hanging cluster of exactly five large round rowan berries near the tip; botanical identity must differ clearly from olive and laurel
+Style/medium: restrained Quiet historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, subtly organic hand-cut brass finishing-tool curves, elegant and authored
+Composition/framing: one isolated centred diagonal motif occupying about 72% of the square, berry cluster forming one clear secondary mass, generous transparent margins, broad leaf shapes and open gaps that survive narrow-spine reduction
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: tiny berry dots, dense clusters, olive fruits, smooth olive leaves, flower blooms, texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, gold, multiple colours, hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — ImageGen background extraction
+
+Use case: background-extraction
+Asset type: final transparent bitmap master for the Alcove book-customisation emblem "Rowan spray"
+Input image: rowan-spray-rgb.png is the edit target
+Primary request: preserve the supplied rowan-spray artwork exactly—same diagonal twig, seven serrated leaves, five hanging berries, calyx cuts, dark sepia colour, line weight, silhouette, scale, placement, and square composition—and remove only the pale gray-and-white checkerboard background
+Scene/backdrop: replace every checkerboard and pale background pixel with genuine alpha transparency
+Constraints: change only the background; keep the emblem artwork unchanged; output a true RGBA transparent PNG with crisp antialiased alpha edges; no background colour, no checkerboard pattern, no white matte, no crop, no resize, no extra objects, no text, no border, no badge
+Avoid: redrawing, recolouring, changing berry or leaf counts, smoothing away serrations, texture, shadow, glow, gradient, lighting, watermark

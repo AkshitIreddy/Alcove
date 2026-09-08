@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster decorative rule for a storybook cover
+Primary request: create one tiny understated under-title flourish: a single short, shallow hand-drawn curve with small squared end ticks. Nothing above it and nothing else. It represents an uncoloured pressed mark for the option named Blind title.
+Style: crisp flat vector-like raster line art, one dark brown #432934 stroke, restrained and scholarly.
+Composition: centered horizontal mark, about 4:1 aspect ratio, ample transparent padding, no frame and no filled shape.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, gold, fill, border, long crossband, full rectangle, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

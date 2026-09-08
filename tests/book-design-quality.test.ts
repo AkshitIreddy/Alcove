@@ -1,3 +1,4 @@
+import { REMASTERED_TITLE_TEXT_SURFACES } from '../src/art/bookTitleArtwork';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -258,14 +259,14 @@ describe('book binding quality vocabulary', () => {
   });
 
   it('keeps stable ornament indices while giving active slots honest binder-tool labels', () => {
-    expect(ORNAMENT_COUNT).toBe(86);
+    expect(ORNAMENT_COUNT).toBe(118);
     expect(ORNAMENT_LABELS).toHaveLength(ORNAMENT_COUNT);
     expect(ORNAMENT_TAGS).toHaveLength(ORNAMENT_COUNT);
     expect(ORNAMENT_LABELS.slice(0, 4)).toEqual([
       'Diamond', 'Broad laurel branch', 'Foliate starflower', 'Acanthus arabesque',
     ]);
     expect(ORNAMENT_LABELS[49]).toBe('Heart');
-    expect(ORNAMENT_LABELS.slice(50)).toEqual([
+    expect(ORNAMENT_LABELS.slice(50, 86)).toEqual([
       'Owl',
       'Stag',
       'Fox',
@@ -433,13 +434,7 @@ describe('book binding quality vocabulary', () => {
         expect(coveringSpecFor(resolved.cover).id).toBe(preset.material);
 
         const coverTitle = resolveCoverTitleColours(resolved.cover, 'Winter Herbarium');
-        const directTitle = [
-          'none', 'direct-blind-title', 'direct-gilt-title', 'direct-ink-title',
-          'press-small-caps', 'printer-floret-imprint',
-          'oxford-blind-compartment', 'cambridge-calf-compartment',
-          'french-triple-fillet', 'ledger-open-field',
-          'inscription-shoulders', 'renaissance-title-window',
-        ].includes(resolved.cover.titlePlate ?? '');
+        const directTitle = REMASTERED_TITLE_TEXT_SURFACES[resolved.cover.titlePlate ?? 'none'] === 'board';
         const titleContrastFloor = directTitle
           // Direct tooling is intentionally the board's own field. Forcing
           // the physical-label floor used to fabricate a filled UI card

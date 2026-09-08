@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+  <path d="M90 640 L90 240 L166 240 Q188 110 500 42 Q812 110 834 240 L910 240 L910 640 Z" fill="#432934" stroke="#432934" stroke-width="15"/>
+  <path d="M70 620 L70 224 L146 224 Q170 90 500 24 Q830 90 854 224 L930 224 L930 620 Z" fill="#f2e6ce" stroke="#c5a465" stroke-width="12"/>
+  <path d="M112 592 L112 258 L180 258 Q206 140 500 76 Q794 140 820 258 L888 258 L888 592 Z" fill="none" stroke="#432934" stroke-width="10"/>
+  <path d="M500 76 L500 240 M500 76 L352 250 M500 76 L648 250 M500 76 L240 274 M500 76 L760 274" fill="none" stroke="#c5a465" stroke-width="9"/>
+  <path d="M210 274 Q500 162 790 274" fill="none" stroke="#432934" stroke-width="10"/>
+  <path d="M166 298 L220 334 L194 376 L244 406 L214 454 M834 298 L780 334 L806 376 L756 406 L786 454" fill="none" stroke="#c5a465" stroke-width="9"/>
+  <path d="M174 520 C286 548 396 532 474 516 M526 516 C604 532 714 548 826 520" fill="none" stroke="#432934" stroke-width="9"/>
+  <path d="M140 586 L174 550 L208 586 M860 586 L826 550 L792 586" fill="#c5a465" stroke="#432934" stroke-width="8"/>
+  <path d="M500 46 C526 64 528 92 500 112 C472 92 474 64 500 46 Z" fill="#c5a465" stroke="#432934" stroke-width="7"/>
+</svg>

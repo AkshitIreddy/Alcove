@@ -1,0 +1,22 @@
+Prompt 1 — generation
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only; match its graceful flat botanical linework and confident negative space, without reproducing its books, lettering, frames, layout, palette, or existing sprigs
+Primary request: create one original emblem named "Honeysuckle scroll"
+Subject: one flowing S-curved vine ending in a clearly recognizable flared honeysuckle trumpet flower, with two broad opposing leaves and one curled tendril; the flower bell and scrolling vine must carry the identity
+Style/medium: intricate Grand historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, elegant hand-cut brass finishing-tool curves, botanical and calligraphic rather than a generic icon
+Composition/framing: one isolated centred upright S-shaped motif occupying about 70% of the square, generous transparent margins, large open counters in the scroll and clear gaps between flower and leaves; readable when reduced for a narrow spine
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — ImageGen background extraction
+
+Use case: background-extraction
+Asset type: final transparent bitmap master for the Alcove book-customisation emblem "Honeysuckle scroll"
+Input image: honeysuckle-scroll-rgb.png is the edit target
+Primary request: preserve the supplied honeysuckle ornament exactly—same flowering trumpet, long stamens, paired leaves, S-curved vine, scrolls, dark sepia colour, line weight, silhouette, scale, placement, and square composition—and remove only the pale gray-and-white checkerboard background
+Scene/backdrop: replace every checkerboard and pale background pixel with genuine alpha transparency
+Constraints: change only the background; keep the emblem artwork unchanged; output a true RGBA transparent PNG with crisp antialiased alpha edges; no background colour, no checkerboard pattern, no white matte, no crop, no resize, no extra objects, no text, no border, no badge
+Avoid: redrawing, recolouring, smoothing away linework, texture, shadow, glow, gradient, lighting, watermark

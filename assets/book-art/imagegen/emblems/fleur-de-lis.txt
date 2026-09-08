@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and 24 px narrow-spine finishing-tool emblem, active index 26 “fleur-de-lis”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool fleur-de-lis: one tall pointed central petal, two broad side petals that curve outward and roll back into compact hooks, a narrow cinched band across the waist, and a small three-point foot below. The classic three-lobed heraldic identity must be unmistakable and remain crisp when reduced to 24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; stately, graceful, restrained, and stamp-ready. Use one uniform solid dark plum-sepia ink (#432934) only. Build one connected silhouette with a few broad transparent channels defining the central petal, recurved side lobes, waist band, and foot.
+Composition/framing: centered upright and bilaterally balanced with slight hand-drawn bowing, about 62% of the square canvas, comfortably inset; compact vertical proportions suited to a narrow book spine; central point clearly tallest.
+Constraints: exactly one fleur-de-lis; three primary upper petals; one simple waist band; one compact lower foot; broad readable silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges; instantly legible at 24 px.
+Avoid: iris flower, tulip, anthemion fan, spear or arrowhead, crown, floral stem or leaves, circle, badge, medallion, seal, cartouche, frame, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, second color, background color, texture, grain, gradient, lighting, highlights, shading, bevel, metallic effect, glow, blur, shadow, repeated pattern, photorealism.

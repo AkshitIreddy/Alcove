@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone PARCHMENT JOINT SLIP for a traditional book cover: a narrow tall cream parchment label with subtly bowed cut edges, a fine dark outline, one tiny gold stitch at each upper and lower corner, and two short horizontal register ticks near the ends. Keep the long central 70 percent completely calm and blank for live title text rotated vertically. It should feel like a handmade pasted title slip set beside the book joint.
+Style: crisp flat vector-like raster, uniform pale cream #f2e6ce fill, dark brown #432934 outline, sparse muted gold #c5a465 stitches, gentle hand-drawn irregularity.
+Composition: centered portrait strip, about 1:3.4 aspect ratio, broad blank interior, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, horizontal label, scroll curls, ribbon tails, flowers in the text area, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

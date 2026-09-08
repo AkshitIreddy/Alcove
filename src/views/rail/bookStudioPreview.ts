@@ -8,8 +8,10 @@
  * focus behaviour or either responsive preview home.
  */
 
-import { coverCompositionLayout } from '../../art/covers';
-import type { TitlePlateStyle } from '../../art/spines';
+import { COVER_FRAME_INSET, coverCompositionLayout, coverTitlePanelHeight } from '../../art/covers';
+import type { BookCompositionId, BookSpineCharacter } from '../../art/bookCompositions';
+import type { BookStyle } from '../../art/bookStyle';
+import { normalizeTitlePlateStyle, type TitlePlateStyle } from '../../art/spines';
 
 export type BookPreviewFace = 'spine' | 'cover';
 
@@ -81,6 +83,11 @@ export interface BookPreviewGeometryInput {
   coverTitlePlate?: TitlePlateStyle;
   coverFrame?: number;
   coverMedallion?: number;
+  coverComposition?: BookCompositionId | null;
+  /** Authored shelf-facing back paired with the whole-book composition. */
+  spineCharacter?: BookSpineCharacter | null;
+  /** True only when the composed spine painter will actually paint a device. */
+  spineEmblemPresent?: boolean;
   /** Optional exact boxes retained for older preview harnesses. */
   spineTargets?: {
     title?: PreviewRect | null;
@@ -97,6 +104,21 @@ export interface BookPreviewGeometry {
 }
 
 const MIN_HIT = 24;
+
+/** Colour and physical-size edits do not dismantle an authored edition. */
+const COMPOSITION_PRESERVING_STYLE_KEYS = new Set<keyof BookStyle>([
+  'pigment', 'clothHex', 'spineBaseHex', 'spineAccentHex',
+  'coverBaseHex', 'coverAccentHex', 'toolingHex', 'emblemHex',
+  'hardwareHex', 'format', 'height', 'thickness', 'overlap',
+  'composition',
+]);
+
+/** Whether a manual Studio edit takes ownership away from the authored layout. */
+export function manualBookStyleEditClearsComposition(
+  keys: readonly (keyof BookStyle)[],
+): boolean {
+  return keys.some((key) => !COMPOSITION_PRESERVING_STYLE_KEYS.has(key));
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -129,15 +151,6 @@ function tappable(
   );
 }
 
-function inset(source: PreviewRect, x: number, y: number): PreviewRect {
-  return rect(
-    source.left + x,
-    source.top + y,
-    Math.max(1, source.width - x * 2),
-    Math.max(1, source.height - y * 2),
-  );
-}
-
 /** Project one renderer-normalized spine box into preview-canvas pixels. */
 function spineTargetRect(spine: PreviewRect, normalized: PreviewRect): PreviewRect {
   return rect(
@@ -163,9 +176,9 @@ export function coverCompositionTargetRects(
   cover: PreviewRect,
   options: Pick<
     BookPreviewGeometryInput,
-    'coverTitlePlate' | 'coverFrame' | 'coverMedallion'
+    'coverTitlePlate' | 'coverFrame' | 'coverMedallion' | 'coverComposition'
   >,
-): { title: PreviewRect; medallion: PreviewRect } {
+): { title: PreviewRect; medallion: PreviewRect; frame: PreviewRect; frameVisible: boolean; medallionVisible: boolean } {
   const w = cover.width;
   const h = cover.height;
   const pad = Math.min(w, h) * 0.016;
@@ -182,17 +195,22 @@ export function coverCompositionTargetRects(
     options.coverFrame ?? 0,
     options.coverMedallion ?? 0,
     false,
+    options.coverComposition ?? null,
   );
 
   const labelW = faceW * composition.titleWidth;
-  const labelH = Math.min(bh * composition.titleHeight, labelW * 0.62);
-  const labelX = faceX + (faceW - labelW) / 2;
+  const labelH = coverTitlePanelHeight(normalizeTitlePlateStyle(options.coverTitlePlate),
+    labelW, bh, composition.titleHeight, options.coverComposition);
+  const labelX = faceX + faceW * (composition.titleCenterX ?? 0.5) - labelW / 2;
   const labelY = by + bh * composition.titleCenterY - labelH / 2;
-  const medR = Math.min(faceW, bh) * composition.medallionScale;
-  const medX = faceX + faceW * 0.5;
+  const medR = Math.min(faceW, bh) * composition.medallionScale * 1.4;
+  const medX = faceX + faceW * (composition.medallionCenterX ?? 0.5);
   const medY = by + bh * composition.medallionCenterY;
 
   return {
+    frame: rect(cover.left + faceX + faceW * COVER_FRAME_INSET.x,
+      cover.top + by + bh * COVER_FRAME_INSET.y,
+      faceW * (1 - 2 * COVER_FRAME_INSET.x), bh * (1 - 2 * COVER_FRAME_INSET.y)),
     title: rect(
       cover.left + labelX,
       cover.top + labelY,
@@ -205,6 +223,8 @@ export function coverCompositionTargetRects(
       medR * 2,
       medR * 2,
     ),
+    frameVisible: composition.frameVisible !== false,
+    medallionVisible: composition.medallionVisible !== false,
   };
 }
 
@@ -226,19 +246,26 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
   const exactBands = input.spineTargets?.raisedBands ?? [];
   const exactOrnament = input.spineTargets?.ornament;
   const exactEndbands = input.spineTargets?.endbands ?? [];
+  const composedCharacter = input.coverComposition != null ? input.spineCharacter ?? null : null;
+  const composedFocal = input.spineEmblemPresent === true &&
+    (composedCharacter === 'formal' || composedCharacter === 'storybook' ||
+      composedCharacter === 'botanical' || composedCharacter === 'grand');
   const bandsPresent = hasExactSpineTargets
     ? exactBands.length > 0
     : input.raisedBands > 0;
   const endbandsPresent = hasExactSpineTargets
     ? exactEndbands.length > 0
     : input.headTail;
-  const ornamentPresent = hasExactSpineTargets
+  const ornamentPresent = composedCharacter !== null
+    ? composedFocal
+    : hasExactSpineTargets
     ? exactOrnament !== null && exactOrnament !== undefined
     : input.ornament >= 0;
   const cordY = spine.top + spine.height * 0.23;
-  const ornamentY = spine.top + spine.height * 0.7;
-  const coverInner = inset(cover, Math.max(10, cover.width * 0.09), Math.max(12, cover.height * 0.07));
+  const ornamentY = spine.top + spine.height *
+    (composedCharacter === 'storybook' ? 0.4 : composedCharacter !== null ? 0.43 : 0.7);
   const coverCompositionTargets = coverCompositionTargetRects(cover, input);
+  const coverInner = coverCompositionTargets.frame;
 
   const bandHotspots: BookPreviewHotspot[] = exactBands.length > 0
     ? exactBands.map((band, index) => ({
@@ -311,7 +338,8 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
     ['bottom', rect(coverInner.left, coverInner.top + coverInner.height - 5, coverInner.width, 10)],
     ['left', rect(coverInner.left - 5, coverInner.top, 10, coverInner.height)],
   ] as const;
-  const frameHotspots: BookPreviewHotspot[] = frameEdges.map(([edgeName, edgeRect]) => ({
+  const frameHotspots: BookPreviewHotspot[] = coverCompositionTargets.frameVisible
+    ? frameEdges.map(([edgeName, edgeRect]) => ({
     id: `cover-frame-${edgeName}`,
     face: 'cover',
     label: `Edit cover frame from its ${edgeName} edge`,
@@ -325,7 +353,8 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
       edgeName === 'left' || edgeName === 'right' ? Math.min(coverInner.height, 72) : 18,
     ),
     layer: 'detail',
-  }));
+      }))
+    : [];
 
   const hotspots: BookPreviewHotspot[] = [
     // Spine body and silhouette are deliberately broad, low-layer targets.
@@ -364,7 +393,10 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
       shortLabel: ornamentPresent ? 'emblem' : 'add emblem',
       target: 'ornament',
       rect: tappable(
-        exactOrnament === undefined || exactOrnament === null
+        composedCharacter !== null
+          ? rect(spine.left + spine.width * 0.15, ornamentY - spine.height * 0.055,
+              spine.width * 0.7, spine.height * 0.11)
+          : exactOrnament === undefined || exactOrnament === null
           ? rect(spine.left + spine.width * 0.18, ornamentY - 11, spine.width * 0.64, 22)
           : spineTargetRect(spine, exactOrnament),
         input.canvasWidth,
@@ -416,7 +448,7 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
       ),
       layer: 'detail',
     },
-    {
+    ...(coverCompositionTargets.medallionVisible ? [{
       id: 'cover-emblem',
       face: 'cover',
       label: ornamentPresent ? 'Edit the book emblem' : 'Add a book emblem',
@@ -431,7 +463,7 @@ export function bookPreviewGeometry(input: BookPreviewGeometryInput): BookPrevie
       ),
       absent: !ornamentPresent,
       layer: 'fitting',
-    },
+    } satisfies BookPreviewHotspot] : []),
     {
       id: 'cover-edge',
       face: 'cover',

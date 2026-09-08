@@ -1,0 +1,17 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 29 “wheat-sheaf”.
+Primary request: Create one original Quiet-tier bookbinder finishing-tool ornament depicting an unmistakable tied wheat sheaf: three sturdy wheat ears, each with a clear central stalk and a few bold alternating grains, gathered into a narrow waist by one simple crossing tie, with short splayed stalk ends below. It must remain instantly readable as harvested wheat at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; restrained, graceful, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only, with strong connected shapes and deliberate open cuts.
+Composition/framing: centered upright emblem, slight natural asymmetry, about 70% of the square canvas, comfortably inset; compact enough for a narrow book spine; generous transparent negative space between the three ears and around the tied waist.
+Constraints: exactly one wheat sheaf; three distinct grain heads; one tied bundle; robust silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: loose flower bouquet, grass plume, laurel, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain effect, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.
+
+Prompt 2 — Flat-ink cleanup
+
+Precise flat-ink cleanup of the supplied wheat-sheaf emblem only. Preserve the exact three-ear tied-sheaf composition, silhouette, proportions, grain layout, tie, scale, and placement. Convert every visible brown part to one perfectly uniform dark sepia ink color (#3A241A), with no tonal variation. Convert every white interior mark inside the ears, stalks, and tie into genuine transparent negative-space cutouts, not white paint. Preserve the already transparent outer background as real alpha 0. Keep crisp antialiased edges and strong readability at 16–24 px. Do not redraw or add details. No checkerboard, white matte, second color, gradient, lighting, shading, highlight, texture, shadow, badge, frame, text, or mockup. Deliver one square RGBA PNG with only uniform sepia emblem pixels and transparent pixels.
+
+Prompt 3 — Transparency correction
+
+Background-extraction correction only. Preserve the supplied wheat-sheaf artwork exactly: the same three grain ears, alternating grains, long awns, tied waist, splayed stalk ends, dark sepia color, line work, silhouette, scale, position, and square composition. Remove the visible gray-and-white checkerboard completely and replace every background pixel with genuine alpha transparency (RGBA, alpha 0). Also make the pale internal cuts through the grains, stalks, and tie genuine transparent negative space rather than white paint. The checkerboard is a preview artifact and must not remain in the actual pixels. Keep only the dark sepia emblem pixels with crisp antialiased alpha edges. Do not redraw, recolor, crop, resize, add, or remove any part of the emblem. No background color, checkerboard pattern, white matte, texture, gradient, lighting, shading, highlight, shadow, glow, text, border, badge, or mockup. Deliver one square transparent PNG asset.

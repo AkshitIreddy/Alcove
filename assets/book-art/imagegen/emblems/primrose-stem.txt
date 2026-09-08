@@ -1,0 +1,22 @@
+Prompt 1 — generation
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only; match its graceful flat botanical linework and confident spacing, without reproducing books, lettering, frames, layout, palette, or existing flowers
+Primary request: create one original emblem named "Primrose stem"
+Subject: one upright gently bowed stem carrying one open primrose flower with exactly five broad notched petals and a bold small central eye, plus two low oval leaves; unmistakably primrose and simpler than the branching dog rose
+Style/medium: restrained Quiet historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, subtly organic hand-cut brass finishing-tool curves, delicate in character but sturdy at small scale
+Composition/framing: one isolated centred vertical motif occupying about 68% of the square, bloom dominant at the upper third, leaves clearly separated, generous transparent margins and open petal gaps that survive narrow-spine reduction
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: rose thorns, branch cluster, carnation fringe, extra blooms, flower pot, texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom effect, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — ImageGen background extraction
+
+Use case: background-extraction
+Asset type: final transparent bitmap master for the Alcove book-customisation emblem "Primrose stem"
+Input image: primrose-stem-rgb.png is the edit target
+Primary request: preserve the supplied primrose artwork exactly—same single five-petal notched bloom, central eye, two leaves, bowed stem, dark sepia colour, line weight, silhouette, scale, placement, and square composition—and remove only the pale gray-and-white checkerboard background
+Scene/backdrop: replace every checkerboard and pale background pixel with genuine alpha transparency
+Constraints: change only the background; keep the emblem artwork unchanged; output a true RGBA transparent PNG with crisp antialiased alpha edges; no background colour, no checkerboard pattern, no white matte, no crop, no resize, no extra objects, no text, no border, no badge
+Avoid: redrawing, recolouring, changing petal or leaf counts, smoothing away linework, texture, shadow, glow, gradient, lighting, watermark

@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 43 “five-leaf-anthemion”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable five-leaf anthemion: exactly five upright palmette lobes springing from one small fan base, with a tall narrow central leaf, two medium leaves curling outward, and two shorter outer leaves turning back in graceful hooks. Add one compact inverted teardrop foot beneath the fan. It must read immediately as a classical anthemion/palmette rather than a flower or crown at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; formal, architectural, graceful, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Use a strong connected silhouette and broad transparent channels between lobes.
+Composition/framing: centered upright and bilaterally balanced, about 66% of the square canvas, comfortably inset; compact fan-shaped top over a narrow foot; suitable for a narrow book spine; clear negative space between all five leaves.
+Constraints: exactly five primary palmette leaves; central leaf visibly tallest; two mirrored inner leaves and two mirrored recurved outer leaves; one unified base; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: floral petals, lotus blossom, tulip, fleur-de-lis, royal crown, feathers, shell, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

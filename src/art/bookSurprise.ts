@@ -52,7 +52,6 @@ import {
 } from './bookDesign';
 import {
   ACTIVE_COVER_FRAME_INDICES,
-  ACTIVE_COVER_FRAMES,
   coverBodyColours,
   coverCompositionLayout,
   coverPainterColours,
@@ -84,6 +83,9 @@ import {
   normalizeTitlePlateStyle,
 } from './spines';
 import { colourContrast } from './titleContrast';
+import { toOklch, toHex } from './palette';
+import { EXPANDED_BOOK_TITLES, EXPANDED_BOOK_EMBLEMS, EXPANDED_BOOK_FRAMES,
+  EXPANDED_SUPPORTING_FRAMES, expandedFrameStatement } from './bookArtworkExpansion';
 
 /* ========================================================================== *
  *                              public contract                               *
@@ -698,11 +700,18 @@ function palette(
   emblemHex: string,
   hardwareHex: string,
 ): BookSurprisePalette {
+  // Only authored Surprise swatches receive this pigment adjustment. Reader
+  // hexes and locks never travel through it. Preserve hue/value relationships
+  // while giving the cloth the colour the rejected greyed editions lacked.
+  const pigment = (hex: string): string => {
+    const colour = toOklch(hex);
+    return toHex({ ...colour, C: Math.min(.16, colour.C * 1.55 + .012) });
+  };
   return {
-    spineBaseHex,
-    spineAccentHex,
-    coverBaseHex,
-    coverAccentHex,
+    spineBaseHex: pigment(spineBaseHex),
+    spineAccentHex: pigment(spineAccentHex),
+    coverBaseHex: pigment(coverBaseHex),
+    coverAccentHex: pigment(coverAccentHex),
     toolingHex,
     emblemHex,
     hardwareHex,
@@ -1270,17 +1279,11 @@ const COMPOSITION_GRAMMARS: Readonly<
  * cover programmes in their own right. Both sets are derived from the active
  * cover authority so a later retirement cannot survive in Surprise alone.
  */
-const SURPRISE_QUIET_FRAME_IDS: ReadonlySet<number> = new Set(
-  ACTIVE_COVER_FRAMES.flatMap((frame) => (
-    frame.rules.length <= 2
-    && frame.corner === 'none'
-    && frame.side === 'none'
-    && frame.turn !== 'ogee'
-    && !frame.band
-      ? [frame.index]
-      : []
-  )),
-);
+// The remastered frames are authored drawings rather than combinations of the
+// retired rule/corner fields, so their role must follow the visible master.
+// Plain, double, broad and banded fillets can support another focal idea. Every
+// other active frame is a complete perimeter programme.
+const SURPRISE_QUIET_FRAME_IDS: ReadonlySet<number> = new Set([0, 2, 24, 36, ...EXPANDED_SUPPORTING_FRAMES]);
 const SURPRISE_FOCAL_FRAME_IDS: ReadonlySet<number> = new Set(
   ACTIVE_COVER_FRAME_INDICES.filter((frame) => !SURPRISE_QUIET_FRAME_IDS.has(frame)),
 );
@@ -1289,8 +1292,7 @@ const SURPRISE_FOCAL_FRAME_IDS: ReadonlySet<number> = new Set(
  * Automatic emblems must survive on the spine, not merely look good in the
  * large cover medallion. Native-scale refutation retired every tool that read
  * as a scratch, insect, charm or tiny piece of hardware at 21–37 px. Keep the
- * automatic subset to the sixteen broad integrated binder's tools that passed
- * the final cover-and-spine boards. This is deliberately the same authority
+ * automatic pool aligned with the reviewed cover-and-spine catalogue. This is deliberately the same authority
  * as the Studio: every surviving tool has now been refuted on both faces at
  * true shelf size, so Surprise no longer needs a second, smaller shadow
  * catalogue.
@@ -1298,6 +1300,8 @@ const SURPRISE_FOCAL_FRAME_IDS: ReadonlySet<number> = new Set(
 const SHELF_LEGIBLE_EMBLEM_CANDIDATES: ReadonlySet<number> = new Set([
   0, 1, 2, 5, 12, 13, 14, 20,
   23, 26, 28, 29, 30, 31, 43, 56,
+  66, 67, 68, 70, 71, 74, 75, 78, 80, 81, 83, 84, 85,
+  ...Object.values(EXPANDED_BOOK_EMBLEMS).flat(),
 ]);
 
 export const BOOK_SURPRISE_EMBLEM_INDICES: readonly number[] =
@@ -1317,14 +1321,14 @@ const SURPRISE_SAFE_ORNAMENT_IDS: ReadonlySet<number> = new Set(
 const DIRECTION_EMBLEM_CANDIDATES: Readonly<
   Record<BookSurpriseDirectionId, readonly number[]>
 > = {
-  formal: [0, 1, 12, 20, 23, 26, 28, 43],
-  grand: [0, 2, 5, 12, 20, 23, 26, 30, 31, 43],
-  antique: [0, 1, 12, 13, 14, 23, 26, 28, 29, 30, 43, 56],
-  storybook: [2, 5, 12, 13, 14, 23, 30, 31, 43, 56],
-  botanical: [1, 12, 13, 14, 23, 28, 29, 30, 31, 43, 56],
-  cosy: [1, 2, 12, 13, 23, 31, 43, 56],
-  rustic: [0, 1, 12, 13, 14, 23, 28, 29, 30, 43, 56],
-  quiet: [0, 1, 12, 23, 28, 43],
+  formal: [0, 1, 12, 20, 23, 26, 28, 43, 66, 75, 84, 85],
+  grand: [0, 2, 5, 12, 20, 23, 26, 30, 31, 43, 66, 68, 75, 84, 85],
+  antique: [0, 1, 12, 13, 14, 23, 26, 28, 29, 30, 43, 56, 71, 74, 84, 85],
+  storybook: [2, 5, 12, 13, 14, 23, 30, 31, 43, 56, 67, 68, 80, 81],
+  botanical: [1, 12, 13, 14, 23, 28, 29, 30, 31, 43, 56, 66, 67, 68, 70, 71, 74, 75, 78, 80, 81, 83],
+  cosy: [1, 2, 12, 13, 23, 31, 43, 56, 67, 78, 80, 81],
+  rustic: [0, 1, 12, 13, 14, 23, 28, 29, 30, 43, 56, 70, 71, 78, 83],
+  quiet: [0, 1, 12, 23, 28, 43, 71, 80, 83],
 };
 
 /**
@@ -1335,20 +1339,34 @@ const DIRECTION_EMBLEM_CANDIDATES: Readonly<
 const DIRECTION_ARCHITECTURAL_FRAME_CANDIDATES: Readonly<
   Record<BookSurpriseDirectionId, readonly number[]>
 > = {
-  formal: [5, 17, 20, 24, 50, 53, 54],
-  grand: [6, 26, 36, 43, 48, 51, 52, 54, 55],
+  formal: [17, 20, 50, 53],
+  grand: [43, 48, 51, 52, 54, 55],
   antique: [5, 8, 17, 20, 24, 50, 52, 55],
   storybook: [6, 8, 17, 26, 43, 51, 54],
   botanical: [6, 26, 43, 48, 51, 55],
-  cosy: [5, 6, 17, 26, 36, 50, 51],
-  rustic: [5, 8, 17, 20, 24, 36, 50, 53, 55],
+  cosy: [5, 17, 26, 50],
+  rustic: [5, 8, 17, 20, 50, 53, 55],
   quiet: [],
+};
+
+/** Quiet supporting rules still carry the period and mood of each direction. */
+const DIRECTION_SUPPORTING_FRAME_CANDIDATES: Readonly<
+  Record<BookSurpriseDirectionId, readonly number[]>
+> = {
+  formal: [2, 24, 36],
+  grand: [24, 36],
+  antique: [0, 24],
+  storybook: [2, 24],
+  botanical: [0, 24],
+  cosy: [0, 2],
+  rustic: [0, 24, 36],
+  quiet: [0],
 };
 
 function activeDirectionEmblems(
   directionId: BookSurpriseDirectionId,
 ): readonly number[] {
-  const preferred = DIRECTION_EMBLEM_CANDIDATES[directionId].filter(
+  const preferred = [...DIRECTION_EMBLEM_CANDIDATES[directionId], ...EXPANDED_BOOK_EMBLEMS[directionId]].filter(
     (index) => SURPRISE_SAFE_ORNAMENT_IDS.has(index),
   );
   return preferred.length > 0 ? preferred : BOOK_SURPRISE_EMBLEM_INDICES;
@@ -1357,8 +1375,9 @@ function activeDirectionEmblems(
 function activeDirectionArchitecturalFrames(
   directionId: BookSurpriseDirectionId,
 ): readonly number[] {
-  const preferred = DIRECTION_ARCHITECTURAL_FRAME_CANDIDATES[directionId].filter(
-    (index) => SURPRISE_FOCAL_FRAME_IDS.has(index),
+  const preferred = [...DIRECTION_ARCHITECTURAL_FRAME_CANDIDATES[directionId], ...EXPANDED_BOOK_FRAMES[directionId]].filter(
+    (index) => SURPRISE_FOCAL_FRAME_IDS.has(index)
+      && (directionId === 'grand' || ![43, 51, 54, 55].includes(index)),
   );
   if (preferred.length > 0 || directionId === 'quiet') return preferred;
   // Totality under a future frame retirement: retain the focal role using the
@@ -1387,7 +1406,7 @@ function activeCompositionGrammar(
   const moodRows = COMPOSITION_GRAMMARS[direction.id];
   const profile = DIRECTIONS[direction.id];
   const plates = uniqueValues(
-    [...moodRows.flatMap((row) => row.plates), ...profile.plates]
+    [...moodRows.flatMap((row) => row.plates), ...profile.plates, ...EXPANDED_BOOK_TITLES[direction.id]]
       .map(normalizeTitlePlateStyle),
   );
   const frames = uniqueValues([
@@ -1421,8 +1440,8 @@ function activeCompositionGrammar(
     headTailChance: profile.headTailChance,
     cornerChance: 0,
     insetChance: 0,
-    maxStatements: 1,
-    targetLoad: direction.id === 'grand' ? [1.8, 3.8] : [1.1, 3.2],
+    maxStatements: direction.id === 'grand' ? 2 : 1,
+    targetLoad: direction.id === 'grand' ? [2.45, 4.35] : [1.1, 3.2],
   });
 }
 
@@ -1805,6 +1824,9 @@ function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boo
     // or a split binding; dyed cross-bands belong on cloth/leather, while a
     // vellum ticket is welcome on the paper/vellum archive families.
     if (materialGroup === null) return true;
+    // A paper ownership/title ticket is an applied label, not the covering
+    // itself; it is also a deliberate authored option on cloth and leather.
+    if (plate === 'laid-paper-ticket') return true;
     if (
       plate === 'morocco-single-rule' ||
       plate === 'morocco-double-rule' ||
@@ -1820,7 +1842,6 @@ function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boo
       return materialGroup === 'leather' || materialGroup === 'cloth' || materialGroup === 'split';
     }
     if (
-      plate === 'laid-paper-ticket' ||
       plate === 'deckled-paper-ticket' ||
       plate === 'vellum-rule-ticket' ||
       plate === 'parchment-slip'
@@ -1830,13 +1851,85 @@ function plateMaterialEligible(plate: TitlePlateStyle, preset?: BookPreset): boo
     return true;
 }
 
+/**
+ * Title treatments authored for automatic recipes.
+ *
+ * The Studio still exposes the complete active catalogue, including the three
+ * narrow vertical slips. They are deliberately absent here: a vertical slip is
+ * a strong manual layout decision and became visual wallpaper when Surprise
+ * sampled it as ordinary quiet furniture. Each direction instead has a small
+ * hierarchy of direct lettering, horizontal tickets and compatible labels.
+ */
+const AUTOMATIC_TITLE_PROGRAMMES: Readonly<
+  Record<BookSurpriseDirectionId, readonly TitlePlateStyle[]>
+> = {
+  formal: [
+    'direct-gilt-title', 'morocco-single-rule', 'morocco-double-rule',
+    'library-buckram-label', 'press-small-caps',
+  ],
+  grand: [
+    'direct-gilt-title', 'morocco-double-rule', 'morocco-clipped-rule',
+    'two-tone-leather-label', 'press-small-caps', 'inscription-shoulders',
+  ],
+  antique: [
+    'direct-blind-title', 'morocco-single-rule', 'calf-blind-label',
+    'laid-paper-ticket', 'vellum-rule-ticket', 'press-small-caps',
+  ],
+  storybook: [
+    'direct-ink-title', 'laid-paper-ticket', 'vellum-rule-ticket',
+    'library-buckram-label', 'press-small-caps', 'printer-floret-imprint',
+  ],
+  botanical: [
+    'direct-ink-title', 'laid-paper-ticket', 'vellum-rule-ticket',
+    'morocco-single-rule', 'press-small-caps', 'printer-floret-imprint',
+  ],
+  cosy: [
+    'direct-ink-title', 'laid-paper-ticket', 'vellum-rule-ticket',
+    'library-buckram-label', 'press-small-caps', 'printer-floret-imprint',
+  ],
+  rustic: [
+    'direct-blind-title', 'library-buckram-label', 'laid-paper-ticket',
+    'calf-blind-label', 'morocco-single-rule', 'press-small-caps',
+  ],
+  quiet: [
+    'direct-blind-title', 'direct-ink-title', 'library-buckram-label',
+    'laid-paper-ticket', 'press-small-caps',
+  ],
+};
+
+const NARROW_VERTICAL_AUTOMATIC_PLATES: ReadonlySet<TitlePlateStyle> = new Set([
+  'deckled-paper-ticket',
+  'parchment-slip',
+  'cloth-inlay-crossband',
+]);
+
+function automaticTitleValues(
+  directionId: BookSurpriseDirectionId,
+  preset: BookPreset,
+  request: NormalizedRequest,
+): readonly TitlePlateStyle[] {
+  const authored = [...AUTOMATIC_TITLE_PROGRAMMES[directionId], ...EXPANDED_BOOK_TITLES[directionId]];
+  return focalValues(
+    authored,
+    authored,
+    'title-plate',
+    request,
+    (plate) => plate !== 'none'
+      && !NARROW_VERTICAL_AUTOMATIC_PLATES.has(plate)
+      && plateMaterialEligible(plate, preset),
+  );
+}
+
 function platePoolForComposition(
   values: readonly TitlePlateStyle[],
   mode: CoverCompositionMode,
   preset?: BookPreset,
 ): readonly TitlePlateStyle[] {
   const normalized = uniqueValues(values.map(normalizeTitlePlateStyle));
-  const materialEligible = normalized.filter((plate) => plateMaterialEligible(plate, preset));
+  const materialEligible = normalized.filter((plate) =>
+    plate !== 'none'
+    && !NARROW_VERTICAL_AUTOMATIC_PLATES.has(plate)
+    && plateMaterialEligible(plate, preset));
   const candidates = materialEligible.length > 0 ? materialEligible : normalized;
   const selected = candidates.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0).family;
@@ -1852,7 +1945,7 @@ function framePoolForComposition(
   mode: CoverCompositionMode,
 ): readonly number[] {
   if (values.length < 3) return values;
-  const ordered = [...values].sort((a, b) => a - b);
+  const ordered = [...values].sort((a, b) => frameStatement(a) - frameStatement(b) || a - b);
   const lowEnd = Math.max(1, Math.ceil(ordered.length * 0.48));
   const highStart = Math.min(ordered.length - 1, Math.floor(ordered.length * 0.45));
   const selected = mode === 'restrained'
@@ -1926,13 +2019,7 @@ function generatedStyle(
     request,
     rnd,
   );
-  const curatedPlates = uniqueValues(curatedGrammarValues(
-    grammar?.plates ?? p.plates,
-    p.plates,
-    'title-plate',
-    String,
-    request,
-  ).map(normalizeTitlePlateStyle));
+  const curatedPlates = automaticTitleValues(directionId, preset, request);
   const titlePlate = pick(platePoolForComposition(curatedPlates, composition, preset), rnd);
   const curatedFrames = curatedGrammarValues(
     grammar?.frames ?? p.frames,
@@ -2206,6 +2293,8 @@ function titlePlateStatement(plate: TitlePlateStyle): number {
 }
 
 function frameStatement(frame: number): number {
+  const expanded = expandedFrameStatement(frame);
+  if (expanded !== undefined) return expanded;
   if (SURPRISE_QUIET_FRAME_IDS.has(frame)) return frame === 0 ? 0.22 : 0.42;
   if (frame >= 44) return 1.55;
   if (frame >= 30) return 1.15;
@@ -2260,50 +2349,41 @@ function focalValues<T>(
 }
 
 function quietPlateForProgramme(
-  grammar: CompositionGrammar | null,
+  _grammar: CompositionGrammar | null,
   directionId: BookSurpriseDirectionId,
   preset: BookPreset,
   request: NormalizedRequest,
+  programme: FocalProgramme,
   salt: string,
 ): TitlePlateStyle {
-  const preferred = uniqueValues(
-    (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
-  );
-  const wider = uniqueValues(DIRECTIONS[directionId].plates.map(normalizeTitlePlateStyle));
-  const quiet = focalValues(
-    preferred,
-    wider,
-    'title-plate',
-    request,
-    (plate) => titlePlateStatement(plate) <= 0.62 && plateMaterialEligible(plate, preset),
-  );
-  const authored = quiet.length > 0 ? quiet : curatedGrammarValues(
-    preferred,
-    wider,
-    'title-plate',
-    String,
-    request,
-  );
-  const eligible = authored.filter((plate) =>
-    plateMaterialEligible(plate, preset) && titlePlateStatement(plate) <= 0.62);
-  const values = eligible.length > 0
-    ? eligible
-    : ACTIVE_TITLE_PLATES.filter((plate) =>
-        plateMaterialEligible(plate, preset) && titlePlateStatement(plate) <= 0.62);
+  const authored = automaticTitleValues(directionId, preset, request);
+  const quiet = authored.filter((plate) => titlePlateStatement(plate) <= 0.62);
+  const direct = quiet.filter((plate) =>
+    coverCompositionLayout(plate, 0, 0, false).family === 'direct');
+  // A frame or emblem is already the cover's focal statement. Direct type lets
+  // that drawing breathe, as on the Field Notes and Small Histories reference
+  // bindings. Binding-led books retain ticket/direct variety, including the
+  // single paper label used by The Lantern Atlas.
+  const values = (
+    (programme === 'frame-led' || programme === 'matched-emblem')
+    && direct.length > 0
+  ) ? direct : quiet.length > 0 ? quiet : authored;
   return deterministicMember(values, `${preset.id}:${salt}:plate`)
-    ?? 'label';
+    ?? 'direct-ink-title';
 }
 
 function quietFrameForProgramme(
-  grammar: CompositionGrammar | null,
+  _grammar: CompositionGrammar | null,
   directionId: BookSurpriseDirectionId,
   preset: BookPreset,
   request: NormalizedRequest,
   salt: string,
 ): number {
   const quiet = focalValues(
-    grammar?.frames ?? DIRECTIONS[directionId].frames,
-    DIRECTIONS[directionId].frames,
+    [...DIRECTION_SUPPORTING_FRAME_CANDIDATES[directionId],
+      ...EXPANDED_BOOK_FRAMES[directionId].filter(frame => SURPRISE_QUIET_FRAME_IDS.has(frame)),
+      ...EXPANDED_BOOK_FRAMES.quiet],
+    [...SURPRISE_QUIET_FRAME_IDS],
     'cover-frame',
     request,
     (frame) => frameStatement(frame) <= 0.42,
@@ -2319,7 +2399,7 @@ function architecturalFramePoolForProgramme(
 ): readonly number[] {
   const materialAllows = (frame: number): boolean =>
     SURPRISE_FOCAL_FRAME_IDS.has(frame)
-    && (!PAPER_LIKE_MATERIALS.has(preset.material) || frame < 30);
+    && (!PAPER_LIKE_MATERIALS.has(preset.material) || frameStatement(frame) < 1);
   return focalValues(
     activeDirectionArchitecturalFrames(directionId),
     ACTIVE_COVER_FRAME_INDICES,
@@ -2381,14 +2461,19 @@ function chooseFocalProgramme(
   // sampled recipes; architectural frames now spend the same single budget
   // without reviving studs, charms, corners, wallpaper or applied hardware.
   const programmeWeights: Readonly<Record<BookSurpriseDirectionId, readonly FocalProgramme[]>> = {
-    formal: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem'],
-    grand: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    antique: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    storybook: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    botanical: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    cosy: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    rustic: ['frame-led', 'frame-led', 'matched-emblem', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
-    quiet: ['title-led'],
+    formal: ['frame-led', 'frame-led', 'title-led', 'matched-emblem', 'matched-emblem'],
+    // Grand balances ceremonial perimeters, shaped title furniture and paired
+    // tools, so richer books do not all become the same filigree frame.
+    grand: [
+      'matched-emblem',
+      'frame-led', 'frame-led', 'frame-led', 'title-led', 'title-led', 'matched-emblem',
+    ],
+    antique: ['frame-led', 'frame-led', 'title-led', 'matched-emblem', 'matched-emblem', 'matched-emblem'],
+    storybook: ['frame-led', 'title-led', 'matched-emblem', 'matched-emblem', 'title-led', 'matched-emblem'],
+    botanical: ['frame-led', 'title-led', 'matched-emblem', 'matched-emblem', 'title-led', 'matched-emblem'],
+    cosy: ['frame-led', 'title-led', 'matched-emblem', 'title-led', 'matched-emblem'],
+    rustic: ['frame-led', 'frame-led', 'title-led', 'matched-emblem', 'matched-emblem'],
+    quiet: ['title-led', 'title-led', 'title-led', 'title-led', 'title-led', 'title-led', 'title-led', 'matched-emblem'],
   };
   const hasMotifs = motifPoolForProgramme(grammar, directionId, request).length > 0;
   const hasFrames = architecturalFramePoolForProgramme(
@@ -2397,7 +2482,8 @@ function chooseFocalProgramme(
     request,
   ).length > 0;
   const pool = programmeWeights[directionId].filter((programme) =>
-    programme === 'title-led'
+    (programme === 'title-led' && (directionId === 'quiet'
+      || automaticTitleValues(directionId, preset, request).some(plate => titlePlateStatement(plate) >= 1)))
     || (programme === 'matched-emblem' && hasMotifs)
     || (programme === 'frame-led' && hasFrames));
   // Restrained modes still receive an authored focal idea, but favour the
@@ -2462,6 +2548,7 @@ function focusGeneratedTreatment(
       directionId,
       preset,
       request,
+      programme,
       salt,
     );
   };
@@ -2520,19 +2607,16 @@ function focusGeneratedTreatment(
   }
 
   if (programme === 'title-led') {
-    const plates = curatedGrammarValues(
-      (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
-      DIRECTIONS[directionId].plates.map(normalizeTitlePlateStyle),
-      'title-plate',
-      String,
-      request,
-    );
+    const plates = automaticTitleValues(directionId, preset, request);
+    const statementPlates = plates.filter(plate => titlePlateStatement(plate) >= 1);
     const titlePool = platePoolForComposition(
-      plates,
-      composition === 'restrained' ? 'balanced' : 'statement',
+      directionId !== 'quiet' && statementPlates.length > 0 ? statementPlates : plates,
+      directionId === 'quiet'
+        ? 'restrained'
+        : composition === 'restrained' ? 'balanced' : 'statement',
       preset,
     );
-    out.titlePlate = deterministicMember(titlePool, `${preset.id}:${salt}:title`) ?? 'label';
+    out.titlePlate = deterministicMember(titlePool, `${preset.id}:${salt}:title`) ?? 'direct-ink-title';
     out.coverFrame = quietFrameForProgramme(
       grammar,
       directionId,
@@ -2729,7 +2813,7 @@ function compositionAudit(
   const statements =
     (authoredHierarchy ? 1 : 0) +
     (primaryTitleGround ? 1 : 0) +
-    (frame >= 30 ? 1 : 0) +
+    (frameStatement(frame) >= 1 ? 1 : 0) +
     ((style.raisedBands ?? 0) >= 2 ? 1 : 0);
   const format = style.format ?? 'octavo';
   const thickness = style.thickness ?? 28;
@@ -2768,14 +2852,14 @@ function calmerFrame(
   directionId: BookSurpriseDirectionId,
   preset: BookPreset,
   current: number,
-  ceiling = 30,
+  _ceiling = 30,
 ): number {
   const authored = grammar?.frames ?? DIRECTIONS[directionId].frames;
   const eligible = authored.filter(
-    (frame) => frame < ceiling && SURPRISE_QUIET_FRAME_IDS.has(frame),
+    (frame) => SURPRISE_QUIET_FRAME_IDS.has(frame),
   );
   const wider = ACTIVE_COVER_FRAME_INDICES.filter(
-    (frame) => frame < ceiling && SURPRISE_QUIET_FRAME_IDS.has(frame),
+    (frame) => SURPRISE_QUIET_FRAME_IDS.has(frame),
   );
   return deterministicMember(
     eligible.length > 0 ? eligible : wider,
@@ -2784,28 +2868,38 @@ function calmerFrame(
 }
 
 function calmerPlate(
-  grammar: CompositionGrammar | null,
+  _grammar: CompositionGrammar | null,
   directionId: BookSurpriseDirectionId,
   preset: BookPreset,
+  request: NormalizedRequest,
   current: TitlePlateStyle,
 ): TitlePlateStyle {
-  const authored = uniqueValues(
-    (grammar?.plates ?? DIRECTIONS[directionId].plates).map(normalizeTitlePlateStyle),
-  );
+  const authored = automaticTitleValues(directionId, preset, request);
   const eligible = authored.filter((plate) => {
     const family = coverCompositionLayout(plate, 0, 0, false).family;
-    return plateMaterialEligible(plate, preset)
-      && (family === 'direct' || family === 'ticket' || family === 'band');
-  });
-  const wider = ACTIVE_TITLE_PLATES.filter((plate) => {
-    const family = coverCompositionLayout(plate, 0, 0, false).family;
-    return plateMaterialEligible(plate, preset)
-      && (family === 'direct' || family === 'ticket' || family === 'band');
+    return family === 'direct' || family === 'ticket' || family === 'band';
   });
   return deterministicMember(
-    eligible.length > 0 ? eligible : wider,
+    eligible.length > 0 ? eligible : authored,
     `${preset.id}:plate:${current}`,
-  ) ?? 'label';
+  ) ?? 'direct-ink-title';
+}
+
+function grandPerimeterForProgramme(
+  preset: BookPreset,
+  request: NormalizedRequest,
+  salt: string,
+): number {
+  const grand = DIRECTION_ARCHITECTURAL_FRAME_CANDIDATES.grand;
+  const values = focalValues(
+    grand,
+    grand,
+    'cover-frame',
+    request,
+    (frame) => SURPRISE_FOCAL_FRAME_IDS.has(frame),
+  );
+  return deterministicMember(values, `${request.seed}:${preset.id}:${salt}`)
+    ?? 48;
 }
 
 /**
@@ -2826,6 +2920,19 @@ function reconcileUnlocked(
   const locks = request.lockSet;
   const bandsLocked = locks.has('bands');
   const thicknessLocked = locks.has('thickness');
+
+  // Quiet is an observable direction promise. Seal it here as well as in the
+  // focal chooser so later candidate repair can never promote a supporting
+  // fillet into an ornate Renaissance, dentelle or acanthus perimeter.
+  if (directionId === 'quiet' && !locks.has('cover.frame')) {
+    out.coverFrame = quietFrameForProgramme(
+      grammar,
+      directionId,
+      preset,
+      request,
+      'final-quiet-frame',
+    );
+  }
 
   // Retired applied furniture has no lock or curation semantics. These fields
   // remain only because the shared renderer schema is append-only.
@@ -2891,7 +2998,7 @@ function reconcileUnlocked(
 
   if (PAPER_LIKE_MATERIALS.has(preset.material) && !locks.has('cover.frame')) {
     const plateIsStatement = titlePlateStatement(out.titlePlate ?? 'label') >= 1;
-    if ((out.coverFrame ?? 0) >= (plateIsStatement ? 15 : 30)) {
+    if (frameStatement(out.coverFrame ?? 0) >= (plateIsStatement ? .72 : 1)) {
       out.coverFrame = calmerFrame(
         grammar,
         directionId,
@@ -2908,7 +3015,7 @@ function reconcileUnlocked(
   if (PATTERN_DOMINANT_MATERIALS.has(preset.material)) {
     const plate = out.titlePlate ?? 'label';
     const plateIsStatement = titlePlateStatement(plate) >= 1;
-    if (!locks.has('cover.frame') && (out.coverFrame ?? 0) >= (plateIsStatement ? 15 : 30)) {
+    if (!locks.has('cover.frame') && frameStatement(out.coverFrame ?? 0) >= (plateIsStatement ? .72 : 1)) {
       out.coverFrame = calmerFrame(
         grammar,
         directionId,
@@ -2928,14 +3035,14 @@ function reconcileUnlocked(
       out.ornament = -1;
       out.coverMedallion = -1;
     }
-    if (!locks.has('cover.frame') && (out.coverFrame ?? 0) >= 15) {
+    if (!locks.has('cover.frame') && frameStatement(out.coverFrame ?? 0) >= .72) {
       out.coverFrame = calmerFrame(grammar, directionId, preset, out.coverFrame ?? 0, 15);
     }
     if (
       !locks.has('title.plate') &&
       titlePlateStatement(out.titlePlate ?? 'label') >= 1
     ) {
-      out.titlePlate = calmerPlate(grammar, directionId, preset, out.titlePlate ?? 'label');
+      out.titlePlate = calmerPlate(grammar, directionId, preset, request, out.titlePlate ?? 'label');
     }
   }
 
@@ -2953,6 +3060,7 @@ function reconcileUnlocked(
         grammar,
         directionId,
         preset,
+        request,
         out.titlePlate ?? 'laid-paper-ticket',
       );
     } else if (!locks.has('cover.frame')) {
@@ -2979,6 +3087,7 @@ function reconcileUnlocked(
       grammar,
       directionId,
       preset,
+      request,
       out.titlePlate ?? 'label',
     );
     audit = compositionAudit(out, preset);
@@ -3000,7 +3109,7 @@ function reconcileUnlocked(
     PATTERN_DOMINANT_MATERIALS.has(preset.material);
   if (restrainedSurface && !locks.has('cover.frame')) {
     const ceiling = finalPlateIsStatement ? 15 : 30;
-    if ((out.coverFrame ?? 0) >= ceiling) {
+    if (frameStatement(out.coverFrame ?? 0) >= (finalPlateIsStatement ? .72 : 1)) {
       out.coverFrame = calmerFrame(
         grammar,
         directionId,
@@ -3008,6 +3117,26 @@ function reconcileUnlocked(
         out.coverFrame ?? 0,
         ceiling,
       );
+    }
+  }
+
+  // Grand is the deliberate exception to the one-large-device rule: the
+  // binding's own small crown/palmette may sit inside one complete ceremonial
+  // perimeter. Earlier repair passes are shared with every direction, so seal
+  // this authored hierarchy last. Direct lettering keeps the centre open and
+  // prevents a label from becoming a third stacked object.
+  if (directionId === 'grand') {
+    if (!locks.has('cover.frame')) {
+      out.coverFrame = grandPerimeterForProgramme(preset, request, 'grand-final-perimeter');
+    }
+    if (!locks.has('title.plate')) {
+      const authored = automaticTitleValues(directionId, preset, request);
+      const direct = authored.filter((plate) =>
+        coverCompositionLayout(plate, 0, 0, false).family === 'direct');
+      out.titlePlate = deterministicMember(
+        direct.length > 0 ? direct : authored,
+        `${request.seed}:${preset.id}:grand-direct-title`,
+      ) ?? 'direct-gilt-title';
     }
   }
   // Surprise normally owns the exact binding covering. A visible colour lock
@@ -3080,7 +3209,9 @@ function decorationDensity(style: BookStyleOverrides, preset: BookPreset): numbe
   density += titlePlateStatement(style.titlePlate ?? 'label') * 0.75;
   density += (style.raisedBands ?? 0) * 0.55;
   density += (style.ornament ?? -1) >= 0 ? 0.75 : 0;
-  density += (style.coverFrame ?? 0) >= 44 ? 1.8 : (style.coverFrame ?? 0) >= 30 ? 1.25 : (style.coverFrame ?? 0) >= 15 ? 0.8 : 0.45;
+  const expandedFrame = expandedFrameStatement(style.coverFrame ?? 0);
+  density += expandedFrame !== undefined ? expandedFrame * 1.15
+    : (style.coverFrame ?? 0) >= 44 ? 1.8 : (style.coverFrame ?? 0) >= 30 ? 1.25 : (style.coverFrame ?? 0) >= 15 ? 0.8 : 0.45;
   density += BUSY_DECORATIONS.has(preset.decorations[0] as Decoration) ? 0.5 : 0;
   return density;
 }
@@ -3151,7 +3282,9 @@ function scoreCandidate(
     ['bands'],
   );
   hardConstraint(
-    bindingOwnsFocalProgramme(preset) && frameStatement(style.coverFrame ?? 0) >= 0.72,
+    directionId !== 'grand'
+      && bindingOwnsFocalProgramme(preset)
+      && frameStatement(style.coverFrame ?? 0) >= 0.72,
     'composition-hierarchy',
     'This closed binding cannot carry an independent heavy cover frame.',
     16,
@@ -3180,6 +3313,13 @@ function scoreCandidate(
   const composition = compositionAudit(style, preset);
   const surfaceComplexity = surfaceComplexityAudit(style, preset);
   const maxStatements = statementBudget(grammar, directionId, preset);
+  const grandOrnateHierarchy = directionId === 'grand'
+    && surfaceComplexity.programmes.length <= 2
+    && surfaceComplexity.programmes.includes('architectural-frame')
+    && surfaceComplexity.programmes.every((programme) =>
+      programme === 'architectural-frame'
+      || programme === 'authored-surface'
+      || programme === 'matched-emblem');
   hardConstraint(
     composition.statements > maxStatements,
     'composition-hierarchy',
@@ -3191,23 +3331,26 @@ function scoreCandidate(
     ],
   );
   hardConstraint(
-    PATTERN_DOMINANT_MATERIALS.has(preset.material) &&
-      (style.coverFrame ?? 0) >=
-        (titlePlateStatement(style.titlePlate ?? 'label') >= 1 ? 15 : 30),
+    directionId !== 'grand'
+      && PATTERN_DOMINANT_MATERIALS.has(preset.material) &&
+      frameStatement(style.coverFrame ?? 0) >=
+        (titlePlateStatement(style.titlePlate ?? 'label') >= 1 ? .72 : 1),
     'composition-hierarchy',
     'Patterned covering and ceremonial board tooling are both trying to lead.',
     14,
     ['binding', 'binding.material', 'cover.frame', 'title.plate'],
   );
   hardConstraint(
-    PAPER_LIKE_MATERIALS.has(preset.material) && (style.coverFrame ?? 0) >= 30,
+    directionId !== 'grand'
+      && PAPER_LIKE_MATERIALS.has(preset.material)
+      && frameStatement(style.coverFrame ?? 0) >= 1,
     'material-structure',
     'Paper and vellum need a restrained frame rather than heavy case tooling.',
     12,
     ['binding', 'binding.material', 'cover.frame'],
   );
   hardConstraint(
-    surfaceComplexity.programmes.length > 1,
+    surfaceComplexity.programmes.length > 1 && !grandOrnateHierarchy,
     'composition-hierarchy',
     surfaceComplexity.repeatedField
       ? 'A repeated material field must remain the only decorative programme on the book.'
@@ -3219,7 +3362,7 @@ function scoreCandidate(
     ],
   );
   hardConstraint(
-    surfaceComplexity.material >= 0.42 && (
+    directionId !== 'grand' && surfaceComplexity.material >= 0.42 && (
       frameStatement(style.coverFrame ?? 0) >= 0.72 ||
       (style.ornament ?? -1) >= 0 ||
       (style.coverMedallion ?? -1) >= 0
@@ -3291,10 +3434,10 @@ function scoreCandidate(
   const [minDensity, maxDensity] = surfaceLed
     ? [0.9, 3.6] as const
     : ACTIVE_SURPRISE_DENSITY[directionId];
-  if (density < minDensity) {
+  if (!style.composition && density < minDensity) {
     penalty += pushPenalty(diagnostics, 'finish-direction',
       `The finish is sparse for ${directionId}.`, (minDensity - density) * 2.2);
-  } else if (density > maxDensity) {
+  } else if (!style.composition && density > maxDensity) {
     const locked = locks.has('bands') || locks.has('ornament') || locks.has('cover.frame');
     penalty += pushPenalty(diagnostics, locked ? 'locked-compromise' : 'furniture-density',
       'Too many independent details compete with the title.', (density - maxDensity) * 4.8, locked);
@@ -3348,7 +3491,7 @@ function scoreCandidate(
       'The selected direction had no legal binding under the current locks and removals.', 0.5);
   }
 
-  if (grammar !== null) {
+  if (grammar !== null && !style.composition) {
     const grammarMisses: string[] = [];
     if (!grammar.plates.includes(style.titlePlate ?? 'label')) grammarMisses.push('title treatment');
     if (!grammar.frames.includes(style.coverFrame ?? 0)) grammarMisses.push('cover frame');
@@ -3381,13 +3524,15 @@ function scoreCandidate(
    * without pretending there is one maximally decorated ideal book.
    */
   const targetDensity = (minDensity + maxDensity) / 2;
-  const densityCadence = Math.abs(density - targetDensity) * 0.48;
+  // Empty space is authored in an edition. Rewarding a density target here
+  // was actively selecting the extra ornament the owner rejected.
+  const densityCadence = style.composition ? 0 : Math.abs(density - targetDensity) * 0.48;
   const targetPair = directionId === 'grand' || directionId === 'storybook'
     ? 0.24
     : directionId === 'quiet'
       ? 0.16
       : 0.2;
-  const colourCadence = (Math.abs(spinePair - targetPair) + Math.abs(coverPair - targetPair)) * 2.1;
+  const colourCadence = style.composition ? 0 : (Math.abs(spinePair - targetPair) + Math.abs(coverPair - targetPair)) * 2.1;
   const coverLayout = coverCompositionLayout(
     style.titlePlate ?? 'label',
     style.coverFrame ?? 0,
@@ -3395,14 +3540,14 @@ function scoreCandidate(
     false,
   );
   let hierarchyCadence = 0;
-  if (coverLayout.family === 'round' && (style.coverFrame ?? 0) >= 44) hierarchyCadence += 0.55;
-  if (coverLayout.family === 'ticket' && (style.coverFrame ?? 0) >= 44) hierarchyCadence += 0.35;
-  if (PALE_OR_PAPER_MATERIALS.has(preset.material) && (style.coverFrame ?? 0) >= 44) hierarchyCadence += 0.5;
+  if (coverLayout.family === 'round' && frameStatement(style.coverFrame ?? 0) >= 1.5) hierarchyCadence += 0.55;
+  if (coverLayout.family === 'ticket' && frameStatement(style.coverFrame ?? 0) >= 1.5) hierarchyCadence += 0.35;
+  if (PALE_OR_PAPER_MATERIALS.has(preset.material) && frameStatement(style.coverFrame ?? 0) >= 1.5) hierarchyCadence += 0.5;
 
   const [targetLoadMin, targetLoadMax] = grammar?.targetLoad ?? [minDensity, maxDensity];
   const targetLoad = (targetLoadMin + targetLoadMax) / 2;
-  const loadCadence = Math.abs(composition.load - targetLoad) * 0.82;
-  const loadOverflow = Math.max(0, composition.load - targetLoadMax) * 2.4;
+  const loadCadence = style.composition ? 0 : Math.abs(composition.load - targetLoad) * 0.82;
+  const loadOverflow = style.composition ? 0 : Math.max(0, composition.load - targetLoadMax) * 2.4;
   const proportionCadence = composition.proportionExcess * 0.7;
 
   // The authored binding weight is a light tie-breaker, not permission for a
@@ -3417,7 +3562,8 @@ function scoreCandidate(
   );
   const densityCell = density < 2.25 ? 'restrained' : density < 4.8 ? 'balanced' : 'ornate';
   const frame = style.coverFrame ?? 0;
-  const frameCell = frame < 15 ? 'plain' : frame < 30 ? 'detailed' : frame < 44 ? 'architectural' : 'ceremonial';
+  const frameLoad = frameStatement(frame);
+  const frameCell = frameLoad < .72 ? 'plain' : frameLoad < 1 ? 'detailed' : frameLoad < 1.5 ? 'architectural' : 'ceremonial';
   const cell = [
     preset.id,
     preset.shape,
@@ -3605,6 +3751,12 @@ interface CandidateSearchResult {
   candidates: readonly ScoredCandidate[];
 }
 
+/** The final design decision is an authored edition, not another axis roll.
+ * Locks and curation may keep an existing manual composition; they never get
+ * hidden by a new layout. All other books leave this seam as complete bindings.
+ */
+
+
 function buildCandidateSearch(request: NormalizedRequest): CandidateSearchResult {
   const direction = chosenDirection(request.direction, request.seed);
   const pool = presetPool(request, direction);
@@ -3638,6 +3790,8 @@ function buildCandidateSearch(request: NormalizedRequest): CandidateSearchResult
       preset,
       request,
     );
+    // Keep the established palette and binding, without the rejected sparse edition overlay.
+    style = { ...style, composition: null, spineCharacter: null };
     candidates.push(scoreCandidate(
       preset,
       style,

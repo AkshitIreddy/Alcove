@@ -24,6 +24,7 @@ const browser = await chromium.launch({
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
 });
 const page = await browser.newPage({ viewport: { width: 1460, height: 1000 } });
+await page.routeWebSocket('**', ws => ws.close());
 page.setDefaultTimeout(120000);
 page.on('pageerror', (error) => console.error('[pageerror]', error.message));
 await page.goto(`${url}/?fx=force`, { waitUntil: 'domcontentloaded' });
@@ -83,6 +84,7 @@ const report = await page.evaluate(async () => {
       const spineW = resolved.style.thickness * scale;
 
       const cell = document.createElement('section');
+      cell.dataset.direction = direction.id;
       cell.style.cssText =
         'box-sizing:border-box;width:332px;padding:10px 10px 9px;background:#f5eee2;' +
         'border:1.5px solid #56392f;border-radius:14px 11px 15px 12px;' +
@@ -170,6 +172,13 @@ const report = await page.evaluate(async () => {
 });
 
 await page.locator('#surprise-board').screenshot({ path: output });
+for (const direction of [...new Set(report.map(row=>row.direction))]) {
+  await page.evaluate(direction=>{
+    for(const cell of document.querySelectorAll('#surprise-board > section'))
+      cell.style.display=cell.dataset.direction===direction?'':'none';
+  },direction);
+  await page.locator('#surprise-board').screenshot({path:`shots-now/out/book-surprise-${direction}.png`});
+}
 console.log(`-> ${output} (${report.length} paired recipes)`);
 for (const row of report) {
   console.log(`${row.direction.padEnd(10)} ${row.preset.padEnd(26)} spine=${row.material.padEnd(18)} cover=${row.resolvedCoverMaterial}`);

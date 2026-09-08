@@ -25,7 +25,8 @@ import type { SpineParams } from '../../art/spines';
  * not merely a diagnostic label.
  */
 // v6: titleless spine workers no longer load or report handwriting fonts.
-export const ART_PROTOCOL_VERSION = 6;
+// v7: workers preload generated emblem rasters before accepting spine jobs.
+export const ART_PROTOCOL_VERSION = 7;
 
 /* --------------------------------- jobs ---------------------------------- */
 

@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone MOROCCO SINGLE-RULE LABEL for a traditional book cover: a low horizontal leather title label with very gently bowed long edges, clipped corners, one fine muted-gold inset rule, and one tiny dark registration dot centered on each short side. Keep the broad interior completely blank for live title text. Quiet, elegant, and materially distinct from a paper ticket.
+Style: crisp flat vector-like raster, uniform pale source fill #f2e6ce for runtime leather recoloring, dark brown #432934 outline, one muted gold #c5a465 rule, hand-drawn restraint.
+Composition: centered landscape label about 2.8:1, large blank interior, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, second inner rule, flowers, ornate corners, scroll, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

@@ -1,0 +1,12 @@
+Use case: illustration-story. Actual reusable book customisation artwork, 'Half-leather title field'. Landscape 3:1 broad half-leather binding title band with straight horizontal cream body and narrow gold edge fillets, dark brown very fine outer contour, graceful small leaf terminals at far left and right. Central 74% entirely plain cream for title. Genuine transparent PNG background around the artwork, NOT grey checkerboard. Flat solid screen-print pigments only: cream #f2e6ce for specified body, dark ink #432934 for contour, flat gold #c5a465 for tooling. No colours other than these three; no lighting, shadows, glow, gradients, grain, texture, hatching, text, numbers, letters or complete book. Elegant accomplished botanical and bookbinder drawing, not a generic icon. Centre artwork with transparent margin. No mockup, exactly one isolated title-treatment asset.
+
+Final crisp production regeneration prompt:
+
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for a small book cover
+Primary request: one crisp HALF-LEATHER TITLE FIELD: a wide low 3:1 pale cream horizontal band with softly clipped concave corners, one hard dark-brown outer contour, and one clearly separated muted-gold inset rule. At each short end add only a tiny simple three-leaf terminal, no curls and no large bouquet. Keep the central 78 percent completely plain and empty for live title text.
+Style: flat screen-printed vector-like bookbinding geometry with hard clean edges and uniform strokes. Pale cream #f2e6ce, dark brown #432934, muted gold #c5a465.
+Composition: isolated centered band, restrained end terminals, broad clear lettering field, remains crisp at 180 pixels wide.
+Background: true transparent alpha outside the band.
+Text: none.
+Avoid: checkerboard, white canvas, large acanthus, scrolls, thick black end blocks, dense ornament, multiple stacked rules, gradients, lighting, highlight, shadow, blur, glow, texture, grain, bevel, watermark.

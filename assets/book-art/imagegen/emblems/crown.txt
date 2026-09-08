@@ -1,0 +1,39 @@
+INITIAL IMAGEGEN PROMPT
+
+Use case: logo-brand
+Asset type: single square raster master for a tiny book-cover and book-spine emblem
+Primary request: Create one original, graceful historical crown as an ornate bookbinder finishing-tool impression. The crown should feel grand and intricately drawn, with a low arched circlet, five elegant leaf-shaped points, a small central fleur finial, restrained bead details, and two delicate outward curls at the base. Keep generous open negative space inside and between every structural part so the crown remains clear when reduced to a 16 px emblem.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder brass-tool artwork, drawn entirely in one uniform dark sepia ink color; elegant hand-cut historical linework with subtly organic curves; clean, balanced, and production-ready.
+Composition/framing: exactly one centered upright crown, front-facing and symmetrical overall, occupying about 70% of the square with roomy transparent margins; strong recognizable silhouette at thumbnail scale; isolated object only.
+Color palette: one dark sepia ink color only, approximately #3A2418, on transparency.
+Constraints: actual transparent PNG alpha; crisp hard edges; one continuous visual object; thin-to-medium strokes sturdy enough for 16 px reduction; open counters; no cropped edges; no text or letters.
+Avoid: circle, oval, badge, medallion, cartouche, shield, crest surround, laurel wreath, frame, border, ribbon, banner, jewels rendered as gems, realistic metal, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, extra symbols, duplicate crowns.
+
+REFINEMENT IMAGEGEN PROMPT
+
+Use case: precise-object-edit
+Asset type: final square raster master for a tiny book-cover and book-spine emblem
+Primary request: Refine Image 1 into a more disciplined bookbinder finishing-tool crown. Preserve its broad royal silhouette, low arched circlet, graceful base curls, symmetry, dark sepia color, transparency, and historical character. Make one targeted change: simplify the detail density for excellent legibility at 16 px. Unite the crown into exactly five points total, with the central point ending in a restrained fleur-shaped tip rather than a separate floating ornament. Remove roughly half of the feather-like interior cuts, bead dots, jewels, and tiny leaf flourishes. Enlarge every open counter and gap. Keep enough elegant leaf-and-scroll shaping to feel intricate and grand, but make the outer silhouette and five points carry the design.
+Input images: Image 1 is the edit target and must remain recognizably the same crown; Image 2 is the Alcove binding-study style reference for restrained antique finishing-tool linework and flat book-cover ornament.
+Scene/backdrop: preserve genuine transparent background with clean alpha; no paper, canvas, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder brass-tool artwork, drawn entirely in one uniform dark sepia ink color; crisp hard edges, subtly organic hand-cut curves, production-ready.
+Composition/framing: exactly one centered upright crown, front-facing and symmetrical overall, occupying about 68% of the square with roomy transparent margins; isolated object only.
+Color palette: one dark sepia ink color only, approximately #3A2418, on transparency.
+Constraints: actual transparent PNG alpha; one continuous visual object; stroke weight sturdy enough for 16 px reduction; very open counters; no cropped edges; no text or letters.
+Avoid: a sixth point, detached ornament above the crown, dense feather hatching, rows of many bead dots, circle, oval, badge, medallion, cartouche, shield, crest surround, laurel wreath, frame, border, ribbon, banner, realistic gems, realistic metal, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, extra symbols, duplicate crowns.
+
+TRANSPARENCY CORRECTION
+
+The built-in ImageGen result contained a baked pale checkerboard and no alpha channel. No third ImageGen prompt was used. The accepted refinement was converted deterministically: luminance values at and above the pale checker field were mapped to zero alpha, darker antialiased crown pixels were mapped progressively to opacity, the surviving motif was normalized to #3A2418, fully transparent pixels were assigned white RGB for robust previewing, and the PNG was forced to RGBA color type 6. The artwork geometry was not regenerated or altered.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Crown emblem, active index 20
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact five-point crown artwork: its geometry, symmetry, proportions, open counters, line weight, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Crown edit target.
+Scene/backdrop: fully transparent outside the crown with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated crown in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing line, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.

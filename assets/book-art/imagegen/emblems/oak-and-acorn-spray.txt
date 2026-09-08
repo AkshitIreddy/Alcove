@@ -1,0 +1,33 @@
+IMAGEGEN PROMPT 1
+
+Use case: logo-brand
+Asset type: individual square raster master for Alcove book-cover and narrow book-spine ornament, active emblem index 13, ID oak-and-acorn-spray
+Primary request: Create one original Grand bookbinder finishing-tool emblem of an oak-and-acorn spray. Draw a single gently rising curved twig bearing exactly three unmistakable lobed oak leaves and exactly two hanging acorns with clearly separated caps and nuts. Arrange the foliage in a graceful alternating rhythm with the acorns as the focal punctuation. Preserve generous negative space between leaves, stem, and fruit so the emblem stays readable when small.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, checkerboard, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder finishing-tool artwork drawn entirely in one uniform dark sepia ink color, approximately #3A2418; elegant hand-cut historical botanical curves, crisp vector-like hard edges, no tonal modeling.
+Composition/framing: exactly one isolated oak spray on a gentle lower-left to upper-right diagonal, balanced within about 68% of the square; compact enough to rotate or place on a narrow spine; sturdy medium outlines and simplified leaf lobes for 16 px reduction.
+Constraints: actual transparent PNG alpha; one coherent branch; exactly three oak leaves and two acorns; open counters; no cropped edges; no text or letters; visibly distinct from laurel, rose, thistle, wheat, and generic leafy sprigs.
+Avoid: surrounding circle, oval, badge, medallion, cartouche, shield, wreath, border, enclosing frame, extra branches, more than two acorns, dense veins, realistic botanical shading, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, duplicate sprays.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Oak and Acorn Spray emblem, active index 13
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact oak spray artwork: one diagonal twig, three lobed leaves, two capped acorns, all veins, proportions, line weight, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Oak and Acorn Spray edit target.
+Scene/backdrop: fully transparent outside the spray with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated oak spray in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing leaf or acorn, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.
+
+IMAGEGEN PROMPT 3 — ACCEPTED FRESH GENERATION
+
+Create a clean transparent PNG emblem, like a one-colour vector cutout.
+
+Name and identity: Oak and acorn spray. Draw exactly one gently rising diagonal oak twig with exactly three unmistakable lobed oak leaves and exactly two hanging acorns. Give each acorn a clearly separate scalloped cap and oval nut. Arrange leaves and fruits in a graceful alternating rhythm, visibly distinct from laurel, olive, rowan, wheat, and generic leafy sprigs.
+
+Artwork: every visible mark must be the exact same solid dark sepia #432934. Use broad confident leaf lobes, restrained open vein cuts, a bowed stem, clear gaps around both acorns, and sturdy contours that remain clear at 24 pixels. Centre the spray at about 70% of the square with generous clear margin.
+
+Transparency: the entire surrounding canvas must be genuine alpha transparency. Produce no black background, no coloured background, no checkerboard graphic, no halo, no vignette, and no matte.
+
+Forbidden: gradients, tonal changes, highlights, shadows, lighting, glow, haze, blur, texture, paper, leather, metal effect, gold, tiny dense veins, border, circle, badge, medallion, plate, shield, wreath, ribbon, words, letters, numbers, watermark, extra branches, extra leaves, extra acorns.

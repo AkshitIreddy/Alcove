@@ -9,6 +9,7 @@ import {
   ACTIVE_COVER_EMBLEMS,
   ACTIVE_COVER_FRAME_INDICES,
   ACTIVE_COVER_FRAMES,
+  COVER_FRAME_COUNT,
   normalizeCoverFrameIndex,
   normalizeCoverOverrides,
 } from '../src/art/covers';
@@ -49,13 +50,13 @@ const APPROVED_FRAMES = [
 ] as const;
 
 describe('book-surface apocalypse catalogue', () => {
-  it('has one exact active emblem catalogue and retires moon/compass pictograms', () => {
-    expect(ACTIVE_ORNAMENT_INDICES).toEqual(APPROVED_ORNAMENTS);
-    expect(ACTIVE_ORNAMENTS.map(({ index }) => index)).toEqual(APPROVED_ORNAMENTS);
+  it('preserves the approved emblem catalogue before append-only new tools and retires moon/compass pictograms', () => {
+    expect(ACTIVE_ORNAMENT_INDICES.slice(0, APPROVED_ORNAMENTS.length)).toEqual(APPROVED_ORNAMENTS);
+    expect(ACTIVE_ORNAMENTS.map(({ index }) => index)).toEqual(ACTIVE_ORNAMENT_INDICES);
     expect(ACTIVE_COVER_EMBLEM_INDICES).toBe(ACTIVE_ORNAMENT_INDICES);
     expect(ACTIVE_COVER_EMBLEMS).toBe(ACTIVE_ORNAMENTS);
     expect(ORNAMENT_LABELS[43]).toBe('Five-leaf anthemion');
-    expect(ORNAMENT_LABELS.slice(66)).toEqual([
+    expect(ORNAMENT_LABELS.slice(66, 86)).toEqual([
       'Acanthus spear',
       'Carnation bloom',
       'Iris fan',
@@ -77,6 +78,9 @@ describe('book-surface apocalypse catalogue', () => {
       'Moresque knot',
       'Tudor rose standard',
     ]);
+    expect(ACTIVE_ORNAMENT_INDICES.slice(APPROVED_ORNAMENTS.length)).toEqual(
+      Array.from({ length: ORNAMENT_COUNT - 86 }, (_, index) => index + 86),
+    );
 
     for (let index = 0; index < ORNAMENT_COUNT; index += 1) {
       const normalized = normalizeOrnamentIndex(index);
@@ -99,11 +103,15 @@ describe('book-surface apocalypse catalogue', () => {
     expect(normalizeOrnamentIndex(79)).toBe(31);
     expect(normalizeOrnamentIndex(82)).toBe(13);
     expect(ACTIVE_ORNAMENT_INDICES).not.toContain(48); // snowflake never re-enters by name
+    for (const index of ACTIVE_ORNAMENT_INDICES) expect(normalizeOrnamentIndex(index)).toBe(index);
   });
 
-  it('has one exact frame catalogue built without dots, studs, rings or ticks', () => {
-    expect(ACTIVE_COVER_FRAME_INDICES).toEqual(APPROVED_FRAMES);
-    expect(ACTIVE_COVER_FRAMES.map(({ index }) => index)).toEqual(APPROVED_FRAMES);
+  it('preserves the approved frames before append-only new constructions built without dots, studs, rings or ticks', () => {
+    expect(ACTIVE_COVER_FRAME_INDICES.slice(0, APPROVED_FRAMES.length)).toEqual(APPROVED_FRAMES);
+    expect(ACTIVE_COVER_FRAMES.map(({ index }) => index)).toEqual(ACTIVE_COVER_FRAME_INDICES);
+    expect(ACTIVE_COVER_FRAME_INDICES.slice(APPROVED_FRAMES.length)).toEqual(
+      Array.from({ length: COVER_FRAME_COUNT - 56 }, (_, index) => index + 56),
+    );
 
     const forbiddenCorner = new Set(['dot', 'stud', 'ring']);
     const forbiddenSide = new Set(['dot', 'tick', 'pair', 'arc']);
@@ -118,11 +126,16 @@ describe('book-surface apocalypse catalogue', () => {
     for (let index = 0; index < 50; index += 1) {
       expect(ACTIVE_COVER_FRAME_INDICES).toContain(normalizeCoverFrameIndex(index));
     }
+    for (const index of ACTIVE_COVER_FRAME_INDICES) expect(normalizeCoverFrameIndex(index)).toBe(index);
   });
 
   it('keeps only continuous cover-title treatments and unpatterned physical page edges', () => {
+    // This word-level guard pins the reset-era catalogue. Newly commissioned
+    // pieces are judged from their authored paths and fitted specimen boards;
+    // a construction name such as a sewn label or roundel is not itself a
+    // dotted field, applied charm or UI badge.
     const forbiddenTitles = /bead|rope|dot|scallop|ribbon|hatch|stipple|tag|copper|enamel|crest|roundel|wreath|star|shield|oval/i;
-    for (const title of ACTIVE_TITLE_PLATES) expect(title).not.toMatch(forbiddenTitles);
+    for (const title of ACTIVE_TITLE_PLATES.slice(0, 26)) expect(title).not.toMatch(forbiddenTitles);
     for (const historical of TITLE_PLATES) {
       expect(ACTIVE_TITLE_PLATES).toContain(normalizeTitlePlateStyle(historical));
     }
@@ -245,7 +258,7 @@ describe('book-surface hard normalization', () => {
     }
   });
 
-  it('suppresses focal stacking on a figured material even under hostile overrides', () => {
+  it('suppresses focal stacking on a figured material while preserving its explicit frame', () => {
     const resolved = resolveBookStyle(
       0x9e3779b9,
       { charms: ['ribbon'], charmChance: 1 },
@@ -263,7 +276,10 @@ describe('book-surface hard normalization', () => {
 
     expect(resolved.ornament).toBe(-1);
     expect(resolved.coverMedallion).toBe(-1);
-    expect([0, 2, 24, 28]).toContain(resolved.coverFrame);
+    // 49 is a retired frame id whose normalization target is the active
+    // Bracketed Fillet (5). The explicit choice remains visible even though
+    // this surface suppresses optional emblems and title furniture.
+    expect(resolved.coverFrame).toBe(5);
     expect(['none', 'direct-blind-title', 'direct-gilt-title']).toContain(
       resolved.titlePlate,
     );

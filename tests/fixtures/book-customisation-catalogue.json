@@ -1,0 +1,1340 @@
+{
+  "titles": [
+    {
+      "id": "none",
+      "label": "None"
+    },
+    {
+      "id": "direct-blind-title",
+      "label": "Blind title"
+    },
+    {
+      "id": "direct-gilt-title",
+      "label": "Gilt title"
+    },
+    {
+      "id": "direct-ink-title",
+      "label": "Inked title"
+    },
+    {
+      "id": "press-small-caps",
+      "label": "Dentelle title field"
+    },
+    {
+      "id": "printer-floret-imprint",
+      "label": "Grolier nested field"
+    },
+    {
+      "id": "laid-paper-ticket",
+      "label": "Laid paper ticket"
+    },
+    {
+      "id": "deckled-paper-ticket",
+      "label": "Vertical paper slip"
+    },
+    {
+      "id": "vellum-rule-ticket",
+      "label": "Vellum shoulder band"
+    },
+    {
+      "id": "parchment-slip",
+      "label": "Vertical parchment slip"
+    },
+    {
+      "id": "morocco-single-rule",
+      "label": "Morocco single rule"
+    },
+    {
+      "id": "morocco-double-rule",
+      "label": "Morocco double rule"
+    },
+    {
+      "id": "morocco-clipped-rule",
+      "label": "Grolier lozenge"
+    },
+    {
+      "id": "calf-blind-label",
+      "label": "Oval calf compartment"
+    },
+    {
+      "id": "two-tone-leather-label",
+      "label": "Inset leather centre"
+    },
+    {
+      "id": "library-buckram-label",
+      "label": "Library buckram label"
+    },
+    {
+      "id": "dyed-leather-crossband",
+      "label": "Half-leather title field"
+    },
+    {
+      "id": "gilt-ruled-crossband",
+      "label": "Gilt ruled crossband"
+    },
+    {
+      "id": "cloth-inlay-crossband",
+      "label": "Vertical cloth inlay"
+    },
+    {
+      "id": "split-leather-crossband",
+      "label": "Split-board title field"
+    },
+    {
+      "id": "oxford-blind-compartment",
+      "label": "Oxford blind compartment"
+    },
+    {
+      "id": "cambridge-calf-compartment",
+      "label": "Arts & Crafts blind title"
+    },
+    {
+      "id": "french-triple-fillet",
+      "label": "Perimeter title bridge"
+    },
+    {
+      "id": "ledger-open-field",
+      "label": "Armorial inscription field"
+    },
+    {
+      "id": "inscription-shoulders",
+      "label": "Lobed Islamic cartouche"
+    },
+    {
+      "id": "renaissance-title-window",
+      "label": "Renaissance quadrilobe"
+    }
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "id": "plain-rule",
+      "label": "Plain Rule",
+      "rules": [
+        1
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "soft",
+      "band": false,
+      "tier": "single"
+    },
+    {
+      "index": 2,
+      "id": "double-rule",
+      "label": "Double Rule",
+      "rules": [
+        1,
+        0.7
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "soft",
+      "band": false,
+      "tier": "double"
+    },
+    {
+      "index": 5,
+      "id": "bracketed",
+      "label": "Bracketed Fillet",
+      "rules": [
+        1
+      ],
+      "corner": "bracket",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "single"
+    },
+    {
+      "index": 6,
+      "id": "acanthus-return",
+      "label": "Open Acanthus Return",
+      "rules": [
+        1,
+        0.4
+      ],
+      "corner": "acanthus",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "fillet"
+    },
+    {
+      "index": 8,
+      "id": "lozenge-corners",
+      "label": "Corner Lozenges",
+      "rules": [
+        1
+      ],
+      "corner": "lozenge",
+      "side": "none",
+      "turn": "soft",
+      "band": false,
+      "tier": "single"
+    },
+    {
+      "index": 17,
+      "id": "double-brackets",
+      "label": "Double Bracket",
+      "rules": [
+        1,
+        0.7
+      ],
+      "corner": "bracket",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "double"
+    },
+    {
+      "index": 20,
+      "id": "restrained-ogee",
+      "label": "Shouldered Ogee Panel",
+      "rules": [
+        1,
+        0.42
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "shouldered",
+      "band": false,
+      "tier": "fillet"
+    },
+    {
+      "index": 24,
+      "id": "fillet",
+      "label": "Broad Fillet",
+      "rules": [
+        1.35,
+        0.28
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "fillet"
+    },
+    {
+      "index": 26,
+      "id": "fillet-fleuron",
+      "label": "Fleuron Fillet",
+      "rules": [
+        1,
+        0.4
+      ],
+      "corner": "fleuron",
+      "side": "none",
+      "turn": "soft",
+      "band": false,
+      "tier": "fillet"
+    },
+    {
+      "index": 36,
+      "id": "banded",
+      "label": "Banded Fillet",
+      "rules": [
+        1,
+        0.7
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "square",
+      "band": true,
+      "tier": "banded"
+    },
+    {
+      "index": 43,
+      "id": "banded-fleuron",
+      "label": "Banded Fleurons",
+      "rules": [
+        1,
+        0.7
+      ],
+      "corner": "fleuron",
+      "side": "none",
+      "turn": "soft",
+      "band": true,
+      "tier": "banded"
+    },
+    {
+      "index": 48,
+      "id": "renaissance-panel",
+      "label": "Renaissance Panel",
+      "rules": [
+        1,
+        0.55
+      ],
+      "corner": "renaissance",
+      "side": "none",
+      "turn": "square",
+      "band": true,
+      "tier": "banded"
+    },
+    {
+      "index": 50,
+      "id": "mitred-calf-panel",
+      "label": "Mitred Calf Panel",
+      "rules": [
+        1.25,
+        0.34
+      ],
+      "corner": "bracket",
+      "side": "none",
+      "turn": "shouldered",
+      "band": false,
+      "tier": "fillet"
+    },
+    {
+      "index": 51,
+      "id": "open-dentelle",
+      "label": "Open Dentelle",
+      "rules": [
+        1,
+        0.55,
+        0.22
+      ],
+      "corner": "fleuron",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "triple"
+    },
+    {
+      "index": 52,
+      "id": "grolier-lozenge-panel",
+      "label": "Grolier Lozenge Panel",
+      "rules": [
+        1,
+        0.66,
+        0.26
+      ],
+      "corner": "lozenge",
+      "side": "none",
+      "turn": "shouldered",
+      "band": false,
+      "tier": "triple"
+    },
+    {
+      "index": 53,
+      "id": "library-triple-mitre",
+      "label": "Library Triple Mitre",
+      "rules": [
+        1,
+        0.48,
+        0.2
+      ],
+      "corner": "none",
+      "side": "none",
+      "turn": "square",
+      "band": false,
+      "tier": "triple"
+    },
+    {
+      "index": 54,
+      "id": "renaissance-open-panel",
+      "label": "Renaissance Open Panel",
+      "rules": [
+        1,
+        0.72,
+        0.3
+      ],
+      "corner": "renaissance",
+      "side": "none",
+      "turn": "shouldered",
+      "band": false,
+      "tier": "triple"
+    },
+    {
+      "index": 55,
+      "id": "blind-acanthus-panel",
+      "label": "Blind Acanthus Panel",
+      "rules": [
+        1.15,
+        0.42
+      ],
+      "corner": "acanthus",
+      "side": "none",
+      "turn": "shouldered",
+      "band": false,
+      "tier": "fillet"
+    }
+  ],
+  "emblems": [
+    {
+      "index": 0,
+      "label": "Diamond"
+    },
+    {
+      "index": 1,
+      "label": "Broad laurel branch"
+    },
+    {
+      "index": 2,
+      "label": "Foliate starflower"
+    },
+    {
+      "index": 5,
+      "label": "Rising sun"
+    },
+    {
+      "index": 12,
+      "label": "Fleuron"
+    },
+    {
+      "index": 13,
+      "label": "Oak and acorn spray"
+    },
+    {
+      "index": 14,
+      "label": "Thistle bloom"
+    },
+    {
+      "index": 20,
+      "label": "Crown"
+    },
+    {
+      "index": 23,
+      "label": "Stemmed rosette"
+    },
+    {
+      "index": 26,
+      "label": "Fleur-de-lis"
+    },
+    {
+      "index": 28,
+      "label": "Acanthus volutes"
+    },
+    {
+      "index": 29,
+      "label": "Wheat sheaf"
+    },
+    {
+      "index": 30,
+      "label": "Split pomegranate"
+    },
+    {
+      "index": 31,
+      "label": "Open tulip"
+    },
+    {
+      "index": 43,
+      "label": "Five-leaf anthemion"
+    },
+    {
+      "index": 56,
+      "label": "Split fern palmette"
+    },
+    {
+      "index": 66,
+      "label": "Acanthus spear"
+    },
+    {
+      "index": 67,
+      "label": "Carnation bloom"
+    },
+    {
+      "index": 68,
+      "label": "Iris fan"
+    },
+    {
+      "index": 70,
+      "label": "Poppy seedhead"
+    },
+    {
+      "index": 71,
+      "label": "Olive spray"
+    },
+    {
+      "index": 74,
+      "label": "Honeysuckle scroll"
+    },
+    {
+      "index": 75,
+      "label": "Lotus palmette"
+    },
+    {
+      "index": 78,
+      "label": "Rowan spray"
+    },
+    {
+      "index": 80,
+      "label": "Primrose stem"
+    },
+    {
+      "index": 81,
+      "label": "Dog-rose branch"
+    },
+    {
+      "index": 83,
+      "label": "Reed bundle"
+    },
+    {
+      "index": 84,
+      "label": "Moresque knot"
+    },
+    {
+      "index": 85,
+      "label": "Tudor rose standard"
+    }
+  ],
+  "lettering": [
+    {
+      "index": 0,
+      "id": "caveat",
+      "label": "Caveat"
+    },
+    {
+      "index": 1,
+      "id": "kalam",
+      "label": "Kalam"
+    },
+    {
+      "index": 2,
+      "id": "patrick",
+      "label": "Patrick Hand"
+    },
+    {
+      "index": 9,
+      "id": "rubric",
+      "label": "Rubric"
+    },
+    {
+      "index": 18,
+      "id": "shouted",
+      "label": "Shouted"
+    },
+    {
+      "index": 31,
+      "id": "small-caps",
+      "label": "Small Caps"
+    },
+    {
+      "index": 36,
+      "id": "drawn",
+      "label": "Drawn"
+    },
+    {
+      "index": 38,
+      "id": "drafting",
+      "label": "Drafting"
+    },
+    {
+      "index": 43,
+      "id": "printed",
+      "label": "Printed"
+    },
+    {
+      "index": 44,
+      "id": "engraved",
+      "label": "Engraved"
+    }
+  ],
+  "edges": [
+    {
+      "id": "plain",
+      "label": "Plain"
+    },
+    {
+      "id": "gilt",
+      "label": "Gilt"
+    },
+    {
+      "id": "stained-red",
+      "label": "Red edges"
+    },
+    {
+      "id": "sepia-edge",
+      "label": "Sepia edges"
+    },
+    {
+      "id": "deckle",
+      "label": "Deckle"
+    },
+    {
+      "id": "red-under-gold",
+      "label": "Red under gold"
+    }
+  ],
+  "endbands": [
+    {
+      "index": 1,
+      "label": "woven chevron"
+    },
+    {
+      "index": 2,
+      "label": "wrapped cord"
+    },
+    {
+      "index": 3,
+      "label": "solid silk roll"
+    }
+  ],
+  "formats": [
+    {
+      "id": "folio",
+      "label": "Folio"
+    },
+    {
+      "id": "quarto",
+      "label": "Quarto"
+    },
+    {
+      "id": "octavo",
+      "label": "Octavo"
+    },
+    {
+      "id": "duodecimo",
+      "label": "Duodecimo"
+    },
+    {
+      "id": "pocket",
+      "label": "Pocket"
+    }
+  ],
+  "materials": [
+    {
+      "id": "smooth-cloth",
+      "label": "Smooth Cloth"
+    },
+    {
+      "id": "buckram",
+      "label": "Library Buckram"
+    },
+    {
+      "id": "linen",
+      "label": "Book Linen"
+    },
+    {
+      "id": "felt",
+      "label": "Felt"
+    },
+    {
+      "id": "velvet",
+      "label": "Velvet"
+    },
+    {
+      "id": "polished-calf",
+      "label": "Polished Calf"
+    },
+    {
+      "id": "morocco-grain",
+      "label": "Morocco Goatskin"
+    },
+    {
+      "id": "russia-calf",
+      "label": "Russia Calf"
+    },
+    {
+      "id": "roan",
+      "label": "Roan"
+    },
+    {
+      "id": "oilcloth",
+      "label": "Oilcloth"
+    },
+    {
+      "id": "vellum",
+      "label": "Vellum"
+    },
+    {
+      "id": "parchment",
+      "label": "Parchment"
+    },
+    {
+      "id": "alum-tawed",
+      "label": "Alum-Tawed Pigskin"
+    },
+    {
+      "id": "paper-wrapper",
+      "label": "Paper Wrapper"
+    },
+    {
+      "id": "half-bound",
+      "label": "Half Bound"
+    },
+    {
+      "id": "quarter-bound",
+      "label": "Quarter Bound"
+    },
+    {
+      "id": "three-quarter",
+      "label": "Three-Quarter Bound"
+    },
+    {
+      "id": "half-cloth-paper",
+      "label": "Half Cloth over Paper"
+    }
+  ],
+  "shapes": [
+    "square",
+    "tight-back",
+    "double-hinge"
+  ],
+  "decorations": [
+    "plain",
+    "quarto-grand-fillet",
+    "oxford-double-compartment",
+    "cambridge-blind-bays",
+    "printers-terminal-blocks",
+    "library-closed-fillet",
+    "folio-five-compartment",
+    "botanical-centre-panel",
+    "prize-laurel-panel",
+    "buckram-library-bays",
+    "buckram-oxford-fillets",
+    "buckram-cambridge-bands",
+    "buckram-archive-folio",
+    "linen-herbarium-sprig",
+    "linen-printers-bands",
+    "linen-scholar-bays",
+    "velvet-crown-frame",
+    "velvet-palmette-panel",
+    "grand-crown-compartments",
+    "calf-blind-double-fillet",
+    "calf-oxford-bands",
+    "calf-cambridge-bays",
+    "calf-gilt-compartments",
+    "calf-royal-crown",
+    "calf-laurel-wreath",
+    "russia-folio-panels",
+    "russia-blind-fillet",
+    "russia-crown-bay",
+    "russia-scholar-bands",
+    "roan-school-fillet",
+    "roan-botanical-sprig",
+    "roan-terminal-bays",
+    "oilcloth-ledger-fillet",
+    "oilcloth-terminal-bands",
+    "vellum-folio-bays",
+    "vellum-terminal-fleuron",
+    "vellum-laurel-panel",
+    "vellum-abbey-fillet",
+    "parchment-quarto-bands",
+    "parchment-blind-bays",
+    "parchment-herbarium-sprig",
+    "parchment-fleuron-panel",
+    "parchment-scholar-fillet",
+    "wrapper-ruled-fold",
+    "wrapper-printers-imprint",
+    "wrapper-botanical-sprig",
+    "wrapper-archive-sewn",
+    "half-calf-material-bands",
+    "half-oxford-compartments",
+    "half-laurel-panel",
+    "quarter-calf-bands",
+    "quarter-scholar-bays",
+    "quarter-botanical-sprig",
+    "three-quarter-corded",
+    "three-quarter-folio-bays",
+    "three-quarter-crown",
+    "half-cloth-herbarium",
+    "half-cloth-prize-laurel",
+    "half-cloth-printers"
+  ],
+  "bindings": [
+    {
+      "id": "plain-cloth",
+      "shape": "square",
+      "material": "smooth-cloth",
+      "label": "Plain Cloth",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "gilt-quarto",
+      "shape": "square",
+      "material": "smooth-cloth",
+      "label": "Gilt Quarto",
+      "decorations": [
+        "quarto-grand-fillet"
+      ]
+    },
+    {
+      "id": "oxford-cloth",
+      "shape": "tight-back",
+      "material": "smooth-cloth",
+      "label": "Oxford Cloth",
+      "decorations": [
+        "oxford-double-compartment"
+      ]
+    },
+    {
+      "id": "cambridge-cloth",
+      "shape": "tight-back",
+      "material": "smooth-cloth",
+      "label": "Cambridge Cloth",
+      "decorations": [
+        "cambridge-blind-bays"
+      ]
+    },
+    {
+      "id": "library-fillet-cloth",
+      "shape": "square",
+      "material": "smooth-cloth",
+      "label": "Library Fillet Cloth",
+      "decorations": [
+        "library-closed-fillet"
+      ]
+    },
+    {
+      "id": "linen-commonplace",
+      "shape": "square",
+      "material": "linen",
+      "label": "Linen Commonplace",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "velvet-ducal",
+      "shape": "square",
+      "material": "velvet",
+      "label": "Grand Crown Velvet",
+      "decorations": [
+        "grand-crown-compartments"
+      ]
+    },
+    {
+      "id": "printers-cloth",
+      "shape": "double-hinge",
+      "material": "smooth-cloth",
+      "label": "Printer’s Cloth",
+      "decorations": [
+        "printers-terminal-blocks"
+      ]
+    },
+    {
+      "id": "folio-cloth",
+      "shape": "tight-back",
+      "material": "smooth-cloth",
+      "label": "Folio Cloth",
+      "decorations": [
+        "folio-five-compartment"
+      ]
+    },
+    {
+      "id": "botanical-cloth",
+      "shape": "square",
+      "material": "smooth-cloth",
+      "label": "Botanical Cloth",
+      "decorations": [
+        "botanical-centre-panel"
+      ]
+    },
+    {
+      "id": "prize-cloth",
+      "shape": "tight-back",
+      "material": "smooth-cloth",
+      "label": "Prize Cloth",
+      "decorations": [
+        "prize-laurel-panel"
+      ]
+    },
+    {
+      "id": "linen-botanical",
+      "shape": "tight-back",
+      "material": "linen",
+      "label": "Linen Herbarium",
+      "decorations": [
+        "linen-herbarium-sprig"
+      ]
+    },
+    {
+      "id": "linen-printers",
+      "shape": "double-hinge",
+      "material": "linen",
+      "label": "Printer’s Linen",
+      "decorations": [
+        "linen-printers-bands"
+      ]
+    },
+    {
+      "id": "linen-scholar",
+      "shape": "tight-back",
+      "material": "linen",
+      "label": "Scholar’s Linen",
+      "decorations": [
+        "linen-scholar-bays"
+      ]
+    },
+    {
+      "id": "velvet-crown",
+      "shape": "double-hinge",
+      "material": "velvet",
+      "label": "Sunrise Velvet",
+      "decorations": [
+        "velvet-crown-frame"
+      ]
+    },
+    {
+      "id": "velvet-palmette",
+      "shape": "tight-back",
+      "material": "velvet",
+      "label": "Palmette Velvet",
+      "decorations": [
+        "velvet-palmette-panel"
+      ]
+    },
+    {
+      "id": "plain-calf",
+      "shape": "square",
+      "material": "polished-calf",
+      "label": "Plain Calf",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "blind-calf",
+      "shape": "tight-back",
+      "material": "polished-calf",
+      "label": "Blind Calf",
+      "decorations": [
+        "calf-blind-double-fillet"
+      ]
+    },
+    {
+      "id": "oxford-calf",
+      "shape": "tight-back",
+      "material": "polished-calf",
+      "label": "Oxford Calf",
+      "decorations": [
+        "calf-oxford-bands"
+      ]
+    },
+    {
+      "id": "russia-folio",
+      "shape": "double-hinge",
+      "material": "russia-calf",
+      "label": "Russia Folio",
+      "decorations": [
+        "russia-folio-panels"
+      ]
+    },
+    {
+      "id": "roan-schoolbook",
+      "shape": "square",
+      "material": "roan",
+      "label": "Roan Schoolbook",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "oilcloth-logbook",
+      "shape": "square",
+      "material": "oilcloth",
+      "label": "Oilcloth Logbook",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "cambridge-calf",
+      "shape": "double-hinge",
+      "material": "polished-calf",
+      "label": "Cambridge Calf",
+      "decorations": [
+        "calf-cambridge-bays"
+      ]
+    },
+    {
+      "id": "calf-compartments",
+      "shape": "square",
+      "material": "polished-calf",
+      "label": "Calf Gilt Compartments",
+      "decorations": [
+        "calf-gilt-compartments"
+      ]
+    },
+    {
+      "id": "royal-calf",
+      "shape": "double-hinge",
+      "material": "polished-calf",
+      "label": "Royal State Calf",
+      "decorations": [
+        "calf-royal-crown"
+      ]
+    },
+    {
+      "id": "laurel-calf",
+      "shape": "square",
+      "material": "polished-calf",
+      "label": "Laureate Calf",
+      "decorations": [
+        "calf-laurel-wreath"
+      ]
+    },
+    {
+      "id": "russia-blind",
+      "shape": "tight-back",
+      "material": "russia-calf",
+      "label": "Blind Russia",
+      "decorations": [
+        "russia-blind-fillet"
+      ]
+    },
+    {
+      "id": "russia-crown",
+      "shape": "square",
+      "material": "russia-calf",
+      "label": "Formal Russia",
+      "decorations": [
+        "russia-crown-bay"
+      ]
+    },
+    {
+      "id": "russia-scholar",
+      "shape": "tight-back",
+      "material": "russia-calf",
+      "label": "Russia Scholar",
+      "decorations": [
+        "russia-scholar-bands"
+      ]
+    },
+    {
+      "id": "roan-fillet",
+      "shape": "tight-back",
+      "material": "roan",
+      "label": "Roan School Fillet",
+      "decorations": [
+        "roan-school-fillet"
+      ]
+    },
+    {
+      "id": "roan-botanical",
+      "shape": "double-hinge",
+      "material": "roan",
+      "label": "Botanical Roan",
+      "decorations": [
+        "roan-botanical-sprig"
+      ]
+    },
+    {
+      "id": "roan-terminal",
+      "shape": "tight-back",
+      "material": "roan",
+      "label": "Terminal-Bay Roan",
+      "decorations": [
+        "roan-terminal-bays"
+      ]
+    },
+    {
+      "id": "oilcloth-rules",
+      "shape": "tight-back",
+      "material": "oilcloth",
+      "label": "Ledger Oilcloth",
+      "decorations": [
+        "oilcloth-ledger-fillet"
+      ]
+    },
+    {
+      "id": "oilcloth-terminal",
+      "shape": "double-hinge",
+      "material": "oilcloth",
+      "label": "Terminal Oilcloth",
+      "decorations": [
+        "oilcloth-terminal-bands"
+      ]
+    },
+    {
+      "id": "half-calf",
+      "shape": "tight-back",
+      "material": "half-bound",
+      "label": "Half Calf",
+      "decorations": [
+        "half-calf-material-bands"
+      ]
+    },
+    {
+      "id": "quarter-calf",
+      "shape": "square",
+      "material": "quarter-bound",
+      "label": "Quarter Calf",
+      "decorations": [
+        "quarter-calf-bands"
+      ]
+    },
+    {
+      "id": "quarter-cloth",
+      "shape": "tight-back",
+      "material": "quarter-bound",
+      "label": "Quarter Cloth",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "three-quarter-morocco",
+      "shape": "tight-back",
+      "material": "three-quarter",
+      "label": "Three-Quarter Corded Binding",
+      "decorations": [
+        "three-quarter-corded"
+      ]
+    },
+    {
+      "id": "half-cloth",
+      "shape": "square",
+      "material": "half-cloth-paper",
+      "label": "Half Cloth",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "half-oxford",
+      "shape": "square",
+      "material": "half-bound",
+      "label": "Oxford Half Binding",
+      "decorations": [
+        "half-oxford-compartments"
+      ]
+    },
+    {
+      "id": "half-laurel",
+      "shape": "double-hinge",
+      "material": "half-bound",
+      "label": "Oak Half Binding",
+      "decorations": [
+        "half-laurel-panel"
+      ]
+    },
+    {
+      "id": "quarter-scholar",
+      "shape": "double-hinge",
+      "material": "quarter-bound",
+      "label": "Scholar’s Quarter Binding",
+      "decorations": [
+        "quarter-scholar-bays"
+      ]
+    },
+    {
+      "id": "quarter-botanical",
+      "shape": "square",
+      "material": "quarter-bound",
+      "label": "Botanical Quarter Binding",
+      "decorations": [
+        "quarter-botanical-sprig"
+      ]
+    },
+    {
+      "id": "three-quarter-folio",
+      "shape": "double-hinge",
+      "material": "three-quarter",
+      "label": "Three-Quarter Folio",
+      "decorations": [
+        "three-quarter-folio-bays"
+      ]
+    },
+    {
+      "id": "three-quarter-crown",
+      "shape": "square",
+      "material": "three-quarter",
+      "label": "Three-Quarter State Binding",
+      "decorations": [
+        "three-quarter-crown"
+      ]
+    },
+    {
+      "id": "half-cloth-botanical",
+      "shape": "tight-back",
+      "material": "half-cloth-paper",
+      "label": "Herbarium Half Cloth",
+      "decorations": [
+        "half-cloth-herbarium"
+      ]
+    },
+    {
+      "id": "half-cloth-prize",
+      "shape": "double-hinge",
+      "material": "half-cloth-paper",
+      "label": "Starflower Prize Half Cloth",
+      "decorations": [
+        "half-cloth-prize-laurel"
+      ]
+    },
+    {
+      "id": "half-cloth-printers",
+      "shape": "square",
+      "material": "half-cloth-paper",
+      "label": "Printer’s Half Cloth",
+      "decorations": [
+        "half-cloth-printers"
+      ]
+    },
+    {
+      "id": "buckram-library",
+      "shape": "square",
+      "material": "buckram",
+      "label": "Library Buckram",
+      "decorations": [
+        "buckram-library-bays"
+      ]
+    },
+    {
+      "id": "buckram-oxford",
+      "shape": "tight-back",
+      "material": "buckram",
+      "label": "Oxford Buckram",
+      "decorations": [
+        "buckram-oxford-fillets"
+      ]
+    },
+    {
+      "id": "buckram-cambridge",
+      "shape": "double-hinge",
+      "material": "buckram",
+      "label": "Cambridge Buckram",
+      "decorations": [
+        "buckram-cambridge-bands"
+      ]
+    },
+    {
+      "id": "buckram-folio",
+      "shape": "tight-back",
+      "material": "buckram",
+      "label": "Archive Folio",
+      "decorations": [
+        "buckram-archive-folio"
+      ]
+    },
+    {
+      "id": "plain-vellum",
+      "shape": "square",
+      "material": "vellum",
+      "label": "Plain Vellum",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "vellum-folio",
+      "shape": "tight-back",
+      "material": "vellum",
+      "label": "Vellum Folio",
+      "decorations": [
+        "vellum-folio-bays"
+      ]
+    },
+    {
+      "id": "parchment-quarto",
+      "shape": "square",
+      "material": "parchment",
+      "label": "Parchment Quarto",
+      "decorations": [
+        "parchment-quarto-bands"
+      ]
+    },
+    {
+      "id": "vellum-terminal",
+      "shape": "double-hinge",
+      "material": "vellum",
+      "label": "Fleuron Vellum",
+      "decorations": [
+        "vellum-terminal-fleuron"
+      ]
+    },
+    {
+      "id": "vellum-laurel",
+      "shape": "square",
+      "material": "vellum",
+      "label": "Laureate Vellum",
+      "decorations": [
+        "vellum-laurel-panel"
+      ]
+    },
+    {
+      "id": "vellum-abbey",
+      "shape": "tight-back",
+      "material": "vellum",
+      "label": "Abbey Vellum",
+      "decorations": [
+        "vellum-abbey-fillet"
+      ]
+    },
+    {
+      "id": "parchment-blind",
+      "shape": "tight-back",
+      "material": "parchment",
+      "label": "Blind Parchment",
+      "decorations": [
+        "parchment-blind-bays"
+      ]
+    },
+    {
+      "id": "parchment-sprig",
+      "shape": "double-hinge",
+      "material": "parchment",
+      "label": "Parchment Herbarium",
+      "decorations": [
+        "parchment-herbarium-sprig"
+      ]
+    },
+    {
+      "id": "parchment-fleuron",
+      "shape": "tight-back",
+      "material": "parchment",
+      "label": "Fleuron Parchment",
+      "decorations": [
+        "parchment-fleuron-panel"
+      ]
+    },
+    {
+      "id": "parchment-scholar",
+      "shape": "square",
+      "material": "parchment",
+      "label": "Scholar’s Parchment",
+      "decorations": [
+        "parchment-scholar-fillet"
+      ]
+    },
+    {
+      "id": "plain-wrapper",
+      "shape": "square",
+      "material": "paper-wrapper",
+      "label": "Plain Wrapper",
+      "decorations": [
+        "plain"
+      ]
+    },
+    {
+      "id": "ruled-wrapper",
+      "shape": "tight-back",
+      "material": "paper-wrapper",
+      "label": "Fold-Fillet Wrapper",
+      "decorations": [
+        "wrapper-ruled-fold"
+      ]
+    },
+    {
+      "id": "printers-wrapper",
+      "shape": "double-hinge",
+      "material": "paper-wrapper",
+      "label": "Printer’s Wrapper",
+      "decorations": [
+        "wrapper-printers-imprint"
+      ]
+    },
+    {
+      "id": "botanical-wrapper",
+      "shape": "square",
+      "material": "paper-wrapper",
+      "label": "Botanical Wrapper",
+      "decorations": [
+        "wrapper-botanical-sprig"
+      ]
+    },
+    {
+      "id": "archive-wrapper",
+      "shape": "tight-back",
+      "material": "paper-wrapper",
+      "label": "Archive Fillet Wrapper",
+      "decorations": [
+        "wrapper-archive-sewn"
+      ]
+    }
+  ]
+}

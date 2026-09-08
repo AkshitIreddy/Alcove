@@ -1,0 +1,12 @@
+Prompt 1 — generation
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only; match the graceful flat botanical linework and confident spacing, but do not reproduce any book, title, border, layout, colour scheme, or existing sprig
+Primary request: create one original emblem named "Olive spray"
+Subject: one elegant diagonal olive branch with a clearly bowed woody stem, six long narrow alternating olive leaves, and exactly three broad oval olives placed as a small asymmetric cluster; unmistakably olive rather than laurel or rowan
+Style/medium: restrained Quiet historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, organic hand-cut brass finishing-tool curves, sophisticated and authored rather than a generic icon
+Composition/framing: one isolated centred diagonal motif occupying about 72% of the square, generous transparent margins, clear gaps between every leaf and fruit, strong outside silhouette that remains readable when reduced for a narrow spine
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style

@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone MOROCCO DOUBLE-RULE LABEL for a traditional book cover: a formal horizontal leather title plaque with softly clipped chamfered corners, a strong dark outer contour, and exactly two fine nested muted-gold fillets separated by calm breathing space. Add a tiny gold leaf-shaped stop at the midpoint of each short side. Keep the central 72 percent completely blank for live title text.
+Style: crisp flat vector-like raster, uniform pale source fill #f2e6ce for runtime leather recoloring, dark brown #432934 outline, muted gold #c5a465 double rules, elegant hand-drawn geometry.
+Composition: centered landscape label about 2.5:1, generous blank interior, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, oval silhouette, flowers in the center, scroll curls, third rule, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

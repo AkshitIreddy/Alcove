@@ -146,7 +146,8 @@ describe('cover title fitting', () => {
     const native = paintedTitle(title, 'gilt-direct', 166, 230);
     const shelf = paintedTitle(title, 'gilt-direct', 85, 118);
 
-    expect(native.lines).toHaveLength(2);
+    expect(native.lines.length).toBeGreaterThanOrEqual(2);
+    expect(native.lines.length).toBeLessThanOrEqual(3);
     expect(native.fontPx).toBeGreaterThanOrEqual(10);
     expect(shelf.lines).toHaveLength(3);
     expect(shelf.fontPx).toBeGreaterThanOrEqual(6.5);

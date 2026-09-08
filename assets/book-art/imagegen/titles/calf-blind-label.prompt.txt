@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone CALF OVAL TITLE LABEL: a broad low rectangular calf label with gently bowed edges and clipped outer corners, containing one unmistakable large horizontal oval locus outlined by a fine pressed dark rule and a tiny muted-gold dot at each cardinal point. Keep the oval interior completely blank for live title text. The oval is the identity of this treatment.
+Style: crisp flat vector-like raster, uniform pale source fill #f2e6ce for runtime leather recoloring, dark brown #432934 outline/rule, sparse muted gold #c5a465 dots, traditional bookbinder restraint.
+Composition: centered landscape plaque about 2.4:1, oval occupies most of the plaque, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, rectangle-only design, flowers, scrolls, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

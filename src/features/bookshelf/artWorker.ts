@@ -42,6 +42,10 @@
  */
 
 import { setFlatScheme } from '../../art/flat';
+import {
+  bookRasterArtworkIds,
+  preloadBookRasterArtwork,
+} from '../../art/bookRasterArtwork';
 import { renderSpine, type Ctx2D } from '../../art/spines';
 import {
   ART_PROTOCOL_VERSION,
@@ -51,6 +55,25 @@ import {
 } from './artJobs';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
+
+/* -------------------------- generated artwork --------------------------- */
+
+const workerRasterIds = bookRasterArtworkIds('emblems');
+let readyPosted = false;
+
+/**
+ * Worker and main thread have separate module memory. Decode the generated
+ * emblem masters in this realm before the first spine can paint. A rejected
+ * preload is intentionally not memoized by bookRasterArtwork: the next queued
+ * job retries, and receives a normal per-job error if the asset is still bad.
+ */
+async function ensureRasterArtworkReady(): Promise<void> {
+  await preloadBookRasterArtwork(workerRasterIds);
+  if (!readyPosted) {
+    readyPosted = true;
+    post({ kind: 'ready', version: ART_PROTOCOL_VERSION });
+  }
+}
 
 /* ------------------------------- drawing --------------------------------- */
 
@@ -86,13 +109,14 @@ function paintSpine(job: SpineJob): ImageBitmap {
 const queue: ArtJob[] = [];
 let running = false;
 
-function runNext(): void {
+async function runNext(): Promise<void> {
   if (running) return;
   const job = queue.shift();
   if (job === undefined) return;
   running = true;
   const t0 = performance.now();
   try {
+    await ensureRasterArtworkReady();
     const bitmap = paintSpine(job);
     post({ kind: 'spine', id: job.id, ok: true, bitmap, ms: performance.now() - t0 }, [bitmap]);
   } catch (err) {
@@ -109,7 +133,7 @@ function runNext(): void {
     running = false;
     // Yield to the event loop so a message posted while the last job ran is
     // seen before the next one starts.
-    setTimeout(() => runNext(), 0);
+    setTimeout(() => void runNext(), 0);
   }
 }
 
@@ -119,7 +143,10 @@ function post(message: ArtMessage, transfer: Transferable[] = []): void {
 
 scope.addEventListener('message', (event: MessageEvent<ArtJob>) => {
   queue.push(event.data);
-  runNext();
+  void runNext();
 });
 
-post({ kind: 'ready', version: ART_PROTOCOL_VERSION });
+// Start only the worker-needed subset while the module is otherwise idle.
+// Failure is reported against the first real job, whose host already owns the
+// fallback path; a later job may retry after a transient dev-server miss.
+void ensureRasterArtworkReady().catch(() => {});

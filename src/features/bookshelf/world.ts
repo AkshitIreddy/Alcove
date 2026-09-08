@@ -560,6 +560,11 @@ export class ShelfWorld {
     host: HTMLElement,
     events: WorldEvents,
   ): Promise<ShelfWorld> {
+    // A spine/cover is cached after its first draw. Finish decoding artwork
+    // before creating those caches, so a slow asset cannot freeze a fallback
+    // drawing into the library for the rest of the session.
+    const { preloadBookRasterArtwork } = await import('../../art/bookRasterArtwork');
+    await preloadBookRasterArtwork();
     ensureGsapPixi();
     const degrade = detectSoftwareRenderer();
     const dpr = degrade ? 1 : Math.min(globalThis.devicePixelRatio || 1, 2);

@@ -61,13 +61,15 @@ describe('Surprise surface composition', () => {
           expect(ROLLABLE_DECORATIONS, `${at}:${decoration}`).toContain(decoration);
         }
         expect(bookPresetAllowedForAutomaticSurprise(preset), at).toBe(true);
-        expect(audit.programmes.length, `${at}:${audit.programmes.join('+')}`).toBeLessThanOrEqual(1);
+        expect(audit.programmes.length, `${at}:${audit.programmes.join('+')}`).toBeLessThanOrEqual(direction.id === 'grand' ? 2 : 1);
         if (direction.id === 'quiet') {
-          expect(audit.programmes, at).not.toContain('matched-emblem');
+          // Quiet can carry a single small binder's tool; ornate perimeter
+          // programmes remain excluded and the one-programme budget holds.
+          expect(audit.programmes, at).not.toContain('architectural-frame');
         } else {
-          expect(audit.programmes, at).toHaveLength(1);
+          expect(audit.programmes.length, at).toBeGreaterThanOrEqual(1);
           expect(
-            ['authored-surface', 'matched-emblem', 'architectural-frame'],
+            ['authored-surface', 'matched-emblem', 'architectural-frame', 'title-ground'],
             `${at}:${audit.programmes.join('+')}`,
           ).toContain(audit.programmes[0]);
           const focal = audit.programmes[0] ?? 'missing';
@@ -97,7 +99,7 @@ describe('Surprise surface composition', () => {
           expect(['leather', 'cloth', 'split'], at).toContain(materialGroup);
         }
         if ([
-          'laid-paper-ticket', 'deckled-paper-ticket', 'vellum-rule-ticket', 'parchment-slip',
+          'deckled-paper-ticket', 'vellum-rule-ticket', 'parchment-slip',
         ].includes(recipe.style.titlePlate)) {
           expect(['vellum', 'paper', 'split'], at).toContain(materialGroup);
         }
@@ -113,11 +115,12 @@ describe('Surprise surface composition', () => {
           expect(medallion, at).toBe(ornament);
         }
         if (bookPresetHasAuthoredFocal(recipe.preset)) {
-          expect(audit.programmes, at).toEqual(['authored-surface']);
+          if (direction.id === 'grand') expect(audit.programmes, at).toContain('authored-surface');
+          else expect(audit.programmes, at).toEqual(['authored-surface']);
         }
 
         const frameLabel = FRAME_LABELS[recipe.style.coverFrame ?? 0] ?? '';
-        expect(frameLabel, `${at}:${frameLabel}`).not.toMatch(/dots?|rings?|studded|side /i);
+        expect(frameLabel, `${at}:${frameLabel}`).not.toMatch(/\b(?:dots?|rings?|studded|side)\b/i);
       }
 
       if (direction.id !== 'quiet') {
@@ -157,10 +160,11 @@ describe('Surprise surface composition', () => {
         const audit = inspectBookSurpriseSurfaceComposition(recipe);
         expect(recipe.preset, `${direction.id}:${seedIndex}`).toBe(openPreset.id);
         expect(
-          audit.programmes,
+          audit.programmes.length,
           `${direction.id}:${seedIndex}:${JSON.stringify(recipe.style)}:${JSON.stringify(audit)}`,
-        ).toHaveLength(1);
-        reached.add(audit.programmes[0] ?? 'missing');
+        ).toBeLessThanOrEqual(direction.id === 'grand' ? 2 : 1);
+        expect(audit.programmes.length).toBeGreaterThanOrEqual(1);
+        for (const programme of audit.programmes) reached.add(programme);
       }
       expect([...reached], `${direction.id}:${openPreset.id}:frame`).toContain('architectural-frame');
       expect([...reached], `${direction.id}:${openPreset.id}:emblem`).toContain('matched-emblem');

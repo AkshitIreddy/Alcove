@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone LOBED ISLAMIC INSCRIPTION CARTOUCHE for a fine book cover: an elegant open six-lobed horizontal cartouche drawn with one dark outline and a parallel muted-gold inner fillet, with tiny spear-leaf shoulder flourishes projecting left and right. Preserve the historical lobed silhouette clearly. Keep the entire central aperture transparent and completely empty for live title text.
+Style: crisp flat vector-like raster line art, dark brown #432934 and muted gold #c5a465 only, graceful hand-drawn geometry, intricate but calm.
+Composition: centered wide six-lobed open frame about 2.3:1, broad clear center, transparent inside and outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, filled plaque, rectangle, oval, star in the center, dense arabesque inside the aperture, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

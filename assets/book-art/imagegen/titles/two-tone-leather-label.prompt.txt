@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone TWO-TONE LEATHER TITLE LABEL: an open dark-brown outer leather silhouette shaped like a shallow cushion with concave clipped corners, holding a smaller pale inset title panel edged by one thin muted-gold keyline. Leave the inset center completely blank for live title text. Make the layered two-material construction immediately readable while keeping the lettering field broad.
+Style: crisp flat vector-like raster using only uniform semantic source colors: pale ground #f2e6ce, dark brown #432934, muted gold #c5a465; restrained traditional bookbinding geometry.
+Composition: centered landscape label about 2.5:1, outer dark border substantial but narrow, pale interior large, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, oval, flowers, scroll curls, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

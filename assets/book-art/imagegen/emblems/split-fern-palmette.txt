@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 56 “split-fern-palmette”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable split fern palmette: a single small stem-base divides into two mirrored fern fronds that sweep upward and outward, leaving a clear pointed almond-shaped gulf of transparent space between them. Each half carries four broad alternating fern leaflets and ends in a curled tip; a tiny three-prong palmette foot anchors the split. It must read as two halves of one fern fan, visually distinct from the five-leaf anthemion and from a feather, at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; elegant, botanical, slightly architectural, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Favor bold connected frond ribs and substantial leaflets separated by open transparent cuts.
+Composition/framing: centered upright emblem, bilaterally balanced with gentle organic asymmetry, about 68% of the square canvas, comfortably inset; broad upper fan narrowing into a compact base; suitable for a narrow book spine.
+Constraints: exactly two clearly separated fern fronds; four primary leaflets per side; central transparent split visible from the base to near the tips; one connected base; robust silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: single feather, wheat, laurel wreath, five smooth anthemion lobes, fleur-de-lis, flower, shell, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

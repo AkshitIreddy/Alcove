@@ -6,6 +6,7 @@ import { ACTIVE_TITLE_PLATES, resolveBookStyle } from '../src/art/bookStyle';
 import {
   bookPreviewGeometry,
   coverCompositionTargetRects,
+  manualBookStyleEditClearsComposition,
   previewRectStyle,
   type BookPreviewGeometryInput,
 } from '../src/views/rail/bookStudioPreview';
@@ -184,9 +185,13 @@ describe('Book Studio interaction contract', () => {
       coverMedallion: 5,
     });
 
-    // A paper ticket narrows and the transparent controls must travel with
-    // its exact authored locus rather than an assumed generic lower plate.
-    expect(ticketTitle?.rect.width).toBeLessThan(directTitle?.rect.width ?? 0);
+    // Direct lettering fits the frame opening, while a physical ticket has
+    // its own outer box. Both hit targets must follow their actual artwork.
+    const exactDirect = coverCompositionTargetRects(direct.cover, {
+      coverTitlePlate: 'direct-gilt-title', coverFrame: 24, coverMedallion: 5,
+    });
+    expect(ticketTitle?.rect.width).toBeCloseTo(exactTicket.title.width, 5);
+    expect(directTitle?.rect.width).toBeCloseTo(exactDirect.title.width, 5);
     expect(centerY(ticketTitle!.rect)).not.toBe(centerY(directTitle!.rect));
     expect(ticketTitle?.rect.left).toBeCloseTo(exactTicket.title.left, 5);
     expect(ticketTitle?.rect.top).toBeCloseTo(exactTicket.title.top, 5);
@@ -272,6 +277,65 @@ describe('Book Studio interaction contract', () => {
       }
       expect(overlaps(displayed.get('cover-title')!, displayed.get('cover-emblem')!)).toBe(false);
     }
+  });
+
+  it('follows authored whole-book geometry and hides furniture the edition omits', () => {
+    const botanical = bookPreviewGeometry(input({
+      coverComposition: 'botanical-study',
+      coverMedallion: 71,
+    }));
+    const quiet = bookPreviewGeometry(input({ coverComposition: 'quiet-title' }));
+    const grand = bookPreviewGeometry(input({ coverComposition: 'grand-frame' }));
+
+    expect(botanical.hotspots.filter((row) => row.target === 'cover-frame')).toHaveLength(0);
+    expect(botanical.hotspots.filter((row) => row.id === 'cover-emblem')).toHaveLength(1);
+    expect(quiet.hotspots.filter((row) => row.target === 'cover-frame')).toHaveLength(0);
+    expect(quiet.hotspots.filter((row) => row.id === 'cover-emblem')).toHaveLength(0);
+    expect(grand.hotspots.filter((row) => row.target === 'cover-frame')).toHaveLength(4);
+    expect(grand.hotspots.filter((row) => row.id === 'cover-emblem')).toHaveLength(0);
+
+    const botanicalTargets = coverCompositionTargetRects(botanical.cover, {
+      coverTitlePlate: 'direct-ink-title', coverFrame: 0, coverMedallion: 71,
+      coverComposition: 'botanical-study',
+    });
+    expect(botanicalTargets.medallion.height).toBeGreaterThan(botanicalTargets.title.height);
+    expect(centerY(botanicalTargets.title)).toBeLessThan(centerY(botanicalTargets.medallion));
+  });
+
+  it('tracks the actual composed-spine device instead of the legacy low stamp position', () => {
+    const storybook = bookPreviewGeometry(input({
+      coverComposition: 'storybook-device',
+      spineCharacter: 'storybook',
+      spineEmblemPresent: true,
+    }));
+    const formalWithoutDevice = bookPreviewGeometry(input({
+      coverComposition: 'formal-title',
+      spineCharacter: 'formal',
+      spineEmblemPresent: false,
+    }));
+    const ornament = storybook.hotspots.find((row) => row.id === 'spine-ornament');
+    expect(centerY(ornament!.rect)).toBeCloseTo(
+      storybook.spine.top + storybook.spine.height * 0.4,
+      5,
+    );
+    expect(ornament?.absent).toBe(false);
+    expect(formalWithoutDevice.hotspots.find((row) => row.id === 'spine-ornament')?.absent)
+      .toBe(true);
+  });
+
+  it('detaches authored composition for manual decoration while preserving colour and size edits', () => {
+    expect(manualBookStyleEditClearsComposition(['coverFrame'])).toBe(true);
+    expect(manualBookStyleEditClearsComposition(['titlePlate', 'titleFont'])).toBe(true);
+    expect(manualBookStyleEditClearsComposition(['ornament', 'coverMedallion'])).toBe(true);
+    expect(manualBookStyleEditClearsComposition(['raisedBands'])).toBe(true);
+    expect(manualBookStyleEditClearsComposition(['wear', 'edge'])).toBe(true);
+    expect(manualBookStyleEditClearsComposition(['coverBaseHex', 'toolingHex'])).toBe(false);
+    expect(manualBookStyleEditClearsComposition(['height', 'thickness', 'format'])).toBe(false);
+
+    const source = readFileSync(resolve(ROOT, 'src/views/rail/BookStudio.tsx'), 'utf8');
+    expect(source.match(/manualBookStyleEditClearsComposition\(/g)).toHaveLength(2);
+    expect(source.match(/composition: null \}, binding, binding/g)).toHaveLength(1);
+    expect(source.match(/composition: null \}, id, id/g)).toHaveLength(1);
   });
 
   it('leaves an add target wherever optional rendered furniture is absent', () => {

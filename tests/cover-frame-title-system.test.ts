@@ -16,6 +16,11 @@ import {
   type CoverTitleFurniture,
 } from '../src/art/covers';
 import type { FlatCtx } from '../src/art/flat';
+import { REMASTERED_FRAME_MASTERS } from '../src/art/bookFrameArtwork';
+import {
+  REMASTERED_TITLE_LAYOUTS,
+  REMASTERED_TITLE_SVG_SOURCES,
+} from '../src/art/bookTitleArtwork';
 import { ACTIVE_TITLE_PLATES } from '../src/art/spines';
 
 type Operation = readonly [name: string, ...args: readonly unknown[]];
@@ -130,25 +135,43 @@ const EXPECTED_FURNITURE = new Map<string, CoverTitleFurniture>([
   ['renaissance-title-window', 'renaissance-mitred-window'],
 ]);
 
+const ESTABLISHED_FRAME_INDICES = [
+  0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
+  50, 51, 52, 53, 54, 55,
+] as const;
+
+const ESTABLISHED_FRAME_TIERS = [
+  'single', 'double', 'single', 'fillet', 'single', 'double',
+  'fillet', 'fillet', 'fillet', 'banded', 'banded', 'banded',
+  'fillet', 'triple', 'triple', 'triple', 'triple', 'fillet',
+] as const;
+
 describe('authored cover frame system', () => {
-  it('keeps eighteen materially distinct frame families and translates every legacy id', () => {
-    expect(ACTIVE_COVER_FRAME_INDICES).toEqual([
-      0, 2, 5, 6, 8, 17, 20, 24, 26, 36, 43, 48,
-      50, 51, 52, 53, 54, 55,
-    ]);
-    expect(ACTIVE_COVER_FRAMES.map(({ tier }) => tier)).toEqual([
-      'single', 'double', 'single', 'fillet', 'single', 'double',
-      'fillet', 'fillet', 'fillet', 'banded', 'banded', 'banded',
-      'fillet', 'triple', 'triple', 'triple', 'triple', 'fillet',
-    ]);
-    const constructions = ACTIVE_COVER_FRAMES.map((frame) => JSON.stringify({
+  it('keeps every established frame and appends individually authored constructions', () => {
+    expect(ACTIVE_COVER_FRAME_INDICES.slice(0, ESTABLISHED_FRAME_INDICES.length)).toEqual(
+      ESTABLISHED_FRAME_INDICES,
+    );
+    expect(ACTIVE_COVER_FRAMES.slice(0, ESTABLISHED_FRAME_TIERS.length).map(({ tier }) => tier)).toEqual(
+      ESTABLISHED_FRAME_TIERS,
+    );
+    const establishedConstructions = ACTIVE_COVER_FRAMES
+      .slice(0, ESTABLISHED_FRAME_INDICES.length)
+      .map((frame) => JSON.stringify({
       rules: frame.rules,
       corner: frame.corner,
       side: frame.side,
       turn: frame.turn,
       band: frame.band,
-    }));
-    expect(new Set(constructions).size).toBe(ACTIVE_COVER_FRAMES.length);
+      }));
+    expect(new Set(establishedConstructions).size).toBe(ESTABLISHED_FRAME_INDICES.length);
+
+    expect(REMASTERED_FRAME_MASTERS.map(({ index }) => index)).toEqual(ACTIVE_COVER_FRAME_INDICES);
+    expect(REMASTERED_FRAME_MASTERS.map(({ id }) => id)).toEqual(
+      ACTIVE_COVER_FRAMES.map(({ id }) => id),
+    );
+    expect(new Set(REMASTERED_FRAME_MASTERS.map(({ svg }) => svg)).size).toBe(
+      ACTIVE_COVER_FRAME_INDICES.length,
+    );
     for (let index = 0; index < 56; index += 1) {
       expect(ACTIVE_COVER_FRAME_INDICES, `legacy frame ${index}`).toContain(
         normalizeCoverFrameIndex(index),
@@ -190,12 +213,19 @@ describe('authored cover title furniture', () => {
   });
 
   it('gives every active treatment its own named physical construction', () => {
-    expect(ACTIVE_TITLE_PLATES).toEqual([...EXPECTED_FURNITURE.keys()]);
+    expect(ACTIVE_TITLE_PLATES.slice(0, EXPECTED_FURNITURE.size)).toEqual(
+      [...EXPECTED_FURNITURE.keys()],
+    );
     for (const [style, furniture] of EXPECTED_FURNITURE) {
       expect(coverTitleFurniture(style as never), style).toBe(furniture);
     }
-    expect(new Set(EXPECTED_FURNITURE.values()).size).toBe(ACTIVE_TITLE_PLATES.length);
-    expect([...EXPECTED_FURNITURE.values()].join(' ')).not.toMatch(/pill|capsule|badge/i);
+    const furniture = ACTIVE_TITLE_PLATES.map((style) => coverTitleFurniture(style));
+    expect(new Set(furniture).size).toBe(ACTIVE_TITLE_PLATES.length);
+    expect(furniture.join(' ')).not.toMatch(/pill|capsule|badge/i);
+    expect(Object.keys(REMASTERED_TITLE_SVG_SOURCES)).toEqual(ACTIVE_TITLE_PLATES);
+    expect(new Set(Object.values(REMASTERED_TITLE_SVG_SOURCES)).size).toBe(
+      ACTIVE_TITLE_PLATES.length,
+    );
   });
 
   it('keys every curated title treatment independently in the cover cache', () => {
@@ -204,22 +234,30 @@ describe('authored cover title furniture', () => {
     expect(new Set(keys).size).toBe(ACTIVE_TITLE_PLATES.length);
   });
 
-  it('allocates broad horizontal fields and genuine vertical slips', () => {
-    const vertical = new Set([
-      'deckled-paper-ticket', 'parchment-slip', 'cloth-inlay-crossband',
-    ]);
+  it('preserves the three vertical slips and keeps title furniture clear of the emblem', () => {
+    const vertical = ['deckled-paper-ticket', 'parchment-slip', 'cloth-inlay-crossband'];
+    for (const style of vertical) {
+      expect(REMASTERED_TITLE_LAYOUTS[style as keyof typeof REMASTERED_TITLE_LAYOUTS].orientation)
+        .not.toBe('horizontal');
+    }
     for (const style of ACTIVE_TITLE_PLATES) {
       const layout = coverCompositionLayout(style, 26, -1);
-      if (vertical.has(style)) {
-        expect(layout.titleWidth, style).toBeLessThanOrEqual(0.32);
-        expect(layout.titleHeight, style).toBeGreaterThanOrEqual(0.5);
-        expect(layout.titleCenterX, style).not.toBe(0.5);
-        continue;
+      const art = REMASTERED_TITLE_LAYOUTS[style];
+      if (art.orientation !== 'horizontal') {
+        expect(layout.titleWidth, style).toBeLessThan(0.3);
+        expect(layout.titleHeight, style).toBeGreaterThan(0.6);
+      } else {
+        expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.6);
       }
-      if (layout.family === 'band') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.82);
-      if (layout.family === 'ticket') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.45);
-      if (layout.family === 'heraldic') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.64);
-      if (layout.family === 'panel') expect(layout.titleWidth, style).toBeGreaterThanOrEqual(0.73);
+      const left = (layout.titleCenterX ?? 0.5) - layout.titleWidth / 2;
+      const right = left + layout.titleWidth;
+      const top = layout.titleCenterY - layout.titleHeight / 2;
+      const bottom = top + layout.titleHeight;
+      const radius = layout.medallionScale * 1.89;
+      const mx = layout.medallionCenterX ?? 0.5;
+      const my = layout.medallionCenterY;
+      expect(left >= 0 && right <= 1 && top >= 0 && bottom <= 1, style).toBe(true);
+      expect(right < mx - radius || left > mx + radius || bottom < my - radius * .72, style).toBe(true);
     }
   });
 

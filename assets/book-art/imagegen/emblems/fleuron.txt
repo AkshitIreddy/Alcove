@@ -1,0 +1,21 @@
+IMAGEGEN PROMPT 1
+
+Use case: logo-brand
+Asset type: individual square raster master for Alcove book-cover and narrow book-spine ornament, active emblem index 12, ID fleuron
+Primary request: Create one original Grand bookbinder fleuron: a compact upright ornamental flourish with a pointed trefoil leaf at the crown, a slim central stem, two mirrored S-scroll wings, and a small downward spear terminal. Interlock the curves into one elegant historical printer-and-binder ornament while keeping wide open counters between every curl. It must read unmistakably as a classical fleuron rather than a literal flower.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, checkerboard, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder finishing-tool artwork drawn entirely in one uniform dark sepia ink color, approximately #3A2418; graceful hand-cut curves, crisp vector-like hard edges, no tonal modeling.
+Composition/framing: exactly one centered upright fleuron, isolated, vertically compact and symmetrical, occupying about 62% of the square with generous transparent margins; bold medium stroke weight sturdy at 16 px and on a narrow spine.
+Constraints: actual transparent PNG alpha; one continuous visual object; clear central axis; large open counters; no cropped edges; no text or letters; visually distinct from a fleur-de-lis, crown, rosette, or botanical sprig.
+Avoid: surrounding circle, oval, badge, medallion, cartouche, shield, wreath, realistic blossom, loose leaves, enclosing frame, dense filigree, tiny dots, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, extra symbols, duplicate ornaments.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Fleuron emblem, active index 12
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact upright fleuron artwork: its trefoil crown, mirrored S-scroll wings, central stem, spear terminal, proportions, line weight, open counters, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Fleuron edit target.
+Scene/backdrop: fully transparent outside the fleuron with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated fleuron in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing line, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.

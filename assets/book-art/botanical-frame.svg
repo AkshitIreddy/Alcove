@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280">
+  <path d="M14 3 L186 3 Q197 3 197 14 L197 266 Q197 277 186 277 L14 277 Q3 277 3 266 L3 14 Q3 3 14 3 Z" fill="none" stroke="#c5a465" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 35 Q14 19 34 14 M17 26 Q14 17 23 17 Q25 22 17 26 M25 19 Q24 10 32 12 Q35 17 25 19 M188 35 Q186 19 166 14 M183 26 Q186 17 177 17 Q175 22 183 26 M175 19 Q176 10 168 12 Q165 17 175 19 M12 245 Q14 261 34 266 M17 254 Q14 263 23 263 Q25 258 17 254 M188 245 Q186 261 166 266 M183 254 Q186 263 177 263 Q175 258 183 254" fill="none" stroke="#c5a465" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

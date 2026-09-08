@@ -1,0 +1,10 @@
+Use case: logo-brand
+Asset type: transparent bitmap master for a book-customisation emblem, later composited as a single-colour bookbinder's finishing-tool impression on both a large cover and a very narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only, especially the graceful gold botanical linework on FIELD NOTES and SMALL HISTORIES; do not reproduce the books, frames, titles, colours, or layout
+Primary request: create one original emblem named "Broad laurel branch"
+Subject: a single sweeping diagonal laurel branch with an elegant bowed stem and seven to nine clearly shaped laurel leaves, balanced alternating rhythm, graceful taper, and a small terminal bud; unmistakably laurel
+Style/medium: intricate Grand historical bookbinding ornament translated into clean flat vector-like raster line art; single uniform dark sepia ink only; authoritative engraved brass finishing-tool design; organic authored curves rather than generic icon geometry
+Composition/framing: one isolated centred motif, tall diagonal silhouette occupying about 70% of the square, generous transparent margin, every leaf separated by clear negative space; readable when reduced to a 16-pixel-wide spine stamp
+Colour palette: exactly one dark sepia ink colour, approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent background with preserved alpha; one connected ornamental subject; crisp antialiased edges; no border, no surrounding circle, no badge, no plate, no cartouche, no text, no letters, no numbers, no watermark
+Avoid: texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style

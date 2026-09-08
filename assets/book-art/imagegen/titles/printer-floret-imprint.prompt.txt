@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone GROLIER NESTED FIELD for a book cover: two slender nested, softly bowed rectangular gilt fillets with gently rounded corners, interrupted at the top center by one small five-petal printer's floret and at the bottom by a tiny diamond. Keep the broad interior completely empty for live title text. Fine formal tooling, more detailed than a direct title but calmer than dentelle.
+Style: crisp flat vector-like raster, solid muted gold #c5a465 tooling with sparse dark brown #432934 outline accents, hand-drawn line character.
+Composition: centered horizontal 2.1:1 open frame with generous central aperture and transparent inside/outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, filled plaque, third frame, corner bouquets, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

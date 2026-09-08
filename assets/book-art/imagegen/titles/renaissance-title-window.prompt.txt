@@ -1,0 +1,19 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone RENAISSANCE QUADRILOBE TITLE WINDOW for a grand book cover: a broad four-lobed pale inlay with a dark outer contour, one fine muted-gold inner fillet, and a pair of small open acanthus leaf returns growing outward from the left and right waist. The four-lobed silhouette must be unmistakable. Keep the central 68 percent blank and calm for live title text.
+Style: crisp flat vector-like raster, uniform pale ground #f2e6ce, dark brown #432934 outline, muted gold #c5a465 tooling, hand-drawn Renaissance bookbinding ornament, intricate but gracious.
+Composition: centered horizontal quadrilobe about 2.1:1, leaf returns remain outside the large lettering field, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, rectangle, plain oval, eight lobes, ornament inside the text aperture, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.
+
+Final crisp production regeneration prompt:
+
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for a small book cover
+Primary request: one crisp RENAISSANCE QUADRILOBE title window. Create a broad pale cream horizontal four-lobed shape: one rounded lobe at top, bottom, left, and right, joined by four shallow concave waists. Draw one clean dark-brown outer contour and one clearly separated thin muted-gold inner fillet. Add only one tiny three-leaf gold sprig outside the far-left waist and one matching sprig outside the far-right waist. Keep the central 72 percent completely plain and empty for live title text.
+Style: flat screen-printed vector-like bookbinding ornament with hard clean edges, uniform line weight, restrained Renaissance character. Pale cream #f2e6ce, dark brown #432934, muted gold #c5a465.
+Composition: centered horizontal quadrilobe about 2.2:1; small side sprigs never crowd the title field; stays crisp at 150 pixels wide.
+Background: true transparent alpha outside the quadrilobe.
+Text: none.
+Avoid: checkerboard, white canvas, oval, rectangle, more than four lobes, large acanthus bouquets, dense foliage, crown, gradients, lighting, highlight, shadow, blur, glow, texture, grain, bevel, watermark.

@@ -1,0 +1,19 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay
+Primary request: one standalone VELLUM SHOULDER BAND for a book cover: a broad horizontal pale vellum band with softly bowed top and bottom edges, squared ends, two fine unequal dark ruled keylines near each long edge, and tiny mitred corner cuts. Keep the entire central band calm and empty for live title text. It must feel like a structural vellum strip laid across the upper cover, not a small label.
+Style: crisp flat vector-like raster, uniform cream #f2e6ce fill, dark brown #432934 outline/rules, one sparse muted-gold #c5a465 inner line.
+Composition: centered very wide band, about 4:1 aspect ratio, transparent outside.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, scroll curls, ornate flowers, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.
+
+Final crisp production regeneration prompt:
+
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for a small book cover
+Primary request: one crisp VELLUM SHOULDER BAND: a broad pale cream horizontal band about 3.2:1 with gently bowed top and bottom edges and slightly inward-curved short sides. Draw one continuous hard dark-brown outer contour, then exactly one continuous thin muted-gold inset rule following the silhouette with generous separation. Add four tiny clean mitred corner cuts only. Keep the central 80 percent completely plain and empty for live title text.
+Style: flat screen-printed vector-like vellum geometry with hard clean edges, uninterrupted rules, and uniform line weight. Pale cream #f2e6ce, dark brown #432934, muted gold #c5a465.
+Composition: isolated centered bowed band, restrained and structural, remains crisp at 180 pixels wide.
+Background: true transparent alpha outside the band.
+Text: none.
+Avoid: checkerboard, white canvas, dashed lines, broken lines, alternating marks, stitching, doubled strokes, extra parallel rules, flowers, diamonds, gradients, lighting, highlight, shadow, blur, glow, texture, grain, bevel, watermark.

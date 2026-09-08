@@ -1,0 +1,13 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for an illustrated book-cover customization system
+Reference image: use only the restrained flat bookbinder line vocabulary, warm ink and dull-gold rule proportions of the supplied Alcove binding study; do not reproduce its books or text.
+Primary request: create one standalone DENTELLE TITLE FIELD treatment. A wide open title locus formed by gracious lace-like bookbinder dentelle returns at the left and right, with a few small linked leaf and dot tools in the four shoulders. Keep the central 60 percent completely empty for live title lettering. The silhouette must read as fine dentelle tooling rather than a rectangular label.
+Style/medium: crisp flat vector-like raster artwork, solid flat warm-gold lines and a single dark sepia outline where needed, subtly hand-drawn bowed geometry, historically plausible bookbinding ornament, elegant and restrained.
+Composition: centered horizontal ornament, about 2.2:1 aspect ratio, generous open center, symmetrical overall with tiny hand-drawn asymmetry, no surrounding book or cover.
+Background: genuinely transparent alpha across the entire canvas outside the drawn tooling.
+Text: none. Do not render letters, words, symbols that resemble type, or placeholder lines inside the title aperture.
+Constraints: no lighting model, no highlights, no shadows, no gradients, no texture, no blur, no glow, no bevel, no photographic material, no white canvas, no rectangular badge fill, no border touching the image edges, no watermark. The empty live-text aperture must remain uncluttered.
+
+Final transparency recreation prompt:
+
+Recreate this exact open dentelle title ornament as a clean transparent-background raster asset. Preserve the existing proportions, curls, leaves, dots, line weight, restrained gold-and-dark-brown palette, and broad empty center. The reference already has correct transparency: keep all outside pixels and the entire center aperture truly transparent. Output a real alpha-channel PNG cutout; do not draw or simulate a checkerboard, white backdrop, paper, or colored field. No text and no added elements.

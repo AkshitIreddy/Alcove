@@ -1,0 +1,23 @@
+GENERATION PROMPT
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for an illustrated book-cover customization system
+Reference image: use the supplied Alcove binding study only for its flat restrained bookbinder tooling language and warm dull-gold/sepia line proportions; do not copy its books or text.
+Primary request: create one standalone GROLIER LOZENGE title treatment: a true broad horizontal diamond-shaped morocco-leather onlay, its four points unmistakable, with two elegant nested gilt fillets and tiny split-leaf terminal tools at the left and right points. Preserve a large calm diamond-shaped center for live title lettering. It must read as a Renaissance Grolier binding lozenge, not a clipped rectangle, shield, hexagon, UI badge, or gemstone.
+Style/medium: crisp flat vector-like raster artwork, one solid deep oxblood leather fill, one dark sepia outline, solid flat muted-gold tooling, subtly bowed hand-drawn edges, gracious and historically plausible.
+Composition: centered horizontal lozenge, about 2:1 overall aspect, large uncluttered central aperture, ornament confined near the nested perimeter and points, no surrounding book or cover.
+Background: genuinely transparent alpha outside the lozenge.
+Text: none. No letters, words, title placeholders, or fake writing.
+Constraints: no lighting, no highlights, no shadows, no gradients, no texture, no blur, no glow, no bevel, no photographic leather, no rectangular plaque, no border touching canvas edges, no watermark.
+
+SEMANTIC-COLOUR EDIT PROMPT
+Use case: precise-object-edit
+Asset type: production transparent raster overlay using three semantic source pigments for runtime recolouring
+Primary request: preserve the exact Grolier lozenge geometry and transparent outside. Repaint the entire leather body as one perfectly uniform flat pale cream #f2e6ce source colour. Repaint the single outer contour as dark brown #432934. Repaint both nested fillets and leaf terminals as muted gold #c5a465. Keep all colours solid and unshaded. The cream is a semantic source slot and will become oxblood at runtime.
+Background: true transparent alpha outside the diamond.
+Text: none.
+Invariants: same broad diamond, same four points, same double fillets, same two leaf terminals, same completely empty live-title center.
+Constraints: use only #f2e6ce, #432934, #c5a465 plus antialias alpha; no gradient, lighting, shadow, highlight, glow, bevel, texture, checkerboard, white matte, new ornament, or watermark.
+
+Final transparency recreation prompt:
+
+Recreate this exact Grolier lozenge title plaque as a clean transparent-background raster asset. Preserve the broad diamond silhouette, pale ground, dark outer contour, two fine nested muted-gold fillets, small leaf-arrow terminals at left and right, and completely blank central title field. The reference already has correct transparency: keep all pixels outside the diamond truly transparent. Output a real alpha-channel PNG cutout; do not draw or simulate a checkerboard or white backdrop. Use a pale cream title ground, dark brown outline, and muted gold tooling. No text and no added ornament.

@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: transparent raster decorative rule for a storybook cover
+Primary request: create one restrained under-title gilt flourish: a short shallow bowed line divided at the center by one tiny open diamond and finished with tapered terminals. Nothing above it and nothing else. It belongs to an option named Gilt title.
+Style: crisp flat vector-like raster line art, solid muted gold #c5a465 only, graceful traditional binder's finishing tool.
+Composition: centered horizontal mark, about 5:1 aspect ratio, ample transparent padding, no frame and no filled shape.
+Background: true transparent alpha.
+Text: none.
+Avoid: letters, fake writing, plaque, rectangle, border, long band, gradients, lighting, shadow, texture, blur, glow, bevel, checkerboard, watermark.

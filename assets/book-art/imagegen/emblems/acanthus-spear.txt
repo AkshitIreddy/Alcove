@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 66 “acanthus-spear”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable acanthus spear: one tall sharp spear-shaped central blade rises from a compact base while two deeply cut acanthus leaves wrap upward around its lower half, their curled tips turning outward. The central spear remains fully visible and dominant from base to point. It must read immediately as a pointed spear enriched by acanthus foliage, visually distinct from a fleur-de-lis, fern palmette, or ordinary leaf, at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; heraldic, elegant, restrained, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Favor a strong connected vertical silhouette, broad transparent cuts within the acanthus lobes, and clear separation around the spear blade.
+Composition/framing: centered upright and nearly symmetrical, about 70% of the square canvas, comfortably inset; narrow vertical proportions for a book spine; pointed spear top, sculptural leaf shoulders, and one small flared foot.
+Constraints: exactly one dominant central spear point; exactly two flanking acanthus leaves with deeply notched lobes and outward curls; unified base; robust recognizable silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: weapon shaft or arrowhead alone, fleur-de-lis, crown, feather, plain leaf, fern pair, flower, shell, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

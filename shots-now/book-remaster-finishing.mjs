@@ -1,0 +1,12 @@
+import {chromium} from 'playwright';import {mkdirSync} from 'node:fs';
+const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});const page=await browser.newPage({viewport:{width:1360,height:1100},deviceScaleFactor:1.5});
+await page.routeWebSocket('**', ws=>ws.close());await page.goto('http://127.0.0.1:1420');
+await page.evaluate(async()=>{
+ const f=await import('/src/art/bookFinishingArtwork.ts');const c=await import('/src/art/covers.ts');const sp=await import('/src/art/spines.ts');
+ await (await import('/src/art/bookRasterArtwork.ts')).preloadBookRasterArtwork();
+ await document.fonts.ready;document.body.innerHTML='';document.body.style.cssText='margin:0;padding:24px;background:#eee5d6;color:#432934;font:15px Georgia';
+ const heading=document.createElement('h1');heading.textContent='Book finishing · remastered masters and applied covers';document.body.append(heading);
+ const grid=document.createElement('main');grid.id='finishing';grid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:16px';document.body.append(grid);
+ for(const edge of sp.ACTIVE_EDGE_TREATMENTS){const card=document.createElement('section');card.style.cssText='padding:16px;background:#f8f3e9;border:1px solid #cbbfae';card.innerHTML=`<p>${sp.EDGE_LABELS[edge]}</p>`;const cv=document.createElement('canvas');cv.width=330;cv.height=310;const ctx=cv.getContext('2d');f.paintRemasteredPageEdge(ctx,edge,12,25,20,260);f.paintRemasteredPageEdge(ctx,edge,49,40,5,220);ctx.save();ctx.translate(95,0);c.renderCoverInto(ctx,205,285,{seed:317,palette:18,texture:0,material:'smooth-cloth',frame:2,medallion:1,titleFont:0,gilt:true,titlePlate:'laid-paper-ticket',edge,headTail:true,headTailStyle:1},'Field Notes');ctx.restore();card.append(cv);grid.append(card)}
+ for(const style of sp.ACTIVE_HEAD_TAIL_OPTIONS){const card=document.createElement('section');card.style.cssText='padding:16px;background:#f8f3e9;border:1px solid #cbbfae';card.innerHTML=`<p>${style.label}</p>`;const cv=document.createElement('canvas');cv.width=330;cv.height=130;const ctx=cv.getContext('2d');f.paintRemasteredEndband(ctx,style.index,15,15,288,48,'#884a3b','#e0c48e');f.paintRemasteredEndband(ctx,style.index,15,94,35,6,'#884a3b','#e0c48e');card.append(cv);grid.append(card)}
+});mkdirSync('shots-now/out/book-remaster',{recursive:true});await page.locator('#finishing').screenshot({path:'shots-now/out/book-remaster/finishing.png'});await browser.close();

@@ -1,0 +1,24 @@
+Prompt 1 — rejected gradient study
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: none; create an original ornament informed by refined historical bookbinding finishing tools
+Primary request: create one original emblem named "Moresque knot"
+Subject: one perfectly centred symmetrical interlaced arabesque knot made from two broad continuous ribbon-vines, crossing clearly over and under, forming one tall almond-shaped central counter and four outward curling leaf terminals; unmistakably a Renaissance Moresque strapwork knot rather than rings, an hourglass, a monogram, or a Celtic knot
+Style/medium: intricate Grand historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, graceful hand-cut brass finishing-tool curves, refined and authored
+Composition/framing: one isolated compact vertical ornament occupying about 65% of the square, strong bilateral symmetry, large open counters and clearly readable over-under crossings, generous transparent margin; must remain legible when reduced for a narrow spine
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent connected subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: checkerboard background, Celtic triquetra, chain links, infinity symbol, hourglass, compass, heraldic shield, texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — accepted generation
+
+Use case: logo-brand
+Asset type: isolated transparent emblem master for a historical bookbinding customization system
+Primary request: draw exactly one emblem named "Moresque knot" as a crisp, high-contrast, single-ink ornament
+Subject geometry: two broad ribbon-vines weave over and under around a tall open almond at the centre; each ribbon exits into one large outward C-scroll above and one large outward C-scroll below, for four scroll terminals total; add one small pointed leaf at the top and bottom; unmistakably Renaissance Moresque arabesque strapwork
+Composition: strict bilateral symmetry, centred vertical silhouette, 65% of the square, generous empty transparent margin, large open counters, crossings visibly separated, sturdy at 24 pixels tall
+Rendering: pure flat silhouette and outline shapes in one uniform dark sepia #432934 only, like a clean vector cut from one sheet of ink; hard crisp antialiased edges
+Background: true alpha transparency from edge to edge; there must be no backdrop, no black field, no colour field, no checkerboard graphic
+Constraints: no lighting, no shadow, no glow, no halo, no gradient, no tonal variation, no texture, no paper, no leather, no metallic gold, no blur, no border, no circle, no badge, no plate, no cartouche, no text, no letters, no numbers, no watermark
+Avoid: Celtic triquetra, chain links, infinity symbol, hourglass, monogram, fleur-de-lis, heraldic shield, photorealism, app icon

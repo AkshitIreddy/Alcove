@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 70 “poppy-seedhead”.
+Primary request: Create one original Quiet-tier bookbinder finishing-tool ornament depicting an unmistakable dried poppy seedhead: one plump upright oval capsule divided by three broad vertical transparent seams, topped by a clearly readable flat six-rayed star crown, on one slender slightly bowed stem with two small opposing lance leaves. The crowned seed capsule must be the dominant feature and remain instantly recognizable at 16–24 px, visually distinct from a flower, acorn, vase, or pomegranate.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; spare, calm, botanical, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Favor a bold capsule silhouette, an open star-shaped crown, and very few broad internal cuts.
+Composition/framing: centered upright emblem, about 66% of the square canvas, comfortably inset; seedhead occupies the upper third above a long narrow stem; two leaves create a restrained asymmetrical counterbalance; suitable for a narrow book spine.
+Constraints: exactly one closed seed capsule; one flat six-rayed crown disk clearly separated from the capsule; one stem and two simple leaves; no open blossom petals; robust recognizable silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: blooming poppy, flower petals, rose, tulip, carnation, acorn, urn, pomegranate, wheat, bouquet, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

@@ -3105,13 +3105,9 @@ export const FOCAL_TOOL_DECORATIONS: readonly Decoration[] =
     .filter((row) => PROGRAMME_ARCHETYPES[row[0]].glyph !== undefined)
     .map((row) => row[0]);
 
-const FOCAL_TOOL_DECORATION_SET: ReadonlySet<string> = new Set(
-  FOCAL_TOOL_DECORATIONS,
-);
-
 /** Does this programme already contain its one broad authored focal tool? */
 export function decorationHasFocalTool(id: unknown): boolean {
-  return typeof id === 'string' && FOCAL_TOOL_DECORATION_SET.has(id);
+  return decorationAuthoredFocalGlyph(id) !== null;
 }
 
 function bindingOwnsPhysicalCords(
@@ -3146,6 +3142,18 @@ export const RETIRED_DECORATIONS: readonly Decoration[] = DECORATIONS.filter(
 /** Look up an ornament; unknown ids give `plain` rather than a throw. */
 export function decorSpec(id: unknown): DecorSpec {
   return DECORS[(typeof id === 'string' ? id : '') as Decoration] ?? DECORS.plain;
+}
+
+/**
+ * Resolve the focal directly from the decoration parts the renderer consumes.
+ * This is the semantic authority for both faces of a book; no renderer should
+ * infer a tool from a programme name or keep a second archetype lookup.
+ */
+export function decorationAuthoredFocalGlyph(id: unknown): BroadFocalGlyph | null {
+  const binding = decorSpec(id).parts.find(
+    (part): part is Extract<DecorPart, { k: 'binding' }> => part.k === 'binding',
+  );
+  return binding?.glyph ?? null;
 }
 
 /** Display names for the studio's decoration checklist. */
@@ -4072,8 +4080,7 @@ export function bookPresetAuthoredFocalGlyph(
   id: string | null | undefined,
 ): BroadFocalGlyph | null {
   const decoration = bookPreset(id).decorations.find(decorationHasFocalTool);
-  if (decoration === undefined) return null;
-  return PROGRAMME_ARCHETYPES[decoration as AuthoredSpineProgramId]?.glyph ?? null;
+  return decoration === undefined ? null : decorationAuthoredFocalGlyph(decoration);
 }
 
 export function isBookPresetId(v: unknown): v is BookPresetId {
@@ -4278,10 +4285,14 @@ export function resolveBookDesign(opts: ResolveBookDesignOptions): BookDesign {
   const gilt = opts.gilt ?? chosen.gilt;
   const bands = clamp(Math.round(opts.bands ?? 0), 0, 3);
   // Raised cords already divide the spine horizontally. A second terminal-rule
-  // programme on top turns even a good straight book into a ladder, so the
-  // resolver—not just Surprise—owns the invariant for every direct/manual path.
+  // programme on top turns even a good straight book into a ladder. Keep a
+  // programme which owns the binding's one focal tool, however: the active
+  // artwork painter drops its horizontal rules while cords are present, so the
+  // emblem survives without restoring the ladder. A rule-only programme can
+  // still collapse safely to plain.
+  const chosenOwnsFocal = chosen.decorations.some(decorationHasFocalTool);
   const decorations: readonly Decoration[] =
-    bands > 0 && chosen.decorations.some(decorationHasHorizontalRules)
+    bands > 0 && !chosenOwnsFocal && chosen.decorations.some(decorationHasHorizontalRules)
       ? ['plain']
       : chosen.decorations;
   return {

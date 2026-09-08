@@ -1,0 +1,24 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: a single transparent PNG master for a tiny book-cover and book-spine finishing-tool emblem in Alcove, index 81 “Dog-rose branch”.
+Primary request: Create one intricate but extremely legible, flat hand-drawn bookbinder finishing-tool ornament: a graceful diagonal dog-rose branch with one clearly recognizable open five-petal wild rose bloom, a small visible round center, several elegant pointed serrated leaves, one restrained unopened bud, and two subtle thorns along a flowing stem. It must read instantly as a dog-rose branch when reduced to approximately 16–24 pixels, while retaining graceful Grand-tier craft at cover size.
+Scene/backdrop: fully transparent background, with no enclosing field.
+Subject: one coherent botanical silhouette, centered and comfortably inset, rising diagonally from lower left to upper right. Let the stem curve gently rather than forming a rigid slash. Keep the flower as the primary focal point, with leaf masses balanced on both sides and generous open negative space between forms.
+Style/medium: original flat vector-like line-and-fill artwork inspired by historic brass bookbinding finishing tools; crisp hand-inked contours; restrained botanical engraving simplified for icon scale. One uniform dark sepia ink color (#3A241A) throughout. Use solid flat shapes and deliberate line-weight hierarchy: strong outer silhouette, fewer fine inner cuts, clean petal separations, no hairline filigree.
+Composition/framing: square individual asset, isolated emblem only, approximately 74% of the canvas in height and width; centered optically; no crop; open negative space around and within the branch; robust silhouette suitable for stamping on book cloth and scaling to a narrow spine.
+Color palette: one dark sepia ink only on transparent pixels.
+Constraints: true alpha transparency; exactly one dog-rose branch emblem; open five-petal flower must be unmistakable; all stems, leaves, petals, bud, and thorns connected or visually unified; preserve clarity at thumbnail scale; crisp antialiased edges; no stray marks.
+Avoid: circle, oval, medallion, badge, cartouche, frame, border, title plate, letters, numbers, text, watermark, paper, book, mockup, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, drop shadow, repeated pattern, excessive botanical clutter, photorealism.
+
+Prompt 2 — Small-scale silhouette refinement
+
+Refine the supplied dog-rose branch emblem while preserving its one-color dark sepia (#3A241A), transparent background, diagonal lower-left to upper-right gesture, and historic brass bookbinder finishing-tool character.
+
+Make one targeted change for small-scale clarity: simplify and consolidate the design into a bolder stamp-ready silhouette. The main open bloom must have exactly five broad, clearly separated dog-rose petals and a simple compact round center with only five or six robust stamens. Reduce the foliage to about five distinct serrated leaves total, grouped in balanced masses with open transparent gaps between them. Keep one small closed bud near the upper end. Make the gently curved main stem and side stems thicker and fully connected, and retain two clearly readable small thorns. Increase the negative space and remove hairline veins, tiny center dots, excessive serrations, and delicate interior filigree that would disappear at 16–24 pixels. Keep the whole single emblem optically centered, comfortably inset, and about 70–74% of the square canvas.
+
+Do not add any circle, oval, medallion, badge, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, extra flowers, or photorealism. Preserve genuine alpha transparency and crisp antialiased edges.
+
+Prompt 3 — Transparency correction
+
+Background-extraction correction only. Preserve the supplied dog-rose branch artwork exactly: same five-petal bloom, compact center, five leaves, closed bud, two thorns, dark sepia color, line weight, silhouette, scale, position, and square composition. Remove the visible gray-and-white checkerboard completely and replace every background pixel with genuine alpha transparency (RGBA, alpha 0). The checkerboard is a preview artifact and must not remain in the actual pixels. Keep only the sepia emblem pixels with crisp antialiased alpha edges. Do not redraw, recolor, crop, resize, add, or remove any part of the emblem. No background color, no checkerboard pattern, no white matte, no texture, no shadow, no glow, no text, no border, no badge. Deliver one square transparent PNG asset.

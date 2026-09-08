@@ -1,0 +1,59 @@
+IMAGEGEN PROMPT 1
+
+Use case: logo-brand
+Asset type: individual square raster master for Alcove book-cover and narrow book-spine ornament, active emblem index 2, ID foliate-starflower
+Primary request: Create one original Grand bookbinder finishing-tool emblem of a foliate starflower. Build a single compact eight-point bloom: four long spear-shaped petals on the cardinal axes alternating with four shorter leaf-shaped petals on the diagonals. Let paired inner veins curl gently toward a small open star-shaped heart. The result must read immediately as both a flower and a star, with elegant botanical rhythm and generous gaps between petals.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, checkerboard, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder finishing-tool artwork drawn entirely in one uniform dark sepia ink color, approximately #3A2418; graceful hand-cut historical curves, crisp vector-like hard edges, no tonal modeling.
+Composition/framing: exactly one centered upright radial starflower, isolated and balanced, occupying about 66% of the square with roomy transparent margins; broad petal outlines and minimal inner veins sturdy enough for a 16 px emblem.
+Constraints: actual transparent PNG alpha; one continuous visual object; eight clearly separated points; open negative space; no cropped edges; no text or letters; visually distinct from a plain rosette, sun, diamond, or fleur-de-lis.
+Avoid: surrounding circle, oval, badge, medallion, cartouche, shield, wreath, stem, loose leaves, enclosing frame, realistic flower, dense hatching, tiny pollen dots, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, extra symbols, duplicate flowers.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Foliate Starflower emblem, active index 2
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact eight-point foliate starflower artwork: its petal geometry, star-shaped open heart, inner curls and veins, symmetry, proportions, line weight, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Foliate Starflower edit target.
+Scene/backdrop: fully transparent outside the starflower with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated starflower in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing line, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT 2
+
+Use case: background-extraction
+Asset type: alpha-channel correction for Alcove Foliate Starflower emblem, active index 2
+Primary request: Extract the dark sepia eight-point foliate starflower from Image 1 onto a genuinely empty transparent canvas. The pale gray-and-white checker pattern in Image 1 is an unwanted baked background, not transparency artwork: remove every checker square completely. Return a PNG that contains a real non-opaque alpha channel. Preserve the starflower itself exactly, including every petal, curl, vein, open center, proportion, line weight, and margin.
+Input image: Image 1 is the exact accepted Foliate Starflower source and the only artwork to retain.
+Scene/backdrop: alpha value 0 everywhere outside the sepia motif; no visible or baked background of any color or pattern.
+Constraints: one isolated unchanged starflower; square canvas; transparent PNG with opaque=False; clean antialiased motif edges; no text or watermark.
+Avoid: drawing a checkerboard to symbolize transparency, white or gray field, matte, halo, paper, redraw, reinterpretation, new detail, missing detail, crop, recolor, texture, gradient, shadow, glow, lighting, blur, or extra object.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT 3
+
+Use case: background-extraction
+Asset type: alpha-channel correction for Alcove Foliate Starflower emblem, active index 2
+Primary request: Cut out only the dark brown foliate starflower from Image 1. Delete all light background pixels completely and make them alpha 0. Image 2 demonstrates the required real transparent output behavior: use it only as an alpha-channel example, never as artwork. Preserve Image 1's starflower exactly and do not introduce any crown elements. In the generated preview, the empty transparent area may display as solid black like Image 2; it must never display a gray-and-white checker pattern.
+Input images: Image 1 is the exact Foliate Starflower artwork to retain; Image 2 is a successful transparent Crown file supplied only to demonstrate real alpha encoding.
+Scene/backdrop: genuinely empty alpha 0 canvas everywhere outside the starflower.
+Constraints: output one unchanged dark sepia eight-point starflower; square RGBA PNG; opaque=False; clean antialiased edges; preserve all original margins; no text or watermark.
+Avoid: baked checkerboard, white field, gray field, opaque black background, crown geometry, redraw, new ornament, missing detail, crop, recolor, gradients, shadows, textures, or extra objects.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT 4
+
+Use case: background-extraction
+Asset type: transparent cutout correction for Alcove Foliate Starflower emblem, active index 2
+Primary request: Remove the solid black background from Image 1 and replace it with genuine transparency. Retain only the dark sepia foliate starflower pixels. The black field is not part of the artwork. Produce an actual RGBA PNG whose empty canvas has alpha 0 and whose image verifier reports opaque=False. Preserve the starflower geometry, brown ink color, line weight, open center, eight petals, inner curls, and framing exactly.
+Input image: Image 1 is the accepted starflower on an unwanted solid black field; Image 2 demonstrates the required transparent file encoding only.
+Scene/backdrop: no rendered backdrop at all, only transparent alpha outside the brown starflower.
+Constraints: one unchanged isolated starflower; square transparent PNG; clean antialiased cutout edges; no text or watermark.
+Avoid: opaque black, white, gray, or checkerboard background; crown elements; redraw; recolor; crop; new or missing detail; matte; halo; gradient; texture; lighting; shadow; or extra object.
+
+FRESH DIRECT IMAGEGEN PROMPT
+
+Clean transparent PNG, one-color vector cutout. One Grand eight-point foliate starflower bookbinder tool: four long spear petals alternating with four shorter leaf petals, a small open star-shaped center, and only two restrained inner curls. Solid dark sepia #3A2418 with crisp flat edges and generous open gaps. Centered square composition with roomy margins, unmistakable at cover and narrow-spine size. Real alpha transparency; the file must report opaque=False. No checkerboard, black field, white field, circle, badge, text, texture, gradient, lighting, shadow, glow, or extra object. Use the supplied Alcove binding study only for its restrained antique finishing-tool character.
+
+FRESH-CANDIDATE BACKGROUND-EXTRACTION IMAGEGEN PROMPT 1
+
+Transparent-background edit. Keep only the single dark sepia foliate starflower from Image 1 and delete the pale checkerboard completely. Return a real RGBA PNG with alpha 0 outside the motif and opaque=False. Preserve the exact eight-petal geometry, open star center, curls, line weight, scale, and margins. No drawn checkerboard, black or white field, redraw, recolor, crop, text, texture, gradient, shadow, or extra object.

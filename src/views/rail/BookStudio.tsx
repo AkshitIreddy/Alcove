@@ -151,6 +151,7 @@ import {
 import { stopShelfKeys } from './shelfKeys';
 import {
   bookPreviewGeometry,
+  manualBookStyleEditClearsComposition,
   previewRectStyle,
   type BookStudioControlTarget,
 } from './bookStudioPreview';
@@ -509,7 +510,6 @@ const CURATED_ROWS: Readonly<Record<StyleRowAxis, CuratedRow>> = {
 
 const CURATED_ROW_LIST: readonly CuratedRow[] = Object.values(CURATED_ROWS);
 
-const QUIET_SURFACE_FRAMES: ReadonlySet<number> = new Set([0, 2, 24, 28]);
 const QUIET_SURFACE_TITLES: ReadonlySet<string> = new Set([
   'none',
   'debossed',
@@ -532,7 +532,9 @@ function materialOwnsSurface(material: MaterialLook): boolean {
  * Final composition guard shared by manual chips and local section dice.
  * A figured covering or binding-authored centrepiece has already spent the
  * book's focal budget; it cannot accumulate a second emblem. Figured fields
- * also keep only quiet direct lettering and one structural fillet.
+ * also keep only quiet direct lettering. The frame picker and complete
+ * Surprise programmes are explicit authored choices, so this seam must not
+ * replace their perimeter after the recipe has been composed.
  */
 function reconcileActiveSurfaceComposition(
   draw: BookStyleOverrides,
@@ -548,10 +550,7 @@ function reconcileActiveSurfaceComposition(
       out.coverMedallion = ORNAMENT_NONE;
     }
   }
-  if (surfaceLed) {
-    if (out.coverFrame !== undefined && !QUIET_SURFACE_FRAMES.has(out.coverFrame)) {
-      out.coverFrame = 2;
-    }
+  if (surfaceLed && out.composition !== 'archive-label') {
     if (out.titlePlate !== undefined && !QUIET_SURFACE_TITLES.has(out.titlePlate)) {
       out.titlePlate = out.gilt === true ? 'gilt-direct' : 'blind-lettered';
     }
@@ -937,8 +936,13 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
       // example) authors a label plate. Using that latent value here moved the
       // clickable title outline away from the label actually on the canvas.
       coverTitlePlate: resolved().cover.titlePlate,
-      coverFrame: style().coverFrame,
-      coverMedallion: style().coverMedallion,
+      coverFrame: resolved().cover.frame,
+      coverMedallion: resolved().cover.medallion,
+      coverComposition: resolved().cover.composition,
+      spineCharacter: resolved().spine.spineCharacter,
+      spineEmblemPresent:
+        bookPresetHasAuthoredFocal(pinned() ?? seedBinding()) ||
+        ((resolved().spine.ornamentOn ?? true) && resolved().spine.ornament >= 0),
     });
   });
 
@@ -1082,7 +1086,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   /** Compose and pin, keeping the three axes the reader did not touch. */
   const pickOwn = (patch: Partial<OwnBinding>): void => {
     const binding = ownBindingId({ ...ownParts(), ...patch });
-    applyAppearance(styleWithoutPriorBinding(), binding, binding);
+    applyAppearance({ ...(styleWithoutPriorBinding() ?? {}), composition: null }, binding, binding);
   };
 
   const pickBinding = (id: BookPresetId): void => {
@@ -1090,7 +1094,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
     // picking "Antique Vellum" over a book whose cloth chip had been touched
     // draws a morocco-grained "vellum", which is the studio disagreeing with
     // itself in the same glance.
-    applyAppearance(styleWithoutPriorBinding(), id, id);
+    applyAppearance({ ...(styleWithoutPriorBinding() ?? {}), composition: null }, id, id);
   };
 
   /**
@@ -1114,6 +1118,9 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   const patch = (partial: Partial<BookStyle>): void => {
     const current = normalizeBookStyleOverrides(props.style) ?? {};
     const draft = { ...current, ...partial };
+    if (manualBookStyleEditClearsComposition(Object.keys(partial) as (keyof BookStyle)[])) {
+      draft.composition = null;
+    }
     const material =
       draft.material !== undefined ? materialLookFor(draft.material) : design().material;
     props.onStyleChange(
@@ -1130,6 +1137,7 @@ export default function BookStudio(props: BookStudioProps): JSX.Element {
   const unpatch = (...keys: readonly (keyof BookStyle)[]): void => {
     const current = { ...(normalizeBookStyleOverrides(props.style) ?? {}) };
     for (const key of keys) delete current[key];
+    if (manualBookStyleEditClearsComposition(keys)) current.composition = null;
     props.onStyleChange(
       Object.keys(current).length > 0 ? current : null,
       pinned() ?? seedBinding(),

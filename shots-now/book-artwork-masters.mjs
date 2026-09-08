@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+import { readdirSync } from 'node:fs';
+const browser = await chromium.launch({headless:true});
+const page = await browser.newPage({viewport:{width:1200,height:1200},deviceScaleFactor:1.5});
+const files = readdirSync('assets/book-art').filter(f=>f.endsWith('.svg'));
+await page.goto('http://127.0.0.1:1420');
+await page.setContent(`<body style="margin:0;padding:28px;background:#f2e6ce;color:#432934;font:16px Georgia"><h1 style="font-size:28px;font-weight:400">Alcove · Bookbinder’s artwork</h1><p>Original vector masters · lettering pieces, ruled borders, and matched spine / cover tools</p><main style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">${files.map(f=>`<section style="background:#435954;padding:18px;border-radius:3px"><img src="http://127.0.0.1:1420/assets/book-art/${f}" style="width:100%;height:180px;object-fit:contain"><p style="color:#f2e6ce;text-align:center;margin-bottom:0">${f.replace('.svg','').replaceAll('-',' ')}</p></section>`).join('')}</main></body>`);
+await page.locator('img').evaluateAll(imgs=>Promise.all(imgs.map(i=>i.decode())));
+await page.screenshot({path:'shots-now/out/book-artwork-masters.png',fullPage:true});
+await browser.close();

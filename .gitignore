@@ -47,3 +47,10 @@ shots-now/**/*.gif
 # belong in git; their machine-specific stdout/stderr and sampled JSON do not.
 shots-now/runlogs/
 shots-now/dice/
+
+# Rebuilt by the before/after book-art harness; source remains in Git history.
+shots-now/reference-baseline/
+# Failed generations and whole-book direction studies are local working art.
+assets/book-art/imagegen/studies/
+assets/book-art/imagegen/*study*.png
+assets/book-art/imagegen/laid-paper-ticket-v1.png

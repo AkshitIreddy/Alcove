@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 30 “split-pomegranate”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable split pomegranate: a single crowned fruit opened into two graceful hinged halves, with a clean central cleft and two compact clusters of large teardrop seeds visible inside. Include a short curved stem and two small leaves beneath the crown. The fruit must read immediately as an opened pomegranate, never as a generic flower, shell, or apple, at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; stately, symmetrical with subtle organic irregularity, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Express seeds and rind through bold solid shapes separated by generous transparent cuts.
+Composition/framing: centered upright emblem, about 68% of the square canvas, comfortably inset; a compact crowned silhouette suited to a narrow spine; two open halves balanced around a clearly visible vertical split.
+Constraints: exactly one split pomegranate; unmistakable five-point crown/calyx; two rind halves; a few large readable seeds rather than many dots; strong unified silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: whole closed pomegranate, apple, flower rosette, scallop shell, bowl, heart, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

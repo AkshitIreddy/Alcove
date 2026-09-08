@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 68 “iris-fan”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable iris fan: three narrow upright standard petals rise from one throat, while two broad outer fall petals sweep sideways and downward with one bold beard-shaped transparent cut in each; two slim sword leaves flare beneath the bloom. The tiered upright standards and drooping bearded falls must identify it as an iris, visually distinct from a tulip, lily, fleur-de-lis, or generic palmette, at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; poised, fan-like, graceful, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Build a strong connected silhouette with a few broad transparent separations between standards, falls, and leaves.
+Composition/framing: centered upright emblem, about 68% of the square canvas, comfortably inset; bloom forms a wide low fan around three tall central petals, narrowing into a compact throat and two lower sword leaves; suitable for a narrow book spine.
+Constraints: exactly three upright standard petals; exactly two broad drooping fall petals with readable beard cuts; exactly two sword leaves; one unified throat; robust recognizable silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: tulip cup, lily trumpet, fleur-de-lis, anthemion, crown, feather, rose, carnation, bouquet, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

@@ -1,0 +1,22 @@
+Prompt 1 — generation
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Input image: binding-study-flat-v2.png is a style and craftsmanship reference only; match its graceful flat linework and confident spacing, without reproducing books, lettering, frames, layout, palette, or existing sprigs
+Primary request: create one original emblem named "Reed bundle"
+Subject: exactly three tall river reeds gathered into one upright sheaf, each with a bold elongated seed head and one long blade, crossed once by a simple binding tie near the lower third; unmistakably reeds rather than wheat
+Style/medium: restrained Quiet historical bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, hand-cut brass finishing-tool curves, elegant vertical rhythm
+Composition/framing: one isolated centred narrow vertical motif occupying about 72% of the square, the three heads at staggered heights, stems and blades clearly separated by open negative space, sturdy enough for narrow-spine reduction
+Colour palette: exactly one dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, text, letters, numbers, watermark
+Avoid: grain kernels, wheat ears, more than three reeds, water scene, vase, texture, paper, leather, grain texture, lighting, highlights, shadows, gradients, glow, bloom, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — ImageGen background extraction
+
+Use case: background-extraction
+Asset type: final transparent bitmap master for the Alcove book-customisation emblem "Reed bundle"
+Input image: reed-bundle-rgb.png is the edit target
+Primary request: preserve the supplied reed-bundle artwork exactly—same three staggered cattail seed heads, three tall stems, two long blades, doubled binding tie, dark sepia colour, line weight, silhouette, scale, placement, and square composition—and remove only the pale gray-and-white checkerboard background
+Scene/backdrop: replace every checkerboard and pale background pixel with genuine alpha transparency
+Constraints: change only the background; keep the emblem artwork unchanged; output a true RGBA transparent PNG with crisp antialiased alpha edges; no background colour, no checkerboard pattern, no white matte, no crop, no resize, no extra objects, no text, no border, no badge
+Avoid: redrawing, recolouring, changing the reed count, smoothing away linework, texture, shadow, glow, gradient, lighting, watermark

@@ -1,0 +1,13 @@
+Use case: stylized-concept
+Asset type: transparent raster title-furniture overlay for an illustrated book-cover customization system
+Reference image: use only the restrained flat bookbinder-tooling vocabulary of the supplied Alcove study; do not copy its books, shading, or text.
+Primary request: create one standalone ARTS & CRAFTS BLIND TITLE treatment in the Kelmscott manner. Four asymmetric open corner returns, built from broad squared blind rules that stop well before meeting, with one restrained stylized leaf and seed-pod tool growing inward from the upper-left and lower-right corners only. Keep a generous horizontal rectangular center entirely blank for live title lettering. The design must feel hand-cut, structural, scholarly, and quieter than the Dentelle treatment.
+Style/medium: crisp flat vector-like raster line artwork, one solid dark sepia blind-tool colour plus a few solid muted-gold leaf accents, subtly bowed hand-drawn geometry, no filled plaque.
+Composition: centered horizontal open compartment, about 2.1:1 aspect ratio, strong negative space, unequal diagonally balanced corners, no surrounding book or cover.
+Background: genuinely transparent alpha across the full canvas outside the drawn rules.
+Text: none. No letters, words, placeholder strokes, or fake writing in the center.
+Constraints: no continuous outer rectangle, no lighting, no highlights, no shadows, no gradients, no texture, no blur, no glow, no bevel, no photographic material, no border touching the image edges, no watermark.
+
+Final transparency recreation prompt:
+
+Recreate this exact open Arts and Crafts title compartment as a clean transparent-background raster asset. Preserve the asymmetric upper-left and lower-right botanical corner clusters, the two open rule corners, proportions, restrained dark-brown and muted-gold palette, and broad empty center. The reference already has correct transparency: keep all outside pixels and the entire center aperture truly transparent. Output a real alpha-channel PNG cutout; do not draw or simulate a checkerboard, white backdrop, paper, or colored field. No text and no added elements.

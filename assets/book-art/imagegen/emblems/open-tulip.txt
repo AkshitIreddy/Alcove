@@ -1,0 +1,9 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 31 “open-tulip”.
+Primary request: Create one original Quiet-tier bookbinder finishing-tool ornament depicting an unmistakable open tulip in side-front view: one cup-shaped bloom opened into three broad pointed petals, the middle petal rising slightly above two outward-curving side petals, on one slender gently bowed stem with two long blade leaves. It must read instantly as a tulip rather than a lotus, lily, or generic blossom at 16–24 px.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; calm, spare, graceful, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only, with a strong outer silhouette and two or three broad transparent petal cuts.
+Composition/framing: centered upright emblem, about 68% of the square canvas, comfortably inset; narrow vertical gesture suitable for a book spine; bloom occupies the upper third, leaves countercurve around the lower stem with open negative space.
+Constraints: exactly one flower head with three primary pointed petals; exactly one stem and two simple leaves; robust recognizable silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: closed tulip bud, rose, lotus, iris, lily, bouquet, vase, roots, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.

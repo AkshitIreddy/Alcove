@@ -11,6 +11,7 @@ import {
   type CoverParams,
 } from '../src/art/covers';
 import { CLOTHS, FLAT, type FlatCtx } from '../src/art/flat';
+import { BOOK_EMBLEM_MASTERS } from '../src/art/bookEmblemArtwork';
 import { colourContrast } from '../src/art/titleContrast';
 
 type Operation = readonly [name: string, ...args: readonly unknown[]];
@@ -107,6 +108,38 @@ const EXPECTED_PROGRAMMES = new Map<number, CoverEmblemProgramme>([
   [83, 'reed-bundle'],
   [84, 'moresque-knot'],
   [85, 'tudor-rose-standard'],
+  [86, 'lozenge-fleuron'],
+  [87, 'upright-fleuron'],
+  [88, 'broad-fleur-de-lis'],
+  [89, 'rosette-arabesque'],
+  [90, 'anthemion-fan'],
+  [91, 'anthemion-fan'],
+  [92, 'stellar-palmette'],
+  [93, 'broad-fleur-de-lis'],
+  [94, 'lozenge-fleuron'],
+  [95, 'split-pomegranate'],
+  [96, 'moresque-knot'],
+  [97, 'anthemion-fan'],
+  [98, 'oak-acanthus-volutes'],
+  [99, 'upright-fleuron'],
+  [100, 'lozenge-fleuron'],
+  [101, 'open-tulip'],
+  [102, 'fern-palmette'],
+  [103, 'dog-rose-branch'],
+  [104, 'olive-cutting'],
+  [105, 'iris-triptych'],
+  [106, 'rosette-arabesque'],
+  [107, 'upright-fleuron'],
+  [108, 'lozenge-fleuron'],
+  [109, 'lozenge-fleuron'],
+  [110, 'rowan-spray'],
+  [111, 'open-tulip'],
+  [112, 'lozenge-fleuron'],
+  [113, 'laurel-branch'],
+  [114, 'anthemion-fan'],
+  [115, 'stellar-palmette'],
+  [116, 'reed-bundle'],
+  [117, 'lozenge-fleuron'],
 ]);
 
 const WELCOME_COVER: CoverParams = {
@@ -155,7 +188,14 @@ describe('authored cover emblem programmes', () => {
     for (const [index, programme] of EXPECTED_PROGRAMMES) {
       expect(coverEmblemProgramme(index), String(index)).toBe(programme);
     }
-    expect(new Set(EXPECTED_PROGRAMMES.values()).size).toBe(ACTIVE_COVER_EMBLEM_INDICES.length);
+    // The established case retains its one-to-one finishing programmes. New
+    // devices may share a compatible open setting, but each still owns a
+    // distinct authored master on both the cover and spine.
+    expect(new Set([...EXPECTED_PROGRAMMES.values()].slice(0, 29)).size).toBe(29);
+    expect(Object.keys(BOOK_EMBLEM_MASTERS).map(Number)).toEqual(ACTIVE_COVER_EMBLEM_INDICES);
+    expect(new Set(Object.values(BOOK_EMBLEM_MASTERS).map(({ source }) => source)).size).toBe(
+      ACTIVE_COVER_EMBLEM_INDICES.length,
+    );
     expect(normalizeCoverEmblemIndex(6)).toBe(12);
     expect(normalizeCoverEmblemIndex(19)).toBe(12);
     expect(normalizeCoverEmblemIndex(26)).toBe(26);
@@ -191,15 +231,19 @@ describe('authored cover emblem programmes', () => {
         const addedCurves =
           count(operations, 'quadraticCurveTo') - count(quiet, 'quadraticCurveTo') +
           count(operations, 'bezierCurveTo') - count(quiet, 'bezierCurveTo');
-        expect(addedCurves, at).toBeGreaterThanOrEqual(4);
+        // Geometric lozenges use straight cuts; botanical tools use curves.
+        // Both must contribute authored geometry beyond a generic surround.
+        const addedLines = count(operations, 'lineTo') - count(quiet, 'lineTo');
+        expect(addedCurves + addedLines, at).toBeGreaterThanOrEqual(4);
         const addedFills = count(operations, 'fill') - count(quiet, 'fill');
         const addedStrokes = count(operations, 'stroke') - count(quiet, 'stroke');
         // The append-only botanical tools are deliberately pure open strikes;
         // earlier centre blocks may retain a few solid cut leaves. Either way,
         // authored mass must come from several real marks rather than one fill.
-        expect(addedFills + addedStrokes, at).toBeGreaterThanOrEqual(4);
+        const addedMarks = count(operations, 'moveTo') - count(quiet, 'moveTo');
+        expect(addedFills + addedMarks, at).toBeGreaterThanOrEqual(4);
         expect(addedStrokes, at)
-          .toBeGreaterThanOrEqual(3);
+          .toBeGreaterThanOrEqual(1);
 
         const title = operations
           .filter(([operation]) => operation === 'fillText')
@@ -219,13 +263,17 @@ describe('authored cover emblem programmes', () => {
     const curves = count(crown, 'quadraticCurveTo') - count(quiet, 'quadraticCurveTo');
     const fills = count(crown, 'fill') - count(quiet, 'fill');
 
+    // The SVG master is an open circlet and three leaves, without the old
+    // second title compartment or filled furniture surrounding the crown.
     expect(beziers).toBe(0);
-    expect(curves).toBeGreaterThanOrEqual(20);
-    // This includes the dedicated shelf-scale strike and crown-title fillets.
-    // The ceiling prevents the return of domes, wreaths and micro-laurel.
-    expect(curves).toBeLessThanOrEqual(48);
-    expect(fills).toBeGreaterThanOrEqual(10);
-    expect(fills).toBeLessThanOrEqual(14);
+    expect(curves).toBeGreaterThanOrEqual(2);
+    // Fourteen curves are the open three-arc crown plus its two interrupted
+    // lateral fillets at this size. Keep a little numeric tolerance without
+    // admitting the former 20+ curve filled crown and micro-laurel surround.
+    expect(curves).toBeLessThanOrEqual(16);
+    expect(fills).toBe(0);
+    expect(count(crown, 'stroke') - count(quiet, 'stroke')).toBeGreaterThanOrEqual(1);
+
   });
 });
 

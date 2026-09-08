@@ -1,0 +1,51 @@
+IMAGEGEN PROMPT 1
+
+Use case: logo-brand
+Asset type: individual square raster master for Alcove book-cover and narrow book-spine ornament, active emblem index 5, ID rising-sun
+Primary request: Create one original Quiet bookbinder finishing-tool emblem of a rising sun. Use a clean half-sun emerging above two gently bowed horizon rules, with exactly seven broad tapered rays fanning upward. Keep the center open rather than solid and let the ray spacing create clear calm negative space. It should feel optimistic, old-world, and restrained, like one small brass stamp on a clothbound field notebook.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, checkerboard, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder finishing-tool artwork drawn entirely in one uniform dark sepia ink color, approximately #3A2418; subtly hand-cut curves, crisp vector-like hard edges, no tonal modeling.
+Composition/framing: exactly one centered horizontal rising-sun motif, isolated, occupying about 66% of the square width and 48% of its height with generous transparent margins; bold medium stroke weight sturdy enough for a 16 px emblem and narrow spine.
+Constraints: actual transparent PNG alpha; one coherent visual object; exactly seven distinct rays; large gaps; no cropped edges; no text or letters; clearly a sunrise rather than a full sun, fan, shell, or crown.
+Avoid: full circle, surrounding circle, oval, badge, medallion, cartouche, shield, mountains, sea waves, clouds, face, crown-like points, enclosing frame, dense hatching, realistic landscape, gold color, gradients, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, extra symbols, duplicate suns.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Rising Sun emblem, active index 5
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact rising-sun artwork: its half-sun, seven tapered rays and horizon marks, bowed base rule, proportions, line weight, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Rising Sun edit target.
+Scene/backdrop: fully transparent outside the sun with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated rising-sun motif in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing line, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT 2
+
+Use case: background-extraction
+Asset type: alpha-channel correction for Alcove Rising Sun emblem, active index 5
+Primary request: Cut out only the dark brown rising-sun motif from Image 1. Delete every light gray and white checker square completely and make that empty area alpha 0. Image 2 demonstrates the required true transparent PNG encoding; use it only as an alpha-channel example and do not introduce crown geometry. Preserve Image 1's half-sun, seven tapered rays and horizon marks, bowed rule, proportions, line weight, and framing exactly.
+Input images: Image 1 is the exact Rising Sun artwork to retain; Image 2 is a successful transparent file supplied only to demonstrate real alpha encoding.
+Scene/backdrop: genuine transparent alpha outside the brown rising-sun motif; in the generated preview the empty area should display as black like Image 2 rather than a drawn checkerboard.
+Constraints: one unchanged isolated rising sun; square RGBA PNG whose verifier reports opaque=False; clean antialiased edges; no text or watermark.
+Avoid: baked checkerboard, opaque black, white, or gray field, crown elements, redraw, recolor, crop, new or missing detail, matte, halo, gradient, texture, lighting, shadow, or extra object.
+
+FRESH DIRECT IMAGEGEN PROMPT
+
+Clean transparent PNG, one-color vector cutout. One Quiet rising-sun bookbinder tool: an open half-sun above one gently bowed horizon rule, exactly seven broad tapered rays, calm generous spacing, and a compact horizontal silhouette. Solid dark sepia #3A2418 with crisp flat edges and a sturdy line weight. Centered square composition with roomy margins, unmistakable at cover and narrow-spine size. Real alpha transparency; the file must report opaque=False. No checkerboard, black field, white field, full circle, badge, text, landscape, texture, gradient, lighting, shadow, glow, or extra object. Use the supplied Alcove binding study only for its restrained antique finishing-tool character.
+
+FRESH-CANDIDATE BACKGROUND-EXTRACTION IMAGEGEN PROMPT 1
+
+Transparent-background edit. Keep only the single dark sepia rising-sun motif from Image 1 and delete the pale checkerboard completely. Return a real RGBA PNG with alpha 0 outside the motif and opaque=False. Preserve the exact half-sun, seven rays, bowed horizon rule, line weight, scale, and margins. No drawn checkerboard, black or white field, redraw, recolor, crop, text, texture, gradient, shadow, or extra object.
+
+FRESH-CANDIDATE BACKGROUND-EXTRACTION IMAGEGEN PROMPT 2
+
+Make Image 1 a clean transparent icon file. Preserve the exact rising-sun shapes, but render every retained motif pixel as one solid flat dark sepia #3A2418. Delete the checkerboard entirely and set all background pixels to alpha 0. Output must be RGBA and opaque=False, like Image 2's valid alpha encoding. No darkness around the motif, no glow, no haze, no semi-transparent field, no gradient, no lighting, no background color, no redraw, no crop, no text, and no extra object.
+
+FRESH DIRECT IMAGEGEN PROMPT 2
+
+Transparent PNG icon asset with a genuinely empty alpha background. Draw one quiet bookbinder rising-sun mark in one solid flat dark sepia color: an open half-sun, exactly seven broad tapered rays, and one shallow bowed horizon line. Keep every ray separate with generous gaps and use crisp sturdy vector-like edges. Center the compact horizontal motif with wide empty margins. No checkerboard, black backdrop, white backdrop, haze, gradient, glow, texture, shadow, badge, full circle, landscape, text, or other object.
+
+DIRECT-CANDIDATE CLEANUP IMAGEGEN PROMPT
+
+Precise transparent-icon cleanup. Image 1 already has real alpha. Erase every diffuse brown or black haze pixel surrounding the rising-sun shapes, leaving alpha 0 throughout the empty field. Keep only the seven crisp tapered rays, the half-sun arc, and the single bowed horizon rule. Make those retained shapes fully opaque and one uniform flat dark sepia #3A2418. Preserve their exact positions, sizes, spacing, and square framing. No glow, gradient, soft shadow, aura, lighting, texture, extra line, crop, checkerboard, black field, white field, text, or other object.

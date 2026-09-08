@@ -1,0 +1,31 @@
+Prompt 1 — Initial generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 67 “carnation-bloom”.
+Primary request: Create one original Grand-tier bookbinder finishing-tool ornament depicting an unmistakable carnation bloom: one dense rounded flower head built from three bold tiers of scalloped, irregularly notched petals, with a small toothed calyx beneath, on a short gently curving stem bearing two narrow opposing leaves. The ruffled carnation edge is the defining feature and must remain clear at 16–24 px, visually distinct from a five-petal rose, tulip, peony, or chrysanthemum.
+Style/medium: flat vector-like hand-drawn historical brass-tool artwork; lush but disciplined, graceful, crisp, and stamp-ready. Use one uniform dark sepia ink (#3A241A) only. Shape the petal tiers as connected masses separated by a few broad transparent clefts, never a cloud of tiny lines.
+Composition/framing: centered upright emblem, about 68% of the square canvas, comfortably inset; broad ruffled head over a narrow stem; compact enough for a narrow book spine; slight organic asymmetry with clear negative space around leaves and petal tiers.
+Constraints: exactly one carnation head; visibly fringed/scalloped outer rim; three readable petal tiers; one small calyx, one stem, two leaves; robust distinctive silhouette; true RGBA alpha transparency with background pixels alpha 0; crisp antialiased edges.
+Avoid: rose, tulip, lotus, iris, poppy, peony ball, daisy, chrysanthemum rays, bouquet, vase, circle, badge, medallion, cartouche, frame, border, title plate, text, letters, numbers, watermark, paper, book, mockup, visible checkerboard, white matte, background color, texture, grain, gradients, lighting, highlights, shading, bevel, metallic effects, glow, blur, shadow, repeated pattern, photorealism.
+
+Prompt 2 — Small-scale simplification
+
+Refine the supplied carnation-bloom emblem for narrow-spine clarity while preserving its single ruffled flower head, small calyx, curved stem, two opposing narrow leaves, vertical placement, and graceful bookbinder-tool character. Simplify the flower from many busy striped petals into exactly three bold nested tiers of broad scalloped and irregularly notched petal masses, separated by only a few wide transparent clefts. Keep the unmistakable fringed carnation outline, but remove all hairline hatching, spikes, tiny cuts, and white painted details. Convert all pale interior areas into genuine transparent negative space. Make every remaining visible mark one uniform dark sepia ink (#3A241A), with no tonal variation. Preserve true RGBA alpha transparency outside and within the emblem. Keep the compact head-to-stem silhouette readable at 16–24 px, with crisp antialiased edges. No checkerboard, white matte, second color, gradient, lighting, shading, highlight, texture, shadow, circle, badge, frame, text, or mockup. Deliver one individual square transparent PNG.
+
+Prompt 3 — Background extraction attempt
+
+Background-extraction and ink cleanup only. Preserve the supplied detailed carnation-bloom artwork exactly: the same large ruffled carnation head, layered petal contours, toothed calyx, curved stem, two leaves, silhouette, scale, position, and square composition. Do not simplify or redraw the flower. Convert all white or pale interior petal marks, leaf marks, stem marks, and calyx marks into genuine transparent negative-space cutouts, not white paint. Preserve the already transparent outer background as alpha 0. Make every remaining visible mark one uniform dark sepia ink (#3A241A), with no tonal variation. Keep crisp antialiased alpha edges. No checkerboard, white matte, second color, background color, texture, gradient, lighting, shading, highlight, shadow, glow, text, border, badge, or mockup. Deliver one square RGBA transparent PNG asset.
+
+Prompt 4 — Transparency correction attempt
+
+Background-extraction correction only. Preserve the supplied detailed carnation-bloom artwork exactly: same ruffled multi-tier flower head, calyx, curved stem, two leaves, all sepia contours and transparent interior cuts, silhouette, scale, position, and square composition. Remove the visible gray-and-white checkerboard completely and replace every background pixel with genuine alpha transparency (RGBA, alpha 0). Make every pale area within the petals, calyx, stem, and leaves genuine transparent negative space rather than white paint. The checkerboard is a preview artifact and must not remain in the actual pixels. Keep only the dark sepia emblem pixels with crisp antialiased alpha edges. Do not redraw, recolor, crop, resize, simplify, add, or remove any artwork. No background color, checkerboard pattern, white matte, texture, gradient, lighting, shading, highlight, shadow, glow, text, border, badge, or mockup. Deliver one square transparent PNG asset.
+
+Prompt 5 — Accepted alternate generation
+
+Use case: logo-brand
+Asset type: one transparent square PNG master for Alcove book-cover and narrow-spine finishing-tool emblem, active index 67 “carnation-bloom”.
+Primary request: Draw one bold Quiet-to-Grand bookbinder stamp silhouette of a carnation: one compact rounded ruffled bloom made from three nested scalloped outlines, a small pointed calyx, one gently curved stem, and exactly two long narrow leaves. The serrated wavy edge must identify it as a carnation at 16–24 px.
+Style/medium: extremely clean flat vector-like cut-paper silhouette in one uniform dark sepia ink (#3A241A). Use solid connected sepia masses only. Separate the three petal tiers using wide areas of actual empty transparency, never pale or white paint. No inner hatching or fine veins.
+Composition/framing: centered upright, about 66% of the square, broad bloom over slender stem, generous transparent space, crisp stamp-ready edges.
+Constraints: one bloom, three broad ruffled tiers, one calyx, one stem, two leaves; dark sepia pixels plus transparent pixels only; genuine RGBA alpha background; robust narrow-spine silhouette.
+Avoid: any white or pale pixels, visible checkerboard, background, gradient, tonal shading, highlight, texture, hairline detail, rose spiral, peony ball, chrysanthemum rays, badge, medallion, circle, frame, text, book, mockup, shadow, glow, photorealism.

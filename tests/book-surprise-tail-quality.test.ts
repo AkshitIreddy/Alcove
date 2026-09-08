@@ -41,10 +41,7 @@ describe('Surprise bad-tail quality', () => {
     expect(ACTIVE_EDGE_TREATMENTS).toEqual([
       'plain', 'gilt', 'stained-red', 'sepia-edge', 'deckle', 'red-under-gold',
     ]);
-    expect(BOOK_SURPRISE_EMBLEM_INDICES).toEqual([
-      0, 1, 2, 5, 12, 13, 14, 20,
-      23, 26, 28, 29, 30, 31, 43, 56,
-    ]);
+    expect(BOOK_SURPRISE_EMBLEM_INDICES).toEqual(ACTIVE_ORNAMENT_INDICES);
     for (const ornament of BOOK_SURPRISE_EMBLEM_INDICES) {
       expect(ACTIVE_ORNAMENT_INDICES).toContain(ornament);
     }
@@ -131,7 +128,7 @@ describe('Surprise bad-tail quality', () => {
         record(recipe.constraintViolations === 0, `${at} has ${recipe.constraintViolations} hard violations`);
         record(recipe.score >= 82, `${at} score ${recipe.score}`);
         record(recipe.archetype === `${direction.id}-binding-programme`, `${at} widened its grammar`);
-        record(audit.programmes.length <= 1, `${at} stacked ${audit.programmes.join('+')}`);
+        record(audit.programmes.length <= (direction.id === 'grand' ? 2 : 1), `${at} stacked ${audit.programmes.join('+')}`);
         record(audit.repeatedField === false, `${at} emitted a repeated field`);
         record(recipe.style.charm === 'none', `${at} emitted ${recipe.style.charm}`);
         record(recipe.style.cornerProtectors !== true, `${at} emitted corner hardware`);
@@ -192,7 +189,7 @@ describe('Surprise bad-tail quality', () => {
       record(seenPresets.size >= 4, `${direction.id} collapsed to ${seenPresets.size} presets`);
       record(signatures.size >= 28, `${direction.id} collapsed to ${signatures.size}/40 layouts`);
       if (direction.id === 'quiet') {
-        record(emblemCount === 0, `${direction.id} stamped ${emblemCount}/40 restrained books`);
+        record(emblemCount <= 8, `${direction.id} stamped ${emblemCount}/40 restrained books`);
       } else {
         record(
           emblemCount > 0 || authoredCount === 40,
@@ -238,7 +235,7 @@ describe('Surprise bad-tail quality', () => {
       expect(recipe.constraintViolations, at).toBe(0);
       expect(recipe.score, at).toBeGreaterThanOrEqual(82);
       expect(recipe.archetype, at).toBe(`${direction}-binding-programme`);
-      expect(audit.programmes.length, at).toBeLessThanOrEqual(1);
+      expect(audit.programmes.length, at).toBeLessThanOrEqual(direction === 'grand' ? 2 : 1);
       expect(recipe.style.charm, at).toBe('none');
       expect(recipe.style.cornerProtectors, at).toBe(false);
       expect(recipe.style.insetPlate, at).toBe(false);

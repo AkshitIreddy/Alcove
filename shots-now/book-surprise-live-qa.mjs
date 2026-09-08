@@ -3,12 +3,17 @@
  * Restores the exact pre-run binding and style before exiting.
  *
  * Usage: node shots-now/book-surprise-live-qa.mjs [--url=http://127.0.0.1:1420]
+ *        [--direction=grand] [--sabotage=plain-frame]
  */
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const hit = process.argv.find((arg) => arg.startsWith('--url='));
 const base = hit?.slice('--url='.length) || 'http://127.0.0.1:1420';
+const directionName = process.argv.find(arg=>arg.startsWith('--direction='))?.slice('--direction='.length) || 'botanical';
+const sabotagePlainFrame = process.argv.includes('--sabotage=plain-frame');
+const expansion = process.argv.includes('--expansion');
+const GRAND_ORNATE_FRAMES = new Set([43, 48, 51, 52, 54, 55, 59, 60, 61]);
 const out = 'shots-now/out';
 mkdirSync(out, { recursive: true });
 
@@ -28,6 +33,8 @@ const isKnownBookOpenAudioError = (message) =>
   message.includes('at handleOpen');
 
 try {
+  // Keep a single module graph while the shared development server is edited.
+  await page.routeWebSocket('**', socket => socket.close());
   await page.goto(`${base}/?fx=force`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => globalThis.__shelfWorld !== undefined, null, { polling: 400 });
   await page.waitForFunction(() => globalThis.__shelfVisibleBooks?.().length > 0, null, { polling: 400 });
@@ -68,13 +75,13 @@ try {
   if (!studioText.includes('cover title')) throw new Error('front-cover title controls are missing');
 
   const direction = page.getByRole('group', { name: 'Surprise book direction' });
-  await direction.getByRole('button', { name: 'botanical', exact: true }).click();
+  await direction.getByRole('button', { name: directionName, exact: true }).click();
   // From this point onward every exit path must restore the captured recipe.
   appearanceMutated = true;
   await page.getByRole('button', { name: /dress this book/i }).click();
   await page.waitForTimeout(1400);
 
-  const applied = await page.evaluate((id) => ({
+  let applied = await page.evaluate((id) => ({
     binding: globalThis.__shelfBinding(id),
     style: globalThis.__shelfBookMeta(id)?.style ?? null,
   }), original.id);
@@ -82,6 +89,50 @@ try {
     throw new Error(`Surprise did not apply a new binding (${String(original.binding)} -> ${String(applied.binding)})`);
   }
   if (applied.style === null) throw new Error('Surprise did not persist its style recipe');
+  if (expansion) {
+    await page.evaluate(async id => globalThis.__shelfSaveBinding(id, 'plain-cloth'), original.id);
+    const plate = page.getByRole('group', {name:'Title plate', exact:true});
+    await plate.getByRole('button', {name:/more/i}).click();
+    await plate.getByRole('button', {name:/^whispered rules$/i}).click();
+    const emblem = page.getByRole('group', {name:'Book emblem',exact:true});
+    await emblem.getByRole('button', {name:/more/i}).click();
+    await emblem.getByRole('button', {name:/^single ginkgo$/i}).click();
+    await page.getByRole('button', {name:/\d+ more frames/i}).click();
+    await page.getByRole('group', {name:'Cover frame',exact:true})
+      .getByRole('button', {name:/^soft mitre$/i}).click();
+    await page.waitForFunction(id => {
+      const style=globalThis.__shelfBookMeta(id)?.style;
+      return style?.titlePlate==='whisper-rules' && style?.ornament===114 && style?.coverFrame===79;
+    },original.id);
+    applied=await page.evaluate(id=>({binding:globalThis.__shelfBinding(id),style:globalThis.__shelfBookMeta(id)?.style}),original.id);
+  }
+  if (applied.style.composition != null || applied.style.spineCharacter != null) {
+    throw new Error('Surprise revived the rejected sparse layout instead of the established binding');
+  }
+  if (sabotagePlainFrame) {
+    await page.evaluate(async ({ id, style }) => {
+      await globalThis.__shelfSetBookStyle(id, { ...style, coverFrame: 2 });
+    }, { id: original.id, style: applied.style });
+    applied = await page.evaluate((id) => ({
+      binding: globalThis.__shelfBinding(id),
+      style: globalThis.__shelfBookMeta(id)?.style ?? null,
+    }), original.id);
+    if (applied.style?.coverFrame !== 2) {
+      throw new Error('plain-frame sabotage did not reach the saved appearance');
+    }
+  }
+  if (
+    directionName === 'grand'
+    && !expansion
+    && !GRAND_ORNATE_FRAMES.has(applied.style.coverFrame)
+    && (applied.style.ornament ?? -1) < 0
+    && !['gothic-pointed-panel','fanfare-pediment','crown-quatrefoil','imperial-fan-panel',
+      'morocco-clipped-rule','inscription-shoulders','two-tone-leather-label'].includes(applied.style.titlePlate)
+  ) {
+    throw new Error(
+      `Grand Surprise lost its ornate perimeter in the live Studio path (frame ${String(applied.style.coverFrame)})`,
+    );
+  }
 
   await page.screenshot({ path: `${out}/book-surprise-live-studio.png` });
   await page.getByRole('group', { name: 'Preview face' })
@@ -103,6 +154,7 @@ try {
     original.id,
   );
   await page.evaluate((id) => globalThis.__shelfWhenSpinesReady?.(true).then(() => id), original.id);
+  await page.waitForFunction(() => globalThis.__shelfWorld?.frozen === false);
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${out}/book-surprise-live-shelf.png` });
 
@@ -130,6 +182,9 @@ try {
     book: original.title,
     bindingBefore: original.binding,
     bindingApplied: applied.binding,
+    coverFrameApplied: applied.style.coverFrame,
+    compositionApplied: applied.style.composition,
+    spineCharacterApplied: applied.style.spineCharacter,
     restored: true,
     knownBaselinePageErrors: errors.length - unexpectedErrors.length,
     screenshots: [

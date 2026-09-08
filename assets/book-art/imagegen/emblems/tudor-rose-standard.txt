@@ -1,0 +1,23 @@
+Prompt 1 — rejected gradient study
+
+Use case: logo-brand
+Asset type: individual transparent bitmap master for Alcove book customisation, used as one bookbinder finishing-tool emblem on both a cover and a narrow spine
+Primary request: create one original emblem named "Tudor rose standard"
+Subject: one heraldic Tudor rose presented upright on a short formal standard: five broad rounded outer petals, five smaller distinct inner petals, one bold central seed disk, two small pointed sepals visible between lower petals, and a short straight stem ending in two restrained outward leaf-scrolls; unmistakably Tudor rose heraldry and visibly distinct from a natural dog rose or simple rosette
+Style/medium: intricate Grand historical English bookbinding ornament, clean flat vector-like raster artwork, single uniform dark sepia ink, graceful hand-cut brass finishing-tool curves, stately and authored
+Composition/framing: one isolated centred vertical motif occupying about 68% of the square, rose dominates the upper half and short standard anchors below, exact fivefold flower rhythm with broad open cuts, generous transparent margins; remains legible when reduced for a narrow spine
+Colour palette: exactly one uniform dark sepia ink colour approximately #432934; transparent pixels everywhere else
+Constraints: genuinely transparent PNG background with preserved alpha; crisp antialiased edges; one coherent subject; no surrounding circle, badge, medallion, plate, cartouche, border, shield, crown, text, letters, numbers, watermark
+Avoid: checkerboard background, realistic botanical shading, branch, thorns, many small petals, carnation fringe, fleur-de-lis, texture, paper, leather, grain, lighting, highlights, shadows, gradients, glow, bloom effect, 3D, metallic rendering, gold, multiple colours, tiny dots, dense hatching, photorealism, clip-art style, app icon style
+
+Prompt 2 — accepted generation
+
+Create a clean transparent PNG emblem, like a one-colour vector cutout.
+
+Name and identity: Tudor rose standard. Draw a clearly recognizable heraldic Tudor rose with exactly five large rounded outer petals, exactly five smaller inner petals, and one round centre. Mount it on a short straight stem with two small symmetrical curled leaves at the base. The flower should look formal and heraldic, not naturalistic.
+
+Artwork: every visible mark must be the exact same solid dark sepia #432934. Use broad solid shapes and clean cut-out gaps between petals. Strictly flat. Crisp antialiased contours. Strong silhouette that still reads at 24 pixels. Centre it vertically with generous clear space around it.
+
+Transparency: the entire surrounding canvas must be genuine alpha transparency. Produce no black background, no coloured background, no checkerboard pattern, no halo, no vignette, and no matte.
+
+Forbidden: gradients, tonal changes, highlights, shadows, lighting, glow, haze, blur, texture, paper, leather, metal effect, gold, border, circle, badge, medallion, plate, shield, crown, words, letters, numbers, watermark, realistic flower shading, extra petals, thorns, branch.

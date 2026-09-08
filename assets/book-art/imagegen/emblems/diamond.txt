@@ -1,0 +1,21 @@
+IMAGEGEN PROMPT 1
+
+Use case: logo-brand
+Asset type: individual square raster master for Alcove book-cover and narrow book-spine ornament, active emblem index 0, ID diamond
+Primary request: Create one original Quiet bookbinder finishing-tool emblem of a single cut diamond. Make the diamond unmistakable: a tall balanced lozenge silhouette with four crisp points, a smaller open central lozenge, and four broad facet divisions that meet cleanly without clutter. Give the geometry a subtly hand-cut softness like an antique brass finishing stamp, while retaining a strong simple silhouette.
+Input image: the supplied Alcove binding study is a style reference only; match its restrained antique gold-tool linework, crisp flat construction, and refined book-cover ornament hierarchy.
+Scene/backdrop: genuinely transparent background with clean alpha; no paper, canvas, checkerboard, backing tile, or surrounding field.
+Style/medium: precise flat 2D bookbinder finishing-tool artwork drawn entirely in one uniform dark sepia ink color, approximately #3A2418; clean vector-like hard edges with slight historical organic character.
+Composition/framing: exactly one centered upright diamond, isolated, front-facing, symmetrical, occupying about 60% of the square with generous transparent margins; compact enough for a narrow spine; bold medium stroke weight that survives reduction to a 16 px emblem.
+Constraints: actual transparent PNG alpha; one continuous visual object; large open counters; no cropped edges; no text or letters; visibly distinct from a star, flower, crest, or gemstone illustration.
+Avoid: circle, oval, badge, medallion, cartouche, shield, crown, floral sprigs, rays, extra symbols, enclosing frame, realistic jewel rendering, facets made with shading, fill gradients, gold color, lighting, highlights, shadows, glow, texture, distress, paper grain, blur, 3D depth, photorealism, watermark, duplicate diamonds.
+
+BACKGROUND-EXTRACTION IMAGEGEN PROMPT
+
+Use case: background-extraction
+Asset type: corrected transparent square master for Alcove Diamond emblem, active index 0
+Primary request: Remove only the baked pale checkerboard background from Image 1 and replace it with genuine transparent alpha. Preserve the exact diamond artwork: its four-point silhouette, inner open lozenge, facet divisions, proportions, line weight, framing, and uniform dark sepia ink color. Do not redraw, reinterpret, simplify, thicken, thin, crop, recolor, or add anything.
+Input image: Image 1 is the exact accepted Diamond edit target.
+Scene/backdrop: fully transparent outside the diamond with clean alpha; no visible checkerboard, white field, matte, halo, or backing tile.
+Constraints: output exactly one isolated diamond in a square PNG; preserve every artwork pixel and the existing roomy margins; crisp antialiased edges; no text or watermark.
+Avoid: any design change, new ornament, missing line, opaque background, checkerboard pixels, paper, texture, gradient, shadow, glow, lighting, blur, or color variation.

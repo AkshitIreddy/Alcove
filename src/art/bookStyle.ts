@@ -51,9 +51,15 @@ import {
   bookPresetHasAuthoredFocal,
   materialLookFor,
   presetForSeed,
-  type BroadFocalGlyph,
   type BookPresetId,
 } from './bookDesign';
+import { bindingEmblemIndexForAuthoredFocal } from './bookBindingIdentity';
+import {
+  isBookCompositionId,
+  isBookSpineCharacter,
+  type BookSpineCharacter,
+  type BookCompositionId,
+} from './bookCompositions';
 import { normaliseHex } from './customColour';
 import { clamp, mulberry32, type RandomFn } from './noise';
 import {
@@ -182,41 +188,9 @@ const SURFACE_LED_TITLE_PLATES: ReadonlySet<TitlePlateStyle> = new Set([
   'twin-rules',
 ]);
 
-/**
- * Board-scale counterparts for the focal tools authored into named bindings.
- * Several historical glyphs deliberately converge on the final clean cover
- * vocabulary; this is semantic normalization, not a second random choice.
- */
-const COVER_EMBLEM_FOR_AUTHORED_FOCAL: Readonly<
-  Partial<Record<BroadFocalGlyph, number>>
-> = {
-  crown: 20,
-  sprig: 13,
-  laurel: 1,
-  palmette: 43,
-  fleuron: 12,
-  rosette: 23,
-  'fleur-de-lis': 26,
-  starflower: 2,
-  acanthus: 12,
-  sunrise: 5,
-  'oak-spray': 13,
-  thistle: 14,
-  'ivy-knot': 1,
-  'oak-volutes': 28,
-  'wheat-saltire': 29,
-  pomegranate: 30,
-  tulip: 31,
-  pinecone: 13,
-  'fern-palmette': 56,
-  ginkgo: 31,
-  compass: 0,
-  shield: 0,
-};
-
 function authoredCoverEmblem(binding: BookPresetId): number {
   const glyph = bookPresetAuthoredFocalGlyph(binding);
-  return glyph === null ? ORNAMENT_NONE : (COVER_EMBLEM_FOR_AUTHORED_FOCAL[glyph] ?? ORNAMENT_NONE);
+  return bindingEmblemIndexForAuthoredFocal(glyph) ?? ORNAMENT_NONE;
 }
 
 /** `ornament: -1` means "no stamp" — after the sixteen live binder tools. */
@@ -342,6 +316,9 @@ export interface BookStyle {
   coverMedallion: number;
   cornerProtectors: boolean;
   insetPlate: boolean;
+  /** Authored whole-book composition, or null for legacy/manual assembly. */
+  composition: BookCompositionId | null;
+  spineCharacter: BookSpineCharacter | null;
 }
 
 /** The user-overridable view of a BookStyle: every field optional. */
@@ -696,6 +673,10 @@ export function normalizeBookStyleOverrides(raw: unknown): BookStyleOverrides | 
   }
   if (typeof raw.cornerProtectors === 'boolean') o.cornerProtectors = false;
   if (typeof raw.insetPlate === 'boolean') o.insetPlate = false;
+  if (raw.composition === null) o.composition = null;
+  else if (isBookCompositionId(raw.composition)) o.composition = raw.composition;
+  if (raw.spineCharacter === null) o.spineCharacter = null;
+  else if (isBookSpineCharacter(raw.spineCharacter)) o.spineCharacter = raw.spineCharacter;
 
   return Object.keys(o).length > 0 ? o : null;
 }
@@ -939,12 +920,23 @@ export function resolveBookStyle(
   // Cover-only knobs: the seed's own rolls unless the studio pins them.
   const coverBase = deriveCoverParams(s);
   let coverFrame = normalizeCoverFrameIndex(over.coverFrame ?? coverBase.frame);
-  if (surfaceLed && !SURFACE_LED_FRAMES.has(coverFrame)) coverFrame = 2;
+  // Surface-led bindings get a quiet fallback only for their latent seeded
+  // frame. An explicit override is authored intent: it may come from the
+  // reader's frame picker or from a complete Surprise binding programme, and
+  // silently reducing it here used to turn Grand three-quarter books back
+  // into a plain double rule after the recipe had already selected dentelle.
+  if (
+    over.coverFrame === undefined
+    && surfaceLed
+    && !SURFACE_LED_FRAMES.has(coverFrame)
+  ) coverFrame = 2;
   // One emblem axis drives both faces. A binding-authored centrepiece spends
   // that focal budget itself, so the compatibility fields stay bare.
   const coverMedallion = bindingOwnsFocal || surfaceLed ? ORNAMENT_NONE : ornament;
   const cornerProtectors = false;
   const insetPlate = false;
+  // Retire the experimental sparse layouts without rewriting the reader's colours or choices.
+  const composition = null;
   void rCorner;
   void rInset;
 
@@ -986,6 +978,8 @@ export function resolveBookStyle(
     coverMedallion,
     cornerProtectors,
     insetPlate,
+    composition,
+    spineCharacter: null,
   };
 
   const pinned = new Set(Object.keys(over) as (keyof BookStyle)[]);
@@ -1047,6 +1041,8 @@ export function spineParamsFor(
 ): SpineParams {
   return {
     ...base,
+    composition: style.composition,
+    spineCharacter: style.spineCharacter,
     materialPinned: pinned.has('material'),
     palette: style.pigment,
     clothHex: style.clothHex,
@@ -1104,6 +1100,10 @@ export function coverParamsFor(
     ? style.material
     : (bindingMaterialFor(materialLook) as BindingMaterial);
   const bindingEmblem = authoredCoverEmblem(bindingPreset.id);
+  const composedCoverUsesEmblem =
+    style.composition === 'botanical-study'
+    || style.composition === 'storybook-device'
+    || style.composition === 'formal-title';
   const overrides: CoverOverrides = {
     palette: style.pigment,
     clothHex: style.clothHex,
@@ -1118,7 +1118,11 @@ export function coverParamsFor(
     // A binding-authored focal suppresses the optional shelf ornament, but its
     // semantic counterpart still belongs on the front board. This is why the
     // crowned Welcome spine and its held cover remain the same book.
-    medallion: bindingEmblem >= 0 ? bindingEmblem : style.coverMedallion,
+    medallion: style.composition !== null
+      ? (composedCoverUsesEmblem
+          ? (style.coverMedallion >= 0 ? style.coverMedallion : bindingEmblem)
+          : ORNAMENT_NONE)
+      : (bindingEmblem >= 0 ? bindingEmblem : style.coverMedallion),
     titleFont: style.titleFont,
     gilt: style.gilt,
     raisedBands: style.raisedBands,
@@ -1133,6 +1137,7 @@ export function coverParamsFor(
     wear: style.wear,
     charm: style.charm,
     charmColor: style.charmColor,
+    composition: style.composition,
   };
   return deriveCoverParams(seed >>> 0, overrides);
 }

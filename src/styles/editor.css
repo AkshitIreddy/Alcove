@@ -666,10 +666,15 @@
   flex: 0 0 auto;
   user-select: none;
   position: relative;
+  margin-top: calc(
+    var(--nb-rule-lead) + (var(--page-line-height) - 18px) / 2 - 2px
+  );
 }
 
 .nb-prose ul[data-type='taskList'] li > label input {
   position: absolute;
+  inset: 0;
+  z-index: 1;
   opacity: 0;
   width: 100%;
   height: 100%;
@@ -677,14 +682,13 @@
   cursor: pointer;
 }
 
-/* The drawn box: slightly uneven corners + a tiny tilt */
-.nb-prose ul[data-type='taskList'] li > label span {
+/* The upstream span now carries visually hidden accessibility text. Draw our
+   box on the label instead, giving the real input an honest hit area. */
+.nb-prose ul[data-type='taskList'] li > label::before {
+  content: '';
   display: block;
   width: 18px;
   height: 18px;
-  margin-top: calc(
-    var(--nb-rule-lead) + (var(--page-line-height) - 18px) / 2 - 2px
-  );
   border: 2px solid var(--ink-graphite);
   border-radius: 3px 6px 2px 7px / 6px 3px 7px 2px;
   background: var(--paper-cream);
@@ -694,12 +698,12 @@
   pointer-events: none;
 }
 
-.nb-prose ul[data-type='taskList'] li > label:hover span {
+.nb-prose ul[data-type='taskList'] li > label:hover::before {
   background: var(--wash-amber-light);
 }
 
 /* Pencil check */
-.nb-prose ul[data-type='taskList'] li[data-checked='true'] > label span::after {
+.nb-prose ul[data-type='taskList'] li[data-checked='true'] > label::after {
   content: '';
   position: absolute;
   left: 2px;
@@ -710,6 +714,12 @@
   border-bottom: 2.5px solid var(--ink-graphite);
   border-radius: 1px;
   transform: rotate(-50deg) scaleY(1.06);
+  pointer-events: none;
+}
+
+.nb-prose ul[data-type='taskList'] li > label:has(input:focus-visible)::before {
+  outline: 2px solid var(--ink-graphite);
+  outline-offset: 3px;
 }
 
 .nb-prose ul[data-type='taskList'] li > div {

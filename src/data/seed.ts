@@ -60,6 +60,10 @@
  *             crown programme; no page content changes.
  *   v16 → v17 refreshes two untouched tour leaves for Creative Direction,
  *             the complete AI visual catalogue and the zoomable image viewer.
+ *   v17 → v18 refreshes the untouched Book Studio leaves for the expanded
+ *             title, frame and emblem artwork catalogue. The wording names
+ *             capabilities rather than totals, so adding another authored
+ *             option cannot make the guide stale again.
  *
  * The current seed version lives in the `settings` table under 'seedVersion'.
  */
@@ -115,7 +119,7 @@ import type { PageDoc } from './types';
  * useful sample data first, then guided action, then progressive discovery.
  * See the research note above WELCOME_PAGE_SOURCES.
  */
-export const SEED_VERSION = 17;
+export const SEED_VERSION = 18;
 
 /** `settings` table key holding the last-applied seed version. */
 export const SEED_VERSION_KEY = 'seedVersion';
@@ -302,7 +306,7 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  * This is the first object a reader ever sees on the shelf, and it was warm
  * amber cloth with whatever the seed happened to give it — which read as the
  * default it was. It is the app's calling card, so it is dressed like one:
- * grand blue presentation boards, two raised cords, one foliate lozenge and
+ * grand blue presentation boards, two raised cords, one open diamond and
  * gilt edges, quarto and stout so it has some presence beside a pocket
  * paperback. Its binding preset is pinned separately to `gilt-quarto`; that
  * preset's square publisher case and continuous fillet supply the formal
@@ -329,7 +333,7 @@ export const WELCOME_SPINE_SEED = fnv1a(WELCOME_BOOK_TITLE) >>> 0;
  *
  * The measured spine panel and two cords keep the blue field structured at
  * shelf scale. The front board spends the detail budget on one continuous
- * Renaissance panel, an engraved direct-gilt title and one foliate lozenge.
+ * Renaissance panel, an engraved direct-gilt title and one open diamond.
  *
  * The cool blue deliberately separates the Welcome volume from the default
  * walnut case and from the warmer mixed shelf, while the gold keeps it formal
@@ -422,23 +426,23 @@ const V16_VELVET_WELCOME_BINDING: Readonly<Record<string, unknown>> = {
  *
  * The Renaissance panel supplies one continuous architectural perimeter and
  * restrained acanthus returns. Engraved direct gilt gives the title the same
- * formal register without adding a label or badge. A broad foliate lozenge is
+ * formal register without adding a label or badge. A broad open diamond is
  * the single focal on both faces; it reads as binder's tooling rather than a
  * costume crown, shield or themed prop.
  */
 export const WELCOME_BINDING: Readonly<Record<string, unknown>> = {
   ...V15_BLUE_WELCOME_BINDING,
-  ornament: 0, // Foliate lozenge — broad, formal and legible at shelf width
+  ornament: 0, // Open diamond — broad, formal and legible at shelf width
   titleFont: 44, // Engraved — reader-legible formal caps from the curated case
   coverFrame: 48, // Renaissance Panel — banded architectural corner returns
-  coverMedallion: 0, // The same foliate lozenge as the titleless spine
+  coverMedallion: 0, // The same open diamond as the titleless spine
 };
 
 /**
  * The binding preset pinned to an untouched Welcome book.
  *
  * `gilt-quarto` supplies a square formal publisher binding. The explicit style
- * uses two gilt cords and one broad foliate lozenge; the resolver quiets the
+ * uses two gilt cords and one broad open diamond; the resolver quiets the
  * preset fillet while that focal tool is present, avoiding two stacked ornate
  * systems on a narrow spine. This deliberately does not pin the coarse material
  * control: the named binding owns its smooth presentation cloth. The straight
@@ -2382,7 +2386,7 @@ This Welcome book is a Grand blue Gilt Quarto with an engraved gilt title, a Ren
  * v17 teaches the AI art-direction desk and the full-size image viewer. Keep
  * v16 byte-identical above so an untouched 0.6.2 guide stays recognisable.
  */
-export const WELCOME_PAGE_SOURCES: readonly string[] = WELCOME_PAGE_SOURCES_V16.map(
+const WELCOME_PAGE_SOURCES_V17: readonly string[] = WELCOME_PAGE_SOURCES_V16.map(
   (source) => {
     if (source.includes('# Notebook Script {')) {
       return `# Notebook Script {sticker=sparkle}
@@ -2413,6 +2417,61 @@ The guide treats the catalogue as a palette, not a checklist—one favourite sti
 );
 
 /**
+ * v18 updates the two Book Studio leaves after the artwork remaster. Keep v17
+ * byte-identical above: its exact source is a safety fingerprint for pristine
+ * guides, not copy that may be edited in place.
+ */
+export const WELCOME_PAGE_SOURCES: readonly string[] = WELCOME_PAGE_SOURCES_V17.map(
+  (source) => {
+    if (source.includes('# Dress this book {')) {
+      return `# Dress this book {sticker=sparkle}
+
+This Grand-blue volume is showing the rebuilt book studio before you even open it.
+
+::: card {title="The titleless spine"}
+Choose a straight binding construction, a quiet covering, raised cords and one broad binder's tool. The book's name stays on its cover.
+:::
+
+::: card {title="The cover"}
+Set the complete title in an authored title field and lettering hand, choose a continuous frame and matching emblem, then finish the paper block with a real edge treatment and sewn endband.
+:::
+
+::: callout {variant=tip}
+Surprise me composes a whole binding in a distinct direction. Lock any parts you love, then roll the rest again.
+:::
+
+::: marginalia
+This Welcome binding shares one open diamond between cover and spine. Richness comes from one authored hierarchy, never wallpapered symbols or hardware.
+:::
+`;
+    }
+    if (source.includes('# Dressing a book {')) {
+      return `# Dressing a book {sticker=sparkle}
+
+The paintbrush at the top of the rail opens **Customize this book**, where the spine and cover are designed as one binding.
+
+::: card {title="The binding"}
+Choose among straight cloth, calf, vellum and split-board constructions, then add raised cords, a sewn endband and one broad emblem when the design calls for it. Material-led tooling keeps the titleless spine composed.
+:::
+
+::: card {title="The cover and paper block"}
+Keep the full title, pair an authored title field with a lettering hand and continuous frame, then finish the page edges in plain, gilt, stained, deckled or burnished styles.
+:::
+
+::: quote-card {color=sky}
+This Welcome book is a Grand blue Gilt Quarto with an engraved gilt title, a Renaissance panel and one open diamond shared by cover and spine.
+:::
+
+::: tag {color=amber}
+\`Ctrl Alt D\` dresses the open book
+:::
+`;
+    }
+    return source;
+  },
+);
+
+/**
  * Every page this book USED to be, kept verbatim — the v7 thirty-two, then
  * the older generations already retained below.
  *
@@ -2429,6 +2488,9 @@ The guide treats the catalogue as a palette, not a checklist—one favourite sti
  * mojibaked pencil.
  */
 export const LEGACY_WELCOME_PAGE_SOURCES: readonly string[] = [
+  // v17 — the outgoing 0.7.14 field guide, retained for the v18 refresh.
+  ...WELCOME_PAGE_SOURCES_V17,
+
   // v16 — the outgoing 0.6.2 field guide, retained for the v17 refresh.
   ...WELCOME_PAGE_SOURCES_V16,
 
@@ -4302,6 +4364,8 @@ async function refreshWelcomeBook(db: Db, force = false): Promise<boolean> {
  *   v16          upgrades the untouched Grand-blue exterior to its authored
  *                Renaissance panel and engraved direct-gilt title
  *   v17          refreshes the AI-guide and image-viewer onboarding leaves
+ *   v18          refreshes the Book Studio leaves for the expanded artwork
+ *                catalogue without hard-coding catalogue totals
  *   always      create the welcome book if the library has none
  *
  * The order matters twice. Renaming BEFORE the existence check is what stops
@@ -4331,11 +4395,11 @@ export async function seedIfEmpty(): Promise<boolean> {
   // bindings for the rest of this launch even after SQLite had been repaired.
   await migrateBookAppearanceSystem(db);
   await migrateWelcomeBookDesign(db, refreshEditedWelcome);
-  // v17 updates two leaves in the forty-eight-leaf field guide.
+  // v18 updates two leaves in the forty-eight-leaf field guide.
   // The refresh
   // helper preserves a reader-edited guide unless they explicitly opted in,
   // while an untouched older guide receives the current onboarding content.
-  if (refreshEditedWelcome || previousVersion < 17) {
+  if (refreshEditedWelcome || previousVersion < 18) {
     await refreshWelcomeBook(db, refreshEditedWelcome);
   }
   const exists = await welcomeBookExists(db);

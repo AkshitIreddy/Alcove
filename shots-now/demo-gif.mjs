@@ -962,6 +962,13 @@ async function assertDemoShelfHome(page, label) {
       const rect = shelf.getBoundingClientRect();
       return rect.width > 20 && rect.height > 20;
     })();
+    const addSlotVisible = [...document.querySelectorAll('.shelf-addslot')].some(
+      (slot) => {
+        const rect = slot.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 &&
+          getComputedStyle(slot).visibility !== 'hidden';
+      },
+    );
     return {
       ok:
         books.length === expectedCount &&
@@ -973,7 +980,7 @@ async function assertDemoShelfHome(page, label) {
         panelsClosed &&
         Math.abs(panelEdge) <= 0.5 &&
         document.querySelector('.pulled-book') === null &&
-        shelfVisible,
+        shelfVisible && addSlotVisible,
       count: books.length,
       uniqueIds: new Set(ids).size,
       missingSeeded: seededTitles.filter((title) => !titles.includes(title)),
@@ -985,6 +992,7 @@ async function assertDemoShelfHome(page, label) {
       panelEdge,
       pulled: document.querySelector('.pulled-book') !== null,
       shelfVisible,
+      addSlotVisible,
     };
   }, { expectedCount: EXPECTED_SHELF_BOOKS, seededTitles: SEEDED_TITLES });
   if (!state.ok) {

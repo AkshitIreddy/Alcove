@@ -11,6 +11,7 @@ export default defineConfig(async (env) =>
         'tests/book-design-quality.test.ts',
         'tests/book-surprise-constraints.test.ts',
         'tests/book-surprise-effective-locks.test.ts',
+        'tests/book-colour-coherence.test.ts',
         'tests/book-studio-prefs.test.ts',
         'tests/book-studio-interaction.test.ts',
         'tests/book-studio-painter-colour-locks.test.ts',

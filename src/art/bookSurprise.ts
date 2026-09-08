@@ -552,6 +552,83 @@ function isBodyColourField(field: keyof BookStyle): field is BodyColourField {
     || field === 'coverAccentHex';
 }
 
+const BODY_COLOUR_FIELDS_AND_LOCKS = [
+  ['spineBaseHex', 'colour.spine-base'],
+  ['spineAccentHex', 'colour.spine-accent'],
+  ['coverBaseHex', 'colour.cover-base'],
+  ['coverAccentHex', 'colour.cover-accent'],
+] as const satisfies readonly (readonly [BodyColourField, BookSurpriseLockId])[];
+
+function circularHueGap(first: number, second: number): number {
+  const direct = Math.abs(first - second);
+  return Math.min(direct, 360 - direct);
+}
+
+/**
+ * A held colour is one anchor for the next generated binding, not permission
+ * to splice two unrelated authored palettes together. Keep every unlocked
+ * body role's own lightness and chroma, but bring its hue into the held
+ * family. Two visibly different held hues are deliberate reader intent and
+ * therefore disable this repair; neither is changed and no third colour is
+ * invented between them.
+ *
+ * This runs only inside Surprise's lock merge. Ordinary manually selected
+ * spine/cover colours remain independent, including intentionally contrasting
+ * pairs. The 34-degree shoulder leaves real warm/cool variation while ruling
+ * out the green-spine/red-board split that a one-role lock previously caused.
+ */
+function coordinateUnlockedBodyColours(
+  style: BookStyleOverrides,
+  request: NormalizedRequest,
+  protectedFields: ReadonlySet<BodyColourField>,
+): BookStyleOverrides {
+  if (request.current === undefined) return style;
+
+  const anchors = BODY_COLOUR_FIELDS_AND_LOCKS.flatMap(([field, lockId]) => {
+    if (!request.lockSet.has(lockId)) return [];
+    const visible = request.current?.visibleColours?.[field];
+    const fallback = style[field];
+    const value = typeof visible === 'string' ? visible : fallback;
+    if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return [];
+    const colour = toOklch(value);
+    return colour.C >= 0.025 ? [colour] : [];
+  });
+  if (anchors.length === 0) return style;
+
+  for (let first = 0; first < anchors.length; first += 1) {
+    for (let second = first + 1; second < anchors.length; second += 1) {
+      if (circularHueGap(anchors[first]!.h, anchors[second]!.h) > 55) return style;
+    }
+  }
+
+  const vector = anchors.reduce(
+    (sum, colour) => {
+      const angle = colour.h * Math.PI / 180;
+      return {
+        x: sum.x + Math.cos(angle) * colour.C,
+        y: sum.y + Math.sin(angle) * colour.C,
+      };
+    },
+    { x: 0, y: 0 },
+  );
+  const anchorHue = ((Math.atan2(vector.y, vector.x) * 180 / Math.PI) + 360) % 360;
+  const out: BookStyleOverrides = { ...style };
+  for (const [field, lockId] of BODY_COLOUR_FIELDS_AND_LOCKS) {
+    if (request.lockSet.has(lockId) || protectedFields.has(field)) continue;
+    const value = out[field];
+    if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) continue;
+    const colour = toOklch(value);
+    if (colour.C < 0.012) continue;
+    const clockwise = ((colour.h - anchorHue + 540) % 360) - 180;
+    if (Math.abs(clockwise) <= 34) continue;
+    out[field] = toHex({
+      ...colour,
+      h: (anchorHue + Math.sign(clockwise) * 34 + 360) % 360,
+    });
+  }
+  return out;
+}
+
 /** Exact named covering whose material transform is visible right now. */
 function effectiveCurrentMaterialLook(current: BookSurpriseCurrent): MaterialLook {
   return currentFieldPinned(current, 'material')
@@ -2128,6 +2205,11 @@ function applyStyleLocks(
   }
   const bodyColourHeld = hasOneOf(request.lockSet, BODY_COLOUR_LOCKS);
   const spineColourHeld = hasOneOf(request.lockSet, SPINE_BODY_COLOUR_LOCKS);
+  const protectedBodyFields = new Set<BodyColourField>(
+    BODY_COLOUR_FIELDS_AND_LOCKS
+      .filter(([, lockId]) => request.lockSet.has(lockId))
+      .map(([field]) => field),
+  );
 
   /*
    * These are transformation dependencies, not surprise decisions smuggled
@@ -2150,10 +2232,11 @@ function applyStyleLocks(
     out.spineAccentHex = request.current.colourSources?.spineAccentHex
       ?? request.current.visibleColours?.spineAccentHex
       ?? request.current.style.spineAccentHex;
+    protectedBodyFields.add('spineAccentHex');
   }
   // Shelf collision policy is user intent, never decoration.
   out.overlap = request.current.style.overlap;
-  return out;
+  return coordinateUnlockedBodyColours(out, request, protectedBodyFields);
 }
 
 

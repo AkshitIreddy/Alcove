@@ -1946,7 +1946,8 @@ function commitShots() {
 const moved = commitShots();
 // The staging copy has done its job the moment the set is committed. Kept only
 // when the run FAILED, where it is the cheapest evidence of how far it got.
-rmSync(STAGING, { recursive: true, force: true });
+if (args.includes('--keep-staging')) console.log(`kept capture evidence: ${STAGING}`);
+else rmSync(STAGING, { recursive: true, force: true });
 
 /* -------------------------------- the report ------------------------------ */
 

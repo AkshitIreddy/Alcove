@@ -1,5 +1,25 @@
 # Alcove — running TODO
 
+## ✅ 0.7.15 — books with more character (released 2026-09-08)
+
+Book customisation keeps the existing asset names with remastered artwork and
+adds 72 choices: 32 emblems, 24 borders and 16 title treatments. Surprise me
+uses coordinated designs for each direction. The demo and README screenshots
+now show the richer spine artwork. Page turns share the live editor's ruling
+geometry, including cumulative spacing and smaller/larger reading sizes.
+
+Release commit `8454a4a` and annotated tag `v0.7.15` were pushed to `main`.
+GitHub Actions run `34205303567` passed all gates, Windows Rust tests, all three
+platform builds and publication. The live stable release has 13 assets and
+12 verified checksum entries. The updater manifest covers Windows, Linux and
+both macOS architectures with matching signatures and immutable release URLs.
+
+- [x] Remaster and expand the book artwork and authored variation rules.
+- [x] Fix page-turn text alignment and retry blank thumbnail captures.
+- [x] Obtain owner approval of the updated MP4 and publish its matching WebP.
+- [x] Recapture and visually review the README still set.
+- [x] Pass local checks, CI packaging and live release verification.
+
 ## ✅ 0.7.14 — timelines keep every colour (released 2026-09-03)
 
 Timeline cards now honour the complete stationer's tint catalogue, including

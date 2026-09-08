@@ -161,7 +161,7 @@ export const RELEASES = 'https://github.com/AkshitIreddy/Alcove/releases';
  * so the installer carries Microsoft's WebView2 bootstrapper instead of fetching
  * it. docs/packaging-windows.md has all three modes with their measured sizes.
  */
-const INSTALLER_SIZE = 'about 16 MB';
+const INSTALLER_SIZE = 'about 70 MB';
 
 /**
  * The version, from the one file that owns it — cross-checked against the Rust

@@ -413,6 +413,14 @@ export default function FlipSurface(props: FlipSurfaceProps): JSX.Element {
         context.drawImage(entry.bitmap, 0, 0);
         return canvas.toDataURL('image/png');
       },
+      /** Actively prepare the shader faces, as a real cold-turn request does. */
+      prepare: async (dir: FlipDirection): Promise<void> => {
+        const pages = getFlipPages(dir);
+        if (pages === null) return;
+        const required = [pages.front, pages.back, pages.revealed]
+          .filter((id): id is string => id !== null);
+        await Promise.all([...new Set(required)].map((id) => cache.ensure(id)));
+      },
       /** Forget everything, so a probe can ask what a cold book does. */
       clear: () => cache.dispose(),
     };

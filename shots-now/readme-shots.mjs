@@ -1387,6 +1387,13 @@ if (appShots.some(wanted)) {
     const box = page.locator('textarea').first();
     await box.click({ force: true });
     await box.fill(SCRIPT);
+    // Filling puts the caret at the end and scrolls the source. Photograph
+    // its opening alongside the preview, with no partial line at the rim.
+    await box.evaluate((element) => {
+      element.setSelectionRange(0, 0);
+      element.scrollTop = 0;
+      element.blur();
+    });
     await wait(page, 2800);
     if (wanted('script-dialog')) await shot(page, 'script-dialog');
     if (wanted('script-page')) {

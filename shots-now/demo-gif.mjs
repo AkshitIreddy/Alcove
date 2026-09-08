@@ -83,7 +83,7 @@
  * Those bridges are only handed out under `?fx=force`, which is also what stops
  * the shelf from degrading its effects — see `world.ts`.
  *
- *   npm run dev          (a dev server on :1420)
+ *   node shots-now/capture-server.mjs  (instead of dev; port1420 without HMR)
  *   node shots-now/demo-gif.mjs --gifsmith-local=file:///C:/path/to/gifsmith/dist/index.js
  *   node shots-now/demo-gif.mjs --check     (dry run + contact sheet, no encode)
  *   node shots-now/demo-gif.mjs --qa-only   (render staged WebP + MP4, do not publish)
@@ -874,6 +874,20 @@ async function waitForWarmNextFlip(page, ctx, heading) {
   // time, so give snapshot preparation room without changing the demo pace.
   const warmTimeoutMs = 45_000;
   try {
+    // Idle warming can discard a capture when ahead-page pagination changes
+    // its document. A real turn actively prepares those faces; a passive
+    // polling loop never requested that retry and could wait forever.
+    for (let pass = 0; pass < 4; pass += 1) {
+      await settleScene(ctx,
+        page.evaluate(() => globalThis.__flipCache?.prepare?.('next')),
+        { capMs: warmTimeoutMs, label: `prepare curl before ${heading}` });
+      await advanceSceneFrames(page, ctx, 2);
+      const ready = await page.evaluate(() => {
+        const faces = globalThis.__flipCache?.facesFor?.('next');
+        return Boolean(faces?.hasFront && faces.hasBack && faces.hasRevealed);
+      });
+      if (ready) break;
+    }
     await settleScene(
       ctx,
       page.waitForFunction(() => {
@@ -1291,6 +1305,11 @@ const tl = timeline((t) => {
 
   t.waitFor('.shelf-dock');
   t.call(async function stockTheShelf(page, ctx) {
+    // The dock mounts before the async artwork preload creates ShelfWorld.
+    // A cold capture must wait for the owner, then await its ready promise.
+    await settleScene(ctx,
+      page.waitForFunction(() => Boolean(globalThis.__shelfWorld?.ready), { timeout: 60_000 }),
+      { capMs: 60_000, label: 'create the shelf world' });
     // Wait for the world's own ready promise, not a timer: the case is baked
     // art and a shot taken before it lands photographs bare arches.
     //
@@ -1887,7 +1906,9 @@ const tl = timeline((t) => {
     // blank ruled shells the old, un-centred demo held for ten seconds.
     t.waitUntil(() => {
       const current = [...document.querySelectorAll('.nb-thumb.is-current .nb-thumb-paper')];
-      return current.length > 0 && current.every((paper) => paper.classList.contains('has-preview'));
+      return current.length > 0 && current.every((paper) =>
+        paper.classList.contains('has-raster') &&
+        paper.getAttribute('data-thumbnail-state') === 'ready');
     });
     t.hold(hold);
   };
@@ -2646,6 +2667,9 @@ const scene = {
   // film. Gifsmith opens its destination before capture, so write the whole
   // candidate under ignored QA first and promote it only after render returns.
   out: DEMO_STAGING,
+  // Optional retained source frames make a late capture failure reviewable.
+  workDir: opt('work-dir', undefined),
+  keepFrames: args.includes('--keep-frames'),
   viewport: { width: 1360, height: 850 },
   props: [cursor({ start: LOOP_CURSOR_HOME }), bezel()],
   timeline: tl,

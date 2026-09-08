@@ -399,8 +399,8 @@ defending — why it is that way and what it replaced.
 
 ### What the source files document about themselves
 
-<!--f:srcDocstrings-->354<!--/f--> of <!--f:srcFiles-->395<!--/f--> source files
-open with a module docstring — <!--f:docstringLines-->7398<!--/f--> lines of it.
+<!--f:srcDocstrings-->363<!--/f--> of <!--f:srcFiles-->408<!--/f--> source files
+open with a module docstring — <!--f:docstringLines-->7408<!--/f--> lines of it.
 That is the largest single body of prose in the repo and it is deliberately not
 copied here; this README's job is to point at it. The numbers are not asserted
 either: `npm run readme:check` recomputes them from the tree and reports drift.
@@ -1988,7 +1988,7 @@ above, along with the five siblings that led to a standing alarm.
 ## The design record
 <!--nav: The ADR set in `docs/design/`, including which documents are superseded and why they are kept-->
 
-[`docs/design/`](../design/) is an ADR set: <!--f:designDocs-->17<!--/f-->
+[`docs/design/`](../design/) is an ADR set: <!--f:designDocs-->18<!--/f-->
 documents, of which <!--f:supersededDesignDocs-->5<!--/f--> carry an explicit
 superseded banner in their first lines. The superseded ones are kept on purpose —
 the diagnosis of *why* a half-simulated surface reads as cheap is what produced the
@@ -2003,6 +2003,7 @@ Read the relevant one **before** working in its area.
 | [`bookshelf-rendering.md`](../design/bookshelf-rendering.md) | **Current** | Pixi v8 WebGL world + DOM overlay. Camera in log-zoom space, floor virtualization, 3-tier LOD, no live SVG filters in any hot path. |
 | [`page-flip.md`](../design/page-flip.md) | **Current** | Live DOM at rest, GPU curl during the gesture, CSS 3D rigid fold as the no-WebGL fallback only. |
 | [`block-editor.md`](../design/block-editor.md) | **Current** | TipTap v3 with vendored Solid bindings. Document JSON *is* the storage format. |
+| [`book-art-remaster.md`](../design/book-art-remaster.md) | **Current** | Remastered book artwork, preserved catalogue identities, appended choices and direction-specific Surprise composition. |
 | [`title-plate-curation.md`](../design/title-plate-curation.md) | **Current** | The museum-backed keep, redraw and retirement rules for cover title furniture and emblems. |
 | [`script-language.md`](../design/script-language.md) | **Current** | Notebook Script: Markdown subset + `:::` directives + fenced mini-languages, with a handwritten tolerant parser. |
 | [`ai-agent.md`](../design/ai-agent.md) | **Current** | The in-book agent's autonomy, source coverage, credential boundary, native-render self-review gate, immutable preview and approval-only apply contract. |

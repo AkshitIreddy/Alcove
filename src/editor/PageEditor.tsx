@@ -71,6 +71,7 @@ import {
 } from './document';
 import { createDragHandleWiring } from './dragHandle';
 import { createEditorExtensions } from './extensions';
+import { PROSE_GRID_SELECTOR, proseGridCorrections } from './proseGrid';
 import { recordSnapshot } from './history/pageHistory';
 import { registerPageEditor, unregisterPageEditor } from './instances';
 import { setActiveEditor } from './insert/activeEditor';
@@ -476,14 +477,6 @@ interface GridSnapDecoration {
   pixels: number;
 }
 
-function gridSnapCorrection(laidOutTop: number, pitch: number): number {
-  if (!Number.isFinite(laidOutTop) || !Number.isFinite(pitch) || pitch <= 0) {
-    return 0;
-  }
-  const phase = ((laidOutTop % pitch) + pitch) % pitch;
-  return phase < 0.5 || pitch - phase < 0.5 ? 0 : pitch - phase;
-}
-
 /**
  * ProseMirror owns every direct child of `.nb-prose`.
  *
@@ -536,7 +529,7 @@ function createGridSnapPlugin(
  * which put every line after the Welcome heading halfway between rules.
  *
  * Measure every ordinary block after the first. Grid-aligned transitions cost
- * no decoration (`gridSnapCorrection` returns zero); only the first ordinary
+ * no decoration (the shared grid correction returns zero); only the first ordinary
  * block after a fractional-height predecessor receives a spacer, and every
  * later line follows from the prose line-height again.
  *
@@ -572,22 +565,13 @@ function measureProseGridSnaps(
    * failed, and how one Welcome column happened to align while another landed
    * half a rule away after a different-height introduction.
    */
-  const ordinary = (node: Element): boolean =>
-    node.matches('p, h1, h2, h3, h4, ul, ol, blockquote, [data-type="columns"]');
   const rootRect = root.getBoundingClientRect();
   const scale = visualScale(rootRect.height, root.clientHeight);
-  const measured: GridSnapDecoration[] = [];
-
-  for (let index = 1; index < children.length; index += 1) {
-    const child = children[index] as HTMLElement;
-    if (!ordinary(child)) continue;
-    const laidOutTop =
-      (child.getBoundingClientRect().top - rootRect.top) / scale;
-    const pixels = gridSnapCorrection(laidOutTop, pitch);
-    if (pixels <= 0) continue;
-    measured.push({ ...ranges[index]!, pixels });
-  }
-  return measured;
+  return proseGridCorrections(children.map((child) => ({
+    ordinary: child.matches(PROSE_GRID_SELECTOR),
+    top: (child.getBoundingClientRect().top - rootRect.top) / scale,
+    appliedCorrection: Number.parseFloat(child.getAttribute('data-nb-grid-snap') ?? '') || 0,
+  })), pitch).map(({ index, pixels }) => ({ ...ranges[index]!, pixels }));
 }
 
 export default function PageEditor(props: PageEditorProps): JSX.Element {

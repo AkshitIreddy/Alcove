@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { PROSE_GRID_SELECTOR, proseGridCorrections } from '../src/editor/proseGrid';
 
 const editorCss = readFileSync(
   new URL('../src/styles/editor.css', import.meta.url),
@@ -24,11 +25,13 @@ describe('ruled prose baseline', () => {
   });
 
   it('phase-checks prose after compact headings as well as feature blocks', () => {
-    expect(pageEditorSource).toContain('if (!ordinary(child)) continue;');
-    expect(pageEditorSource).not.toContain('ordinary(previous)');
-    expect(pageEditorSource).toContain(
-      'const pixels = gridSnapCorrection(laidOutTop, pitch);',
-    );
+    expect(proseGridCorrections([
+      { ordinary: true, top: 0 },
+      { ordinary: true, top: 43 },
+      { ordinary: false, top: 96 },
+      { ordinary: true, top: 177 },
+    ], 32)).toEqual([{ index: 1, pixels: 21 }, { index: 3, pixels: 26 }]);
+    expect(pageEditorSource).toContain('proseGridCorrections(');
     expect(pageEditorSource).toContain(
       'getComputedStyle(instance.view.dom).lineHeight',
     );
@@ -41,7 +44,7 @@ describe('ruled prose baseline', () => {
     expect(editorCss).toMatch(
       /\.nb-prose > :is\(ul, ol, blockquote, \[data-type='columns'\]\)\[data-nb-grid-snap\] \*[\s\S]*?--nb-grid-snap:\s*0px/,
     );
-    expect(pageEditorSource).toContain('[data-type="columns"]');
+    expect(PROSE_GRID_SELECTOR).toContain('[data-type="columns"]');
   });
 
   it('masks page rules beneath independently spaced decorative writing', () => {

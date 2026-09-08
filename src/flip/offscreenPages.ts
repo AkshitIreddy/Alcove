@@ -42,6 +42,7 @@ import {
 } from './rasterCache';
 import { inlineSvgStyles } from './svgSnapshot';
 import { snapshotGridCorrections } from './snapshotFidelity';
+import { PROSE_GRID_SELECTOR } from '../editor/proseGrid';
 import { prepareSnapshotTableChrome } from './snapshotChrome';
 import {
   freezeSnapshotBlockGeometry,
@@ -163,8 +164,6 @@ export interface OffscreenPageCaptureOptions {
 const SETTLE_AHEAD =
   typeof location === 'undefined' || !/[?&]settleahead=0\b/.test(location.search);
 
-const ORDINARY_PROSE_SELECTOR = 'p, h1, h2, h3, h4, ul, ol, blockquote';
-
 /**
  * Apply PageEditor's measured grid decoration to an owned staged sheet. The
  * staged read-only editor does not install the live plugin; without this
@@ -173,6 +172,9 @@ const ORDINARY_PROSE_SELECTOR = 'p, h1, h2, h3, h4, ul, ol, blockquote';
 export function alignStagedProse(sheet: HTMLElement, pitch: number): number {
   const prose = sheet.querySelector<HTMLElement>('.nb-prose');
   if (prose === null) return 0;
+  // Match the live editor: reading-size settings scale both prose and rules.
+  const renderedPitch = Number.parseFloat(getComputedStyle(prose).lineHeight);
+  if (Number.isFinite(renderedPitch) && renderedPitch > 0) pitch = renderedPitch;
   const children = Array.from(prose.children).filter(
     (node): node is HTMLElement => node instanceof HTMLElement,
   );
@@ -184,7 +186,7 @@ export function alignStagedProse(sheet: HTMLElement, pitch: number): number {
   const scale = visualScale(rootRect.height, prose.clientHeight);
   const corrections = snapshotGridCorrections(
     children.map((child) => ({
-      ordinary: child.matches(ORDINARY_PROSE_SELECTOR),
+      ordinary: child.matches(PROSE_GRID_SELECTOR),
       top: (child.getBoundingClientRect().top - rootRect.top) / scale,
     })),
     pitch,

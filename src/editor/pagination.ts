@@ -10,6 +10,10 @@
  * is left is cut at its last line above the fold instead (`contentOverflows`
  * below, `PageEditor.splitOverflowingBlock`) and the drain carries the tail on
  * its next pass. The math here is DOM-free so it unit-tests in Node.
+ * Expanded dropdowns are handled before whole-block removal by
+ * `detailsPagination`: keep fitting body content on this page and insert a
+ * valid dropdown boundary, repeating its summary on the carried piece.
+ * This also applies when preceding or following top-level blocks exist.
  */
 
 /**

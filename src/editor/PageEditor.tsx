@@ -93,6 +93,7 @@ import {
   trailingCompanionCount,
   trailingOverflowCount,
 } from './pagination';
+import { splitOverflowingDetails } from './detailsPagination';
 import {
   DIAGRAM_CONTINUATION_EDIT_EVENT,
   planDiagramContinuation,
@@ -814,6 +815,14 @@ export default function PageEditor(props: PageEditorProps): JSX.Element {
         const cut = doc.content.size - (phantom ? (tail?.nodeSize ?? 0) : 0);
         const realBottoms = phantom ? bottoms.slice(0, -1) : bottoms;
         const realCount = doc.childCount - (phantom ? 1 : 0);
+
+        // Use the remaining space inside the FIRST overflowing dropdown,
+        // even when more blocks follow it. Moving its whole box first wastes
+        // this leaf; leaving a lone oversized dropdown clips its body forever.
+        const firstOverflow = realBottoms.findIndex(bottom => bottom + padBottom > capacity);
+        if (firstOverflow >= 0 && splitOverflowingDetails(
+          view, rootTop + (capacity - padBottom) * scale, firstOverflow,
+        )) continue;
 
         const overflowCount = Math.min(
           trailingOverflowCount(realBottoms, capacity, padBottom),

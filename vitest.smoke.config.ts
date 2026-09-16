@@ -17,6 +17,7 @@ export default defineConfig(async (env) =>
         'tests/book-studio-painter-colour-locks.test.ts',
         'tests/smoke.test.ts',
         'tests/timeline-colors.test.ts',
+        'tests/details-pagination.test.ts',
         'tests/image-placeholder.test.ts',
         'tests/save-file.test.ts',
         'tests/script-source-clean-authority.test.ts',
